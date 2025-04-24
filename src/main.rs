@@ -2,6 +2,9 @@ use std::io;
 use std::cmp::Ordering; // compare, ordering
 use rand::Rng;
 
+fn times_two(x: i32) -> i32 {
+    2*x
+}
 fn main() {
     let secret_number = rand::rng().random_range(1..=100);
 
