@@ -1,4 +1,6 @@
 mod vector;
+mod matrix;
+
 use std::io;
 use std::cmp::Ordering; // compare, ordering
 use rand::Rng;
