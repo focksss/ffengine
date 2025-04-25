@@ -5,9 +5,10 @@ edition = "2024"
 
 [dependencies]
 ash = "0.38.0"
+ash-window = "0.13"
 libloading = "0.8"
 rand = "0.9.0"
-winit = "0.29"
-env_logger = "0.10"
+winit = "0.30"
+env_logger = "0.11"
 log = "0.4"
 anyhow = "1.0"
