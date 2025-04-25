@@ -25,8 +25,10 @@ fn main() {
 
     let input_vector = Vector::new_from_vec(&vals);
 
-    println!("parsed input vector: {:?}\n", input_vector);
+    input_vector.println();
+
+    println!();
     
     let test = Matrix::new_translation_3f(1.0,2.0,3.0);
-    test.print();
+    test.println();
 }

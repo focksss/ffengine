@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use crate::vector::Vector;
 
 #[derive(Debug)]
@@ -231,10 +232,9 @@ impl Matrix {
     }
     //</editor-fold>
     
-    pub fn print(&self) {
-        println!("{:?}", &self.data[0..4]);
-        println!("{:?}", &self.data[4..8]);
-        println!("{:?}", &self.data[8..12]);
-        println!("{:?}", &self.data[12..16]);
+    pub fn println(&self) {
+        for i in 0..4 {
+            println!("{:?}", &self.data[i * 4..(i + 1) * 4]);
+        }
     }
 }

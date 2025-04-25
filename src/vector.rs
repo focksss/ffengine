@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 #[derive(Debug)]
 pub struct Vector {
     pub x: f32,
@@ -125,4 +126,8 @@ impl Vector {
         Vector::new_vec4(self.x / v, self.y / v, self.z / v, self.w / v)
     }
     //</editor-fold>
+    
+    pub fn println(&self) {
+        println!("{:?}", self)
+    }
 }
