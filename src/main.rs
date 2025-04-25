@@ -28,5 +28,5 @@ fn main() {
     println!("parsed input vector: {:?}\n", input_vector);
     
     let test = Matrix::new_translation_3f(1.0,2.0,3.0);
-    println!("matrix test: {:?}\n", test);
+    test.print();
 }

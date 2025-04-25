@@ -230,4 +230,11 @@ impl Matrix {
         result
     }
     //</editor-fold>
+    
+    pub fn print(&self) {
+        println!("{:?}", &self.data[0..4]);
+        println!("{:?}", &self.data[4..8]);
+        println!("{:?}", &self.data[8..12]);
+        println!("{:?}", &self.data[12..16]);
+    }
 }
