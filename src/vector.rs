@@ -23,7 +23,8 @@ impl Vector {
     pub fn new_empty() -> Self {
         Self { x: 0.0, y: 0.0, z: 0.0, w: 0.0 }
     }
-    pub fn new_from_vec(vals: Vec<f32>) -> Self {
+
+    pub fn new_from_vec(vals: &Vec<f32>) -> Self {
         match vals.len() {
             1 => Vector::new_vec(vals[0]),
             2 => Vector::new_vec2(vals[0], vals[1]),
@@ -61,26 +62,51 @@ impl Vector {
     }
     //</editor-fold>
 
+    //<editor-fold desc = "vector operations"
+    pub fn magnitude_3d(&self) -> f32 {
+        (
+            self.x * self.x +
+            self.y * self.y +
+            self.z * self.z
+            ).sqrt()
+    }
+    pub fn magnitude_4d(&self) -> f32 {
+        (
+            self.x * self.x +
+            self.y * self.y +
+            self.z * self.z +
+            self.w * self.w
+            ).sqrt()
+    }
+
+    pub fn normalize_3d(&self) -> Vector {
+        self.div_float(self.magnitude_3d())
+    }
+    pub fn normalize_4d(&self) -> Vector {
+        self.div_float(self.magnitude_4d())
+    }
+    //</editor-fold>
+
     //<editor-fold desc = "vector vector operations">
-    pub fn dot(&self, other: Vector) -> f32 {
+    pub fn dot(&self, other: &Vector) -> f32 {
         self.x * other.x + self.y * other.y + self.z * other.z + self.w * other.w
     }
-    pub fn cross(&self, other: Vector) -> Vector {
+    pub fn cross(&self, other: &Vector) -> Vector {
         Vector::new_vec3(
             self.y * other.z - self.z * other.y,
             self.z * other.x - self.x * other.z,
             self.x * other.y - self.y * other.x)
     }
-    pub fn add_vec(&self, vec: Vector) -> Vector {
+    pub fn add_vec(&self, vec: &Vector) -> Vector {
         Vector::new_vec4(self.x + vec.x, self.y + vec.y, self.z + vec.z, self.w + vec.w)
     }
-    pub fn sub_vec(&self, vec: Vector) -> Vector {
+    pub fn sub_vec(&self, vec: &Vector) -> Vector {
         Vector::new_vec4(self.x - vec.x, self.y - vec.y, self.z - vec.z, self.w - vec.w)
     }
-    pub fn mul_by_vec(&self, vec: Vector) -> Vector {
+    pub fn mul_by_vec(&self, vec: &Vector) -> Vector {
         Vector::new_vec4(self.x * vec.x, self.y * vec.y, self.z * vec.z, self.w * vec.w)
     }
-    pub fn div_by_vec(&self, vec: Vector) -> Vector {
+    pub fn div_by_vec(&self, vec: &Vector) -> Vector {
         Vector::new_vec4(self.x / vec.x, self.y / vec.y, self.z / vec.z, self.w / vec.w)
     }
     //</editor-fold>
