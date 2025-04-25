@@ -65,11 +65,26 @@ impl Vector {
     pub fn sub_vec(&self, vec: Vector) -> Vector {
         Vector::new_vec4(self.x - vec.x, self.y - vec.y, self.z - vec.z, self.w - vec.w)
     }
-    pub fn mult_by_vec(&self, vec: Vector) -> Vector {
+    pub fn mul_by_vec(&self, vec: Vector) -> Vector {
         Vector::new_vec4(self.x * vec.x, self.y * vec.y, self.z * vec.z, self.w * vec.w)
     }
     pub fn div_by_vec(&self, vec: Vector) -> Vector {
         Vector::new_vec4(self.x / vec.x, self.y / vec.y, self.z / vec.z, self.w / vec.w)
+    }
+    //</editor-fold>
+    
+    //<editor-fold desc = "vector float operations"
+    pub fn add_float(&self, v: f32) -> Vector {
+        Vector::new_vec4(self.x + v, self.y + v, self.z + v, self.w + v)
+    }
+    pub fn sub_float(&self, v: f32) -> Vector {
+        Vector::new_vec4(self.x - v, self.y - v, self.z - v, self.w - v)
+    }
+    pub fn mul_float(&self, v: f32) -> Vector {
+        Vector::new_vec4(self.x * v, self.y * v, self.z * v, self.w * v)
+    }
+    pub fn div_float(&self, v: f32) -> Vector {
+        Vector::new_vec4(self.x / v, self.y / v, self.z / v, self.w / v)
     }
     //</editor-fold>
 }
