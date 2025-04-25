@@ -5,6 +5,7 @@ use std::io;
 use std::cmp::Ordering; // compare, ordering
 use rand::Rng;
 use vector::Vector;
+use matrix::Matrix;
 
 fn main() {
     println!("input values to construct vector");
@@ -24,5 +25,8 @@ fn main() {
 
     let input_vector = Vector::new_from_vec(&vals);
 
-    println!("parsed input vector: {:?}", input_vector);
+    println!("parsed input vector: {:?}\n", input_vector);
+    
+    let test = Matrix::new_translation_3f(1.0,2.0,3.0);
+    println!("matrix test: {:?}\n", test);
 }
