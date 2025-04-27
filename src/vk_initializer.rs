@@ -112,9 +112,9 @@ unsafe extern "system" fn vulkan_debug_callback(
         ffi::CStr::from_ptr(callback_data.p_message).to_string_lossy()
     };
 
-    println!(
-        "{message_severity:?}:\n{message_type:?} [{message_id_name} ({message_id_number})] : {message}\n",
-    );
+    //println!(
+    //    "{message_severity:?}:\n{message_type:?} [{message_id_name} ({message_id_number})] : {message}\n",
+    //);
 
     vk::FALSE
 }
