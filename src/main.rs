@@ -10,6 +10,7 @@ use std::io::Cursor;
 use std::{fs, io, mem};
 use std::mem::{align_of, size_of, size_of_val};
 use std::path::Path;
+use std::process::Command;
 // TODO: Remove when bumping MSRV to 1.80
 
 use ash::util::*;
@@ -43,11 +44,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     unsafe {
         println!("main code running");
         let mut shader_paths = Vec::new();
-        shader_paths.push("src/shaders/glsl/hello_triangle");
+        shader_paths.push("src\\shaders\\glsl\\hello_triangle");
 
         compile_shaders(shader_paths).expect("Failed to compile shaders");
 
-        let mut base = VkBase::new(1920, 1080, MAX_FRAMES_IN_FLIGHT)?;
+        let mut base = VkBase::new(800, 600, MAX_FRAMES_IN_FLIGHT)?;
         init_rendering(&mut base, vertices);
     }
     Ok(())
@@ -221,8 +222,8 @@ unsafe fn init_rendering(base: &mut VkBase, vertices: [Vertex; 3]) {
         base.device
             .bind_buffer_memory(vertex_input_buffer, vertex_input_buffer_memory, 0)
             .unwrap();
-        let mut vertex_spv_file = Cursor::new(&include_bytes!("shaders/glsl/hello_triangle/vert.spv")[..]);
-        let mut frag_spv_file = Cursor::new(&include_bytes!("shaders/glsl/hello_triangle/triangle.frag.spv")[..]);
+        let mut vertex_spv_file = Cursor::new(&include_bytes!("shaders/spv/hello_triangle/triangle.vert.spv")[..]);
+        let mut frag_spv_file = Cursor::new(&include_bytes!("shaders/spv/hello_triangle/triangle.frag.spv")[..]);
 
         let vertex_code =
             read_spv(&mut vertex_spv_file).expect("Failed to read vertex shader spv file");
@@ -494,7 +495,7 @@ fn compile_shaders(shader_directories: Vec<&str>) -> io::Result<()> {
         println!("{}",shader_directory);
         let shader_directory_path = Path::new(&shader_directory);
 
-        let spv_folder_str = shader_directory.replace("shaders/glsl", "shaders/spv");
+        let spv_folder_str = shader_directory.replace("shaders\\glsl", "shaders\\spv");
         let spv_folder = Path::new(&spv_folder_str);
 
         if !spv_folder.exists() {
@@ -512,15 +513,19 @@ fn compile_shaders(shader_directories: Vec<&str>) -> io::Result<()> {
                         let file_name = path.file_name().unwrap().to_string_lossy();
                         let spv_file = spv_folder.join(format!("{}.spv", file_name));
 
-                        if !spv_file.exists() {
-                            println!("{} does not exist, needs to be created!", spv_file.display());
-                        }
-
                         let glsl_modified = path.metadata()?.modified()?;
                         let spv_modified = spv_file.metadata()?.modified()?;
 
-                        if glsl_modified > spv_modified {
-                            println!("{} needs to be recompiled!", spv_file.display());
+                        if glsl_modified > spv_modified || !spv_file.exists() {
+                            println!("{} is being recompiled", spv_file.display());
+                            let compile_cmd = Command::new("glslc")
+                                .arg(&path)
+                                .arg("-o")
+                                .arg(&spv_file)
+                                .status()?;
+                            if !compile_cmd.success() {
+                                println!("Shader compilation failed");
+                            }
                         }
                     }
                 }
