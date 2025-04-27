@@ -9,12 +9,14 @@ impl Matrix {
     //<editor-fold desc = "constructors">
     // defaults to identity
     pub fn new() -> Self {
-        Self { data: [
-            1.0, 0.0, 0.0, 0.0,
-            0.0, 1.0, 0.0, 0.0,
-            0.0, 0.0, 1.0, 0.0,
-            0.0, 0.0, 0.0, 1.0,
-        ]}
+        Self {
+            data: [
+                1.0, 0.0, 0.0, 0.0,
+                0.0, 1.0, 0.0, 0.0,
+                0.0, 0.0, 1.0, 0.0,
+                0.0, 0.0, 0.0, 1.0,
+            ]
+        }
     }
 
     pub fn new_empty() -> Self {
@@ -49,9 +51,9 @@ impl Matrix {
         for row in 0..4 {
             result[row] =
                 self.data[row * 4] * other.x +
-                self.data[row * 4 + 1] * other.y +
-                self.data[row * 4 + 2] * other.z +
-                self.data[row * 4 + 3] * other.w;
+                    self.data[row * 4 + 1] * other.y +
+                    self.data[row * 4 + 2] * other.z +
+                    self.data[row * 4 + 3] * other.w;
         }
         Vector::new_from_array(&result)
     }
@@ -135,28 +137,28 @@ impl Matrix {
     pub fn new_rotate_quaternion_vec4(quaternion: &Vector) -> Self {
         let mut result = Matrix::new();
         let (x, y, z, w) = (quaternion.x, quaternion.y, quaternion.z, quaternion.w);
-        result.data[0] = 1.0 - 2.0*(y*y + z*z);
-        result.data[1] = 2.0*(x*y - z*w);
-        result.data[2] = 2.0*(x*z + y*w);
-        result.data[4] = 2.0*(x*y + z*w);
-        result.data[5] = 1.0 - 2.0*(x*x + z*z);
-        result.data[6] = 2.0*(y*z - x*w);
-        result.data[8] = 2.0*(x*z - y*w);
-        result.data[9] = 2.0*(y*z + x*w);
-        result.data[10] = 1.0 - 2.0*(x*x + y*y);
+        result.data[0] = 1.0 - 2.0 * (y * y + z * z);
+        result.data[1] = 2.0 * (x * y - z * w);
+        result.data[2] = 2.0 * (x * z + y * w);
+        result.data[4] = 2.0 * (x * y + z * w);
+        result.data[5] = 1.0 - 2.0 * (x * x + z * z);
+        result.data[6] = 2.0 * (y * z - x * w);
+        result.data[8] = 2.0 * (x * z - y * w);
+        result.data[9] = 2.0 * (y * z + x * w);
+        result.data[10] = 1.0 - 2.0 * (x * x + y * y);
         result
     }
     pub fn new_rotate_quaternion_4f(x: f32, y: f32, z: f32, w: f32) -> Self {
         let mut result = Matrix::new();
-        result.data[0] = 1.0 - 2.0*(y*y + z*z);
-        result.data[1] = 2.0*(x*y - z*w);
-        result.data[2] = 2.0*(x*z + y*w);
-        result.data[4] = 2.0*(x*y + z*w);
-        result.data[5] = 1.0 - 2.0*(x*x + z*z);
-        result.data[6] = 2.0*(y*z - x*w);
-        result.data[8] = 2.0*(x*z - y*w);
-        result.data[9] = 2.0*(y*z + x*w);
-        result.data[10] = 1.0 - 2.0*(x*x + y*y);
+        result.data[0] = 1.0 - 2.0 * (y * y + z * z);
+        result.data[1] = 2.0 * (x * y - z * w);
+        result.data[2] = 2.0 * (x * z + y * w);
+        result.data[4] = 2.0 * (x * y + z * w);
+        result.data[5] = 1.0 - 2.0 * (x * x + z * z);
+        result.data[6] = 2.0 * (y * z - x * w);
+        result.data[8] = 2.0 * (x * z - y * w);
+        result.data[9] = 2.0 * (y * z + x * w);
+        result.data[10] = 1.0 - 2.0 * (x * x + y * y);
         result
     }
 
@@ -231,7 +233,7 @@ impl Matrix {
         result
     }
     //</editor-fold>
-    
+
     pub fn println(&self) {
         for i in 0..4 {
             println!("{:?}", &self.data[i * 4..(i + 1) * 4]);
