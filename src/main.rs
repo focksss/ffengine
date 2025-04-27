@@ -2,6 +2,7 @@
 mod matrix;
 mod vector;
 mod vk_initializer;
+mod shader_stage;
 
 use std::default::Default;
 use std::cell::RefCell;
@@ -9,10 +10,12 @@ use std::error::Error;
 use std::io::Cursor;
 use std::mem;
 use std::mem::{align_of, size_of, size_of_val};
+use ash::prelude::VkResult;
 // TODO: Remove when bumping MSRV to 1.80
 
 use ash::util::*;
 use ash::vk;
+use ash::vk::{PipelineShaderStageCreateInfo, ShaderModule};
 use crate::{vk_initializer::*, matrix::*, vector::*};
 
 #[derive(Clone, Debug, Copy)]
@@ -25,8 +28,29 @@ struct Vertex {
 const MAX_FRAMES_IN_FLIGHT: usize = 2;
 
 fn main() -> Result<(), Box<dyn Error>> {
+    let vertices = [
+        Vertex {
+            pos: [-1.0, 1.0, 0.0, 1.0],
+            color: [1.0, 0.0, 0.0, 1.0],
+        },
+        Vertex {
+            pos: [1.0, 1.0, 0.0, 1.0],
+            color: [0.0, 1.0, 0.0, 1.0],
+        },
+        Vertex {
+            pos: [0.0, -1.0, 0.0, 1.0],
+            color: [0.0, 0.0, 1.0, 1.0],
+        },
+    ];
     unsafe {
-        let base = VkBase::new(1920, 1080, MAX_FRAMES_IN_FLIGHT)?;
+        let mut base = VkBase::new(1920, 1080, MAX_FRAMES_IN_FLIGHT)?;
+        init_rendering(&mut base, vertices);
+    }
+    Ok(())
+}
+
+unsafe fn init_rendering(base: &mut VkBase, vertices: [Vertex; 3]) {
+    unsafe {
         let renderpass_attachments = [
             vk::AttachmentDescription {
                 format: base.surface_format.format,
@@ -172,21 +196,6 @@ fn main() -> Result<(), Box<dyn Error>> {
             .device
             .allocate_memory(&vertex_buffer_allocate_info, None)
             .unwrap();
-
-        let vertices = [
-            Vertex {
-                pos: [-1.0, 1.0, 0.0, 1.0],
-                color: [1.0, 0.0, 0.0, 1.0],
-            },
-            Vertex {
-                pos: [1.0, 1.0, 0.0, 1.0],
-                color: [0.0, 1.0, 0.0, 1.0],
-            },
-            Vertex {
-                pos: [0.0, -1.0, 0.0, 1.0],
-                color: [0.0, 0.0, 1.0, 1.0],
-            },
-        ];
 
         let vert_ptr = base
             .device
@@ -474,5 +483,4 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
         base.device.destroy_render_pass(renderpass, None);
     }
-    Ok(())
 }
