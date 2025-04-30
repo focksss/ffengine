@@ -2,6 +2,7 @@
   <dictionary name="project">
     <words>
       <w>ortho</w>
+      <w>renderpass</w>
       <w>swapchain</w>
     </words>
   </dictionary>

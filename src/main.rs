@@ -11,10 +11,12 @@ use std::{fs, io, mem};
 use std::mem::{align_of, size_of, size_of_val};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::ptr::null;
 // TODO: Remove when bumping MSRV to 1.80
 
 use ash::util::*;
 use ash::vk;
+use ash::vk::{Buffer, DeviceMemory};
 use crate::{vk_initializer::*, matrix::*, vector::*};
 
 #[derive(Clone, Debug, Copy)]
@@ -22,6 +24,9 @@ use crate::{vk_initializer::*, matrix::*, vector::*};
 struct Vertex {
     pos: [f32; 4],
     color: [f32; 4],
+}
+struct UniformData {
+    view: [f32; 16],
 }
 
 const MAX_FRAMES_IN_FLIGHT: usize = 2;
@@ -41,6 +46,9 @@ fn main() -> Result<(), Box<dyn Error>> {
             color: [0.0, 0.0, 1.0, 1.0],
         },
     ];
+    let uniform_data = UniformData {
+        view: Matrix::new().data
+    };
     unsafe {
         println!("main code running");
         let mut shader_paths = Vec::new();
@@ -54,8 +62,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-unsafe fn init_rendering(base: &mut VkBase, vertices: [Vertex; 3]) -> Result<(), Box<dyn std::error::Error>> {
+unsafe fn init_rendering(base: &mut VkBase, vertices: [Vertex; 3]) -> Result<(), Box<dyn Error>> {
     unsafe {
+        //<editor-fold desc = "renderpass init">
         let renderpass_attachments = [
             vk::AttachmentDescription {
                 format: base.surface_format.format,
@@ -105,7 +114,8 @@ unsafe fn init_rendering(base: &mut VkBase, vertices: [Vertex; 3]) -> Result<(),
             .device
             .create_render_pass(&renderpass_create_info, None)
             .unwrap();
-
+        //</editor-fold>
+        //<editor-fold desc = "framebuffers">
         let framebuffers: Vec<vk::Framebuffer> = base
             .present_image_views
             .iter()
@@ -123,105 +133,79 @@ unsafe fn init_rendering(base: &mut VkBase, vertices: [Vertex; 3]) -> Result<(),
                     .unwrap()
             })
             .collect();
-        // u32 to specify type (i32 is unnecessary)
-        let index_buffer_data = [0u32, 1, 2];
-        let index_buffer_info = vk::BufferCreateInfo::default()
-            .size(size_of_val(&index_buffer_data) as u64)
-            .usage(vk::BufferUsageFlags::INDEX_BUFFER)
-            .sharing_mode(vk::SharingMode::EXCLUSIVE);
-
-        let index_buffer = base.device.create_buffer(&index_buffer_info, None).unwrap();
-        let index_buffer_memory_req = base.device.get_buffer_memory_requirements(index_buffer);
-        let index_buffer_memory_index = find_memorytype_index(
-            &index_buffer_memory_req,
-            &base.device_memory_properties,
-            vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
-        )
-            .expect("Unable to find suitable memorytype for the index buffer.");
-
-        let index_allocate_info = vk::MemoryAllocateInfo {
-            allocation_size: index_buffer_memory_req.size,
-            memory_type_index: index_buffer_memory_index,
+        //</editor-fold>
+        //<editor-fold desc = "uniform buffers">
+        let ubo_layout_binding = vk::DescriptorSetLayoutBinding {
+            binding: 0,
+            descriptor_type: vk::DescriptorType::UNIFORM_BUFFER,
+            descriptor_count: 1,
+            stage_flags: vk::ShaderStageFlags::VERTEX,
             ..Default::default()
         };
-        let index_buffer_memory = base
-            .device
-            .allocate_memory(&index_allocate_info, None)
-            .unwrap();
-        let index_ptr = base
-            .device
-            .map_memory(
-                index_buffer_memory,
+        let ubo_layout_create_info = vk::DescriptorSetLayoutCreateInfo {
+            s_type: vk::StructureType::DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+            binding_count: 1,
+            p_bindings: &ubo_layout_binding,
+            ..Default::default()
+        };
+        let ubo_descriptor_set_layout = unsafe { base.device.create_descriptor_set_layout(&ubo_layout_create_info, None)? };
+
+        let ubo_buffer_size = size_of::<UniformData>() as u64;
+        let mut uniform_buffers = Vec::new();
+        let mut uniform_buffers_memory = Vec::new();
+        let mut uniform_buffers_mapped = Vec::new();
+        for i in 0..MAX_FRAMES_IN_FLIGHT {
+            uniform_buffers.push(Buffer::null());
+            uniform_buffers_memory.push(DeviceMemory::null());
+            create_buffer(
+                base,
+                ubo_buffer_size,
+                vk::BufferUsageFlags::UNIFORM_BUFFER,
+                vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
+                &mut uniform_buffers[i],
+                &mut uniform_buffers_memory[i],
+            );
+            uniform_buffers_mapped.push(base.device.map_memory(
+                uniform_buffers_memory[i],
                 0,
-                index_buffer_memory_req.size,
-                vk::MemoryMapFlags::empty(),
-            )
-            .unwrap();
-        let mut index_slice = Align::new(
-            index_ptr,
-            align_of::<u32>() as u64,
-            index_buffer_memory_req.size,
-        );
-        index_slice.copy_from_slice(&index_buffer_data);
-        base.device.unmap_memory(index_buffer_memory);
-        base.device
-            .bind_buffer_memory(index_buffer, index_buffer_memory, 0)
-            .unwrap();
-
-        let vertex_input_buffer_info = vk::BufferCreateInfo {
-            size: 3 * size_of::<Vertex>() as u64,
-            usage: vk::BufferUsageFlags::VERTEX_BUFFER,
-            sharing_mode: vk::SharingMode::EXCLUSIVE,
-            ..Default::default()
-        };
-
-        let vertex_input_buffer = base
-            .device
-            .create_buffer(&vertex_input_buffer_info, None)
-            .unwrap();
-
-        let vertex_input_buffer_memory_req = base
-            .device
-            .get_buffer_memory_requirements(vertex_input_buffer);
-
-        let vertex_input_buffer_memory_index = find_memorytype_index(
-            &vertex_input_buffer_memory_req,
-            &base.device_memory_properties,
+                ubo_buffer_size,
+                vk::MemoryMapFlags::empty()
+            ));
+        }
+        //</editor-fold>
+        //<editor-fold desc = "vertex buffer">
+        let vertex_buffer_size = 3 * size_of::<Vertex>() as u64;
+        let mut vertex_input_buffer = Buffer::null();
+        let mut vertex_input_buffer_memory = DeviceMemory::null();
+        create_buffer(
+            &base,
+            vertex_buffer_size,
+            vk::BufferUsageFlags::VERTEX_BUFFER,
             vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
-        )
-            .expect("Unable to find suitable memorytype for the vertex buffer.");
-
-        let vertex_buffer_allocate_info = vk::MemoryAllocateInfo {
-            allocation_size: vertex_input_buffer_memory_req.size,
-            memory_type_index: vertex_input_buffer_memory_index,
-            ..Default::default()
-        };
-
-        let vertex_input_buffer_memory = base
-            .device
-            .allocate_memory(&vertex_buffer_allocate_info, None)
-            .unwrap();
+            &mut vertex_input_buffer,
+            &mut vertex_input_buffer_memory,
+        );
 
         let vert_ptr = base
             .device
             .map_memory(
                 vertex_input_buffer_memory,
                 0,
-                vertex_input_buffer_memory_req.size,
+                vertex_buffer_size,
                 vk::MemoryMapFlags::empty(),
             )
-            .unwrap();
+            .expect("Failed to map vertex buffer memory");
 
         let mut vert_align = Align::new(
             vert_ptr,
             align_of::<Vertex>() as u64,
-            vertex_input_buffer_memory_req.size,
+            vertex_buffer_size,
         );
         vert_align.copy_from_slice(&vertices);
+
         base.device.unmap_memory(vertex_input_buffer_memory);
-        base.device
-            .bind_buffer_memory(vertex_input_buffer, vertex_input_buffer_memory, 0)
-            .unwrap();
+        //</editor-fold>
+        //<editor-fold desc = "shaders">
         let mut vertex_spv_file = Cursor::new(load_file("hello_triangle\\triangle.vert.spv")?);
         let mut frag_spv_file = Cursor::new(load_file("hello_triangle\\triangle.frag.spv")?);
 
@@ -242,7 +226,8 @@ unsafe fn init_rendering(base: &mut VkBase, vertices: [Vertex; 3]) -> Result<(),
             .device
             .create_shader_module(&frag_shader_info, None)
             .expect("Fragment shader module error");
-
+        //</editor-fold>
+        //<editor-fold desc = "full graphics pipeline initiation">
         let layout_create_info = vk::PipelineLayoutCreateInfo::default();
 
         let pipeline_layout = base
@@ -369,7 +354,7 @@ unsafe fn init_rendering(base: &mut VkBase, vertices: [Vertex; 3]) -> Result<(),
             .expect("Unable to create graphics pipeline");
 
         let graphic_pipeline = graphics_pipelines[0];
-
+        //</editor-fold>
         // SETUP RENDER LOOP, AUTO RUNS
         let current_frame = RefCell::new(0usize);
         let _ = base.render_loop(|| {
@@ -433,22 +418,8 @@ unsafe fn init_rendering(base: &mut VkBase, vertices: [Vertex; 3]) -> Result<(),
                         &[vertex_input_buffer],
                         &[0],
                     );
-                    device.cmd_bind_index_buffer(
-                        draw_command_buffer,
-                        index_buffer,
-                        0,
-                        vk::IndexType::UINT32,
-                    );
-                    device.cmd_draw_indexed(
-                        draw_command_buffer,
-                        index_buffer_data.len() as u32,
-                        1,
-                        0,
-                        0,
-                        1,
-                    );
-                    // Or draw without the index buffer
-                    // device.cmd_draw(draw_command_buffer, 3, 1, 0, 0);
+                    device.cmd_draw(draw_command_buffer, 3, 1, 0, 0);
+
                     device.cmd_end_render_pass(draw_command_buffer);
                 },
             );
@@ -466,31 +437,66 @@ unsafe fn init_rendering(base: &mut VkBase, vertices: [Vertex; 3]) -> Result<(),
 
             *frame = (*frame + 1) % MAX_FRAMES_IN_FLIGHT;
         });
-
         println!("Render loop exited successfully, cleaning up");
-
-
+        //<editor-fold desc = "cleanup">
         base.device.device_wait_idle().unwrap();
         for pipeline in graphics_pipelines {
             base.device.destroy_pipeline(pipeline, None);
         }
         base.device.destroy_pipeline_layout(pipeline_layout, None);
-        base.device
-            .destroy_shader_module(vertex_shader_module, None);
-        base.device
-            .destroy_shader_module(fragment_shader_module, None);
-        base.device.free_memory(index_buffer_memory, None);
-        base.device.destroy_buffer(index_buffer, None);
+        base.device.destroy_shader_module(vertex_shader_module, None);
+        base.device.destroy_shader_module(fragment_shader_module, None);
         base.device.free_memory(vertex_input_buffer_memory, None);
         base.device.destroy_buffer(vertex_input_buffer, None);
         for framebuffer in framebuffers {
             base.device.destroy_framebuffer(framebuffer, None);
         }
         base.device.destroy_render_pass(renderpass, None);
+        for i in 0..MAX_FRAMES_IN_FLIGHT {
+            base.device.destroy_buffer(uniform_buffers[i], None);
+            base.device.free_memory(uniform_buffers_memory[i], None);
+        }
+        base.device.destroy_descriptor_set_layout(ubo_descriptor_set_layout, None);
+        //</editor-fold>
     }
     Ok(())
 }
+unsafe fn create_buffer(
+    base: &VkBase,
+    size: vk::DeviceSize,
+    usage: vk::BufferUsageFlags,
+    properties: vk::MemoryPropertyFlags,
+    buffer: &mut Buffer,
+    buffer_memory: &mut DeviceMemory)
+{ unsafe {
+    let buffer_info = vk::BufferCreateInfo {
+        s_type: vk::StructureType::BUFFER_CREATE_INFO,
+        size: size,
+        usage: usage,
+        sharing_mode: vk::SharingMode::EXCLUSIVE,
+        ..Default::default()
+    };
+    *buffer = base.device.create_buffer(&buffer_info, None).expect("failed to create buffer");
 
+    let memory_requirements = base.device.get_buffer_memory_requirements(*buffer);
+    let memory_indices = find_memorytype_index(
+        &memory_requirements,
+        &base.device_memory_properties,
+        properties,
+    ).expect("failed to find suitable memory type for buffer");
+    let allocation_info = vk::MemoryAllocateInfo {
+        allocation_size: memory_requirements.size,
+        memory_type_index: memory_indices,
+        ..Default::default()
+    };
+
+    *buffer_memory = base.device.allocate_memory(&allocation_info, None).expect("failed to allocate buffer memory");
+
+    base.device
+        .bind_buffer_memory(*buffer, *buffer_memory, 0)
+        .expect("failed to bind buffer memory");
+}
+}
 fn compile_shaders(shader_directories: Vec<&str>) -> io::Result<()> {
     for shader_directory in shader_directories {
         let shader_directory_path = Path::new(&shader_directory);
