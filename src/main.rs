@@ -149,7 +149,7 @@ unsafe fn init_rendering(base: &mut VkBase, vertices: [Vertex; 3]) -> Result<(),
             ..Default::default()
         };
         let ubo_descriptor_set_layout = unsafe { base.device.create_descriptor_set_layout(&ubo_layout_create_info, None)? };
-
+        
         let ubo_buffer_size = size_of::<UniformData>() as u64;
         let mut uniform_buffers = Vec::new();
         let mut uniform_buffers_memory = Vec::new();
@@ -358,6 +358,9 @@ unsafe fn init_rendering(base: &mut VkBase, vertices: [Vertex; 3]) -> Result<(),
         // SETUP RENDER LOOP, AUTO RUNS
         let current_frame = RefCell::new(0usize);
         let _ = base.render_loop(|| {
+            let ubo = UniformData {view: Matrix::new().data};
+            
+            
             let mut frame = current_frame.borrow_mut();
             let (present_index, _) = base
                 .swapchain_loader
@@ -381,7 +384,7 @@ unsafe fn init_rendering(base: &mut VkBase, vertices: [Vertex; 3]) -> Result<(),
                     },
                 },
             ];
-
+            
             let render_pass_begin_info = vk::RenderPassBeginInfo::default()
                 .render_pass(renderpass)
                 .framebuffer(framebuffers[present_index as usize])
