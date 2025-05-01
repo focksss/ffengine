@@ -169,9 +169,9 @@ impl Matrix {
 
         result.data[0] = f / aspect;
         result.data[5] = f;
-        result.data[10] = (far + near) / (near - far);
+        result.data[10] = far / (near - far);
         result.data[11] = -1.0;
-        result.data[14] = (2.0 * far * near) / (near - far);
+        result.data[14] = (far * near) / (near - far);
         result.data[15] = 0.0;
 
         result
@@ -185,10 +185,10 @@ impl Matrix {
 
         result.data[0] = 2.0 / rl;
         result.data[5] = 2.0 / tb;
-        result.data[10] = -2.0 / f_n;
+        result.data[10] = 1.0 / f_n;
         result.data[12] = -(right + left) / rl;
         result.data[13] = -(top + bottom) / tb;
-        result.data[14] = -(far + near) / f_n;
+        result.data[14] = -near / f_n;
         result.data[15] = 1.0;
 
         result
