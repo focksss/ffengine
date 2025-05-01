@@ -181,16 +181,7 @@ impl VkBase {
             match event {
                 Event::WindowEvent {
                     event:
-                    WindowEvent::CloseRequested
-                    | WindowEvent::KeyboardInput {
-                        event:
-                        KeyEvent {
-                            state: ElementState::Pressed,
-                            logical_key: Key::Named(NamedKey::Escape),
-                            ..
-                        },
-                        ..
-                    },
+                    WindowEvent::CloseRequested,
                     ..
                 } => {
                     elwp.exit();

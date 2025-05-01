@@ -10,9 +10,10 @@ layout (location = 1) out vec4 o_color;
 
 layout(binding = 0) uniform UniformBuffer {
     mat4 view;
+    mat4 projection;
 } ubo;
 void main() {
     fragPos = pos.xyz;
     o_color = color;
-    gl_Position = ubo.view * pos;
+    gl_Position = ubo.projection * ubo.view * pos;
 }

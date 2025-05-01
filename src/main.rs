@@ -30,6 +30,7 @@ struct Vertex {
 #[repr(C)]
 struct UniformData {
     view: [f32; 16],
+    projection: [f32; 16],
 }
 
 const MAX_FRAMES_IN_FLIGHT: usize = 2;
@@ -49,9 +50,6 @@ fn main() -> Result<(), Box<dyn Error>> {
             color: [0.0, 0.0, 1.0, 1.0],
         },
     ];
-    let uniform_data = UniformData {
-        view: Matrix::new().data
-    };
     unsafe {
         println!("main code running");
         let mut shader_paths = Vec::new();
@@ -343,6 +341,7 @@ unsafe fn init_rendering(base: &mut VkBase, vertices: [Vertex; 3]) -> Result<(),
 
         let rasterization_info = vk::PipelineRasterizationStateCreateInfo {
             front_face: vk::FrontFace::COUNTER_CLOCKWISE,
+            cull_mode: vk::CullModeFlags::NONE,
             line_width: 1.0,
             polygon_mode: vk::PolygonMode::FILL,
             ..Default::default()
@@ -432,7 +431,10 @@ unsafe fn init_rendering(base: &mut VkBase, vertices: [Vertex; 3]) -> Result<(),
                 },
             ];
 
-            let ubo = UniformData {view: Matrix::new().data};
+            let ubo = UniformData {
+                view: Matrix::new_view(&Vector::new_vec3(0.0, 0.0, 1.0), &Vector::new_vec(0.0)).data,
+                projection: Matrix::new_projection(90.0_f32.to_radians(), base.window.inner_size().width as f32 / base.window.inner_size().height as f32, 0.001, 1000.0).data,
+            };
             copy_data_to_memory(uniform_buffers_mapped[*frame], &[ubo]);
 
             let render_pass_begin_info = vk::RenderPassBeginInfo::default()
@@ -497,7 +499,6 @@ unsafe fn init_rendering(base: &mut VkBase, vertices: [Vertex; 3]) -> Result<(),
             base.swapchain_loader
                 .queue_present(base.present_queue, &present_info)
                 .unwrap();
-
             *frame = (*frame + 1) % MAX_FRAMES_IN_FLIGHT;
         });
         println!("Render loop exited successfully, cleaning up");
