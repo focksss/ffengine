@@ -8,7 +8,7 @@ layout (location = 1) in vec4 color;
 layout (location = 0) out vec3 fragPos;
 layout (location = 1) out vec4 o_color;
 
-layout(binding = 0) uniform UniformBufferObject {
+layout(binding = 0) uniform UniformBuffer {
     mat4 view;
 } ubo;
 void main() {

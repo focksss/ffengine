@@ -8,6 +8,7 @@ use std::cell::RefCell;
 use std::error::Error;
 use std::io::Cursor;
 use std::{fs, io, mem};
+use std::ffi::c_void;
 use std::mem::{align_of, size_of, size_of_val};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -25,6 +26,8 @@ struct Vertex {
     pos: [f32; 4],
     color: [f32; 4],
 }
+#[derive(Clone, Debug, Copy)]
+#[repr(C)]
 struct UniformData {
     view: [f32; 16],
 }
@@ -170,7 +173,54 @@ unsafe fn init_rendering(base: &mut VkBase, vertices: [Vertex; 3]) -> Result<(),
                 0,
                 ubo_buffer_size,
                 vk::MemoryMapFlags::empty()
-            ));
+            ).expect("failed to map uniform buffer"));
+        }
+        //</editor-fold>
+        //<editor-fold desc = "descriptor pool">
+        let pool_size = vk::DescriptorPoolSize {
+            ty: vk::DescriptorType::UNIFORM_BUFFER,
+            descriptor_count: MAX_FRAMES_IN_FLIGHT as u32,
+            ..Default::default()
+        };
+        let pool_create_info = vk::DescriptorPoolCreateInfo {
+            s_type: vk::StructureType::DESCRIPTOR_POOL_CREATE_INFO,
+            pool_size_count: 1,
+            p_pool_sizes: &pool_size,
+            max_sets: MAX_FRAMES_IN_FLIGHT as u32,
+            ..Default::default()
+        };
+        let descriptor_pool = base.device.create_descriptor_pool(&pool_create_info, None).expect("failed to create descriptor pool");
+        //</editor-fold>
+        //<editor-fold desc = "descriptor set">
+        let layouts = vec![ubo_descriptor_set_layout; MAX_FRAMES_IN_FLIGHT];
+
+        let alloc_info = vk::DescriptorSetAllocateInfo {
+            s_type: vk::StructureType::DESCRIPTOR_SET_ALLOCATE_INFO,
+            descriptor_pool,
+            descriptor_set_count: MAX_FRAMES_IN_FLIGHT as u32,
+            p_set_layouts: layouts.as_ptr(),
+            ..Default::default()
+        };
+        let descriptor_sets = base.device.allocate_descriptor_sets(&alloc_info)
+            .expect("Failed to allocate descriptor sets");
+
+        for i in 0..MAX_FRAMES_IN_FLIGHT {
+            let buffer_info = vk::DescriptorBufferInfo {
+                buffer: uniform_buffers[i],
+                offset: 0,
+                range: size_of::<UniformData>() as vk::DeviceSize,
+            };
+            let descriptor_write = vk::WriteDescriptorSet {
+                s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
+                dst_set: descriptor_sets[i],
+                dst_binding: 0,
+                dst_array_element: 0,
+                descriptor_type: vk::DescriptorType::UNIFORM_BUFFER,
+                descriptor_count: 1,
+                p_buffer_info: &buffer_info,
+                ..Default::default()
+            };
+            base.device.update_descriptor_sets(&[descriptor_write], &[]);
         }
         //</editor-fold>
         //<editor-fold desc = "vertex buffer">
@@ -196,12 +246,7 @@ unsafe fn init_rendering(base: &mut VkBase, vertices: [Vertex; 3]) -> Result<(),
             )
             .expect("Failed to map vertex buffer memory");
 
-        let mut vert_align = Align::new(
-            vert_ptr,
-            align_of::<Vertex>() as u64,
-            vertex_buffer_size,
-        );
-        vert_align.copy_from_slice(&vertices);
+        copy_data_to_memory(vert_ptr, &vertices);
 
         base.device.unmap_memory(vertex_input_buffer_memory);
         //</editor-fold>
@@ -358,9 +403,6 @@ unsafe fn init_rendering(base: &mut VkBase, vertices: [Vertex; 3]) -> Result<(),
         // SETUP RENDER LOOP, AUTO RUNS
         let current_frame = RefCell::new(0usize);
         let _ = base.render_loop(|| {
-            let ubo = UniformData {view: Matrix::new().data};
-            
-            
             let mut frame = current_frame.borrow_mut();
             let (present_index, _) = base
                 .swapchain_loader
@@ -384,7 +426,10 @@ unsafe fn init_rendering(base: &mut VkBase, vertices: [Vertex; 3]) -> Result<(),
                     },
                 },
             ];
-            
+
+            let ubo = UniformData {view: Matrix::new().data};
+            copy_data_to_memory(uniform_buffers_mapped[*frame], &[ubo]);
+
             let render_pass_begin_info = vk::RenderPassBeginInfo::default()
                 .render_pass(renderpass)
                 .framebuffer(framebuffers[present_index as usize])
@@ -421,6 +466,16 @@ unsafe fn init_rendering(base: &mut VkBase, vertices: [Vertex; 3]) -> Result<(),
                         &[vertex_input_buffer],
                         &[0],
                     );
+
+                    device.cmd_bind_descriptor_sets(
+                        draw_command_buffer,
+                        vk::PipelineBindPoint::GRAPHICS,
+                        pipeline_layout,
+                        0,
+                        &[descriptor_sets[*frame]],
+                        &[],
+                    );
+
                     device.cmd_draw(draw_command_buffer, 3, 1, 0, 0);
 
                     device.cmd_end_render_pass(draw_command_buffer);
@@ -460,6 +515,7 @@ unsafe fn init_rendering(base: &mut VkBase, vertices: [Vertex; 3]) -> Result<(),
             base.device.free_memory(uniform_buffers_memory[i], None);
         }
         base.device.destroy_descriptor_set_layout(ubo_descriptor_set_layout, None);
+        base.device.destroy_descriptor_pool(descriptor_pool, None);
         //</editor-fold>
     }
     Ok(())
@@ -500,6 +556,15 @@ unsafe fn create_buffer(
         .expect("failed to bind buffer memory");
 }
 }
+
+unsafe fn copy_data_to_memory<T: Copy>(ptr: *mut c_void, data: &[T]) { unsafe {
+    let mut aligned = Align::new(
+        ptr,
+        align_of::<T>() as u64,
+        (data.len() * size_of::<T>()) as u64,
+    );
+    aligned.copy_from_slice(&data);
+}}
 fn compile_shaders(shader_directories: Vec<&str>) -> io::Result<()> {
     for shader_directory in shader_directories {
         let shader_directory_path = Path::new(&shader_directory);
