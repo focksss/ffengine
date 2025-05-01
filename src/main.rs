@@ -273,7 +273,12 @@ unsafe fn init_rendering(base: &mut VkBase, vertices: [Vertex; 3]) -> Result<(),
             .expect("Fragment shader module error");
         //</editor-fold>
         //<editor-fold desc = "full graphics pipeline initiation">
-        let layout_create_info = vk::PipelineLayoutCreateInfo::default();
+        let layout_create_info = vk::PipelineLayoutCreateInfo {
+            s_type: vk::StructureType::PIPELINE_LAYOUT_CREATE_INFO,
+            set_layout_count: 1,
+            p_set_layouts: &ubo_descriptor_set_layout,
+            ..Default::default()
+        };
 
         let pipeline_layout = base
             .device

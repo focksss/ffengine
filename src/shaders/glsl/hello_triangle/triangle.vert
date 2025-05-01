@@ -14,5 +14,5 @@ layout(binding = 0) uniform UniformBuffer {
 void main() {
     fragPos = pos.xyz;
     o_color = color;
-    gl_Position = pos;
+    gl_Position = ubo.view * pos;
 }
