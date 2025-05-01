@@ -1,28 +1,33 @@
 #![allow(dead_code)]
-#[derive(Debug)]
+#[derive(Clone, Debug, Copy)]
 pub struct Vector {
     pub x: f32,
     pub y: f32,
     pub z: f32,
     pub w: f32,
+    pub null: bool,
 }
 
 impl Vector {
     //<editor-fold desc = "constructors">
     pub fn new_vec4(x: f32, y: f32, z: f32, w: f32) -> Self {
-        Self { x, y, z, w }
+        Self { x, y, z, w, null: false }
     }
     pub fn new_vec3(x: f32, y: f32, z: f32) -> Self {
-        Self { x, y, z, w: 1.0 }
+        Self { x, y, z, w: 1.0, null: false }
     }
     pub fn new_vec2(x: f32, y: f32) -> Self {
-        Self { x, y, z: 1.0, w: 1.0}
+        Self { x, y, z: 1.0, w: 1.0, null: false}
     }
     pub fn new_vec(v: f32) -> Self {
-        Self { x: v, y: v, z: v, w: v }
+        Self { x: v, y: v, z: v, w: v, null: false }
     }
     pub fn new_empty() -> Self {
-        Self { x: 0.0, y: 0.0, z: 0.0, w: 0.0 }
+        Self { x: 0.0, y: 0.0, z: 0.0, w: 0.0, null: false }
+    }
+
+    pub fn new_null() -> Self {
+        Self { x: 0.0, y: 0.0, z: 0.0, w: 0.0, null: false }
     }
 
     pub fn new_from_vec(vals: &Vec<f32>) -> Self {

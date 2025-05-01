@@ -2,6 +2,7 @@
 mod matrix;
 mod vector;
 mod vk_initializer;
+mod scene;
 
 use std::default::Default;
 use std::cell::RefCell;
@@ -432,8 +433,8 @@ unsafe fn init_rendering(base: &mut VkBase, vertices: [Vertex; 3]) -> Result<(),
             ];
 
             let ubo = UniformData {
-                view: Matrix::new_view(&Vector::new_vec3(0.0, 0.0, 1.0), &Vector::new_vec(0.0)).data,
-                projection: Matrix::new_projection(90.0_f32.to_radians(), base.window.inner_size().width as f32 / base.window.inner_size().height as f32, 0.001, 1000.0).data,
+                view: Matrix::new_view(&Vector::new_vec3(0.0, 0.0, -1.0), &Vector::new_vec(0.0)).data,
+                projection: Matrix::new_projection(100.0_f32.to_radians(), base.window.inner_size().width as f32 / base.window.inner_size().height as f32, 0.01, 100.0).data,
             };
             copy_data_to_memory(uniform_buffers_mapped[*frame], &[ubo]);
 
