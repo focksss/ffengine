@@ -6,6 +6,7 @@
       <w>pdevice</w>
       <w>renderpass</w>
       <w>swapchain</w>
+      <w>swapchains</w>
     </words>
   </dictionary>
 </component>

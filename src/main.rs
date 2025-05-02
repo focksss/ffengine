@@ -3,6 +3,7 @@ mod matrix;
 mod vector;
 mod vk_initializer;
 mod scene;
+mod model;
 
 use std::default::Default;
 use std::cell::RefCell;
@@ -456,6 +457,7 @@ unsafe fn run(base: &mut VkBase, vertices: [Vertex; 9]) -> Result<(), Box<dyn Er
         let mut mouse_delta = (0.0, 0.0);
         let mut last_frame_time = Instant::now();
         let mut cursor_locked = false;
+        let mut saved_cursor_pos = PhysicalPosition::new(0.0, 0.0);
         base.event_loop.borrow_mut().run_on_demand(|event, elwp| {
             elwp.set_control_flow(ControlFlow::Poll);
             match event {
@@ -513,6 +515,8 @@ unsafe fn run(base: &mut VkBase, vertices: [Vertex; 9]) -> Result<(), Box<dyn Er
                             base.window.inner_size().height as f32 * 0.5))
                         .expect("failed to reset mouse position");
                         do_mouse(&mut player_camera, mouse_delta, &mut cursor_locked);
+                    } else {
+                        saved_cursor_pos = position;
                     }
                 }
                 Event::WindowEvent {
@@ -533,12 +537,18 @@ unsafe fn run(base: &mut VkBase, vertices: [Vertex; 9]) -> Result<(), Box<dyn Er
                     ..
                 } => {
                     cursor_locked = false;
+                    if let Err(err) = base.window.set_cursor_grab(CursorGrabMode::None) {
+                        eprintln!("Cursor unlock failed: {:?}", err);
+                    } else {
+                        base.window.set_cursor_visible(true);
+                    }
+                    base.window.set_cursor_position(saved_cursor_pos).expect("Cursor pos reset failed");
                 }
                 Event::AboutToWait => {
                     let now = Instant::now();
                     let delta_time = now.duration_since(last_frame_time).as_secs_f32();
                     last_frame_time = now;
-                    do_controls(&mut player_camera, &pressed_keys, &mut new_pressed_keys, delta_time, &mut cursor_locked, base);
+                    do_controls(&mut player_camera, &pressed_keys, &mut new_pressed_keys, delta_time, &mut cursor_locked, base, &mut saved_cursor_pos);
 
                     let (present_index, _) = base
                         .swapchain_loader
@@ -669,7 +679,8 @@ fn do_controls(
     new_pressed_keys: &mut HashSet<PhysicalKey>,
     delta_time: f32,
     cursor_locked: &mut bool,
-    base: &VkBase
+    base: &VkBase,
+    saved_cursor_pos: &mut PhysicalPosition<f64>,
 ) {
     if pressed_keys.contains(&PhysicalKey::Code(KeyCode::KeyW)) {
         player_camera.position.x -= player_camera.speed*delta_time * (player_camera.rotation.y + PI/2.0).cos();
@@ -715,12 +726,17 @@ fn do_controls(
             } else {
                 base.window.set_cursor_visible(false);
             }
+            base.window.set_cursor_position(PhysicalPosition::new(
+                base.window.inner_size().width as f32 * 0.5,
+                base.window.inner_size().height as f32 * 0.5))
+                .expect("failed to reset mouse position");
         } else {
             if let Err(err) = base.window.set_cursor_grab(CursorGrabMode::None) {
-                eprintln!("Cursor lock failed: {:?}", err);
+                eprintln!("Cursor unlock failed: {:?}", err);
             } else {
                 base.window.set_cursor_visible(true);
             }
+            base.window.set_cursor_position(*saved_cursor_pos).expect("Cursor pos reset failed");
         }
     }
 
