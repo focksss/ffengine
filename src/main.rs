@@ -445,7 +445,7 @@ unsafe fn run(base: &mut VkBase, vertices: [Vertex; 9]) -> Result<(), Box<dyn Er
             Vector::new_null(),
             Vector::new_empty(),
             1.0,
-            0.1,
+            0.001,
             100.0
         );
 
@@ -464,6 +464,12 @@ unsafe fn run(base: &mut VkBase, vertices: [Vertex; 9]) -> Result<(), Box<dyn Er
                     ..
                 } => {
                     elwp.exit();
+                }
+                Event::WindowEvent {
+                    event: WindowEvent::Resized( new_size ),
+                    ..
+                } => {
+                    println!("bruh");
                 }
                 Event::WindowEvent {
                     event: WindowEvent::RedrawRequested,
@@ -497,7 +503,6 @@ unsafe fn run(base: &mut VkBase, vertices: [Vertex; 9]) -> Result<(), Box<dyn Er
                     event: WindowEvent::CursorMoved { position, .. },
                     ..
                 } => {
-                    mouse_delta = (0.0, 0.0);
                     if base.window.has_focus() && cursor_locked {
                         mouse_delta = (
                             -position.x as f32 + 0.5 * base.window.inner_size().width as f32,
@@ -507,6 +512,7 @@ unsafe fn run(base: &mut VkBase, vertices: [Vertex; 9]) -> Result<(), Box<dyn Er
                             base.window.inner_size().width as f32 * 0.5,
                             base.window.inner_size().height as f32 * 0.5))
                         .expect("failed to reset mouse position");
+                        do_mouse(&mut player_camera, mouse_delta, &mut cursor_locked);
                     }
                 }
                 Event::WindowEvent {
@@ -532,7 +538,7 @@ unsafe fn run(base: &mut VkBase, vertices: [Vertex; 9]) -> Result<(), Box<dyn Er
                     let now = Instant::now();
                     let delta_time = now.duration_since(last_frame_time).as_secs_f32();
                     last_frame_time = now;
-                    do_controls(&mut player_camera, &pressed_keys, &new_pressed_keys, mouse_delta, delta_time, &mut cursor_locked, base);
+                    do_controls(&mut player_camera, &pressed_keys, &mut new_pressed_keys, delta_time, &mut cursor_locked, base);
 
                     let (present_index, _) = base
                         .swapchain_loader
@@ -657,7 +663,14 @@ unsafe fn run(base: &mut VkBase, vertices: [Vertex; 9]) -> Result<(), Box<dyn Er
     Ok(())
 }
 
-fn do_controls(player_camera: &mut Camera, pressed_keys: &HashSet<PhysicalKey>, new_pressed_keys: &HashSet<PhysicalKey>, mouse_delta: (f32, f32), delta_time: f32, cursor_locked: &mut bool, base: &VkBase) {
+fn do_controls(
+    player_camera: &mut Camera,
+    pressed_keys: &HashSet<PhysicalKey>,
+    new_pressed_keys: &mut HashSet<PhysicalKey>,
+    delta_time: f32,
+    cursor_locked: &mut bool,
+    base: &VkBase
+) {
     if pressed_keys.contains(&PhysicalKey::Code(KeyCode::KeyW)) {
         player_camera.position.x -= player_camera.speed*delta_time * (player_camera.rotation.y + PI/2.0).cos();
         player_camera.position.z += player_camera.speed*delta_time * (player_camera.rotation.y + PI/2.0).sin();
@@ -711,9 +724,12 @@ fn do_controls(player_camera: &mut Camera, pressed_keys: &HashSet<PhysicalKey>, 
         }
     }
 
+    new_pressed_keys.clear();
+}
+fn do_mouse(player_camera: &mut Camera, mouse_delta: (f32, f32), cursor_locked: &mut bool) {
     if *cursor_locked {
-        player_camera.rotation.y += player_camera.sensitivity * delta_time * mouse_delta.0;
-        player_camera.rotation.x += player_camera.sensitivity * delta_time * mouse_delta.1;
+        player_camera.rotation.y += player_camera.sensitivity * mouse_delta.0;
+        player_camera.rotation.x += player_camera.sensitivity * mouse_delta.1;
         player_camera.rotation.x = player_camera.rotation.x.clamp(-89.99_f32, 89.99_f32);
     }
 }
