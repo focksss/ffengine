@@ -9,17 +9,24 @@ use std::cell::RefCell;
 use std::error::Error;
 use std::io::Cursor;
 use std::{fs, io, mem};
+use std::collections::HashSet;
 use std::ffi::c_void;
 use std::mem::{align_of, size_of, size_of_val};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::ptr::null;
-// TODO: Remove when bumping MSRV to 1.80
+use std::time::Instant;
 
 use ash::util::*;
 use ash::vk;
 use ash::vk::{Buffer, DeviceMemory};
+use winit::dpi::PhysicalPosition;
+use winit::event::{ElementState, Event, KeyEvent, WindowEvent};
+use winit::event_loop::ControlFlow;
+use winit::keyboard::{Key, KeyCode, NamedKey, PhysicalKey, SmolStr};
+use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
+use winit::window::CursorGrabMode;
 use crate::{vk_initializer::*, matrix::*, vector::*};
+use crate::scene::Camera;
 
 #[derive(Clone, Debug, Copy)]
 #[repr(C)]
@@ -35,6 +42,7 @@ struct UniformData {
 }
 
 const MAX_FRAMES_IN_FLIGHT: usize = 2;
+const PI: f32 = std::f32::consts::PI;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let vertices = [
@@ -50,6 +58,32 @@ fn main() -> Result<(), Box<dyn Error>> {
             pos: [0.0, -1.0, 0.0, 1.0],
             color: [0.0, 0.0, 1.0, 1.0],
         },
+
+        Vertex {
+            pos: [-1.0, 1.0, 1.0, 1.0],
+            color: [1.0, 0.0, 0.0, 1.0],
+        },
+        Vertex {
+            pos: [1.0, 1.0, 1.0, 1.0],
+            color: [0.0, 1.0, 0.0, 1.0],
+        },
+        Vertex {
+            pos: [0.0, -1.0, 1.0, 1.0],
+            color: [0.0, 0.0, 1.0, 1.0],
+        },
+
+        Vertex {
+            pos: [-1.0, 1.0, -1.0, 1.0],
+            color: [1.0, 0.0, 0.0, 1.0],
+        },
+        Vertex {
+            pos: [1.0, 1.0, -1.0, 1.0],
+            color: [0.0, 1.0, 0.0, 1.0],
+        },
+        Vertex {
+            pos: [0.0, -1.0, -1.0, 1.0],
+            color: [0.0, 0.0, 1.0, 1.0],
+        },
     ];
     unsafe {
         println!("main code running");
@@ -58,13 +92,13 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         compile_shaders(shader_paths).expect("Failed to compile shaders");
 
-        let mut base = VkBase::new(800, 600, MAX_FRAMES_IN_FLIGHT)?;
-        init_rendering(&mut base, vertices).expect("Application launch failed!");
+        let mut base = VkBase::new(1000, 800, MAX_FRAMES_IN_FLIGHT)?;
+        run(&mut base, vertices).expect("Application launch failed!");
     }
     Ok(())
 }
 
-unsafe fn init_rendering(base: &mut VkBase, vertices: [Vertex; 3]) -> Result<(), Box<dyn Error>> {
+unsafe fn run(base: &mut VkBase, vertices: [Vertex; 9]) -> Result<(), Box<dyn Error>> {
     unsafe {
         //<editor-fold desc = "renderpass init">
         let renderpass_attachments = [
@@ -223,7 +257,7 @@ unsafe fn init_rendering(base: &mut VkBase, vertices: [Vertex; 3]) -> Result<(),
         }
         //</editor-fold>
         //<editor-fold desc = "vertex buffer">
-        let vertex_buffer_size = 3 * size_of::<Vertex>() as u64;
+        let vertex_buffer_size = 9 * size_of::<Vertex>() as u64;
         let mut vertex_input_buffer = Buffer::null();
         let mut vertex_input_buffer_memory = DeviceMemory::null();
         create_buffer(
@@ -405,103 +439,194 @@ unsafe fn init_rendering(base: &mut VkBase, vertices: [Vertex; 3]) -> Result<(),
 
         let graphic_pipeline = graphics_pipelines[0];
         //</editor-fold>
-        // SETUP RENDER LOOP, AUTO RUNS
-        let current_frame = RefCell::new(0usize);
-        let _ = base.render_loop(|| {
-            let mut frame = current_frame.borrow_mut();
-            let (present_index, _) = base
-                .swapchain_loader
-                .acquire_next_image(
-                    base.swapchain,
-                    u64::MAX,
-                    base.present_complete_semaphore,
-                    vk::Fence::null(),
-                )
-                .unwrap();
-            let clear_values = [
-                vk::ClearValue {
-                    color: vk::ClearColorValue {
-                        float32: [0.0, 0.0, 0.0, 0.0],
+        let mut player_camera = Camera::new(
+            Vector::new_vec3(0.0, 0.0, -1.0),
+            Vector::new_null(),
+            Vector::new_empty(),
+            1.0,
+            0.1,
+            100.0
+        );
+
+
+        let mut current_frame = 0usize;
+        let mut pressed_keys = HashSet::new();
+        let mut mouse_delta = (0.0, 0.0);
+        let mut last_frame_time = Instant::now();
+        let mut cursor_locked = false;
+        base.event_loop.borrow_mut().run_on_demand(|event, elwp| {
+            elwp.set_control_flow(ControlFlow::Poll);
+            match event {
+                Event::WindowEvent {
+                    event: WindowEvent::CloseRequested,
+                    ..
+                } => {
+                    elwp.exit();
+                }
+                Event::WindowEvent {
+                    event: WindowEvent::RedrawRequested,
+                    ..
+                } => {
+                    
+                }
+                Event::WindowEvent {
+                    event: WindowEvent::KeyboardInput {
+                        event: KeyEvent {
+                            state,
+                            physical_key,
+                            ..
+                        },
+                        ..
                     },
+                    ..
+                } => {
+                    match state {
+                        ElementState::Pressed => {
+                            pressed_keys.insert(physical_key.clone());
+                        }
+                        ElementState::Released => {
+                            pressed_keys.remove(&physical_key);
+                        }
+                    }
+                }
+                Event::WindowEvent {
+                    event: WindowEvent::CursorMoved { position, .. },
+                    ..
+                } => {
+                    mouse_delta = (0.0, 0.0);
+                    if base.window.has_focus() && cursor_locked {
+                        mouse_delta = (
+                            -position.x as f32 + 0.5 * base.window.inner_size().width as f32,
+                            position.y as f32 - 0.5 * base.window.inner_size().height as f32,
+                        );
+                        base.window.set_cursor_position(PhysicalPosition::new(
+                            base.window.inner_size().width as f32 * 0.5,
+                            base.window.inner_size().height as f32 * 0.5))
+                        .expect("failed to reset mouse position");
+                    }
+                }
+                Event::WindowEvent {
+                    event: WindowEvent::Focused(true),
+                    ..
+                } => {
+                    if !cursor_locked {
+                        if let Err(err) = base.window.set_cursor_grab(CursorGrabMode::Confined) {
+                            eprintln!("Cursor lock failed: {:?}", err);
+                        } else {
+                            base.window.set_cursor_visible(false);
+                            cursor_locked = true;
+                        }
+                    }
+                }
+                Event::WindowEvent {
+                    event: WindowEvent::Focused(false),
+                    ..
+                } => {
+                    cursor_locked = false;
+                }
+                Event::AboutToWait => {
+                    let now = Instant::now();
+                    let delta_time = now.duration_since(last_frame_time).as_secs_f32();
+                    last_frame_time = now;
+                    do_controls(&mut player_camera, &pressed_keys, mouse_delta, delta_time, &mut cursor_locked, base);
+
+                    let (present_index, _) = base
+                        .swapchain_loader
+                        .acquire_next_image(
+                            base.swapchain,
+                            u64::MAX,
+                            base.present_complete_semaphore,
+                            vk::Fence::null(),
+                        )
+                        .unwrap();
+                    let clear_values = [
+                        vk::ClearValue {
+                            color: vk::ClearColorValue {
+                                float32: [0.0, 0.0, 0.0, 0.0],
+                            },
+                        },
+                        vk::ClearValue {
+                            depth_stencil: vk::ClearDepthStencilValue {
+                                depth: 1.0,
+                                stencil: 0,
+                            },
+                        },
+                    ];
+                    player_camera.update_matrices(&base);
+                    let ubo = UniformData {
+                        view: player_camera.view_matrix.data,
+                        projection: player_camera.projection_matrix.data,
+                    };
+                    copy_data_to_memory(uniform_buffers_mapped[current_frame], &[ubo]);
+
+                    let render_pass_begin_info = vk::RenderPassBeginInfo::default()
+                        .render_pass(renderpass)
+                        .framebuffer(framebuffers[present_index as usize])
+                        .render_area(base.surface_resolution.into())
+                        .clear_values(&clear_values);
+
+                    let current_rendering_complete_semaphore = base.rendering_complete_semaphores[current_frame];
+                    let current_draw_command_buffer = base.draw_command_buffers[current_frame];
+                    let current_draw_commands_reuse_fence = base.draw_commands_reuse_fences[current_frame];
+                    record_submit_commandbuffer(
+                        &base.device,
+                        current_draw_command_buffer,
+                        current_draw_commands_reuse_fence,
+                        base.present_queue,
+                        &[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT],
+                        &[base.present_complete_semaphore],
+                        &[current_rendering_complete_semaphore],
+                        |device, draw_command_buffer| {
+                            device.cmd_begin_render_pass(
+                                draw_command_buffer,
+                                &render_pass_begin_info,
+                                vk::SubpassContents::INLINE,
+                            );
+                            device.cmd_bind_pipeline(
+                                draw_command_buffer,
+                                vk::PipelineBindPoint::GRAPHICS,
+                                graphic_pipeline,
+                            );
+                            device.cmd_set_viewport(draw_command_buffer, 0, &viewports);
+                            device.cmd_set_scissor(draw_command_buffer, 0, &scissors);
+                            device.cmd_bind_vertex_buffers(
+                                draw_command_buffer,
+                                0,
+                                &[vertex_input_buffer],
+                                &[0],
+                            );
+
+                            device.cmd_bind_descriptor_sets(
+                                draw_command_buffer,
+                                vk::PipelineBindPoint::GRAPHICS,
+                                pipeline_layout,
+                                0,
+                                &[descriptor_sets[current_frame]],
+                                &[],
+                            );
+
+                            device.cmd_draw(draw_command_buffer, 9, 1, 0, 0);
+
+                            device.cmd_end_render_pass(draw_command_buffer);
+                        },
+                    );
+                    let wait_semaphores = [current_rendering_complete_semaphore];
+                    let swapchains = [base.swapchain];
+                    let image_indices = [present_index];
+                    let present_info = vk::PresentInfoKHR::default()
+                        .wait_semaphores(&wait_semaphores) // &base.rendering_complete_semaphore)
+                        .swapchains(&swapchains)
+                        .image_indices(&image_indices);
+
+                    base.swapchain_loader
+                        .queue_present(base.present_queue, &present_info)
+                        .unwrap();
+                    current_frame = (current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
                 },
-                vk::ClearValue {
-                    depth_stencil: vk::ClearDepthStencilValue {
-                        depth: 1.0,
-                        stencil: 0,
-                    },
-                },
-            ];
+                _ => (),
+            }
+        }).expect("Failed to initiate render loop");
 
-            let ubo = UniformData {
-                view: Matrix::new_view(&Vector::new_vec3(0.0, 0.0, -1.0), &Vector::new_vec(0.0)).data,
-                projection: Matrix::new_projection(100.0_f32.to_radians(), base.window.inner_size().width as f32 / base.window.inner_size().height as f32, 0.01, 100.0).data,
-            };
-            copy_data_to_memory(uniform_buffers_mapped[*frame], &[ubo]);
-
-            let render_pass_begin_info = vk::RenderPassBeginInfo::default()
-                .render_pass(renderpass)
-                .framebuffer(framebuffers[present_index as usize])
-                .render_area(base.surface_resolution.into())
-                .clear_values(&clear_values);
-
-            let current_rendering_complete_semaphore = base.rendering_complete_semaphores[*frame];
-            let current_draw_command_buffer = base.draw_command_buffers[*frame];
-            let current_draw_commands_reuse_fence = base.draw_commands_reuse_fences[*frame];
-            record_submit_commandbuffer(
-                &base.device,
-                current_draw_command_buffer,
-                current_draw_commands_reuse_fence,
-                base.present_queue,
-                &[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT],
-                &[base.present_complete_semaphore],
-                &[current_rendering_complete_semaphore],
-                |device, draw_command_buffer| {
-                    device.cmd_begin_render_pass(
-                        draw_command_buffer,
-                        &render_pass_begin_info,
-                        vk::SubpassContents::INLINE,
-                    );
-                    device.cmd_bind_pipeline(
-                        draw_command_buffer,
-                        vk::PipelineBindPoint::GRAPHICS,
-                        graphic_pipeline,
-                    );
-                    device.cmd_set_viewport(draw_command_buffer, 0, &viewports);
-                    device.cmd_set_scissor(draw_command_buffer, 0, &scissors);
-                    device.cmd_bind_vertex_buffers(
-                        draw_command_buffer,
-                        0,
-                        &[vertex_input_buffer],
-                        &[0],
-                    );
-
-                    device.cmd_bind_descriptor_sets(
-                        draw_command_buffer,
-                        vk::PipelineBindPoint::GRAPHICS,
-                        pipeline_layout,
-                        0,
-                        &[descriptor_sets[*frame]],
-                        &[],
-                    );
-
-                    device.cmd_draw(draw_command_buffer, 3, 1, 0, 0);
-
-                    device.cmd_end_render_pass(draw_command_buffer);
-                },
-            );
-            let wait_semaphores = [current_rendering_complete_semaphore];
-            let swapchains = [base.swapchain];
-            let image_indices = [present_index];
-            let present_info = vk::PresentInfoKHR::default()
-                .wait_semaphores(&wait_semaphores) // &base.rendering_complete_semaphore)
-                .swapchains(&swapchains)
-                .image_indices(&image_indices);
-
-            base.swapchain_loader
-                .queue_present(base.present_queue, &present_info)
-                .unwrap();
-            *frame = (*frame + 1) % MAX_FRAMES_IN_FLIGHT;
-        });
         println!("Render loop exited successfully, cleaning up");
         //<editor-fold desc = "cleanup">
         base.device.device_wait_idle().unwrap();
@@ -526,6 +651,67 @@ unsafe fn init_rendering(base: &mut VkBase, vertices: [Vertex; 3]) -> Result<(),
         //</editor-fold>
     }
     Ok(())
+}
+
+fn do_controls(player_camera: &mut Camera, pressed_keys: &HashSet<PhysicalKey>, mouse_delta: (f32, f32), delta_time: f32, cursor_locked: &mut bool, base: &VkBase) {
+    if pressed_keys.contains(&PhysicalKey::Code(KeyCode::KeyW)) {
+        player_camera.position.x -= player_camera.speed*delta_time * (player_camera.rotation.y + PI/2.0).cos();
+        player_camera.position.z += player_camera.speed*delta_time * (player_camera.rotation.y + PI/2.0).sin();
+    }
+    if pressed_keys.contains(&PhysicalKey::Code(KeyCode::KeyA)) {
+        player_camera.position.x += player_camera.speed*delta_time * (player_camera.rotation.y).cos();
+        player_camera.position.z -= player_camera.speed*delta_time * (player_camera.rotation.y).sin();
+    }
+    if pressed_keys.contains(&PhysicalKey::Code(KeyCode::KeyS)) {
+        player_camera.position.x += player_camera.speed*delta_time * (player_camera.rotation.y + PI/2.0).cos();
+        player_camera.position.z -= player_camera.speed*delta_time * (player_camera.rotation.y + PI/2.0).sin();
+    }
+    if pressed_keys.contains(&PhysicalKey::Code(KeyCode::KeyD)) {
+        player_camera.position.x -= player_camera.speed*delta_time * (player_camera.rotation.y).cos();
+        player_camera.position.z += player_camera.speed*delta_time * (player_camera.rotation.y).sin();
+    }
+    if pressed_keys.contains(&PhysicalKey::Code(KeyCode::Space)) {
+        player_camera.position.y += player_camera.speed*delta_time;
+    }
+    if pressed_keys.contains(&PhysicalKey::Code(KeyCode::ShiftLeft)) {
+        player_camera.position.y -= player_camera.speed*delta_time;
+    }
+
+    if pressed_keys.contains(&PhysicalKey::Code(KeyCode::ArrowUp)) {
+        player_camera.rotation.x -= delta_time;
+    }
+    if pressed_keys.contains(&PhysicalKey::Code(KeyCode::ArrowDown)) {
+        player_camera.rotation.x += delta_time;
+    }
+    if pressed_keys.contains(&PhysicalKey::Code(KeyCode::ArrowLeft)) {
+        player_camera.rotation.y += delta_time;
+    }
+    if pressed_keys.contains(&PhysicalKey::Code(KeyCode::ArrowRight)) {
+        player_camera.rotation.y -= delta_time;
+    }
+
+    if pressed_keys.contains(&PhysicalKey::Code(KeyCode::Escape)) {
+        *cursor_locked = !*cursor_locked;
+        if *cursor_locked {
+            if let Err(err) = base.window.set_cursor_grab(CursorGrabMode::Confined) {
+                eprintln!("Cursor lock failed: {:?}", err);
+            } else {
+                base.window.set_cursor_visible(false);
+            }
+        } else {
+            if let Err(err) = base.window.set_cursor_grab(CursorGrabMode::None) {
+                eprintln!("Cursor lock failed: {:?}", err);
+            } else {
+                base.window.set_cursor_visible(true);
+            }
+        }
+    }
+
+    if *cursor_locked {
+        player_camera.rotation.y += player_camera.sensitivity * delta_time * mouse_delta.0;
+        player_camera.rotation.x += player_camera.sensitivity * delta_time * mouse_delta.1;
+        player_camera.rotation.x = player_camera.rotation.x.clamp(-89.99_f32, 89.99_f32);
+    }
 }
 unsafe fn create_buffer(
     base: &VkBase,
