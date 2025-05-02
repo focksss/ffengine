@@ -18,7 +18,7 @@ use ash::{
 };
 use ash::vk::{DeviceMemory, Image, ImageView, SurfaceFormatKHR, SwapchainKHR};
 use winit::{
-    event::{ElementState, Event, KeyEvent, WindowEvent},
+    event::*,
     event_loop::{ControlFlow, EventLoop},
     keyboard::{Key, NamedKey},
     platform::run_on_demand::EventLoopExtRunOnDemand,
@@ -176,23 +176,6 @@ pub struct VkBase {
 }
 
 impl VkBase {
-    pub fn render_loop<F: Fn()>(&self, f: F) -> Result<(), impl Error> {
-        self.event_loop.borrow_mut().run_on_demand(|event, elwp| {
-            elwp.set_control_flow(ControlFlow::Poll);
-            match event {
-                Event::WindowEvent {
-                    event:
-                    WindowEvent::CloseRequested,
-                    ..
-                } => {
-                    elwp.exit();
-                }
-                Event::AboutToWait => f(),
-                _ => (),
-            }
-        })
-    }
-
     pub fn new(window_width: u32, window_height: u32, max_frames_in_flight: usize) -> Result<Self, Box<dyn Error>> {
         unsafe {
             let event_loop = EventLoop::new()?;

@@ -6,25 +6,23 @@ mod scene;
 mod model;
 
 use std::default::Default;
-use std::cell::RefCell;
 use std::error::Error;
 use std::io::Cursor;
 use std::{fs, io, mem};
 use std::collections::HashSet;
 use std::ffi::c_void;
-use std::hash::Hash;
-use std::mem::{align_of, size_of, size_of_val};
+use std::mem::{align_of, size_of};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Instant;
 
 use ash::util::*;
 use ash::vk;
-use ash::vk::{Buffer, DeviceMemory, PhysicalDevice};
+use ash::vk::{Buffer, DeviceMemory};
 use winit::dpi::PhysicalPosition;
 use winit::event::{ElementState, Event, KeyEvent, WindowEvent};
 use winit::event_loop::ControlFlow;
-use winit::keyboard::{Key, KeyCode, NamedKey, PhysicalKey, SmolStr};
+use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
 use winit::window::CursorGrabMode;
 use crate::{vk_initializer::*, matrix::*, vector::*};
@@ -186,7 +184,7 @@ unsafe fn run(base: &mut VkBase, vertices: [Vertex; 9]) -> Result<(), Box<dyn Er
             p_bindings: &ubo_layout_binding,
             ..Default::default()
         };
-        let ubo_descriptor_set_layout = unsafe { base.device.create_descriptor_set_layout(&ubo_layout_create_info, None)? };
+        let ubo_descriptor_set_layout = base.device.create_descriptor_set_layout(&ubo_layout_create_info, None)?;
         
         let ubo_buffer_size = size_of::<UniformData>() as u64;
         let mut uniform_buffers = Vec::new();
@@ -634,7 +632,7 @@ unsafe fn run(base: &mut VkBase, vertices: [Vertex; 9]) -> Result<(), Box<dyn Er
                     let swapchains = [base.swapchain];
                     let image_indices = [present_index];
                     let present_info = vk::PresentInfoKHR::default()
-                        .wait_semaphores(&wait_semaphores) // &base.rendering_complete_semaphore)
+                        .wait_semaphores(&wait_semaphores)
                         .swapchains(&swapchains)
                         .image_indices(&image_indices);
 
@@ -687,16 +685,16 @@ fn do_controls(
         player_camera.position.z += player_camera.speed*delta_time * (player_camera.rotation.y + PI/2.0).sin();
     }
     if pressed_keys.contains(&PhysicalKey::Code(KeyCode::KeyA)) {
-        player_camera.position.x += player_camera.speed*delta_time * (player_camera.rotation.y).cos();
-        player_camera.position.z -= player_camera.speed*delta_time * (player_camera.rotation.y).sin();
+        player_camera.position.x += player_camera.speed*delta_time * player_camera.rotation.y.cos();
+        player_camera.position.z -= player_camera.speed*delta_time * player_camera.rotation.y.sin();
     }
     if pressed_keys.contains(&PhysicalKey::Code(KeyCode::KeyS)) {
         player_camera.position.x += player_camera.speed*delta_time * (player_camera.rotation.y + PI/2.0).cos();
         player_camera.position.z -= player_camera.speed*delta_time * (player_camera.rotation.y + PI/2.0).sin();
     }
     if pressed_keys.contains(&PhysicalKey::Code(KeyCode::KeyD)) {
-        player_camera.position.x -= player_camera.speed*delta_time * (player_camera.rotation.y).cos();
-        player_camera.position.z += player_camera.speed*delta_time * (player_camera.rotation.y).sin();
+        player_camera.position.x -= player_camera.speed*delta_time * player_camera.rotation.y.cos();
+        player_camera.position.z += player_camera.speed*delta_time * player_camera.rotation.y.sin();
     }
     if pressed_keys.contains(&PhysicalKey::Code(KeyCode::Space)) {
         player_camera.position.y += player_camera.speed*delta_time;
@@ -759,8 +757,8 @@ unsafe fn create_buffer(
 { unsafe {
     let buffer_info = vk::BufferCreateInfo {
         s_type: vk::StructureType::BUFFER_CREATE_INFO,
-        size: size,
-        usage: usage,
+        size,
+        usage,
         sharing_mode: vk::SharingMode::EXCLUSIVE,
         ..Default::default()
     };
