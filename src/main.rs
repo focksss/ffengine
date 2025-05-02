@@ -11,6 +11,7 @@ use std::io::Cursor;
 use std::{fs, io, mem};
 use std::collections::HashSet;
 use std::ffi::c_void;
+use std::hash::Hash;
 use std::mem::{align_of, size_of, size_of_val};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -18,7 +19,7 @@ use std::time::Instant;
 
 use ash::util::*;
 use ash::vk;
-use ash::vk::{Buffer, DeviceMemory};
+use ash::vk::{Buffer, DeviceMemory, PhysicalDevice};
 use winit::dpi::PhysicalPosition;
 use winit::event::{ElementState, Event, KeyEvent, WindowEvent};
 use winit::event_loop::ControlFlow;
@@ -451,6 +452,7 @@ unsafe fn run(base: &mut VkBase, vertices: [Vertex; 9]) -> Result<(), Box<dyn Er
 
         let mut current_frame = 0usize;
         let mut pressed_keys = HashSet::new();
+        let mut new_pressed_keys = HashSet::new();
         let mut mouse_delta = (0.0, 0.0);
         let mut last_frame_time = Instant::now();
         let mut cursor_locked = false;
@@ -467,7 +469,7 @@ unsafe fn run(base: &mut VkBase, vertices: [Vertex; 9]) -> Result<(), Box<dyn Er
                     event: WindowEvent::RedrawRequested,
                     ..
                 } => {
-                    
+
                 }
                 Event::WindowEvent {
                     event: WindowEvent::KeyboardInput {
@@ -482,10 +484,12 @@ unsafe fn run(base: &mut VkBase, vertices: [Vertex; 9]) -> Result<(), Box<dyn Er
                 } => {
                     match state {
                         ElementState::Pressed => {
+                            if !pressed_keys.contains(&physical_key) { new_pressed_keys.insert(physical_key.clone()); }
                             pressed_keys.insert(physical_key.clone());
                         }
                         ElementState::Released => {
                             pressed_keys.remove(&physical_key);
+                            new_pressed_keys.remove(&physical_key);
                         }
                     }
                 }
@@ -528,7 +532,7 @@ unsafe fn run(base: &mut VkBase, vertices: [Vertex; 9]) -> Result<(), Box<dyn Er
                     let now = Instant::now();
                     let delta_time = now.duration_since(last_frame_time).as_secs_f32();
                     last_frame_time = now;
-                    do_controls(&mut player_camera, &pressed_keys, mouse_delta, delta_time, &mut cursor_locked, base);
+                    do_controls(&mut player_camera, &pressed_keys, &new_pressed_keys, mouse_delta, delta_time, &mut cursor_locked, base);
 
                     let (present_index, _) = base
                         .swapchain_loader
@@ -653,7 +657,7 @@ unsafe fn run(base: &mut VkBase, vertices: [Vertex; 9]) -> Result<(), Box<dyn Er
     Ok(())
 }
 
-fn do_controls(player_camera: &mut Camera, pressed_keys: &HashSet<PhysicalKey>, mouse_delta: (f32, f32), delta_time: f32, cursor_locked: &mut bool, base: &VkBase) {
+fn do_controls(player_camera: &mut Camera, pressed_keys: &HashSet<PhysicalKey>, new_pressed_keys: &HashSet<PhysicalKey>, mouse_delta: (f32, f32), delta_time: f32, cursor_locked: &mut bool, base: &VkBase) {
     if pressed_keys.contains(&PhysicalKey::Code(KeyCode::KeyW)) {
         player_camera.position.x -= player_camera.speed*delta_time * (player_camera.rotation.y + PI/2.0).cos();
         player_camera.position.z += player_camera.speed*delta_time * (player_camera.rotation.y + PI/2.0).sin();
@@ -690,7 +694,7 @@ fn do_controls(player_camera: &mut Camera, pressed_keys: &HashSet<PhysicalKey>, 
         player_camera.rotation.y -= delta_time;
     }
 
-    if pressed_keys.contains(&PhysicalKey::Code(KeyCode::Escape)) {
+    if new_pressed_keys.contains(&PhysicalKey::Code(KeyCode::Escape)) {
         *cursor_locked = !*cursor_locked;
         if *cursor_locked {
             if let Err(err) = base.window.set_cursor_grab(CursorGrabMode::Confined) {
