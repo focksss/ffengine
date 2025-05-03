@@ -10,5 +10,5 @@ layout (location = 2) in vec2 o_uv;
 
 layout(binding = 1) uniform sampler2D test_tex;
 void main() {
-    uFragColor = vec4(texture(test_tex, o_uv).rgb, 1.0);
+    uFragColor = vec4(texture(test_tex, vec2(o_uv.x, 1.0-o_uv.y)).rgb, 1.0);
 }
