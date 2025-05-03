@@ -151,22 +151,24 @@ pub struct VkBase {
     pub device_memory_properties: vk::PhysicalDeviceMemoryProperties,
     pub queue_family_index: u32,
     pub present_queue: vk::Queue,
+    pub graphics_queue: vk::Queue,
+    pub pdevice_properties: vk::PhysicalDeviceProperties,
 
     pub surface: vk::SurfaceKHR,
-    pub surface_format: vk::SurfaceFormatKHR,
+    pub surface_format: SurfaceFormatKHR,
     pub surface_resolution: vk::Extent2D,
 
-    pub swapchain: vk::SwapchainKHR,
-    pub present_images: Vec<vk::Image>,
-    pub present_image_views: Vec<vk::ImageView>,
+    pub swapchain: SwapchainKHR,
+    pub present_images: Vec<Image>,
+    pub present_image_views: Vec<ImageView>,
 
     pub pool: vk::CommandPool,
     pub draw_command_buffers: Vec<vk::CommandBuffer>,
     pub setup_command_buffer: vk::CommandBuffer,
 
-    pub depth_image: vk::Image,
-    pub depth_image_view: vk::ImageView,
-    pub depth_image_memory: vk::DeviceMemory,
+    pub depth_image: Image,
+    pub depth_image_view: ImageView,
+    pub depth_image_memory: DeviceMemory,
 
     pub present_complete_semaphore: vk::Semaphore,
     pub rendering_complete_semaphores: Vec<vk::Semaphore>,
@@ -290,6 +292,7 @@ impl VkBase {
                         })
                 })
                 .expect("Couldn't find suitable device.");
+            let pdevice_properties = instance.get_physical_device_properties(pdevice);
             //</editor-fold>
 
             let queue_family_index = queue_family_index as u32;
@@ -300,6 +303,7 @@ impl VkBase {
             ];
             let features = vk::PhysicalDeviceFeatures {
                 shader_clip_distance: 1,
+                sampler_anisotropy: vk::TRUE,
                 ..Default::default()
             };
             let priorities = [1.0];
@@ -320,6 +324,7 @@ impl VkBase {
             //</editor-fold>
 
             let present_queue = device.get_device_queue(queue_family_index, 0);
+            let graphics_queue = device.get_device_queue(queue_family_index, 0);
             let swapchain_loader = swapchain::Device::new(&instance, &device);
             let device_memory_properties = instance.get_physical_device_memory_properties(pdevice);
             //<editor-fold desc = "swapchain"
@@ -457,6 +462,8 @@ impl VkBase {
                 surface_loader,
                 surface_format,
                 present_queue,
+                graphics_queue,
+                pdevice_properties,
                 surface_resolution,
                 swapchain_loader,
                 swapchain,

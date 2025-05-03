@@ -4,9 +4,11 @@
 
 layout (location = 0) in vec4 pos;
 layout (location = 1) in vec4 color;
+layout (location = 2) in vec2 uv;
 
 layout (location = 0) out vec3 fragPos;
 layout (location = 1) out vec4 o_color;
+layout (location = 2) out vec2 o_uv;
 
 layout(binding = 0) uniform UniformBuffer {
     mat4 view;
@@ -15,5 +17,6 @@ layout(binding = 0) uniform UniformBuffer {
 void main() {
     fragPos = pos.xyz;
     o_color = color;
+    o_uv = uv;
     gl_Position = ubo.projection * ubo.view * pos;
 }

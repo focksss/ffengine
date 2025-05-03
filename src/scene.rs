@@ -13,18 +13,20 @@ pub struct Camera {
     pub fov_y: f32,
 }
 impl Camera {
-    pub fn new(position: Vector, target: Vector, rotation: Vector, speed: f32, sensitivity: f32, fov_y: f32) -> Self {
+    pub fn new_perspective_rotation(position: Vector, rotation: Vector, speed: f32, sensitivity: f32, fov_y: f32) -> Self {
         Self {
             view_matrix: Matrix::new(),
             projection_matrix: Matrix::new(),
             position,
-            target,
+            target: Vector::new_null(),
             rotation,
             speed,
             sensitivity,
             fov_y,
         }
     }
+
+
     
     pub fn update_matrices(&mut self, base: &VkBase) {
         self.view_matrix = Matrix::new_view(&self.position, &self.rotation);
