@@ -586,8 +586,8 @@ unsafe fn run(base: &mut VkBase, vertices: [Vertex; 9]) -> Result<(), Box<dyn Er
 
         let graphic_pipeline = graphics_pipelines[0];
         //</editor-fold>
-        let model_test = Gltf::new("C:\\Graphics\\assets\\grassblockGLTF3\\untitled.gltf");
-        println!("{:?}", model_test.accessors[0].max);
+        let model_test = Gltf::new("C:\\Graphics\\assets\\luna\\MRLunaSnow.gltf");
+        println!("{:?}", model_test.scene.nodes[0].borrow().children[0].borrow().mesh.clone().unwrap().name);
 
         let mut player_camera = Camera::new_perspective_rotation(
             Vector::new_vec3(0.0, 0.0, -1.0),
