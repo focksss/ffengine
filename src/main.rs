@@ -26,6 +26,7 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
 use winit::window::CursorGrabMode;
 use crate::{vk_initializer::*, matrix::*, vector::*};
+use crate::model::{Gltf};
 use crate::scene::Camera;
 
 #[derive(Clone, Debug, Copy)]
@@ -181,7 +182,7 @@ unsafe fn run(base: &mut VkBase, vertices: [Vertex; 9]) -> Result<(), Box<dyn Er
             .collect();
         //</editor-fold>
         //<editor-fold desc = "image staging buffer">
-        let image = image::load_from_memory(include_bytes!("C:\\Graphics\\assets\\null.png"))
+        let image = image::load_from_memory(include_bytes!("C:\\Graphics\\assets\\luna\\textures\\T_1031001_Head_01_D.png"))
             .unwrap()
             .to_rgba8();
         let (img_width, img_height) = image.dimensions();
@@ -424,8 +425,8 @@ unsafe fn run(base: &mut VkBase, vertices: [Vertex; 9]) -> Result<(), Box<dyn Er
         base.device.free_memory(vertex_input_buffer_memory, None);
         //</editor-fold>
         //<editor-fold desc = "shaders">
-        let mut vertex_spv_file = Cursor::new(load_file("hello_triangle\\triangle.vert.spv")?);
-        let mut frag_spv_file = Cursor::new(load_file("hello_triangle\\triangle.frag.spv")?);
+        let mut vertex_spv_file = Cursor::new(load_file("hello_triangle\\Triangle.vert.spv")?);
+        let mut frag_spv_file = Cursor::new(load_file("hello_triangle\\Triangle.frag.spv")?);
 
         let vertex_code =
             read_spv(&mut vertex_spv_file).expect("Failed to read vertex shader spv file");
@@ -585,6 +586,9 @@ unsafe fn run(base: &mut VkBase, vertices: [Vertex; 9]) -> Result<(), Box<dyn Er
 
         let graphic_pipeline = graphics_pipelines[0];
         //</editor-fold>
+        let model_test = Gltf::new("C:\\Graphics\\assets\\grassblockGLTF3\\untitled.gltf");
+        println!("{:?}", model_test.accessors[0].max);
+
         let mut player_camera = Camera::new_perspective_rotation(
             Vector::new_vec3(0.0, 0.0, -1.0),
             Vector::new_empty(),
@@ -1140,7 +1144,6 @@ fn compile_shaders(shader_directories: Vec<&str>) -> io::Result<()> {
             }
         }
     }
-
     Ok(())
 }
 
