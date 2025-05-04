@@ -1,7 +1,7 @@
 #![warn(unused_qualifications)]
 mod matrix;
 mod vector;
-mod vk_initializer;
+mod vk_helper;
 mod scene;
 mod model;
 
@@ -25,7 +25,7 @@ use winit::event_loop::ControlFlow;
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
 use winit::window::CursorGrabMode;
-use crate::{vk_initializer::*, matrix::*, vector::*};
+use crate::{vk_helper::*, matrix::*, vector::*};
 use crate::model::{Gltf};
 use crate::scene::Camera;
 
@@ -33,7 +33,7 @@ use crate::scene::Camera;
 #[repr(C)]
 struct Vertex {
     pos: [f32; 4],
-    color: [f32; 4],
+    normal: [f32; 4],
     uv: [f32; 2],
 }
 #[derive(Clone, Debug, Copy)]
@@ -50,49 +50,17 @@ fn main() -> Result<(), Box<dyn Error>> {
     let vertices = [
         Vertex {
             pos: [-1.0, 1.0, 0.0, 1.0],
-            color: [1.0, 0.0, 0.0, 1.0],
+            normal: [1.0, 0.0, 0.0, 1.0],
             uv: [0.0, 0.0],
         },
         Vertex {
             pos: [1.0, 1.0, 0.0, 1.0],
-            color: [0.0, 1.0, 0.0, 1.0],
+            normal: [0.0, 1.0, 0.0, 1.0],
             uv: [1.0, 0.0],
         },
         Vertex {
             pos: [0.0, -1.0, 0.0, 1.0],
-            color: [0.0, 0.0, 1.0, 1.0],
-            uv: [0.5, 1.0],
-        },
-
-        Vertex {
-            pos: [-1.0, 1.0, 1.0, 1.0],
-            color: [1.0, 0.0, 0.0, 1.0],
-            uv: [0.0, 0.0],
-        },
-        Vertex {
-            pos: [1.0, 1.0, 1.0, 1.0],
-            color: [0.0, 1.0, 0.0, 1.0],
-            uv: [1.0, 0.0],
-        },
-        Vertex {
-            pos: [0.0, -1.0, 1.0, 1.0],
-            color: [0.0, 0.0, 1.0, 1.0],
-            uv: [0.5, 1.0],
-        },
-
-        Vertex {
-            pos: [-1.0, 1.0, -1.0, 1.0],
-            color: [1.0, 0.0, 0.0, 1.0],
-            uv: [0.0, 0.0],
-        },
-        Vertex {
-            pos: [1.0, 1.0, -1.0, 1.0],
-            color: [0.0, 1.0, 0.0, 1.0],
-            uv: [1.0, 0.0],
-        },
-        Vertex {
-            pos: [0.0, -1.0, -1.0, 1.0],
-            color: [0.0, 0.0, 1.0, 1.0],
+            normal: [0.0, 0.0, 1.0, 1.0],
             uv: [0.5, 1.0],
         },
     ];
@@ -109,7 +77,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-unsafe fn run(base: &mut VkBase, vertices: [Vertex; 9]) -> Result<(), Box<dyn Error>> {
+unsafe fn run(base: &mut VkBase, vertices: [Vertex; 3]) -> Result<(), Box<dyn Error>> {
     unsafe {
         //<editor-fold desc = "renderpass init">
         let renderpass_attachments = [
@@ -192,7 +160,7 @@ unsafe fn run(base: &mut VkBase, vertices: [Vertex; 9]) -> Result<(), Box<dyn Er
 
         let mut image_staging_buffer = Buffer::null();
         let mut image_staging_buffer_memory = DeviceMemory::null();
-        create_buffer(
+        VkBase::create_buffer(
           base,
           image_size,
           vk::BufferUsageFlags::TRANSFER_SRC,
@@ -229,21 +197,20 @@ unsafe fn run(base: &mut VkBase, vertices: [Vertex; 9]) -> Result<(), Box<dyn Er
         };
         let mut texture_image = Image::null();
         let mut texture_image_memory = DeviceMemory::null();
-        create_image(
-            base,
+        base.create_image(
             &texture_image_create_info,
             vk::MemoryPropertyFlags::DEVICE_LOCAL,
             &mut texture_image,
             &mut texture_image_memory,
         );
-        transition_image_layout(base, texture_image, vk::Format::R8G8B8A8_SRGB, vk::ImageLayout::UNDEFINED, vk::ImageLayout::TRANSFER_DST_OPTIMAL);
-        copy_buffer_to_image(base, image_staging_buffer, texture_image, image_extent.into());
-        transition_image_layout(base, texture_image, vk::Format::R8G8B8A8_SRGB, vk::ImageLayout::TRANSFER_DST_OPTIMAL, vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+        base.transition_image_layout(texture_image, vk::Format::R8G8B8A8_SRGB, vk::ImageLayout::UNDEFINED, vk::ImageLayout::TRANSFER_DST_OPTIMAL);
+        base.copy_buffer_to_image(image_staging_buffer, texture_image, image_extent.into());
+        base.transition_image_layout(texture_image, vk::Format::R8G8B8A8_SRGB, vk::ImageLayout::TRANSFER_DST_OPTIMAL, vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
 
         base.device.destroy_buffer(image_staging_buffer, None);
         base.device.free_memory(image_staging_buffer_memory, None);
 
-        let texture_image_view = create_2_d_image_view(base, texture_image, vk::Format::R8G8B8A8_SRGB);
+        let texture_image_view = base.create_2_d_image_view(texture_image, vk::Format::R8G8B8A8_SRGB);
         //</editor-fold>
         //<editor-fold desc = "texture sampler">
         let sampler_info = vk::SamplerCreateInfo {
@@ -297,8 +264,7 @@ unsafe fn run(base: &mut VkBase, vertices: [Vertex; 9]) -> Result<(), Box<dyn Er
         for i in 0..MAX_FRAMES_IN_FLIGHT {
             uniform_buffers.push(Buffer::null());
             uniform_buffers_memory.push(DeviceMemory::null());
-            create_buffer(
-                base,
+            base.create_buffer(
                 ubo_buffer_size,
                 vk::BufferUsageFlags::UNIFORM_BUFFER,
                 vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
@@ -385,12 +351,49 @@ unsafe fn run(base: &mut VkBase, vertices: [Vertex; 9]) -> Result<(), Box<dyn Er
             base.device.update_descriptor_sets(&descriptor_writes, &[]);
         }
         //</editor-fold>
+        //<editor-fold desc = "index buffer">
+        let indices = [0u32, 1, 2, 0, 1, 2, 0, 1, 2];
+        let indice_buffer_size = 4u64 * 9;
+        let mut indice_staging_buffer = Buffer::null();
+        let mut indice_staging_buffer_memory = DeviceMemory::null();
+        base.create_buffer(
+            indice_buffer_size,
+            vk::BufferUsageFlags::TRANSFER_SRC,
+            vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
+            &mut indice_staging_buffer,
+            &mut indice_staging_buffer_memory,
+        );
+
+        let indices_ptr = base
+            .device
+            .map_memory(
+                indice_staging_buffer_memory,
+                0,
+                indice_buffer_size,
+                vk::MemoryMapFlags::empty(),
+            )
+            .expect("Failed to map vertex buffer memory");
+        copy_data_to_memory(indices_ptr, &indices);
+        base.device.unmap_memory(indice_staging_buffer_memory);
+
+        let mut indice_buffer = Buffer::null();
+        let mut indice_buffer_memory = DeviceMemory::null();
+        base.create_buffer(
+            indice_buffer_size,
+            vk::BufferUsageFlags::TRANSFER_DST | vk::BufferUsageFlags::INDEX_BUFFER,
+            vk::MemoryPropertyFlags::DEVICE_LOCAL,
+            &mut indice_buffer,
+            &mut indice_buffer_memory,
+        );
+        base.copy_buffer(&indice_staging_buffer, &indice_buffer, &indice_buffer_size);
+        base.device.destroy_buffer(indice_staging_buffer, None);
+        base.device.free_memory(indice_staging_buffer_memory, None);
+        //</editor-fold>
         //<editor-fold desc = "vertex buffer">
-        let vertex_buffer_size = 9 * size_of::<Vertex>() as u64;
+        let vertex_buffer_size = 3 * size_of::<Vertex>() as u64;
         let mut vertex_input_buffer = Buffer::null();
         let mut vertex_input_buffer_memory = DeviceMemory::null();
-        create_buffer(
-            &base,
+        base.create_buffer(
             vertex_buffer_size,
             vk::BufferUsageFlags::TRANSFER_SRC,
             vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
@@ -412,17 +415,47 @@ unsafe fn run(base: &mut VkBase, vertices: [Vertex; 9]) -> Result<(), Box<dyn Er
 
         let mut vertex_buffer = Buffer::null();
         let mut vertex_buffer_memory = DeviceMemory::null();
-        create_buffer(
-            &base,
+        base.create_buffer(
             vertex_buffer_size,
             vk::BufferUsageFlags::TRANSFER_DST | vk::BufferUsageFlags::VERTEX_BUFFER,
             vk::MemoryPropertyFlags::DEVICE_LOCAL,
             &mut vertex_buffer,
             &mut vertex_buffer_memory,
         );
-        copy_buffer(&base, &vertex_input_buffer, &vertex_buffer, &vertex_buffer_size);
+        base.copy_buffer(&vertex_input_buffer, &vertex_buffer, &vertex_buffer_size);
         base.device.destroy_buffer(vertex_input_buffer, None);
         base.device.free_memory(vertex_input_buffer_memory, None);
+        //</editor-fold>
+        //<editor-fold desc = "instance buffers">
+        let instance_buffer_size = 3 * size_of::<model::Instance>() as u64;
+        let mut instance_buffers = Vec::new();
+        let mut instance_buffers_memory = Vec::new();
+        let mut instance_ptrs = Vec::new();
+        for i in 0..MAX_FRAMES_IN_FLIGHT {
+            instance_buffers.push(Buffer::null());
+            instance_buffers_memory.push(DeviceMemory::null());
+            base.create_buffer(
+                instance_buffer_size,
+                vk::BufferUsageFlags::VERTEX_BUFFER | vk::BufferUsageFlags::TRANSFER_DST,
+                vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
+                &mut instance_buffers[i],
+                &mut instance_buffers_memory[i],
+            );
+            instance_ptrs.push(base
+                .device
+                .map_memory(
+                    instance_buffers_memory[i],
+                    0,
+                    instance_buffer_size,
+                    vk::MemoryMapFlags::empty(),
+                )
+                .expect("Failed to map instance buffer memory"));
+        }
+        let instance_data = [
+            model::Instance {matrix: Matrix::new_translation_vec3(&Vector::new_vec3(0.0, 0.0, 0.0)).data, material: 0, _pad: [0,0,0]},
+            model::Instance {matrix: Matrix::new_translation_vec3(&Vector::new_vec3(0.0, 0.0, 1.0)).data, material: 1, _pad: [0,0,0]},
+            model::Instance {matrix: Matrix::new_translation_vec3(&Vector::new_vec3(0.0, 0.0, -1.0)).data, material: 2, _pad: [0,0,0]},
+        ];
         //</editor-fold>
         //<editor-fold desc = "shaders">
         let mut vertex_spv_file = Cursor::new(load_file("hello_triangle\\Triangle.vert.spv")?);
@@ -475,11 +508,18 @@ unsafe fn run(base: &mut VkBase, vertices: [Vertex; 9]) -> Result<(), Box<dyn Er
                 ..Default::default()
             },
         ];
-        let vertex_input_binding_descriptions = [vk::VertexInputBindingDescription {
-            binding: 0,
-            stride: size_of::<Vertex>() as u32,
-            input_rate: vk::VertexInputRate::VERTEX,
-        }];
+        let vertex_input_binding_descriptions = [
+            vk::VertexInputBindingDescription {
+                binding: 0,
+                stride: size_of::<Vertex>() as u32,
+                input_rate: vk::VertexInputRate::VERTEX,
+            },
+            vk::VertexInputBindingDescription {
+                binding: 1,
+                stride: size_of::<model::Instance>() as u32,
+                input_rate: vk::VertexInputRate::INSTANCE,
+            }
+        ];
         let vertex_input_attribute_descriptions = [
             vk::VertexInputAttributeDescription {
                 location: 0,
@@ -491,13 +531,44 @@ unsafe fn run(base: &mut VkBase, vertices: [Vertex; 9]) -> Result<(), Box<dyn Er
                 location: 1,
                 binding: 0,
                 format: vk::Format::R32G32B32A32_SFLOAT,
-                offset: offset_of!(Vertex, color) as u32,
+                offset: offset_of!(Vertex, normal) as u32,
             },
             vk::VertexInputAttributeDescription {
                 location: 2,
                 binding: 0,
                 format: vk::Format::R32G32_SFLOAT,
                 offset: offset_of!(Vertex, uv) as u32,
+            },
+
+            vk::VertexInputAttributeDescription {
+                location: 3,
+                binding: 1,
+                format: vk::Format::R32G32B32A32_SFLOAT,
+                offset: 0,
+            },
+            vk::VertexInputAttributeDescription {
+                location: 4,
+                binding: 1,
+                format: vk::Format::R32G32B32A32_SFLOAT,
+                offset: 16,
+            },
+            vk::VertexInputAttributeDescription {
+                location: 5,
+                binding: 1,
+                format: vk::Format::R32G32B32A32_SFLOAT,
+                offset: 32,
+            },
+            vk::VertexInputAttributeDescription {
+                location: 6,
+                binding: 1,
+                format: vk::Format::R32G32B32A32_SFLOAT,
+                offset: 48,
+            },
+            vk::VertexInputAttributeDescription {
+                location: 7,
+                binding: 1,
+                format: vk::Format::R32_UINT,
+                offset: 64,
             },
         ];
 
@@ -506,6 +577,7 @@ unsafe fn run(base: &mut VkBase, vertices: [Vertex; 9]) -> Result<(), Box<dyn Er
             .vertex_binding_descriptions(&vertex_input_binding_descriptions);
         let vertex_input_assembly_state_info = vk::PipelineInputAssemblyStateCreateInfo {
             topology: vk::PrimitiveTopology::TRIANGLE_LIST,
+            primitive_restart_enable: vk::FALSE,
             ..Default::default()
         };
         let viewports = [vk::Viewport {
@@ -587,10 +659,11 @@ unsafe fn run(base: &mut VkBase, vertices: [Vertex; 9]) -> Result<(), Box<dyn Er
         let graphic_pipeline = graphics_pipelines[0];
         //</editor-fold>
         let model_test = Gltf::new("C:\\Graphics\\assets\\luna\\MRLunaSnow.gltf");
-        println!("{:?}", model_test.scene.nodes[0].borrow().children[0].borrow().mesh.clone().unwrap().name);
+        model_test.construct_buffers(base);
+        println!("{:?}", model_test.scene.nodes[0].borrow().children[0].borrow().mesh.clone().unwrap().borrow().name);
 
         let mut player_camera = Camera::new_perspective_rotation(
-            Vector::new_vec3(0.0, 0.0, -1.0),
+            Vector::new_vec3(0.0, 0.0, 0.0),
             Vector::new_empty(),
             1.0,
             0.001,
@@ -726,6 +799,8 @@ unsafe fn run(base: &mut VkBase, vertices: [Vertex; 9]) -> Result<(), Box<dyn Er
                     };
                     copy_data_to_memory(uniform_buffers_mapped[current_frame], &[ubo]);
 
+                    copy_data_to_memory(instance_ptrs[current_frame], &instance_data);
+
                     let render_pass_begin_info = vk::RenderPassBeginInfo::default()
                         .render_pass(renderpass)
                         .framebuffer(framebuffers[present_index as usize])
@@ -756,13 +831,6 @@ unsafe fn run(base: &mut VkBase, vertices: [Vertex; 9]) -> Result<(), Box<dyn Er
                             );
                             device.cmd_set_viewport(draw_command_buffer, 0, &viewports);
                             device.cmd_set_scissor(draw_command_buffer, 0, &scissors);
-                            device.cmd_bind_vertex_buffers(
-                                draw_command_buffer,
-                                0,
-                                &[vertex_buffer],
-                                &[0],
-                            );
-
                             device.cmd_bind_descriptor_sets(
                                 draw_command_buffer,
                                 vk::PipelineBindPoint::GRAPHICS,
@@ -771,8 +839,33 @@ unsafe fn run(base: &mut VkBase, vertices: [Vertex; 9]) -> Result<(), Box<dyn Er
                                 &[descriptor_sets[current_frame]],
                                 &[],
                             );
+                            device.cmd_bind_vertex_buffers(
+                                draw_command_buffer,
+                                0,
+                                &[vertex_buffer],
+                                &[0],
+                            );
+                            device.cmd_bind_vertex_buffers(
+                                draw_command_buffer,
+                                1,
+                                &[instance_buffers[current_frame]],
+                                &[0],
+                            );
+                            device.cmd_bind_index_buffer(
+                                draw_command_buffer,
+                                indice_buffer,
+                                0,
+                                vk::IndexType::UINT32,
+                            );
 
-                            device.cmd_draw(draw_command_buffer, 9, 1, 0, 0);
+                            device.cmd_draw_indexed(
+                                draw_command_buffer,
+                                indices.len() as u32,
+                                3,
+                                0,
+                                0,
+                                0,
+                            );
 
                             device.cmd_end_render_pass(draw_command_buffer);
                         },
@@ -797,24 +890,39 @@ unsafe fn run(base: &mut VkBase, vertices: [Vertex; 9]) -> Result<(), Box<dyn Er
         println!("Render loop exited successfully, cleaning up");
         //<editor-fold desc = "cleanup">
         base.device.device_wait_idle().unwrap();
+
         for pipeline in graphics_pipelines {
             base.device.destroy_pipeline(pipeline, None);
         }
         base.device.destroy_pipeline_layout(pipeline_layout, None);
+
         base.device.destroy_shader_module(vertex_shader_module, None);
         base.device.destroy_shader_module(fragment_shader_module, None);
-        base.device.free_memory(vertex_input_buffer_memory, None);
-        base.device.destroy_buffer(vertex_input_buffer, None);
+
+        base.device.free_memory(vertex_buffer_memory, None);
+        base.device.destroy_buffer(vertex_buffer, None);
+
+        base.device.free_memory(indice_buffer_memory, None);
+        base.device.destroy_buffer(indice_buffer, None);
+
         for framebuffer in framebuffers {
             base.device.destroy_framebuffer(framebuffer, None);
         }
+
         base.device.destroy_render_pass(renderpass, None);
+
         for i in 0..MAX_FRAMES_IN_FLIGHT {
             base.device.destroy_buffer(uniform_buffers[i], None);
             base.device.free_memory(uniform_buffers_memory[i], None);
+
+            base.device.destroy_buffer(instance_buffers[i], None);
+            base.device.unmap_memory(instance_buffers_memory[i]);
+            base.device.free_memory(instance_buffers_memory[i], None);
         }
+
         base.device.destroy_descriptor_set_layout(ubo_descriptor_set_layout, None);
         base.device.destroy_descriptor_pool(descriptor_pool, None);
+
         base.device.destroy_sampler(texture_sampler, None);
         base.device.destroy_image_view(texture_image_view, None);
         base.device.free_memory(texture_image_memory, None);
@@ -906,248 +1014,4 @@ fn do_mouse(player_camera: &mut Camera, mouse_delta: (f32, f32), cursor_locked: 
         player_camera.rotation.x += player_camera.sensitivity * mouse_delta.1;
         player_camera.rotation.x = player_camera.rotation.x.clamp(-89.99_f32, 89.99_f32);
     }
-}
-unsafe fn create_buffer(
-    base: &VkBase,
-    size: vk::DeviceSize,
-    usage: vk::BufferUsageFlags,
-    properties: vk::MemoryPropertyFlags,
-    buffer: &mut Buffer,
-    buffer_memory: &mut DeviceMemory)
-{ unsafe {
-    let buffer_info = vk::BufferCreateInfo {
-        s_type: vk::StructureType::BUFFER_CREATE_INFO,
-        size,
-        usage,
-        sharing_mode: vk::SharingMode::EXCLUSIVE,
-        ..Default::default()
-    };
-    *buffer = base.device.create_buffer(&buffer_info, None).expect("failed to create buffer");
-
-    let memory_requirements = base.device.get_buffer_memory_requirements(*buffer);
-    let memory_indices = find_memorytype_index(
-        &memory_requirements,
-        &base.device_memory_properties,
-        properties,
-    ).expect("failed to find suitable memory type for buffer");
-    let allocation_info = vk::MemoryAllocateInfo {
-        allocation_size: memory_requirements.size,
-        memory_type_index: memory_indices,
-        ..Default::default()
-    };
-
-    *buffer_memory = base.device.allocate_memory(&allocation_info, None).expect("failed to allocate buffer memory");
-
-    base.device
-        .bind_buffer_memory(*buffer, *buffer_memory, 0)
-        .expect("failed to bind buffer memory");
-}
-}
-unsafe fn copy_buffer(base: &VkBase, src_buffer: &Buffer, dst_buffer: &Buffer, size: &vk::DeviceSize) { unsafe {
-    let command_buffers = begin_single_time_commands(base, 1);
-    let copy_region = [vk::BufferCopy {
-        src_offset: 0,
-        dst_offset: 0,
-        size: *size,
-        ..Default::default()
-    }];
-    base.device.cmd_copy_buffer(command_buffers[0], *src_buffer, *dst_buffer, &copy_region);
-    end_single_time_commands(base, command_buffers);
-} }
-unsafe fn copy_data_to_memory<T: Copy>(ptr: *mut c_void, data: &[T]) { unsafe {
-    let mut aligned = Align::new(
-        ptr,
-        align_of::<T>() as u64,
-        (data.len() * size_of::<T>()) as u64,
-    );
-    aligned.copy_from_slice(&data);
-} }
-unsafe fn create_image(
-    base: &VkBase,
-    create_info: &vk::ImageCreateInfo,
-    properties: vk::MemoryPropertyFlags,
-    image: &mut Image,
-    image_memory: &mut DeviceMemory)
-{ unsafe {
-    *image = base.device.create_image(create_info, None).expect("Failed to create image");
-    let texture_image_memory_req = base.device.get_image_memory_requirements(*image);
-    let texture_image_alloc_info = vk::MemoryAllocateInfo {
-        s_type: vk::StructureType::MEMORY_ALLOCATE_INFO,
-        allocation_size: texture_image_memory_req.size,
-        memory_type_index: find_memorytype_index(
-            &texture_image_memory_req,
-            &base.instance.get_physical_device_memory_properties(base.pdevice),
-            properties
-        ).expect("unable to get mem type index for texture image"),
-        ..Default::default()
-    };
-    *image_memory = base.device.allocate_memory(&texture_image_alloc_info, None).expect("Failed to allocate image memory");
-    base.device.bind_image_memory(*image, *image_memory, 0).expect("Failed to bind image memory");
-} }
-unsafe fn create_2_d_image_view(base: &VkBase, image: Image, format: vk::Format) -> ImageView { unsafe {
-    let view_info = vk::ImageViewCreateInfo {
-        s_type: vk::StructureType::IMAGE_VIEW_CREATE_INFO,
-        image,
-        view_type: vk::ImageViewType::TYPE_2D,
-        format,
-        subresource_range: ImageSubresourceRange {
-            aspect_mask: vk::ImageAspectFlags::COLOR,
-            base_mip_level: 0,
-            level_count: 1,
-            base_array_layer: 0,
-            layer_count: 1,
-            ..Default::default()
-        },
-        ..Default::default()
-    };
-    let image_view = base.device.create_image_view(&view_info, None).expect("failed to create image view");
-    image_view
-} }
-unsafe fn begin_single_time_commands(base: &VkBase, command_buffer_count: u32) -> Vec<CommandBuffer> { unsafe {
-    let alloc_info = vk::CommandBufferAllocateInfo {
-        s_type: vk::StructureType::COMMAND_BUFFER_ALLOCATE_INFO,
-        level: vk::CommandBufferLevel::PRIMARY,
-        command_pool: base.pool,
-        command_buffer_count,
-        ..Default::default()
-    };
-    let command_buffers = base.device.allocate_command_buffers(&alloc_info).unwrap();
-    let begin_info = vk::CommandBufferBeginInfo {
-        s_type: vk::StructureType::COMMAND_BUFFER_BEGIN_INFO,
-        flags: vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT,
-        ..Default::default()
-    };
-    for i in 0usize..command_buffer_count as usize {
-        base.device.begin_command_buffer(command_buffers[i], &begin_info).unwrap();
-    }
-    command_buffers
-} }
-unsafe fn end_single_time_commands(base: &VkBase, command_buffers: Vec<CommandBuffer>) { unsafe {
-    for command_buffer in command_buffers.iter() {
-        base.device.end_command_buffer(*command_buffer).unwrap();
-    }
-    let submit_info = [vk::SubmitInfo {
-        s_type: vk::StructureType::SUBMIT_INFO,
-        command_buffer_count: 1,
-        p_command_buffers: &command_buffers[0],
-        ..Default::default()
-    }];
-    base.device.queue_submit(base.graphics_queue, &submit_info, vk::Fence::null()).unwrap();
-    base.device.queue_wait_idle(base.graphics_queue).unwrap();
-    base.device.free_command_buffers(base.pool, &command_buffers);
-} }
-unsafe fn transition_image_layout(base: &VkBase, image: Image, format: vk::Format, old_layout: vk::ImageLayout, new_layout: vk::ImageLayout) { unsafe {
-    let command_buffers = begin_single_time_commands(base, 1);
-    let mut barrier = vk::ImageMemoryBarrier {
-        s_type: vk::StructureType::IMAGE_MEMORY_BARRIER,
-        old_layout,
-        new_layout,
-        src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
-        dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
-        image,
-        subresource_range: ImageSubresourceRange {
-            aspect_mask: vk::ImageAspectFlags::COLOR,
-            base_mip_level: 0,
-            level_count: 1,
-            base_array_layer: 0,
-            layer_count: 1,
-            ..Default::default()
-        },
-        ..Default::default()
-    };
-    let mut source_stage = vk::PipelineStageFlags::empty();
-    let mut destination_stage = vk::PipelineStageFlags::empty();
-    if old_layout == vk::ImageLayout::UNDEFINED && new_layout == vk::ImageLayout::TRANSFER_DST_OPTIMAL {
-        barrier.src_access_mask = vk::AccessFlags::empty();
-        barrier.dst_access_mask = vk::AccessFlags::TRANSFER_WRITE;
-
-        source_stage = vk::PipelineStageFlags::TOP_OF_PIPE;
-        destination_stage = vk::PipelineStageFlags::TRANSFER;
-    } else if old_layout == vk::ImageLayout::TRANSFER_DST_OPTIMAL && new_layout == vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL {
-        barrier.src_access_mask = vk::AccessFlags::TRANSFER_WRITE;
-        barrier.dst_access_mask = vk::AccessFlags::SHADER_READ;
-
-        source_stage = vk::PipelineStageFlags::TRANSFER;
-        destination_stage = vk::PipelineStageFlags::FRAGMENT_SHADER;
-    } else {
-        eprintln!("unsupported layout transition");
-    }
-    base.device.cmd_pipeline_barrier(
-        command_buffers[0],
-        source_stage,
-        destination_stage,
-        vk::DependencyFlags::empty(),
-        &[],
-        &[],
-        &[barrier],
-    );
-
-    end_single_time_commands(base, command_buffers);
-} }
-unsafe fn copy_buffer_to_image(base: &VkBase, buffer: Buffer, image: Image, extent: Extent3D) { unsafe {
-    let command_buffers = begin_single_time_commands(base, 1);
-    let region = vk::BufferImageCopy {
-        buffer_offset: 0,
-        buffer_row_length: 0,
-        buffer_image_height: 0,
-        image_subresource: vk::ImageSubresourceLayers {
-            aspect_mask: vk::ImageAspectFlags::COLOR,
-            mip_level: 0,
-            base_array_layer: 0,
-            layer_count: 1,
-            ..Default::default()
-        },
-        image_offset: vk::Offset3D { x: 0, y: 0, z: 0 },
-        image_extent: extent,
-        ..Default::default()
-    };
-    base.device.cmd_copy_buffer_to_image(command_buffers[0], buffer, image, vk::ImageLayout::TRANSFER_DST_OPTIMAL, &[region]);
-    end_single_time_commands(base, command_buffers);
-} }
-fn compile_shaders(shader_directories: Vec<&str>) -> io::Result<()> {
-    for shader_directory in shader_directories {
-        let shader_directory_path = Path::new(&shader_directory);
-
-        let spv_folder_str = shader_directory.replace("shaders\\glsl", "shaders\\spv");
-        let spv_folder = Path::new(&spv_folder_str);
-
-        if !spv_folder.exists() {
-            println!("Creating folder: {:?}", spv_folder);
-            fs::create_dir_all(&spv_folder)?;
-        }
-        for shader in fs::read_dir(shader_directory_path)? {
-            let shader = shader?;
-            let path = shader.path();
-
-            if path.is_file() {
-                if let Some(ext) = path.extension() {
-                    if ext == "vert" || ext == "frag" || ext == "geom" {
-                        let file_name = path.file_name().unwrap().to_string_lossy();
-                        let spv_file = spv_folder.join(format!("{}.spv", file_name));
-
-                        let glsl_modified = path.metadata()?.modified()?;
-                        let spv_modified = spv_file.metadata()?.modified()?;
-
-                        if glsl_modified > spv_modified || !spv_file.exists() {
-                            println!("RECOMPILING:\n{}", spv_file.display());
-                            let compile_cmd = Command::new("glslc")
-                                .arg(&path)
-                                .arg("-o")
-                                .arg(&spv_file)
-                                .status()?;
-                            if !compile_cmd.success() {
-                                println!("Shader compilation failed");
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    Ok(())
-}
-
-fn load_file(path: &str) -> io::Result<Vec<u8>> {
-    let path_final = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src\\shaders\\spv").join(path);
-    fs::read(path_final)
 }

@@ -8,15 +8,17 @@
     dead_code
 )]
 
-use std::{
-    borrow::Cow, cell::RefCell, default::Default, error::Error, ffi, ops::Drop, os::raw::c_char,
-};
+use std::{borrow::Cow, cell::RefCell, default::Default, error::Error, ffi, fs, io, ops::Drop, os::raw::c_char};
+use std::ffi::c_void;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 use ash::{
     ext::debug_utils,
     khr::{surface, swapchain},
     vk, Device, Entry, Instance,
 };
-use ash::vk::{DeviceMemory, Image, ImageView, SurfaceFormatKHR, SwapchainKHR};
+use ash::util::Align;
+use ash::vk::{Buffer, CommandBuffer, DeviceMemory, Extent3D, Image, ImageSubresourceRange, ImageView, SurfaceFormatKHR, SwapchainKHR};
 use winit::{
     event::*,
     event_loop::{ControlFlow, EventLoop},
@@ -41,9 +43,9 @@ macro_rules! offset_of {
 /// is executed. That way we can delay the waiting for the fences by 1 frame which is good for performance.
 /// Make sure to create the fence in a signaled state on the first use.
 #[allow(clippy::too_many_arguments)]
-pub fn record_submit_commandbuffer<F: FnOnce(&Device, vk::CommandBuffer)>(
+pub fn record_submit_commandbuffer<F: FnOnce(&Device, CommandBuffer)>(
     device: &Device,
-    command_buffer: vk::CommandBuffer,
+    command_buffer: CommandBuffer,
     command_buffer_reuse_fence: vk::Fence,
     submit_queue: vk::Queue,
     wait_mask: &[vk::PipelineStageFlags],
@@ -176,7 +178,6 @@ pub struct VkBase {
     pub draw_commands_reuse_fences: Vec<vk::Fence>,
     pub setup_commands_reuse_fence: vk::Fence,
 }
-
 impl VkBase {
     pub fn new(window_width: u32, window_height: u32, max_frames_in_flight: usize) -> Result<Self, Box<dyn Error>> {
         unsafe {
@@ -640,8 +641,199 @@ impl VkBase {
             .unwrap();
         (depth_image, depth_image_view, depth_image_memory)
     }}
-}
 
+
+
+    pub unsafe fn create_buffer(
+        &self,
+        size: vk::DeviceSize,
+        usage: vk::BufferUsageFlags,
+        properties: vk::MemoryPropertyFlags,
+        buffer: &mut Buffer,
+        buffer_memory: &mut DeviceMemory)
+    { unsafe {
+        let buffer_info = vk::BufferCreateInfo {
+            s_type: vk::StructureType::BUFFER_CREATE_INFO,
+            size,
+            usage,
+            sharing_mode: vk::SharingMode::EXCLUSIVE,
+            ..Default::default()
+        };
+        *buffer = self.device.create_buffer(&buffer_info, None).expect("failed to create buffer");
+
+        let memory_requirements = self.device.get_buffer_memory_requirements(*buffer);
+        let memory_indices = find_memorytype_index(
+            &memory_requirements,
+            &self.device_memory_properties,
+            properties,
+        ).expect("failed to find suitable memory type for buffer");
+        let allocation_info = vk::MemoryAllocateInfo {
+            allocation_size: memory_requirements.size,
+            memory_type_index: memory_indices,
+            ..Default::default()
+        };
+
+        *buffer_memory = self.device.allocate_memory(&allocation_info, None).expect("failed to allocate buffer memory");
+
+        self.device
+            .bind_buffer_memory(*buffer, *buffer_memory, 0)
+            .expect("failed to bind buffer memory");
+    }
+    }
+    pub unsafe fn copy_buffer(&self, src_buffer: &Buffer, dst_buffer: &Buffer, size: &vk::DeviceSize) { unsafe {
+        let command_buffers = self.begin_single_time_commands(1);
+        let copy_region = [vk::BufferCopy {
+            src_offset: 0,
+            dst_offset: 0,
+            size: *size,
+            ..Default::default()
+        }];
+        self.device.cmd_copy_buffer(command_buffers[0], *src_buffer, *dst_buffer, &copy_region);
+        self.end_single_time_commands(command_buffers);
+    } }
+    pub unsafe fn create_image(
+        &self,
+        create_info: &vk::ImageCreateInfo,
+        properties: vk::MemoryPropertyFlags,
+        image: &mut Image,
+        image_memory: &mut DeviceMemory)
+    { unsafe {
+        *image = self.device.create_image(create_info, None).expect("Failed to create image");
+        let texture_image_memory_req = self.device.get_image_memory_requirements(*image);
+        let texture_image_alloc_info = vk::MemoryAllocateInfo {
+            s_type: vk::StructureType::MEMORY_ALLOCATE_INFO,
+            allocation_size: texture_image_memory_req.size,
+            memory_type_index: find_memorytype_index(
+                &texture_image_memory_req,
+                &self.instance.get_physical_device_memory_properties(self.pdevice),
+                properties
+            ).expect("unable to get mem type index for texture image"),
+            ..Default::default()
+        };
+        *image_memory = self.device.allocate_memory(&texture_image_alloc_info, None).expect("Failed to allocate image memory");
+        self.device.bind_image_memory(*image, *image_memory, 0).expect("Failed to bind image memory");
+    } }
+    pub unsafe fn create_2_d_image_view(&self, image: Image, format: vk::Format) -> ImageView { unsafe {
+        let view_info = vk::ImageViewCreateInfo {
+            s_type: vk::StructureType::IMAGE_VIEW_CREATE_INFO,
+            image,
+            view_type: vk::ImageViewType::TYPE_2D,
+            format,
+            subresource_range: ImageSubresourceRange {
+                aspect_mask: vk::ImageAspectFlags::COLOR,
+                base_mip_level: 0,
+                level_count: 1,
+                base_array_layer: 0,
+                layer_count: 1,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let image_view = self.device.create_image_view(&view_info, None).expect("failed to create image view");
+        image_view
+    } }
+    pub unsafe fn begin_single_time_commands(&self, command_buffer_count: u32) -> Vec<CommandBuffer> { unsafe {
+        let alloc_info = vk::CommandBufferAllocateInfo {
+            s_type: vk::StructureType::COMMAND_BUFFER_ALLOCATE_INFO,
+            level: vk::CommandBufferLevel::PRIMARY,
+            command_pool: self.pool,
+            command_buffer_count,
+            ..Default::default()
+        };
+        let command_buffers = self.device.allocate_command_buffers(&alloc_info).unwrap();
+        let begin_info = vk::CommandBufferBeginInfo {
+            s_type: vk::StructureType::COMMAND_BUFFER_BEGIN_INFO,
+            flags: vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT,
+            ..Default::default()
+        };
+        for i in 0usize..command_buffer_count as usize {
+            self.device.begin_command_buffer(command_buffers[i], &begin_info).unwrap();
+        }
+        command_buffers
+    } }
+    pub unsafe fn end_single_time_commands(&self, command_buffers: Vec<CommandBuffer>) { unsafe {
+        for command_buffer in command_buffers.iter() {
+            self.device.end_command_buffer(*command_buffer).unwrap();
+        }
+        let submit_info = [vk::SubmitInfo {
+            s_type: vk::StructureType::SUBMIT_INFO,
+            command_buffer_count: 1,
+            p_command_buffers: &command_buffers[0],
+            ..Default::default()
+        }];
+        self.device.queue_submit(self.graphics_queue, &submit_info, vk::Fence::null()).unwrap();
+        self.device.queue_wait_idle(self.graphics_queue).unwrap();
+        self.device.free_command_buffers(self.pool, &command_buffers);
+    } }
+    pub unsafe fn transition_image_layout(&self, image: Image, format: vk::Format, old_layout: vk::ImageLayout, new_layout: vk::ImageLayout) { unsafe {
+        let command_buffers = self.begin_single_time_commands(1);
+        let mut barrier = vk::ImageMemoryBarrier {
+            s_type: vk::StructureType::IMAGE_MEMORY_BARRIER,
+            old_layout,
+            new_layout,
+            src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+            dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+            image,
+            subresource_range: ImageSubresourceRange {
+                aspect_mask: vk::ImageAspectFlags::COLOR,
+                base_mip_level: 0,
+                level_count: 1,
+                base_array_layer: 0,
+                layer_count: 1,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let mut source_stage = vk::PipelineStageFlags::empty();
+        let mut destination_stage = vk::PipelineStageFlags::empty();
+        if old_layout == vk::ImageLayout::UNDEFINED && new_layout == vk::ImageLayout::TRANSFER_DST_OPTIMAL {
+            barrier.src_access_mask = vk::AccessFlags::empty();
+            barrier.dst_access_mask = vk::AccessFlags::TRANSFER_WRITE;
+
+            source_stage = vk::PipelineStageFlags::TOP_OF_PIPE;
+            destination_stage = vk::PipelineStageFlags::TRANSFER;
+        } else if old_layout == vk::ImageLayout::TRANSFER_DST_OPTIMAL && new_layout == vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL {
+            barrier.src_access_mask = vk::AccessFlags::TRANSFER_WRITE;
+            barrier.dst_access_mask = vk::AccessFlags::SHADER_READ;
+
+            source_stage = vk::PipelineStageFlags::TRANSFER;
+            destination_stage = vk::PipelineStageFlags::FRAGMENT_SHADER;
+        } else {
+            eprintln!("unsupported layout transition");
+        }
+        self.device.cmd_pipeline_barrier(
+            command_buffers[0],
+            source_stage,
+            destination_stage,
+            vk::DependencyFlags::empty(),
+            &[],
+            &[],
+            &[barrier],
+        );
+
+        self.end_single_time_commands(command_buffers);
+    } }
+    pub unsafe fn copy_buffer_to_image(&self, buffer: Buffer, image: Image, extent: Extent3D) { unsafe {
+        let command_buffers = self.begin_single_time_commands(1);
+        let region = vk::BufferImageCopy {
+            buffer_offset: 0,
+            buffer_row_length: 0,
+            buffer_image_height: 0,
+            image_subresource: vk::ImageSubresourceLayers {
+                aspect_mask: vk::ImageAspectFlags::COLOR,
+                mip_level: 0,
+                base_array_layer: 0,
+                layer_count: 1,
+                ..Default::default()
+            },
+            image_offset: vk::Offset3D { x: 0, y: 0, z: 0 },
+            image_extent: extent,
+            ..Default::default()
+        };
+        self.device.cmd_copy_buffer_to_image(command_buffers[0], buffer, image, vk::ImageLayout::TRANSFER_DST_OPTIMAL, &[region]);
+        self.end_single_time_commands(command_buffers);
+    } }
+}
 impl Drop for VkBase {
     fn drop(&mut self) {
         unsafe {
@@ -674,4 +866,59 @@ impl Drop for VkBase {
             self.instance.destroy_instance(None);
         }
     }
+}
+
+pub unsafe fn copy_data_to_memory<T: Copy>(ptr: *mut c_void, data: &[T]) { unsafe {
+    let mut aligned = Align::new(
+        ptr,
+        align_of::<T>() as u64,
+        (data.len() * size_of::<T>()) as u64,
+    );
+    aligned.copy_from_slice(&data);
+} }
+pub fn compile_shaders(shader_directories: Vec<&str>) -> io::Result<()> {
+    for shader_directory in shader_directories {
+        let shader_directory_path = Path::new(&shader_directory);
+
+        let spv_folder_str = shader_directory.replace("shaders\\glsl", "shaders\\spv");
+        let spv_folder = Path::new(&spv_folder_str);
+
+        if !spv_folder.exists() {
+            println!("Creating folder: {:?}", spv_folder);
+            fs::create_dir_all(&spv_folder)?;
+        }
+        for shader in fs::read_dir(shader_directory_path)? {
+            let shader = shader?;
+            let path = shader.path();
+
+            if path.is_file() {
+                if let Some(ext) = path.extension() {
+                    if ext == "vert" || ext == "frag" || ext == "geom" {
+                        let file_name = path.file_name().unwrap().to_string_lossy();
+                        let spv_file = spv_folder.join(format!("{}.spv", file_name));
+
+                        let glsl_modified = path.metadata()?.modified()?;
+                        let spv_modified = spv_file.metadata()?.modified()?;
+
+                        if glsl_modified > spv_modified || !spv_file.exists() {
+                            println!("RECOMPILING:\n{}", spv_file.display());
+                            let compile_cmd = Command::new("glslc")
+                                .arg(&path)
+                                .arg("-o")
+                                .arg(&spv_file)
+                                .status()?;
+                            if !compile_cmd.success() {
+                                println!("Shader compilation failed");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+pub fn load_file(path: &str) -> io::Result<Vec<u8>> {
+    let path_final = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src\\shaders\\spv").join(path);
+    fs::read(path_final)
 }
