@@ -627,6 +627,8 @@ impl Node {
     pub unsafe fn draw(&self, base: &VkBase, draw_command_buffer: &CommandBuffer, transform: &Matrix) { unsafe {
         if self.mesh.is_some() {
             for primitive in self.mesh.as_ref().unwrap().borrow().primitives.iter() {
+                println!("{:?}",primitive.material_index);
+
                 base.device.cmd_bind_vertex_buffers(
                     *draw_command_buffer,
                     0,
