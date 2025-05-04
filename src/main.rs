@@ -31,13 +31,6 @@ use crate::scene::Camera;
 
 #[derive(Clone, Debug, Copy)]
 #[repr(C)]
-struct Vertex {
-    pos: [f32; 4],
-    normal: [f32; 4],
-    uv: [f32; 2],
-}
-#[derive(Clone, Debug, Copy)]
-#[repr(C)]
 struct UniformData {
     view: [f32; 16],
     projection: [f32; 16],
@@ -47,23 +40,6 @@ const MAX_FRAMES_IN_FLIGHT: usize = 2;
 const PI: f32 = std::f32::consts::PI;
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let vertices = [
-        Vertex {
-            pos: [-1.0, 1.0, 0.0, 1.0],
-            normal: [1.0, 0.0, 0.0, 1.0],
-            uv: [0.0, 0.0],
-        },
-        Vertex {
-            pos: [1.0, 1.0, 0.0, 1.0],
-            normal: [0.0, 1.0, 0.0, 1.0],
-            uv: [1.0, 0.0],
-        },
-        Vertex {
-            pos: [0.0, -1.0, 0.0, 1.0],
-            normal: [0.0, 0.0, 1.0, 1.0],
-            uv: [0.5, 1.0],
-        },
-    ];
     unsafe {
         println!("main code running");
         let mut shader_paths = Vec::new();
@@ -72,12 +48,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         compile_shaders(shader_paths).expect("Failed to compile shaders");
 
         let mut base = VkBase::new(1000, 800, MAX_FRAMES_IN_FLIGHT)?;
-        run(&mut base, vertices).expect("Application launch failed!");
+        run(&mut base).expect("Application launch failed!");
     }
     Ok(())
 }
 
-unsafe fn run(base: &mut VkBase, vertices: [Vertex; 3]) -> Result<(), Box<dyn Error>> {
+unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
     unsafe {
         //<editor-fold desc = "renderpass init">
         let renderpass_attachments = [
@@ -352,79 +328,28 @@ unsafe fn run(base: &mut VkBase, vertices: [Vertex; 3]) -> Result<(), Box<dyn Er
         }
         //</editor-fold>
         //<editor-fold desc = "index buffer">
-        let indices = [0u32, 1, 2, 0, 1, 2, 0, 1, 2];
-        let indice_buffer_size = 4u64 * 9;
-        let mut indice_staging_buffer = Buffer::null();
-        let mut indice_staging_buffer_memory = DeviceMemory::null();
-        base.create_buffer(
-            indice_buffer_size,
-            vk::BufferUsageFlags::TRANSFER_SRC,
-            vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
-            &mut indice_staging_buffer,
-            &mut indice_staging_buffer_memory,
-        );
-
-        let indices_ptr = base
-            .device
-            .map_memory(
-                indice_staging_buffer_memory,
-                0,
-                indice_buffer_size,
-                vk::MemoryMapFlags::empty(),
-            )
-            .expect("Failed to map vertex buffer memory");
-        copy_data_to_memory(indices_ptr, &indices);
-        base.device.unmap_memory(indice_staging_buffer_memory);
-
-        let mut indice_buffer = Buffer::null();
-        let mut indice_buffer_memory = DeviceMemory::null();
-        base.create_buffer(
-            indice_buffer_size,
-            vk::BufferUsageFlags::TRANSFER_DST | vk::BufferUsageFlags::INDEX_BUFFER,
-            vk::MemoryPropertyFlags::DEVICE_LOCAL,
-            &mut indice_buffer,
-            &mut indice_buffer_memory,
-        );
-        base.copy_buffer(&indice_staging_buffer, &indice_buffer, &indice_buffer_size);
-        base.device.destroy_buffer(indice_staging_buffer, None);
-        base.device.free_memory(indice_staging_buffer_memory, None);
+        let indices = [0u32, 1, 2];
+        let (indice_buffer, indice_buffer_memory) = base.create_device_buffer(&indices);
         //</editor-fold>
         //<editor-fold desc = "vertex buffer">
-        let vertex_buffer_size = 3 * size_of::<Vertex>() as u64;
-        let mut vertex_input_buffer = Buffer::null();
-        let mut vertex_input_buffer_memory = DeviceMemory::null();
-        base.create_buffer(
-            vertex_buffer_size,
-            vk::BufferUsageFlags::TRANSFER_SRC,
-            vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
-            &mut vertex_input_buffer,
-            &mut vertex_input_buffer_memory,
-        );
-
-        let vert_ptr = base
-            .device
-            .map_memory(
-                vertex_input_buffer_memory,
-                0,
-                vertex_buffer_size,
-                vk::MemoryMapFlags::empty(),
-            )
-            .expect("Failed to map vertex buffer memory");
-        copy_data_to_memory(vert_ptr, &vertices);
-        base.device.unmap_memory(vertex_input_buffer_memory);
-
-        let mut vertex_buffer = Buffer::null();
-        let mut vertex_buffer_memory = DeviceMemory::null();
-        base.create_buffer(
-            vertex_buffer_size,
-            vk::BufferUsageFlags::TRANSFER_DST | vk::BufferUsageFlags::VERTEX_BUFFER,
-            vk::MemoryPropertyFlags::DEVICE_LOCAL,
-            &mut vertex_buffer,
-            &mut vertex_buffer_memory,
-        );
-        base.copy_buffer(&vertex_input_buffer, &vertex_buffer, &vertex_buffer_size);
-        base.device.destroy_buffer(vertex_input_buffer, None);
-        base.device.free_memory(vertex_input_buffer_memory, None);
+        let vertices = [
+            model::Vertex {
+                position: [-1.0, 1.0, 0.0],
+                normal: [1.0, 0.0, 0.0],
+                uv: [0.0, 0.0],
+            },
+            model::Vertex {
+                position: [1.0, 1.0, 0.0],
+                normal: [0.0, 1.0, 0.0],
+                uv: [1.0, 0.0],
+            },
+            model::Vertex {
+                position: [0.0, -1.0, 0.0],
+                normal: [0.0, 0.0, 1.0],
+                uv: [0.5, 1.0],
+            },
+        ];
+        let (vertex_buffer, vertex_buffer_memory) = base.create_device_buffer(&vertices);
         //</editor-fold>
         //<editor-fold desc = "instance buffers">
         let instance_buffer_size = 3 * size_of::<model::Instance>() as u64;
@@ -511,7 +436,7 @@ unsafe fn run(base: &mut VkBase, vertices: [Vertex; 3]) -> Result<(), Box<dyn Er
         let vertex_input_binding_descriptions = [
             vk::VertexInputBindingDescription {
                 binding: 0,
-                stride: size_of::<Vertex>() as u32,
+                stride: size_of::<model::Vertex>() as u32,
                 input_rate: vk::VertexInputRate::VERTEX,
             },
             vk::VertexInputBindingDescription {
@@ -524,20 +449,20 @@ unsafe fn run(base: &mut VkBase, vertices: [Vertex; 3]) -> Result<(), Box<dyn Er
             vk::VertexInputAttributeDescription {
                 location: 0,
                 binding: 0,
-                format: vk::Format::R32G32B32A32_SFLOAT,
-                offset: offset_of!(Vertex, pos) as u32,
+                format: vk::Format::R32G32B32_SFLOAT,
+                offset: offset_of!(model::Vertex, position) as u32,
             },
             vk::VertexInputAttributeDescription {
                 location: 1,
                 binding: 0,
-                format: vk::Format::R32G32B32A32_SFLOAT,
-                offset: offset_of!(Vertex, normal) as u32,
+                format: vk::Format::R32G32B32_SFLOAT,
+                offset: offset_of!(model::Vertex, normal) as u32,
             },
             vk::VertexInputAttributeDescription {
                 location: 2,
                 binding: 0,
                 format: vk::Format::R32G32_SFLOAT,
-                offset: offset_of!(Vertex, uv) as u32,
+                offset: offset_of!(model::Vertex, uv) as u32,
             },
 
             vk::VertexInputAttributeDescription {
@@ -658,9 +583,10 @@ unsafe fn run(base: &mut VkBase, vertices: [Vertex; 3]) -> Result<(), Box<dyn Er
 
         let graphic_pipeline = graphics_pipelines[0];
         //</editor-fold>
+        //let model_test = Gltf::new("C:\\Graphics\\assets\\grassblockGLTF3\\untitled.gltf");
         let model_test = Gltf::new("C:\\Graphics\\assets\\luna\\MRLunaSnow.gltf");
         model_test.construct_buffers(base);
-        println!("{:?}", model_test.scene.nodes[0].borrow().children[0].borrow().mesh.clone().unwrap().borrow().name);
+        //println!("{:?}", model_test.scene.nodes[0].borrow().children[0].borrow().mesh.clone().unwrap().borrow().name);
 
         let mut player_camera = Camera::new_perspective_rotation(
             Vector::new_vec3(0.0, 0.0, 0.0),
@@ -848,26 +774,6 @@ unsafe fn run(base: &mut VkBase, vertices: [Vertex; 3]) -> Result<(), Box<dyn Er
                             for node in model_test.scene.nodes.iter() {
                                 node.borrow().draw(base, &draw_command_buffer, &Matrix::new())
                             }
-                            device.cmd_bind_vertex_buffers(
-                                draw_command_buffer,
-                                0,
-                                &[vertex_buffer],
-                                &[0],
-                            );
-                            device.cmd_bind_index_buffer(
-                                draw_command_buffer,
-                                indice_buffer,
-                                0,
-                                vk::IndexType::UINT32,
-                            );
-                            device.cmd_draw_indexed(
-                                draw_command_buffer,
-                                indices.len() as u32,
-                                3,
-                                0,
-                                0,
-                                0,
-                            );
 
                             device.cmd_end_render_pass(draw_command_buffer);
                         },

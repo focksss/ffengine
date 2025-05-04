@@ -329,17 +329,15 @@ impl VkBase {
             let swapchain_loader = swapchain::Device::new(&instance, &device);
             let device_memory_properties = instance.get_physical_device_memory_properties(pdevice);
             //<editor-fold desc = "swapchain"
-            let swapchain_create_info = VkBase::create_swapchain(
-                &surface_loader,
-                &pdevice,
-                &surface,
-                &window,
-                &instance,
-                &device
-            );
-            let surface_format = swapchain_create_info.0;
-            let surface_resolution = swapchain_create_info.1;
-            let swapchain = swapchain_create_info.2;
+            let (surface_format, surface_resolution, swapchain) =
+                VkBase::create_swapchain(
+                    &surface_loader,
+                    &pdevice,
+                    &surface,
+                    &window,
+                    &instance,
+                    &device
+                );
             //</editor-fold>
             //<editor-fold desc = "present images">
             let present_images_create_info = VkBase::create_present_images(
@@ -690,6 +688,42 @@ impl VkBase {
         }];
         self.device.cmd_copy_buffer(command_buffers[0], *src_buffer, *dst_buffer, &copy_region);
         self.end_single_time_commands(command_buffers);
+    } }
+    pub unsafe fn create_device_buffer<T: Copy>(&self, indices: &[T]) -> (Buffer, DeviceMemory) { unsafe {
+        let buffer_size = (size_of::<T>() * 3*indices.len()) as u64;
+        let mut staging_buffer = vk::Buffer::null();
+        let mut staging_buffer_memory = DeviceMemory::null();
+        self.create_buffer(
+            buffer_size,
+            vk::BufferUsageFlags::TRANSFER_SRC,
+            vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
+            &mut staging_buffer,
+            &mut staging_buffer_memory,
+        );
+        let index_ptr = self
+            .device
+            .map_memory(
+                staging_buffer_memory,
+                0,
+                buffer_size,
+                vk::MemoryMapFlags::empty(),
+            )
+            .expect("Failed to map index buffer memory");
+        copy_data_to_memory(index_ptr, &indices);
+        self.device.unmap_memory(staging_buffer_memory);
+        let mut buffer = vk::Buffer::null();
+        let mut buffer_memory = DeviceMemory::null();
+        self.create_buffer(
+            buffer_size,
+            vk::BufferUsageFlags::TRANSFER_DST | vk::BufferUsageFlags::INDEX_BUFFER,
+            vk::MemoryPropertyFlags::DEVICE_LOCAL,
+            &mut buffer,
+            &mut buffer_memory,
+        );
+        self.copy_buffer(&staging_buffer, &buffer, &buffer_size);
+        self.device.destroy_buffer(staging_buffer, None);
+        self.device.free_memory(staging_buffer_memory, None);
+        (buffer, buffer_memory)
     } }
     pub unsafe fn create_image(
         &self,

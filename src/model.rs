@@ -50,7 +50,7 @@ impl Gltf {
                     buffer: buffers[buffer_view["buffer"].as_usize().unwrap()].clone(),
                     byte_length: buffer_view["byteLength"].as_usize().unwrap(),
                     byte_offset: buffer_view["byteOffset"].as_usize().unwrap(),
-                    target: buffer_view["target"].as_usize().unwrap()
+                    target: buffer_view["target"].as_usize().unwrap_or(0)
                 }))
         }
 
@@ -77,7 +77,7 @@ impl Gltf {
             accessors.push(
                 Rc::new(Accessor {
                     buffer_view: buffer_views[accessor["bufferView"].as_usize().unwrap()].clone(),
-                    component_type: accessor["componentType"].as_u32().unwrap(),
+                    component_type: ComponentType::from_u32(accessor["componentType"].as_u32().unwrap()).expect("unsupported component type"),
                     count: accessor["count"].as_usize().unwrap(),
                     r#type: accessor["type"].as_str().unwrap().parse().unwrap(),
                     min,
@@ -242,10 +242,10 @@ impl Gltf {
                         attributes,
                         indices,
                         material,
-                        index_buffer: None,
-                        index_buffer_memory: None,
-                        vertex_buffer: None,
-                        vertex_buffer_memory: None,
+                        index_buffer: vk::Buffer::null(),
+                        index_buffer_memory: DeviceMemory::null(),
+                        vertex_buffer: vk::Buffer::null(),
+                        vertex_buffer_memory: DeviceMemory::null(),
                         material_index,
                     })
                 }
@@ -381,13 +381,13 @@ impl Gltf {
         }
     }
 
-    pub unsafe fn construct_buffers(&self, base: &VkBase) {
+    pub unsafe fn construct_buffers(&self, base: &VkBase) { unsafe {
         for mesh in &self.meshes {
             for primitive in &mut mesh.borrow_mut().primitives {
                 primitive.construct_buffers(&base)
             }
         }
-    }
+    } }
 }
 
 pub struct Buffer {
@@ -414,7 +414,7 @@ pub struct BufferView {
 
 pub struct Accessor {
     pub buffer_view: Rc<BufferView>,
-    pub component_type: u32,
+    pub component_type: ComponentType,
     pub count: usize,
     pub r#type: String,
     pub min: Option<Vector>,
@@ -450,15 +450,52 @@ pub struct Material {
         pub roughness_texture: Option<Rc<Texture>>,
 }
 
+#[derive(Debug, Clone, Copy)]
+enum ComponentType {
+    I8,
+    U8,
+    I16,
+    U16,
+    U32,
+    F32,
+}
+impl ComponentType {
+    fn from_u32(value: u32) -> Option<Self> {
+        match value {
+            5120 => Some(Self::I8),
+            5121 => Some(Self::U8),
+            5122 => Some(Self::I16),
+            5123 => Some(Self::U16),
+            5125 => Some(Self::U32),
+            5126 => Some(Self::F32),
+            _ => None,
+        }
+    }
+    fn byte_size(&self) -> usize {
+        match self {
+            Self::I8 | Self::U8 => 1,
+            Self::I16 | Self::U16 => 2,
+            Self::U32 | Self::F32 => 4,
+        }
+    }
+
+    fn index_type(&self) -> vk::IndexType {
+        match self {
+            Self::I8 | Self::U8 => vk::IndexType::UINT8_KHR,
+            Self::I16 | Self::U16 => vk::IndexType::UINT16,
+            Self::U32 | Self::F32 => vk::IndexType::UINT32,
+        }
+    }
+}
 pub struct Primitive {
     pub attributes: Vec<(String, Rc<Accessor>)>,
     pub indices: Rc<Accessor>,
     pub material: Option<Rc<Material>>,
 
-    pub index_buffer: Option<vk::Buffer>,
-    pub index_buffer_memory: Option<DeviceMemory>,
-    pub vertex_buffer: Option<vk::Buffer>,
-    pub vertex_buffer_memory: Option<DeviceMemory>,
+    pub index_buffer: vk::Buffer,
+    pub index_buffer_memory: DeviceMemory,
+    pub vertex_buffer: vk::Buffer,
+    pub vertex_buffer_memory: DeviceMemory,
     pub material_index: usize,
 }
 impl Primitive {
@@ -466,8 +503,7 @@ impl Primitive {
         let mut position_accessor: Option<&Rc<Accessor>> = None;
         let mut normal_accessor: Option<&Rc<Accessor>> = None;
         let mut texcoord_accessor: Option<&Rc<Accessor>> = None;
-        let indices_accessor = &self.indices;
-        for attribute in &self.attributes {
+        for attribute in self.attributes.iter() {
             if attribute.0.eq("POSITION") {
                 position_accessor = Some(&attribute.1);
             } else if attribute.0.eq("NORMAL") {
@@ -479,10 +515,26 @@ impl Primitive {
         if position_accessor.is_none() {
             println!("Primitive has no POSITION attribute!");
         } else {
+            let indices_accessor = self.indices.clone();
             let mut byte_offset = indices_accessor.buffer_view.byte_offset;
             let mut byte_length = indices_accessor.buffer_view.byte_length;
             let bytes = &indices_accessor.buffer_view.buffer.data[byte_offset..(byte_offset + byte_length)];
-            let indices: &[[f32; 3]] = bytemuck::cast_slice(bytes);
+            let component_type = indices_accessor.component_type;
+            match component_type {
+                ComponentType::U8 => {
+                    let indices: &[u8] = bytemuck::cast_slice(bytes);
+                    (self.index_buffer, self.index_buffer_memory) = base.create_device_buffer(indices);
+                },
+                ComponentType::U16 => {
+                    let indices: &[u16] = bytemuck::cast_slice(bytes);
+                    (self.index_buffer, self.index_buffer_memory) = base.create_device_buffer(indices);
+                },
+                ComponentType::U32 => {
+                    let indices: &[u32] = bytemuck::cast_slice(bytes);
+                    (self.index_buffer, self.index_buffer_memory) = base.create_device_buffer(indices);
+                },
+                _ => panic!("Unsupported index type"),
+            }
 
             byte_offset = position_accessor.unwrap().buffer_view.byte_offset;
             byte_length = position_accessor.unwrap().buffer_view.byte_length;
@@ -513,96 +565,19 @@ impl Primitive {
                     uv: *tex_coords.get(i).unwrap_or(&[0.0, 0.0]),
                 });
             }
-
-            let index_buffer_size = 4 * 3*indices.len() as u64;
-            let mut indice_staging_buffer = vk::Buffer::null();
-            let mut indice_staging_buffer_memory = DeviceMemory::null();
-            base.create_buffer(
-                index_buffer_size,
-                vk::BufferUsageFlags::TRANSFER_SRC,
-                vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
-                &mut indice_staging_buffer,
-                &mut indice_staging_buffer_memory,
-            );
-            let indices_ptr = base
-                .device
-                .map_memory(
-                    indice_staging_buffer_memory,
-                    0,
-                    index_buffer_size,
-                    vk::MemoryMapFlags::empty(),
-                )
-                .expect("Failed to map index buffer memory");
-            copy_data_to_memory(indices_ptr, &indices);
-            base.device.unmap_memory(indice_staging_buffer_memory);
-            let mut indice_buffer = vk::Buffer::null();
-            let mut indice_buffer_memory = DeviceMemory::null();
-            base.create_buffer(
-                index_buffer_size,
-                vk::BufferUsageFlags::TRANSFER_DST | vk::BufferUsageFlags::INDEX_BUFFER,
-                vk::MemoryPropertyFlags::DEVICE_LOCAL,
-                &mut indice_buffer,
-                &mut indice_buffer_memory,
-            );
-            base.copy_buffer(&indice_staging_buffer, &indice_buffer, &index_buffer_size);
-            base.device.destroy_buffer(indice_staging_buffer, None);
-            base.device.free_memory(indice_staging_buffer_memory, None);
-            self.index_buffer = Some(indice_buffer);
-            self.index_buffer_memory = Some(indice_buffer_memory);
-
-
-
-            let vertex_buffer_size = 3 * size_of::<Vertex>() as u64;
-            let mut vertex_staging_buffer = ash::vk::Buffer::null();
-            let mut vertex_staging_buffer_memory = DeviceMemory::null();
-            base.create_buffer(
-                vertex_buffer_size,
-                vk::BufferUsageFlags::TRANSFER_SRC,
-                vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
-                &mut vertex_staging_buffer,
-                &mut vertex_staging_buffer_memory,
-            );
-
-            let vert_ptr = base
-                .device
-                .map_memory(
-                    vertex_staging_buffer_memory,
-                    0,
-                    vertex_buffer_size,
-                    vk::MemoryMapFlags::empty(),
-                )
-                .expect("Failed to map vertex buffer memory");
-            copy_data_to_memory(vert_ptr, &vertices);
-            base.device.unmap_memory(vertex_staging_buffer_memory);
-
-            let mut vertex_buffer = vk::Buffer::null();
-            let mut vertex_buffer_memory = DeviceMemory::null();
-            base.create_buffer(
-                vertex_buffer_size,
-                vk::BufferUsageFlags::TRANSFER_DST | vk::BufferUsageFlags::VERTEX_BUFFER,
-                vk::MemoryPropertyFlags::DEVICE_LOCAL,
-                &mut vertex_buffer,
-                &mut vertex_buffer_memory,
-            );
-            base.copy_buffer(&vertex_staging_buffer, &vertex_buffer, &vertex_buffer_size);
-            base.device.destroy_buffer(vertex_staging_buffer, None);
-            base.device.free_memory(vertex_staging_buffer_memory, None);
-            self.vertex_buffer = Some(vertex_buffer);
-            self.vertex_buffer_memory = Some(vertex_buffer_memory);
+            (self.vertex_buffer, self.vertex_buffer_memory) = base.create_device_buffer(&vertices);
         }
     } }
 }
+#[derive(Clone, Debug, Copy)]
 #[repr(C)]
-#[derive(Copy)]
-#[derive(Clone)]
 pub struct Vertex {
     pub position: [f32; 3],
     pub normal: [f32; 3],
     pub uv: [f32; 2],
 }
+#[derive(Clone, Debug, Copy)]
 #[repr(C)]
-#[derive(Copy)]
-#[derive(Clone)]
 pub struct Instance {
     pub matrix: [f32; 16],
     pub material: u32,
@@ -627,24 +602,24 @@ impl Node {
     pub unsafe fn draw(&self, base: &VkBase, draw_command_buffer: &CommandBuffer, transform: &Matrix) { unsafe {
         if self.mesh.is_some() {
             for primitive in self.mesh.as_ref().unwrap().borrow().primitives.iter() {
-                println!("{:?}",primitive.material_index);
+                //println!("{:?}",primitive.material_index);
 
                 base.device.cmd_bind_vertex_buffers(
                     *draw_command_buffer,
                     0,
-                    &[primitive.vertex_buffer.unwrap()],
+                    &[primitive.vertex_buffer],
                     &[0],
                 );
                 base.device.cmd_bind_index_buffer(
                     *draw_command_buffer,
-                    primitive.index_buffer.unwrap(),
+                    primitive.index_buffer,
                     0,
-                    vk::IndexType::UINT32,
+                    primitive.indices.component_type.index_type(),
                 );
                 base.device.cmd_draw_indexed(
                     *draw_command_buffer,
                     primitive.indices.count as u32,
-                    3,
+                    1,
                     0,
                     0,
                     0,
@@ -660,9 +635,6 @@ impl Node {
 pub struct Scene {
     pub name: String,
     pub nodes: Vec<Rc<RefCell<Node>>>,
-}
-
-pub struct Triangle {
 }
 
 fn resolve_gltf_uri(gltf_path: &str, uri: &str) -> PathBuf {
