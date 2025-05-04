@@ -841,14 +841,17 @@ unsafe fn run(base: &mut VkBase, vertices: [Vertex; 3]) -> Result<(), Box<dyn Er
                             );
                             device.cmd_bind_vertex_buffers(
                                 draw_command_buffer,
-                                0,
-                                &[vertex_buffer],
-                                &[0],
-                            );
-                            device.cmd_bind_vertex_buffers(
-                                draw_command_buffer,
                                 1,
                                 &[instance_buffers[current_frame]],
+                                &[0],
+                            );
+                            for node in model_test.scene.nodes.iter() {
+                                node.borrow().draw(base, &draw_command_buffer, &Matrix::new())
+                            }
+                            device.cmd_bind_vertex_buffers(
+                                draw_command_buffer,
+                                0,
+                                &[vertex_buffer],
                                 &[0],
                             );
                             device.cmd_bind_index_buffer(
@@ -857,7 +860,6 @@ unsafe fn run(base: &mut VkBase, vertices: [Vertex; 3]) -> Result<(), Box<dyn Er
                                 0,
                                 vk::IndexType::UINT32,
                             );
-
                             device.cmd_draw_indexed(
                                 draw_command_buffer,
                                 indices.len() as u32,

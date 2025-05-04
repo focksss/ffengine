@@ -4,7 +4,7 @@ use std::rc::Rc;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use ash::vk;
-use ash::vk::DeviceMemory;
+use ash::vk::{CommandBuffer, DeviceMemory};
 use json::JsonValue;
 use winit::dpi::Position;
 use crate::matrix::Matrix;
@@ -504,16 +504,16 @@ impl Primitive {
                 let bytes = &texcoord_accessor.unwrap().buffer_view.buffer.data[byte_offset..(byte_offset + byte_length)];
                 tex_coords = bytemuck::cast_slice(bytes);
             }
-            
+
             let mut vertices = Vec::new();
             for i in 0..positions.len() {
                 vertices.push(Vertex {
                     position: positions[i],
-                    normal: normals[i],
-                    uv: tex_coords[i],
+                    normal: *normals.get(i).unwrap_or(&[0.0, 0.0, 0.0]),
+                    uv: *tex_coords.get(i).unwrap_or(&[0.0, 0.0]),
                 });
             }
-            
+
             let index_buffer_size = 4 * 3*indices.len() as u64;
             let mut indice_staging_buffer = vk::Buffer::null();
             let mut indice_staging_buffer_memory = DeviceMemory::null();
@@ -549,9 +549,52 @@ impl Primitive {
             base.device.free_memory(indice_staging_buffer_memory, None);
             self.index_buffer = Some(indice_buffer);
             self.index_buffer_memory = Some(indice_buffer_memory);
+
+
+
+            let vertex_buffer_size = 3 * size_of::<Vertex>() as u64;
+            let mut vertex_staging_buffer = ash::vk::Buffer::null();
+            let mut vertex_staging_buffer_memory = DeviceMemory::null();
+            base.create_buffer(
+                vertex_buffer_size,
+                vk::BufferUsageFlags::TRANSFER_SRC,
+                vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
+                &mut vertex_staging_buffer,
+                &mut vertex_staging_buffer_memory,
+            );
+
+            let vert_ptr = base
+                .device
+                .map_memory(
+                    vertex_staging_buffer_memory,
+                    0,
+                    vertex_buffer_size,
+                    vk::MemoryMapFlags::empty(),
+                )
+                .expect("Failed to map vertex buffer memory");
+            copy_data_to_memory(vert_ptr, &vertices);
+            base.device.unmap_memory(vertex_staging_buffer_memory);
+
+            let mut vertex_buffer = vk::Buffer::null();
+            let mut vertex_buffer_memory = DeviceMemory::null();
+            base.create_buffer(
+                vertex_buffer_size,
+                vk::BufferUsageFlags::TRANSFER_DST | vk::BufferUsageFlags::VERTEX_BUFFER,
+                vk::MemoryPropertyFlags::DEVICE_LOCAL,
+                &mut vertex_buffer,
+                &mut vertex_buffer_memory,
+            );
+            base.copy_buffer(&vertex_staging_buffer, &vertex_buffer, &vertex_buffer_size);
+            base.device.destroy_buffer(vertex_staging_buffer, None);
+            base.device.free_memory(vertex_staging_buffer_memory, None);
+            self.vertex_buffer = Some(vertex_buffer);
+            self.vertex_buffer_memory = Some(vertex_buffer_memory);
         }
     } }
 }
+#[repr(C)]
+#[derive(Copy)]
+#[derive(Clone)]
 pub struct Vertex {
     pub position: [f32; 3],
     pub normal: [f32; 3],
@@ -579,6 +622,37 @@ pub struct Node {
     pub translation: Vector,
     pub children: Vec<Rc<RefCell<Node>>>,
     pub children_indices: Vec<usize>,
+}
+impl Node {
+    pub unsafe fn draw(&self, base: &VkBase, draw_command_buffer: &CommandBuffer, transform: &Matrix) { unsafe {
+        if self.mesh.is_some() {
+            for primitive in self.mesh.as_ref().unwrap().borrow().primitives.iter() {
+                base.device.cmd_bind_vertex_buffers(
+                    *draw_command_buffer,
+                    0,
+                    &[primitive.vertex_buffer.unwrap()],
+                    &[0],
+                );
+                base.device.cmd_bind_index_buffer(
+                    *draw_command_buffer,
+                    primitive.index_buffer.unwrap(),
+                    0,
+                    vk::IndexType::UINT32,
+                );
+                base.device.cmd_draw_indexed(
+                    *draw_command_buffer,
+                    primitive.indices.count as u32,
+                    3,
+                    0,
+                    0,
+                    0,
+                );
+            }
+        }
+        for child in self.children.iter() {
+            child.borrow().draw(base, draw_command_buffer, transform);
+        }
+    } }
 }
 
 pub struct Scene {
