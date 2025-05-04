@@ -327,30 +327,6 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             base.device.update_descriptor_sets(&descriptor_writes, &[]);
         }
         //</editor-fold>
-        //<editor-fold desc = "index buffer">
-        let indices = [0u32, 1, 2];
-        let (indice_buffer, indice_buffer_memory) = base.create_device_buffer(&indices);
-        //</editor-fold>
-        //<editor-fold desc = "vertex buffer">
-        let vertices = [
-            model::Vertex {
-                position: [-1.0, 1.0, 0.0],
-                normal: [1.0, 0.0, 0.0],
-                uv: [0.0, 0.0],
-            },
-            model::Vertex {
-                position: [1.0, 1.0, 0.0],
-                normal: [0.0, 1.0, 0.0],
-                uv: [1.0, 0.0],
-            },
-            model::Vertex {
-                position: [0.0, -1.0, 0.0],
-                normal: [0.0, 0.0, 1.0],
-                uv: [0.5, 1.0],
-            },
-        ];
-        let (vertex_buffer, vertex_buffer_memory) = base.create_device_buffer(&vertices);
-        //</editor-fold>
         //<editor-fold desc = "instance buffers">
         let instance_buffer_size = 3 * size_of::<model::Instance>() as u64;
         let mut instance_buffers = Vec::new();
@@ -807,15 +783,11 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
         base.device.destroy_shader_module(vertex_shader_module, None);
         base.device.destroy_shader_module(fragment_shader_module, None);
 
-        base.device.free_memory(vertex_buffer_memory, None);
-        base.device.destroy_buffer(vertex_buffer, None);
-
-        base.device.free_memory(indice_buffer_memory, None);
-        base.device.destroy_buffer(indice_buffer, None);
-
         for framebuffer in framebuffers {
             base.device.destroy_framebuffer(framebuffer, None);
         }
+
+        model_test.cleanup(base);
 
         base.device.destroy_render_pass(renderpass, None);
 

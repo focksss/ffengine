@@ -388,6 +388,17 @@ impl Gltf {
             }
         }
     } }
+
+    pub unsafe fn cleanup(&self, base: &VkBase) { unsafe {
+        for mesh in &self.meshes {
+            for primitive in &mut mesh.borrow_mut().primitives {
+                base.device.free_memory(primitive.vertex_buffer_memory, None);
+                base.device.destroy_buffer(primitive.vertex_buffer, None);
+                base.device.free_memory(primitive.index_buffer_memory, None);
+                base.device.destroy_buffer(primitive.index_buffer, None);
+            }
+        }
+    } }
 }
 
 pub struct Buffer {
