@@ -1,6 +1,6 @@
 use crate::matrix::Matrix;
 use crate::vector::Vector;
-use crate::vk_initializer::VkBase;
+use crate::vk_helper::VkBase;
 
 pub struct Camera {
     pub view_matrix: Matrix,

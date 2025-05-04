@@ -4,11 +4,13 @@
       <w>bruh</w>
       <w>elwp</w>
       <w>glslc</w>
+      <w>memorytype</w>
       <w>ortho</w>
       <w>pdevice</w>
       <w>renderpass</w>
       <w>swapchain</w>
       <w>swapchains</w>
+      <w>texcoord</w>
     </words>
   </dictionary>
 </component>

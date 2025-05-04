@@ -3,10 +3,13 @@ use std::fs;
 use std::rc::Rc;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use ash::vk;
+use ash::vk::DeviceMemory;
 use json::JsonValue;
 use winit::dpi::Position;
 use crate::matrix::Matrix;
 use crate::vector::Vector;
+use crate::vk_helper::{copy_data_to_memory, VkBase};
 
 pub struct Gltf {
     pub json: JsonValue,
@@ -14,7 +17,7 @@ pub struct Gltf {
     pub scene: Rc<Scene>,
     pub scenes: Vec<Rc<Scene>>,
     pub nodes: Vec<Rc<RefCell<Node>>>,
-    pub meshes: Vec<Rc<Mesh>>,
+    pub meshes: Vec<Rc<RefCell<Mesh>>>,
     pub materials: Vec<Rc<Material>>,
     pub textures: Vec<Rc<Texture>>,
     pub images: Vec<Rc<Image>>,
@@ -79,6 +82,7 @@ impl Gltf {
                     r#type: accessor["type"].as_str().unwrap().parse().unwrap(),
                     min,
                     max,
+                    data: Vec::new(),
                 }))
         }
 
@@ -228,24 +232,30 @@ impl Gltf {
 
                     let mut indices = accessors[primitive_json["indices"].as_usize().unwrap()].clone();
 
-                    let mut material = None;
+                    let mut material_index = 0;
                     if let JsonValue::Object(ref material_json) = primitive_json["material"] {
-                        material = Some(materials[material_json["material"].as_usize().unwrap()].clone());
+                        material_index = material_json["material"].as_usize().unwrap()
                     }
+                    let material = Some(materials[material_index].clone());
 
                     primitives.push(Primitive {
                         attributes,
                         indices,
                         material,
+                        index_buffer: None,
+                        index_buffer_memory: None,
+                        vertex_buffer: None,
+                        vertex_buffer_memory: None,
+                        material_index,
                     })
                 }
             }
 
             meshes.push(
-                Rc::new(Mesh {
+                Rc::new(RefCell::new(Mesh {
                     name,
                     primitives,
-                })
+                }))
             );
         }
 
@@ -370,6 +380,14 @@ impl Gltf {
             buffers,
         }
     }
+
+    pub unsafe fn construct_buffers(&self, base: &VkBase) {
+        for mesh in &self.meshes {
+            for primitive in &mut mesh.borrow_mut().primitives {
+                primitive.construct_buffers(&base)
+            }
+        }
+    }
 }
 
 pub struct Buffer {
@@ -401,6 +419,7 @@ pub struct Accessor {
     pub r#type: String,
     pub min: Option<Vector>,
     pub max: Option<Vector>,
+    pub data: Vec<Vec<f32>>,
 }
 
 pub struct Image {
@@ -435,6 +454,116 @@ pub struct Primitive {
     pub attributes: Vec<(String, Rc<Accessor>)>,
     pub indices: Rc<Accessor>,
     pub material: Option<Rc<Material>>,
+
+    pub index_buffer: Option<vk::Buffer>,
+    pub index_buffer_memory: Option<DeviceMemory>,
+    pub vertex_buffer: Option<vk::Buffer>,
+    pub vertex_buffer_memory: Option<DeviceMemory>,
+    pub material_index: usize,
+}
+impl Primitive {
+    unsafe fn construct_buffers(&mut self, base: &VkBase) { unsafe {
+        let mut position_accessor: Option<&Rc<Accessor>> = None;
+        let mut normal_accessor: Option<&Rc<Accessor>> = None;
+        let mut texcoord_accessor: Option<&Rc<Accessor>> = None;
+        let indices_accessor = &self.indices;
+        for attribute in &self.attributes {
+            if attribute.0.eq("POSITION") {
+                position_accessor = Some(&attribute.1);
+            } else if attribute.0.eq("NORMAL") {
+                normal_accessor = Some(&attribute.1);
+            } else if attribute.0.eq("TEXCOORD_0") {
+                texcoord_accessor = Some(&attribute.1);
+            }
+        }
+        if position_accessor.is_none() {
+            println!("Primitive has no POSITION attribute!");
+        } else {
+            let mut byte_offset = indices_accessor.buffer_view.byte_offset;
+            let mut byte_length = indices_accessor.buffer_view.byte_length;
+            let bytes = &indices_accessor.buffer_view.buffer.data[byte_offset..(byte_offset + byte_length)];
+            let indices: &[[f32; 3]] = bytemuck::cast_slice(bytes);
+
+            byte_offset = position_accessor.unwrap().buffer_view.byte_offset;
+            byte_length = position_accessor.unwrap().buffer_view.byte_length;
+            let bytes = &position_accessor.unwrap().buffer_view.buffer.data[byte_offset..(byte_offset + byte_length)];
+            let positions: &[[f32; 3]] = bytemuck::cast_slice(bytes);
+
+            let mut normals: &[[f32; 3]] = &[];
+            if !normal_accessor.is_none() {
+                byte_offset = normal_accessor.unwrap().buffer_view.byte_offset;
+                byte_length = normal_accessor.unwrap().buffer_view.byte_length;
+                let bytes = &normal_accessor.unwrap().buffer_view.buffer.data[byte_offset..(byte_offset + byte_length)];
+                normals = bytemuck::cast_slice(bytes);
+            }
+
+            let mut tex_coords: &[[f32; 2]] = &[];
+            if !texcoord_accessor.is_none() {
+                byte_offset = texcoord_accessor.unwrap().buffer_view.byte_offset;
+                byte_length = texcoord_accessor.unwrap().buffer_view.byte_length;
+                let bytes = &texcoord_accessor.unwrap().buffer_view.buffer.data[byte_offset..(byte_offset + byte_length)];
+                tex_coords = bytemuck::cast_slice(bytes);
+            }
+            
+            let mut vertices = Vec::new();
+            for i in 0..positions.len() {
+                vertices.push(Vertex {
+                    position: positions[i],
+                    normal: normals[i],
+                    uv: tex_coords[i],
+                });
+            }
+            
+            let index_buffer_size = 4 * 3*indices.len() as u64;
+            let mut indice_staging_buffer = vk::Buffer::null();
+            let mut indice_staging_buffer_memory = DeviceMemory::null();
+            base.create_buffer(
+                index_buffer_size,
+                vk::BufferUsageFlags::TRANSFER_SRC,
+                vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
+                &mut indice_staging_buffer,
+                &mut indice_staging_buffer_memory,
+            );
+            let indices_ptr = base
+                .device
+                .map_memory(
+                    indice_staging_buffer_memory,
+                    0,
+                    index_buffer_size,
+                    vk::MemoryMapFlags::empty(),
+                )
+                .expect("Failed to map index buffer memory");
+            copy_data_to_memory(indices_ptr, &indices);
+            base.device.unmap_memory(indice_staging_buffer_memory);
+            let mut indice_buffer = vk::Buffer::null();
+            let mut indice_buffer_memory = DeviceMemory::null();
+            base.create_buffer(
+                index_buffer_size,
+                vk::BufferUsageFlags::TRANSFER_DST | vk::BufferUsageFlags::INDEX_BUFFER,
+                vk::MemoryPropertyFlags::DEVICE_LOCAL,
+                &mut indice_buffer,
+                &mut indice_buffer_memory,
+            );
+            base.copy_buffer(&indice_staging_buffer, &indice_buffer, &index_buffer_size);
+            base.device.destroy_buffer(indice_staging_buffer, None);
+            base.device.free_memory(indice_staging_buffer_memory, None);
+            self.index_buffer = Some(indice_buffer);
+            self.index_buffer_memory = Some(indice_buffer_memory);
+        }
+    } }
+}
+pub struct Vertex {
+    pub position: [f32; 3],
+    pub normal: [f32; 3],
+    pub uv: [f32; 2],
+}
+#[repr(C)]
+#[derive(Copy)]
+#[derive(Clone)]
+pub struct Instance {
+    pub matrix: [f32; 16],
+    pub material: u32,
+    pub _pad: [u32; 3],
 }
 
 pub struct Mesh {
@@ -443,7 +572,7 @@ pub struct Mesh {
 }
 
 pub struct Node {
-    pub mesh: Option<Rc<Mesh>>,
+    pub mesh: Option<Rc<RefCell<Mesh>>>,
     pub name: String,
     pub rotation: Vector,
     pub scale: Vector,
