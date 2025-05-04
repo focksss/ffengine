@@ -20,6 +20,6 @@ layout(binding = 0) uniform UniformBuffer {
 void main() {
     fragPos = pos;
     o_color = color;
-    o_uv = vec2(uv.x, 1 - uv.y);
+    o_uv = vec2(uv.x, uv.y);
     gl_Position = ubo.projection * ubo.view * model * vec4(pos, 1.0);
 }
