@@ -560,11 +560,14 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
         let graphic_pipeline = graphics_pipelines[0];
         //</editor-fold>
         let mut model_test = Gltf::new("C:\\Graphics\\assets\\bistro2\\untitled.gltf");
+        //1235
         //println!("{}",model_test.meshes.len());
         //let mut model_test = Gltf::new("C:\\Graphics\\assets\\grassblockGLTF3\\untitled.gltf");
         //let mut model_test = Gltf::new("C:\\Graphics\\assets\\luna\\MRLunaSnow.gltf");
         model_test.construct_buffers(base, MAX_FRAMES_IN_FLIGHT);
         //println!("{:?}", model_test.scene.nodes[0].borrow().children[0].borrow().mesh.clone().unwrap().borrow().name);
+        model_test.transform_node(1235, &Vector::new_empty(), &Vector::new_vec4(1.0,0.0,0.0,0.0), &Vector::new_vec(1.0));
+        model_test.update_instances_all_frames(base);
 
         let mut player_camera = Camera::new_perspective_rotation(
             Vector::new_vec3(0.0, 0.0, 0.0),
@@ -697,7 +700,6 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                         },
                     ];
                     player_camera.update_matrices(&base);
-                    player_camera.view_matrix.mul_mat4(&Matrix::new_translation_3f(0.0,1.0,0.0));
                     let ubo = UniformData {
                         view: player_camera.view_matrix.data,
                         projection: player_camera.projection_matrix.data,
@@ -705,7 +707,6 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                     copy_data_to_memory(uniform_buffers_mapped[current_frame], &[ubo]);
 
                     copy_data_to_memory(instance_ptrs[current_frame], &instance_data);
-                    //model_test.update_instances(base, current_frame);
 
                     let render_pass_begin_info = vk::RenderPassBeginInfo::default()
                         .render_pass(renderpass)
