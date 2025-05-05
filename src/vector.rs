@@ -106,14 +106,47 @@ impl Vector {
     pub fn add_vec(&self, vec: &Vector) -> Vector {
         Vector::new_vec4(self.x + vec.x, self.y + vec.y, self.z + vec.z, self.w + vec.w)
     }
+
+    pub fn add_vec_to_self(&mut self, vec: &Vector) {
+        let temp = Vector::new_vec4(self.x + vec.x, self.y + vec.y, self.z + vec.z, self.w + vec.w);
+        self.x = temp.x;
+        self.y = temp.y;
+        self.z = temp.z;
+        self.w = temp.w;
+    }
     pub fn sub_vec(&self, vec: &Vector) -> Vector {
         Vector::new_vec4(self.x - vec.x, self.y - vec.y, self.z - vec.z, self.w - vec.w)
     }
     pub fn mul_by_vec(&self, vec: &Vector) -> Vector {
         Vector::new_vec4(self.x * vec.x, self.y * vec.y, self.z * vec.z, self.w * vec.w)
     }
+
+    pub fn mul_by_vec_to_self(&mut self, vec: &Vector) {
+        let temp = Vector::new_vec4(self.x * vec.x, self.y * vec.y, self.z * vec.z, self.w * vec.w);
+        self.x = temp.x;
+        self.y = temp.y;
+        self.z = temp.z;
+        self.w = temp.w;
+    }
     pub fn div_by_vec(&self, vec: &Vector) -> Vector {
         Vector::new_vec4(self.x / vec.x, self.y / vec.y, self.z / vec.z, self.w / vec.w)
+    }
+
+    pub fn combine(&self, other: &Vector) -> Vector {
+        Vector::new_vec4(
+            self.w * other.x + self.x * other.w + self.y * other.z - self.z * other.y,
+            self.w * other.y - self.x * other.z + self.y * other.w + self.z * other.x,
+            self.w * other.z + self.x * other.y - self.y * other.x + self.z * other.w,
+            self.w * other.w - self.x * other.x - self.y * other.y - self.z * other.z,
+        )
+    }
+    
+    pub fn combine_to_self(&mut self, other: &Vector) {
+        let temp = self.clone().combine(other);
+        self.x = temp.x;
+        self.y = temp.y;
+        self.z = temp.z;
+        self.w = temp.w;
     }
     //</editor-fold>
 
