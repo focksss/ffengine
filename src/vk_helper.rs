@@ -689,9 +689,14 @@ impl VkBase {
         self.device.cmd_copy_buffer(command_buffers[0], *src_buffer, *dst_buffer, &copy_region);
         self.end_single_time_commands(command_buffers);
     } }
-    pub unsafe fn create_device_buffer<T: Copy>(&self, indices: &[T]) -> (Buffer, DeviceMemory) { unsafe {
-        let buffer_size = (size_of::<T>() * 3*indices.len()) as u64;
-        let mut staging_buffer = vk::Buffer::null();
+    pub unsafe fn create_device_and_staging_buffer<T: Copy>(&self, buffer_size_in: u64, data: &[T], destroy_staging: bool, do_initial_copy: bool) -> ((Buffer, DeviceMemory), (Buffer, DeviceMemory)) { unsafe {
+        let buffer_size;
+        if buffer_size_in > 0 {
+            buffer_size = buffer_size_in;
+        } else {
+            buffer_size = (size_of::<T>() * data.len()) as u64;
+        }
+        let mut staging_buffer = Buffer::null();
         let mut staging_buffer_memory = DeviceMemory::null();
         self.create_buffer(
             buffer_size,
@@ -700,18 +705,20 @@ impl VkBase {
             &mut staging_buffer,
             &mut staging_buffer_memory,
         );
-        let index_ptr = self
-            .device
-            .map_memory(
-                staging_buffer_memory,
-                0,
-                buffer_size,
-                vk::MemoryMapFlags::empty(),
-            )
-            .expect("Failed to map index buffer memory");
-        copy_data_to_memory(index_ptr, &indices);
-        self.device.unmap_memory(staging_buffer_memory);
-        let mut buffer = vk::Buffer::null();
+        if do_initial_copy {
+            let index_ptr = self
+                .device
+                .map_memory(
+                    staging_buffer_memory,
+                    0,
+                    buffer_size,
+                    vk::MemoryMapFlags::empty(),
+                )
+                .expect("Failed to map index buffer memory");
+            copy_data_to_memory(index_ptr, &data);
+            self.device.unmap_memory(staging_buffer_memory);
+        }
+        let mut buffer = Buffer::null();
         let mut buffer_memory = DeviceMemory::null();
         self.create_buffer(
             buffer_size,
@@ -720,11 +727,18 @@ impl VkBase {
             &mut buffer,
             &mut buffer_memory,
         );
-        self.copy_buffer(&staging_buffer, &buffer, &buffer_size);
-        self.device.destroy_buffer(staging_buffer, None);
-        self.device.free_memory(staging_buffer_memory, None);
-        (buffer, buffer_memory)
-    } }
+        if do_initial_copy {
+            self.copy_buffer(&staging_buffer, &buffer, &buffer_size);
+        }
+        if destroy_staging {
+            self.device.destroy_buffer(staging_buffer, None);
+            self.device.free_memory(staging_buffer_memory, None);
+            ((buffer, buffer_memory), (Buffer::null(), DeviceMemory::null()))
+        } else {
+            ((buffer, buffer_memory), (staging_buffer, staging_buffer_memory))
+        }
+    }
+    }
     pub unsafe fn create_image(
         &self,
         create_info: &vk::ImageCreateInfo,
