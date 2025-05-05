@@ -462,23 +462,31 @@ impl Gltf {
         base.device.unmap_memory(self.instance_staging_buffer.1);
         base.copy_buffer(&self.instance_staging_buffer.0, &self.instance_buffers[frame].0, &self.instance_buffer_size);
     } }
-    pub unsafe fn update_node(&mut self, base: &VkBase, node: &Rc<RefCell<Node>>, parent_transform: &mut Matrix) { unsafe {
+    pub fn update_node(&mut self, base: &VkBase, node: &Rc<RefCell<Node>>, parent_transform: &Matrix) {
         let node = node.borrow();
-        let rotate = &Matrix::new_rotate_quaternion_vec4(&node.rotation);
-        let scale = &Matrix::new_scale_vec3(&node.scale);
-        let translate = &Matrix::new_translation_vec3(&node.translation);
-        parent_transform.set_and_mul_mat4(&scale);
-        parent_transform.set_and_mul_mat4(&rotate);
-        parent_transform.set_and_mul_mat4(&translate);
-        if node.mesh.is_some() {
-            for primitive in node.mesh.as_ref().unwrap().borrow().primitives.iter() {
-                self.instance_data[primitive.id].matrix = parent_transform.data
+
+        let rotate = Matrix::new_rotate_quaternion_vec4(&node.rotation);
+        let scale = Matrix::new_scale_vec3(&node.scale);
+        let translate = Matrix::new_translation_vec3(&node.translation);
+        
+        let mut local_transform = Matrix::new();
+        local_transform.set_and_mul_mat4(&scale);
+        local_transform.set_and_mul_mat4(&rotate);
+        local_transform.set_and_mul_mat4(&translate);
+        
+        let mut world_transform = parent_transform.clone();
+        world_transform.set_and_mul_mat4(&local_transform);
+        
+        if let Some(mesh) = &node.mesh {
+            for primitive in mesh.borrow().primitives.iter() {
+                self.instance_data[primitive.id].matrix = world_transform.data;
             }
         }
+        
         for child in node.children.iter() {
-            self.update_node(base, child, parent_transform);
+            self.update_node(base, child, &world_transform);
         }
-    } }
+    }
 
     pub unsafe fn draw(&self, base: &VkBase, draw_command_buffer: &CommandBuffer, frame: usize) { unsafe {
         base.device.cmd_bind_vertex_buffers(
@@ -598,21 +606,6 @@ impl ComponentType {
             5125 => Some(Self::U32),
             5126 => Some(Self::F32),
             _ => None,
-        }
-    }
-    fn byte_size(&self) -> usize {
-        match self {
-            Self::I8 | Self::U8 => 1,
-            Self::I16 | Self::U16 => 2,
-            Self::U32 | Self::F32 => 4,
-        }
-    }
-
-    fn index_type(&self) -> vk::IndexType {
-        match self {
-            Self::I8 | Self::U8 => vk::IndexType::UINT8_KHR,
-            Self::I16 | Self::U16 => vk::IndexType::UINT16,
-            Self::U32 | Self::F32 => vk::IndexType::UINT32,
         }
     }
 }
