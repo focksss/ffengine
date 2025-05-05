@@ -745,27 +745,8 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                                 &[descriptor_sets[current_frame]],
                                 &[],
                             );
-                            base.device.cmd_bind_vertex_buffers(
-                                draw_command_buffer,
-                                1,
-                                &[model_test.instance_buffers[current_frame].0],
-                                &[0],
-                            );
-                            base.device.cmd_bind_vertex_buffers(
-                                draw_command_buffer,
-                                0,
-                                &[model_test.vertex_buffer.0],
-                                &[0],
-                            );
-                            base.device.cmd_bind_index_buffer(
-                                draw_command_buffer,
-                                model_test.index_buffer.0,
-                                0,
-                                vk::IndexType::UINT32,
-                            );
-                            for node in model_test.scene.nodes.iter() {
-                                node.borrow().draw(base, &draw_command_buffer)
-                            }
+
+                            model_test.draw(base, &draw_command_buffer, current_frame);
 
                             device.cmd_end_render_pass(draw_command_buffer);
                         },

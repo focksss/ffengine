@@ -480,6 +480,30 @@ impl Gltf {
         }
     } }
 
+    pub unsafe fn draw(&self, base: &VkBase, draw_command_buffer: &CommandBuffer, frame: usize) { unsafe {
+        base.device.cmd_bind_vertex_buffers(
+            *draw_command_buffer,
+            1,
+            &[self.instance_buffers[frame].0],
+            &[0],
+        );
+        base.device.cmd_bind_vertex_buffers(
+            *draw_command_buffer,
+            0,
+            &[self.vertex_buffer.0],
+            &[0],
+        );
+        base.device.cmd_bind_index_buffer(
+            *draw_command_buffer,
+            self.index_buffer.0,
+            0,
+            vk::IndexType::UINT32,
+        );
+        for node in self.scene.nodes.iter() {
+            node.borrow().draw(base, &draw_command_buffer)
+        }
+    } }
+
     pub unsafe fn cleanup(&self, base: &VkBase) { unsafe {
         for instance_buffer in &self.instance_buffers {
             base.device.destroy_buffer(instance_buffer.0, None);
@@ -726,7 +750,7 @@ impl Node {
                     primitive.indices.count as u32,
                     1,
                     primitive.index_buffer_offset as u32,
-                    0, 
+                    0,
                     primitive.id as u32,
                 );
             }
