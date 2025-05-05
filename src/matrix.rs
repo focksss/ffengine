@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 use crate::vector::Vector;
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct Matrix {
     pub data: [f32; 16],
 }
@@ -42,6 +42,10 @@ impl Matrix {
             }
         }
         result
+    }
+
+    pub fn set_and_mul_mat4(&mut self, other: &Matrix) {
+        self.data = self.mul_mat4(other).data;
     }
     //</editor-fold>
 
