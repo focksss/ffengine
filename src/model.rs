@@ -298,7 +298,7 @@ impl Gltf {
                         rotation_json[1].as_f32().unwrap(),
                         rotation_json[2].as_f32().unwrap(),
                         rotation_json[3].as_f32().unwrap()
-                    );
+                    ).normalize_4d();
                 };
             }
 
@@ -405,6 +405,13 @@ impl Gltf {
         }
     }
 
+    pub fn transform_node(&mut self, node_index: usize, translation: &Vector, rotation: &Vector, scale: &Vector) {
+        let mut node = self.nodes[node_index].borrow_mut();
+        node.translation.add_vec_to_self(translation);
+        node.rotation.combine_to_self(&rotation.normalize_4d());
+        node.scale.mul_by_vec_to_self(scale);
+    }
+
     pub unsafe fn construct_buffers(&mut self, base: &VkBase, frames_in_flight: usize) { unsafe {
         let mut all_vertices: Vec<Vertex> = vec![];
         let mut all_indices: Vec<u32> = vec![];
@@ -462,27 +469,47 @@ impl Gltf {
         base.device.unmap_memory(self.instance_staging_buffer.1);
         base.copy_buffer(&self.instance_staging_buffer.0, &self.instance_buffers[frame].0, &self.instance_buffer_size);
     } }
+
+    pub unsafe fn update_instances_all_frames(&mut self, base: &VkBase) { unsafe {
+        for node in &self.scene.nodes.clone() {
+            self.update_node(base, node, &mut Matrix::new());
+        }
+        let ptr = base
+            .device
+            .map_memory(
+                self.instance_staging_buffer.1,
+                0,
+                self.instance_buffer_size,
+                vk::MemoryMapFlags::empty(),
+            )
+            .expect("Failed to map index buffer memory");
+        copy_data_to_memory(ptr, &self.instance_data);
+        base.device.unmap_memory(self.instance_staging_buffer.1);
+        for instance_buffer in &self.instance_buffers {
+            base.copy_buffer(&self.instance_staging_buffer.0, &instance_buffer.0, &self.instance_buffer_size);
+        }
+    } }
     pub fn update_node(&mut self, base: &VkBase, node: &Rc<RefCell<Node>>, parent_transform: &Matrix) {
         let node = node.borrow();
 
         let rotate = Matrix::new_rotate_quaternion_vec4(&node.rotation);
         let scale = Matrix::new_scale_vec3(&node.scale);
         let translate = Matrix::new_translation_vec3(&node.translation);
-        
+
         let mut local_transform = Matrix::new();
         local_transform.set_and_mul_mat4(&scale);
         local_transform.set_and_mul_mat4(&rotate);
         local_transform.set_and_mul_mat4(&translate);
-        
+
         let mut world_transform = parent_transform.clone();
         world_transform.set_and_mul_mat4(&local_transform);
-        
+
         if let Some(mesh) = &node.mesh {
             for primitive in mesh.borrow().primitives.iter() {
                 self.instance_data[primitive.id].matrix = world_transform.data;
             }
         }
-        
+
         for child in node.children.iter() {
             self.update_node(base, child, &world_transform);
         }
