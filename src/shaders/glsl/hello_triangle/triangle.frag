@@ -7,8 +7,9 @@ layout (location = 0) out vec4 uFragColor;
 layout (location = 0) in vec3 fragPos;
 layout (location = 1) in vec3 o_color;
 layout (location = 2) in vec2 o_uv;
+layout (location = 3 ) flat in uint material;
 
 layout(binding = 1) uniform sampler2D test_tex;
 void main() {
-    uFragColor = vec4(texture(test_tex, o_uv).rgb, 1.0);
+    uFragColor = vec4(texture(test_tex,o_uv).rgb, 1.0);
 }

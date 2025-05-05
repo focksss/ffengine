@@ -12,6 +12,7 @@ layout (location = 7) in uint material;
 layout (location = 0) out vec3 fragPos;
 layout (location = 1) out vec3 o_color;
 layout (location = 2) out vec2 o_uv;
+layout (location = 3) out uint o_material;
 
 layout(binding = 0) uniform UniformBuffer {
     mat4 view;
@@ -21,5 +22,6 @@ void main() {
     fragPos = pos;
     o_color = color;
     o_uv = vec2(uv.x, uv.y);
+    o_material = material;
     gl_Position = ubo.projection * ubo.view * model * vec4(pos, 1.0);
 }
