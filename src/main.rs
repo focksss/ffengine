@@ -26,7 +26,7 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
 use winit::window::CursorGrabMode;
 use crate::{vk_helper::*, matrix::*, vector::*};
-use crate::model::{Gltf};
+use crate::model::{Gltf, Instance};
 use crate::scene::Camera;
 
 #[derive(Clone, Debug, Copy)]
@@ -559,9 +559,11 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
 
         let graphic_pipeline = graphics_pipelines[0];
         //</editor-fold>
-        //let model_test = Gltf::new("C:\\Graphics\\assets\\grassblockGLTF3\\untitled.gltf");
-        let model_test = Gltf::new("C:\\Graphics\\assets\\luna\\MRLunaSnow.gltf");
-        model_test.construct_buffers(base);
+        let mut model_test = Gltf::new("C:\\Graphics\\assets\\bistro2\\untitled.gltf");
+        //println!("{}",model_test.meshes.len());
+        //let mut model_test = Gltf::new("C:\\Graphics\\assets\\grassblockGLTF3\\untitled.gltf");
+        //let mut model_test = Gltf::new("C:\\Graphics\\assets\\luna\\MRLunaSnow.gltf");
+        model_test.construct_buffers(base, MAX_FRAMES_IN_FLIGHT);
         //println!("{:?}", model_test.scene.nodes[0].borrow().children[0].borrow().mesh.clone().unwrap().borrow().name);
 
         let mut player_camera = Camera::new_perspective_rotation(
@@ -695,6 +697,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                         },
                     ];
                     player_camera.update_matrices(&base);
+                    player_camera.view_matrix.mul_mat4(&Matrix::new_translation_3f(0.0,1.0,0.0));
                     let ubo = UniformData {
                         view: player_camera.view_matrix.data,
                         projection: player_camera.projection_matrix.data,
@@ -702,6 +705,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                     copy_data_to_memory(uniform_buffers_mapped[current_frame], &[ubo]);
 
                     copy_data_to_memory(instance_ptrs[current_frame], &instance_data);
+                    //model_test.update_instances(base, current_frame);
 
                     let render_pass_begin_info = vk::RenderPassBeginInfo::default()
                         .render_pass(renderpass)
@@ -741,14 +745,26 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                                 &[descriptor_sets[current_frame]],
                                 &[],
                             );
-                            device.cmd_bind_vertex_buffers(
+                            base.device.cmd_bind_vertex_buffers(
                                 draw_command_buffer,
                                 1,
-                                &[instance_buffers[current_frame]],
+                                &[model_test.instance_buffers[current_frame].0],
                                 &[0],
                             );
+                            base.device.cmd_bind_vertex_buffers(
+                                draw_command_buffer,
+                                0,
+                                &[model_test.vertex_buffer.0],
+                                &[0],
+                            );
+                            base.device.cmd_bind_index_buffer(
+                                draw_command_buffer,
+                                model_test.index_buffer.0,
+                                0,
+                                vk::IndexType::UINT32,
+                            );
                             for node in model_test.scene.nodes.iter() {
-                                node.borrow().draw(base, &draw_command_buffer, &Matrix::new())
+                                node.borrow().draw(base, &draw_command_buffer)
                             }
 
                             device.cmd_end_render_pass(draw_command_buffer);

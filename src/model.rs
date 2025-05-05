@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::ffi::c_void;
 use std::fs;
 use std::rc::Rc;
 use std::io::Read;
@@ -24,6 +25,15 @@ pub struct Gltf {
     pub accessors: Vec<Rc<Accessor>>,
     pub buffer_views: Vec<Rc<BufferView>>,
     pub buffers: Vec<Rc<Buffer>>,
+
+    pub index_buffer: (vk::Buffer, DeviceMemory),
+    pub vertex_buffer: (vk::Buffer, DeviceMemory),
+
+    pub instance_staging_buffer: (vk::Buffer, DeviceMemory),
+    pub instance_buffers: Vec<(vk::Buffer, DeviceMemory)>,
+    pub instance_buffer_size: u64,
+    pub instance_data: Vec<Instance>,
+    pub primitive_count: usize,
 }
 impl Gltf {
     pub fn new(path: &str) -> Self {
@@ -211,6 +221,7 @@ impl Gltf {
                 }))
         }
 
+        let mut primitive_count = 0usize;
         let mut meshes = Vec::new();
         for mesh in json["meshes"].members() {
             let name_maybe: Option<&str> = mesh["name"].as_str();
@@ -232,22 +243,26 @@ impl Gltf {
 
                     let mut indices = accessors[primitive_json["indices"].as_usize().unwrap()].clone();
 
-                    let mut material_index = 0;
-                    if let JsonValue::Object(ref material_json) = primitive_json["material"] {
-                        material_index = material_json["material"].as_usize().unwrap()
+                    let material_index_maybe: Option<u32> = primitive_json["material"].as_u32();
+                    let mut material_index = 0u32;
+                    match material_index_maybe {
+                        Some(material_index_value) => material_index = material_index_value,
+                        None => (),
                     }
-                    let material = Some(materials[material_index].clone());
-
                     primitives.push(Primitive {
                         attributes,
+                        indices_count: indices.count,
                         indices,
-                        material,
-                        index_buffer: vk::Buffer::null(),
-                        index_buffer_memory: DeviceMemory::null(),
-                        vertex_buffer: vk::Buffer::null(),
-                        vertex_buffer_memory: DeviceMemory::null(),
+                        index_buffer_offset: 0,
+                        vertex_buffer_offset: 0,
+                        index_data_u8: Vec::new(),
+                        index_data_u16: Vec::new(),
+                        index_data_u32: Vec::new(),
+                        vertex_data: Vec::new(),
                         material_index,
-                    })
+                        id: primitive_count,
+                    });
+                    primitive_count += 1;
                 }
             }
 
@@ -284,11 +299,11 @@ impl Gltf {
                         rotation_json[2].as_f32().unwrap(),
                         rotation_json[3].as_f32().unwrap()
                     );
-                }
+                };
             }
 
             let mut scale = Vector::new_vec(1.0);
-            if let JsonValue::Array(ref scale_json) = node["rotation"] {
+            if let JsonValue::Array(ref scale_json) = node["scale"] {
                 if scale_json.len() >= 3 {
                     scale = Vector::new_vec3(
                         scale_json[0].as_f32().unwrap(),
@@ -299,7 +314,7 @@ impl Gltf {
             }
 
             let mut translation = Vector::new_empty();
-            if let JsonValue::Array(ref translation_json) = node["rotation"] {
+            if let JsonValue::Array(ref translation_json) = node["translation"] {
                 if translation_json.len() >= 3 {
                     translation = Vector::new_vec3(
                         translation_json[0].as_f32().unwrap(),
@@ -365,6 +380,8 @@ impl Gltf {
 
         let scene = scenes[json["scene"].as_usize().unwrap()].clone();
 
+
+
         Gltf {
             json,
             extensions_used,
@@ -378,26 +395,103 @@ impl Gltf {
             accessors,
             buffer_views,
             buffers,
+            index_buffer: (vk::Buffer::null(), DeviceMemory::null()),
+            vertex_buffer: (vk::Buffer::null(), DeviceMemory::null()),
+            instance_staging_buffer: (vk::Buffer::null(), DeviceMemory::null()),
+            instance_buffers: Vec::new(),
+            instance_buffer_size: 0,
+            instance_data: Vec::new(),
+            primitive_count,
         }
     }
 
-    pub unsafe fn construct_buffers(&self, base: &VkBase) { unsafe {
+    pub unsafe fn construct_buffers(&mut self, base: &VkBase, frames_in_flight: usize) { unsafe {
+        let mut all_vertices: Vec<Vertex> = vec![];
+        let mut all_indices: Vec<u32> = vec![];
         for mesh in &self.meshes {
             for primitive in &mut mesh.borrow_mut().primitives {
-                primitive.construct_buffers(&base)
+                primitive.construct_data();
+                primitive.vertex_buffer_offset = all_vertices.len();
+                primitive.index_buffer_offset = all_indices.len();
+                all_vertices.extend_from_slice(&primitive.vertex_data);
+                if !primitive.index_data_u8.is_empty() {
+                    all_indices.extend(
+                        primitive.index_data_u8.iter().map(|&i| i as u32 + primitive.vertex_buffer_offset as u32)
+                    );
+                } else if !primitive.index_data_u16.is_empty() {
+                    all_indices.extend(
+                        primitive.index_data_u16.iter().map(|&i| i as u32 + primitive.vertex_buffer_offset as u32)
+                    );
+                } else if !primitive.index_data_u32.is_empty() {
+                    all_indices.extend(
+                        primitive.index_data_u32.iter().map(|&i| i + primitive.vertex_buffer_offset as u32)
+                    );
+                }
+                self.instance_data.push(Instance::new(Matrix::new(), primitive.material_index));
             }
+        }
+        self.instance_buffer_size = self.primitive_count as u64 * size_of::<Instance>() as u64;
+        self.vertex_buffer = base.create_device_and_staging_buffer(0, &*all_vertices, true, true).0;
+        self.index_buffer = base.create_device_and_staging_buffer(0, &*all_indices, true, true).0;
+        for i in 0..frames_in_flight {
+            self.instance_buffers.push((vk::Buffer::null(), DeviceMemory::null()));
+            if i == 0 {
+                (self.instance_buffers[i], self.instance_staging_buffer) =
+                    base.create_device_and_staging_buffer(self.instance_buffer_size, &[0], false, false);
+            } else {
+                self.instance_buffers[i] = base.create_device_and_staging_buffer(self.instance_buffer_size, &[0], true, false).0;
+            }
+            self.update_instances(base, i);
+        }
+    } }
+
+    pub unsafe fn update_instances(&mut self, base: &VkBase, frame: usize) { unsafe {
+        for node in &self.scene.nodes.clone() {
+            self.update_node(base, node, &mut Matrix::new());
+        }
+        let ptr = base
+            .device
+            .map_memory(
+                self.instance_staging_buffer.1,
+                0,
+                self.instance_buffer_size,
+                vk::MemoryMapFlags::empty(),
+            )
+            .expect("Failed to map index buffer memory");
+        copy_data_to_memory(ptr, &self.instance_data);
+        base.device.unmap_memory(self.instance_staging_buffer.1);
+        base.copy_buffer(&self.instance_staging_buffer.0, &self.instance_buffers[frame].0, &self.instance_buffer_size);
+    } }
+    pub unsafe fn update_node(&mut self, base: &VkBase, node: &Rc<RefCell<Node>>, parent_transform: &mut Matrix) { unsafe {
+        let node = node.borrow();
+        let rotate = &Matrix::new_rotate_quaternion_vec4(&node.rotation);
+        let scale = &Matrix::new_scale_vec3(&node.scale);
+        let translate = &Matrix::new_translation_vec3(&node.translation);
+        parent_transform.set_and_mul_mat4(&scale);
+        parent_transform.set_and_mul_mat4(&rotate);
+        parent_transform.set_and_mul_mat4(&translate);
+        if node.mesh.is_some() {
+            for primitive in node.mesh.as_ref().unwrap().borrow().primitives.iter() {
+                self.instance_data[primitive.id].matrix = parent_transform.data
+            }
+        }
+        for child in node.children.iter() {
+            self.update_node(base, child, parent_transform);
         }
     } }
 
     pub unsafe fn cleanup(&self, base: &VkBase) { unsafe {
-        for mesh in &self.meshes {
-            for primitive in &mut mesh.borrow_mut().primitives {
-                base.device.free_memory(primitive.vertex_buffer_memory, None);
-                base.device.destroy_buffer(primitive.vertex_buffer, None);
-                base.device.free_memory(primitive.index_buffer_memory, None);
-                base.device.destroy_buffer(primitive.index_buffer, None);
-            }
+        for instance_buffer in &self.instance_buffers {
+            base.device.destroy_buffer(instance_buffer.0, None);
+            base.device.unmap_memory(instance_buffer.1);
+            base.device.free_memory(instance_buffer.1, None);
         }
+        base.device.destroy_buffer(self.instance_staging_buffer.0, None);
+        base.device.free_memory(self.instance_staging_buffer.1, None);
+        base.device.destroy_buffer(self.index_buffer.0, None);
+        base.device.free_memory(self.index_buffer.1, None);
+        base.device.destroy_buffer(self.vertex_buffer.0, None);
+        base.device.free_memory(self.vertex_buffer.1, None);
     } }
 }
 
@@ -501,16 +595,21 @@ impl ComponentType {
 pub struct Primitive {
     pub attributes: Vec<(String, Rc<Accessor>)>,
     pub indices: Rc<Accessor>,
-    pub material: Option<Rc<Material>>,
 
-    pub index_buffer: vk::Buffer,
-    pub index_buffer_memory: DeviceMemory,
-    pub vertex_buffer: vk::Buffer,
-    pub vertex_buffer_memory: DeviceMemory,
-    pub material_index: usize,
+    pub material_index: u32,
+    pub id: usize,
+
+    pub indices_count: usize,
+    pub index_buffer_offset: usize,
+    pub vertex_buffer_offset: usize,
+
+    pub index_data_u8: Vec<u8>,
+    pub index_data_u16: Vec<u16>,
+    pub index_data_u32: Vec<u32>,
+    pub vertex_data: Vec<Vertex>,
 }
 impl Primitive {
-    unsafe fn construct_buffers(&mut self, base: &VkBase) { unsafe {
+    unsafe fn construct_data(&mut self) { unsafe {
         let mut position_accessor: Option<&Rc<Accessor>> = None;
         let mut normal_accessor: Option<&Rc<Accessor>> = None;
         let mut texcoord_accessor: Option<&Rc<Accessor>> = None;
@@ -534,15 +633,15 @@ impl Primitive {
             match component_type {
                 ComponentType::U8 => {
                     let indices: &[u8] = bytemuck::cast_slice(bytes);
-                    (self.index_buffer, self.index_buffer_memory) = base.create_device_buffer(indices);
+                    self.index_data_u8 = indices.to_vec();
                 },
                 ComponentType::U16 => {
                     let indices: &[u16] = bytemuck::cast_slice(bytes);
-                    (self.index_buffer, self.index_buffer_memory) = base.create_device_buffer(indices);
+                    self.index_data_u16 = indices.to_vec();
                 },
                 ComponentType::U32 => {
                     let indices: &[u32] = bytemuck::cast_slice(bytes);
-                    (self.index_buffer, self.index_buffer_memory) = base.create_device_buffer(indices);
+                    self.index_data_u32 = indices.to_vec();
                 },
                 _ => panic!("Unsupported index type"),
             }
@@ -576,7 +675,7 @@ impl Primitive {
                     uv: *tex_coords.get(i).unwrap_or(&[0.0, 0.0]),
                 });
             }
-            (self.vertex_buffer, self.vertex_buffer_memory) = base.create_device_buffer(&vertices);
+            self.vertex_data = vertices;
         }
     } }
 }
@@ -594,6 +693,15 @@ pub struct Instance {
     pub material: u32,
     pub _pad: [u32; 3],
 }
+impl Instance {
+    pub fn new(matrix: Matrix, material: u32) -> Self {
+        Self {
+            matrix: matrix.data,
+            material,
+            _pad: [0; 3],
+        }
+    }
+}
 
 pub struct Mesh {
     pub name: String,
@@ -610,35 +718,21 @@ pub struct Node {
     pub children_indices: Vec<usize>,
 }
 impl Node {
-    pub unsafe fn draw(&self, base: &VkBase, draw_command_buffer: &CommandBuffer, transform: &Matrix) { unsafe {
+    pub unsafe fn draw(&self, base: &VkBase, draw_command_buffer: &CommandBuffer) { unsafe {
         if self.mesh.is_some() {
             for primitive in self.mesh.as_ref().unwrap().borrow().primitives.iter() {
-                //println!("{:?}",primitive.material_index);
-
-                base.device.cmd_bind_vertex_buffers(
-                    *draw_command_buffer,
-                    0,
-                    &[primitive.vertex_buffer],
-                    &[0],
-                );
-                base.device.cmd_bind_index_buffer(
-                    *draw_command_buffer,
-                    primitive.index_buffer,
-                    0,
-                    primitive.indices.component_type.index_type(),
-                );
                 base.device.cmd_draw_indexed(
                     *draw_command_buffer,
                     primitive.indices.count as u32,
                     1,
-                    0,
-                    0,
-                    0,
+                    primitive.index_buffer_offset as u32,
+                    0, 
+                    primitive.id as u32,
                 );
             }
         }
         for child in self.children.iter() {
-            child.borrow().draw(base, draw_command_buffer, transform);
+            child.borrow().draw(base, draw_command_buffer);
         }
     } }
 }
