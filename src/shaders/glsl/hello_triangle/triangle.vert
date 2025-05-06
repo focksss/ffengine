@@ -18,6 +18,7 @@ layout(binding = 0) uniform UniformBuffer {
     mat4 view;
     mat4 projection;
 } ubo;
+
 void main() {
     fragPos = pos;
     o_color = color;

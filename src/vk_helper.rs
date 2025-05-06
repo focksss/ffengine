@@ -305,6 +305,8 @@ impl VkBase {
             let features = vk::PhysicalDeviceFeatures {
                 shader_clip_distance: 1,
                 sampler_anisotropy: vk::TRUE,
+                shader_sampled_image_array_dynamic_indexing: vk::TRUE,
+                shader_storage_image_array_dynamic_indexing: vk::TRUE,
                 ..Default::default()
             };
             let priorities = [1.0];

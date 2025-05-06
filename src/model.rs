@@ -5,7 +5,8 @@ use std::rc::Rc;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use ash::vk;
-use ash::vk::{CommandBuffer, DeviceMemory};
+use ash::vk::{CommandBuffer, DeviceMemory, Extent3D, ImageView, Sampler};
+use image::DynamicImage;
 use json::JsonValue;
 use winit::dpi::Position;
 use crate::matrix::Matrix;
@@ -19,9 +20,9 @@ pub struct Gltf {
     pub scenes: Vec<Rc<Scene>>,
     pub nodes: Vec<Rc<RefCell<Node>>>,
     pub meshes: Vec<Rc<RefCell<Mesh>>>,
-    pub materials: Vec<Rc<Material>>,
-    pub textures: Vec<Rc<Texture>>,
-    pub images: Vec<Rc<Image>>,
+    pub materials: Vec<Material>,
+    pub textures: Vec<Rc<RefCell<Texture>>>,
+    pub images: Vec<Rc<RefCell<Image>>>,
     pub accessors: Vec<Rc<Accessor>>,
     pub buffer_views: Vec<Rc<BufferView>>,
     pub buffers: Vec<Rc<Buffer>>,
@@ -32,6 +33,11 @@ pub struct Gltf {
     pub instance_staging_buffer: (vk::Buffer, DeviceMemory),
     pub instance_buffers: Vec<(vk::Buffer, DeviceMemory)>,
     pub instance_buffer_size: u64,
+
+    pub material_staging_buffer: (vk::Buffer, DeviceMemory),
+    pub material_buffers: Vec<(vk::Buffer, DeviceMemory)>,
+    pub material_buffer_size: u64,
+
     pub instance_data: Vec<Instance>,
     pub primitive_count: usize,
 }
@@ -99,19 +105,20 @@ impl Gltf {
         let mut images = Vec::new();
         for image in json["images"].members() {
             images.push(
-                Rc::new(Image {
-                    mime_type: image["mimeType"].as_str().unwrap().to_string(),
-                    name: image["name"].as_str().unwrap().to_string(),
-                    uri: resolve_gltf_uri(path, image["uri"].as_str().unwrap())
-                }))
+                Rc::new(RefCell::new(Image::new(
+                    image["mimeType"].as_str().unwrap().to_string(),
+                    image["name"].as_str().unwrap().to_string(),
+                    resolve_gltf_uri(path, image["uri"].as_str().unwrap())
+                ))))
         }
 
         let mut textures = Vec::new();
         for texture in json["textures"].members() {
             textures.push(
-                Rc::new(Texture {
-                   source: images[texture["source"].as_usize().unwrap()].clone(),
-                }))
+                Rc::new(RefCell::new(Texture {
+                    source: images[texture["source"].as_usize().unwrap()].clone(),
+                    sampler: Sampler::null()
+                })))
         }
 
         let mut materials = Vec::new();
@@ -135,10 +142,10 @@ impl Gltf {
 
             let mut normal_texture = None;
             if let JsonValue::Object(ref normal_texture_json) = material["normalTexture"] {
-                normal_texture = Some(textures[normal_texture_json["index"].as_usize().expect("")].clone());
+                normal_texture = Some(normal_texture_json["index"].as_u32().expect(""));
             }
 
-            let mut base_color_factor = Vector::new_vec4(0.5, 0.5, 0.5, 1.0);
+            let mut base_color_factor = [0.5, 0.5, 0.5, 1.0];
             let mut base_color_texture = None;
             let mut metallic_factor = 0.1;
             let mut roughness_factor = 0.5;
@@ -147,16 +154,16 @@ impl Gltf {
             if let JsonValue::Object(ref pbr_metallic_roughness) = material["pbrMetallicRoughness"] {
                 if let JsonValue::Array(ref json_value) = pbr_metallic_roughness["baseColorFactor"] {
                     if json_value.len() >= 4 {
-                        base_color_factor = Vector::new_vec4(
+                        base_color_factor = [
                             json_value[0].as_f32().unwrap(),
                             json_value[1].as_f32().unwrap(),
                             json_value[2].as_f32().unwrap(),
                             json_value[3].as_f32().unwrap(),
-                        );
+                        ];
                     }
                 }
                 if let JsonValue::Object(ref json_value) = pbr_metallic_roughness["baseColorTexture"] {
-                    base_color_texture = Some(textures[json_value["index"].as_usize().expect("FAULTY GLTF: \n    Missing index for baseColorTexture at pbrMetallicRoughness")].clone());
+                    base_color_texture = Some(json_value["index"].as_u32().expect("FAULTY GLTF: \n    Missing index for baseColorTexture at pbrMetallicRoughness"));
                 }
 
                 if let JsonValue::Number(ref json_value) = pbr_metallic_roughness["metallicFactor"] {
@@ -165,7 +172,7 @@ impl Gltf {
                     }
                 }
                 if let JsonValue::Object(ref json_value) = pbr_metallic_roughness["metallicTexture"] {
-                    metallic_texture = Some(textures[json_value["index"].as_usize().expect("FAULTY GLTF: \n    Missing index for metallicTexture at pbrMetallicRoughness")].clone());
+                    metallic_texture = Some(json_value["index"].as_u32().expect("FAULTY GLTF: \n    Missing index for metallicTexture at pbrMetallicRoughness"));
                 }
 
                 if let JsonValue::Number(ref json_value) = pbr_metallic_roughness["roughnessFactor"] {
@@ -174,25 +181,25 @@ impl Gltf {
                     }
                 }
                 if let JsonValue::Object(ref json_value) = pbr_metallic_roughness["roughnessTexture"] {
-                    roughness_texture = Some(textures[json_value["index"].as_usize().expect("FAULTY GLTF: \n    Missing index for roughnessTexture at pbrMetallicRoughness")].clone());
+                    roughness_texture = Some(json_value["index"].as_u32().expect("FAULTY GLTF: \n    Missing index for roughnessTexture at pbrMetallicRoughness"));
                 }
             }
 
-            let mut specular_color_factor = Vector::new_vec(1.0);
+            let mut specular_color_factor = [0.0; 3];
             if let JsonValue::Object(ref khr_materials_specular) = material["KHR_materials_specular"] {
                 if let JsonValue::Array(ref json_val) = khr_materials_specular["baseColorFactor"] {
                     if json_val.len() >= 3 {
-                        specular_color_factor = Vector::new_vec3(
+                        specular_color_factor = [
                             json_val[0].as_f32().unwrap(),
                             json_val[1].as_f32().unwrap(),
                             json_val[2].as_f32().unwrap(),
-                        );
+                        ];
                     }
                 }
             }
 
             let mut ior = 1.0;
-            let mut specular_color_factor = Vector::new_vec(1.0);
+            let mut specular_color_factor = [0.0; 4];
             if let JsonValue::Object(ref khr_materials_ior) = material["KHR_materials_ior"] {
                 if let JsonValue::Number(ref json_value) = khr_materials_ior["ior"] {
                     if let Ok(f) = json_value.to_string().parse::<f32>() {
@@ -202,7 +209,7 @@ impl Gltf {
             }
 
             materials.push(
-                Rc::new(Material {
+                Material {
                     name,
                     alpha_mode,
                     double_sided,
@@ -218,7 +225,7 @@ impl Gltf {
                         metallic_texture,
                         roughness_factor,
                         roughness_texture,
-                }))
+                })
         }
 
         let mut primitive_count = 0usize;
@@ -400,6 +407,9 @@ impl Gltf {
             instance_staging_buffer: (vk::Buffer::null(), DeviceMemory::null()),
             instance_buffers: Vec::new(),
             instance_buffer_size: 0,
+            material_staging_buffer: (vk::Buffer::null(), DeviceMemory::null()),
+            material_buffers: Vec::new(),
+            material_buffer_size: 0,
             instance_data: Vec::new(),
             primitive_count,
         }
@@ -438,19 +448,37 @@ impl Gltf {
             }
         }
         self.instance_buffer_size = self.primitive_count as u64 * size_of::<Instance>() as u64;
+        self.material_buffer_size = self.materials.len() as u64 * size_of::<MaterialSendable>() as u64;
         self.vertex_buffer = base.create_device_and_staging_buffer(0, &*all_vertices, true, true).0;
         self.index_buffer = base.create_device_and_staging_buffer(0, &*all_indices, true, true).0;
+        let mut materials_send = Vec::new();
+        for material in &self.materials {
+            materials_send.push(material.to_sendable());
+        }
         for i in 0..frames_in_flight {
             self.instance_buffers.push((vk::Buffer::null(), DeviceMemory::null()));
+            self.material_buffers.push((vk::Buffer::null(), DeviceMemory::null()));
             if i == 0 {
                 (self.instance_buffers[i], self.instance_staging_buffer) =
                     base.create_device_and_staging_buffer(self.instance_buffer_size, &[0], false, false);
+                (self.material_buffers[i], self.material_staging_buffer) =
+                    base.create_device_and_staging_buffer(0, &materials_send, false, true);
             } else {
                 self.instance_buffers[i] = base.create_device_and_staging_buffer(self.instance_buffer_size, &[0], true, false).0;
+                self.material_buffers[i] = base.create_device_and_staging_buffer(0, &materials_send, true, true).0;
             }
             self.update_instances(base, i);
         }
     } }
+
+    pub unsafe fn construct_textures(&mut self, base: &VkBase) { unsafe {
+        for image in &mut self.images {
+            image.borrow_mut().construct_image_view(base);
+        }
+        for texture in &mut self.textures {
+            texture.borrow_mut().construct_sampler(base);
+        }
+    }}
 
     pub unsafe fn update_instances(&mut self, base: &VkBase, frame: usize) { unsafe {
         for node in &self.scene.nodes.clone() {
@@ -547,10 +575,25 @@ impl Gltf {
         }
         base.device.destroy_buffer(self.instance_staging_buffer.0, None);
         base.device.free_memory(self.instance_staging_buffer.1, None);
+        for material_buffer in &self.material_buffers {
+            base.device.destroy_buffer(material_buffer.0, None);
+            base.device.unmap_memory(material_buffer.1);
+            base.device.free_memory(material_buffer.1, None);
+        }
+        base.device.destroy_buffer(self.material_staging_buffer.0, None);
+        base.device.free_memory(self.material_staging_buffer.1, None);
         base.device.destroy_buffer(self.index_buffer.0, None);
         base.device.free_memory(self.index_buffer.1, None);
         base.device.destroy_buffer(self.vertex_buffer.0, None);
         base.device.free_memory(self.vertex_buffer.1, None);
+        for texture in &self.textures {
+            let texture = texture.borrow();
+            base.device.destroy_sampler(texture.sampler, None);
+        }
+        for image in &self.images {
+            let image = image.borrow();
+            base.device.destroy_image_view(image.image_view, None);
+        }
     } }
 }
 
@@ -590,28 +633,156 @@ pub struct Image {
     pub mime_type: String,
     pub name: String,
     pub uri: PathBuf,
+
+    pub image_view: ImageView,
+}
+impl Image {
+    fn new(mime_type: String, name: String, uri: PathBuf) -> Self {
+        Self {
+            mime_type,
+            name,
+            uri,
+            image_view: ImageView::null()
+        }
+    }
+
+    unsafe fn construct_image_view(&mut self, base: &VkBase) { unsafe {
+        let bytes = fs::read(&self.uri).expect("Failed to read image file");
+        let image = image::load_from_memory(&bytes).expect("Failed to load image").to_rgba8();
+        let (img_width, img_height) = image.dimensions();
+        let image_extent = vk::Extent2D { width: img_width, height: img_height };
+        let image_data = image.into_raw();
+        let image_size = (img_width * img_height * 4) as u64;
+
+        let mut image_staging_buffer = vk::Buffer::null();
+        let mut image_staging_buffer_memory = DeviceMemory::null();
+        VkBase::create_buffer(
+            base,
+            image_size,
+            vk::BufferUsageFlags::TRANSFER_SRC,
+            vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
+            &mut image_staging_buffer,
+            &mut image_staging_buffer_memory,
+        );
+        let image_ptr = base
+            .device
+            .map_memory(
+                image_staging_buffer_memory,
+                0,
+                image_size,
+                vk::MemoryMapFlags::empty(),
+            )
+            .expect("Failed to map image buffer memory");
+        copy_data_to_memory(image_ptr, &image_data);
+        base.device.unmap_memory(image_staging_buffer_memory);
+
+        let texture_image_create_info = vk::ImageCreateInfo {
+            s_type: vk::StructureType::IMAGE_CREATE_INFO,
+            image_type: vk::ImageType::TYPE_2D,
+            extent: Extent3D { width: image_extent.width, height: image_extent.height, depth: 1 },
+            mip_levels: 1,
+            array_layers: 1,
+            format: vk::Format::R8G8B8A8_SRGB,
+            tiling: vk::ImageTiling::OPTIMAL,
+            initial_layout: vk::ImageLayout::UNDEFINED,
+            usage: vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED,
+            sharing_mode: vk::SharingMode::EXCLUSIVE,
+            samples: vk::SampleCountFlags::TYPE_1,
+            ..Default::default()
+        };
+        let mut texture_image = vk::Image::null();
+        let mut texture_image_memory = DeviceMemory::null();
+        base.create_image(
+            &texture_image_create_info,
+            vk::MemoryPropertyFlags::DEVICE_LOCAL,
+            &mut texture_image,
+            &mut texture_image_memory,
+        );
+        base.transition_image_layout(texture_image, vk::Format::R8G8B8A8_SRGB, vk::ImageLayout::UNDEFINED, vk::ImageLayout::TRANSFER_DST_OPTIMAL);
+        base.copy_buffer_to_image(image_staging_buffer, texture_image, image_extent.into());
+        base.transition_image_layout(texture_image, vk::Format::R8G8B8A8_SRGB, vk::ImageLayout::TRANSFER_DST_OPTIMAL, vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+
+        base.device.destroy_buffer(image_staging_buffer, None);
+        base.device.free_memory(image_staging_buffer_memory, None);
+
+        self.image_view = base.create_2_d_image_view(texture_image, vk::Format::R8G8B8A8_SRGB);
+    } }
 }
 
 pub struct Texture {
-    pub source: Rc<Image>,
-}
+    pub source: Rc<RefCell<Image>>,
 
+    pub sampler: Sampler,
+}
+impl Texture {
+    pub unsafe fn construct_sampler(&mut self, base: &VkBase) { unsafe {
+        let sampler_info = vk::SamplerCreateInfo {
+            s_type: vk::StructureType::SAMPLER_CREATE_INFO,
+            mag_filter: vk::Filter::LINEAR,
+            min_filter: vk::Filter::LINEAR,
+            address_mode_u: vk::SamplerAddressMode::REPEAT,
+            address_mode_v: vk::SamplerAddressMode::REPEAT,
+            address_mode_w: vk::SamplerAddressMode::REPEAT,
+            anisotropy_enable: vk::TRUE,
+            max_anisotropy: base.pdevice_properties.limits.max_sampler_anisotropy,
+            border_color: vk::BorderColor::INT_OPAQUE_BLACK,
+            unnormalized_coordinates: vk::FALSE,
+            mipmap_mode: vk::SamplerMipmapMode::LINEAR,
+            mip_lod_bias: 0.0,
+            min_lod: 0.0,
+            max_lod: 0.0,
+            ..Default::default()
+        };
+        self.sampler = base.device.create_sampler(&sampler_info, None).expect("failed to create sampler");
+    } }
+}
 pub struct Material {
     pub alpha_mode: String,
     pub double_sided: bool,
-    pub normal_texture: Option<Rc<Texture>>,
+    pub normal_texture: Option<u32>,
     // KHR_materials_specular
-        pub specular_color_factor: Vector,
+        pub specular_color_factor: [f32; 4],
     // KHR_materials_ior
         pub ior: f32,
     pub name: String,
     // pbrMetallicRoughness
-        pub base_color_factor: Vector,
-        pub base_color_texture: Option<Rc<Texture>>,
+        pub base_color_factor: [f32; 4],
+        pub base_color_texture: Option<u32>,
         pub metallic_factor: f32,
-        pub metallic_texture: Option<Rc<Texture>>,
+        pub metallic_texture: Option<u32>,
         pub roughness_factor: f32,
-        pub roughness_texture: Option<Rc<Texture>>,
+        pub roughness_texture: Option<u32>,
+}
+impl Material {
+    fn to_sendable(&self) -> MaterialSendable {
+        MaterialSendable {
+            normal_texture: self.normal_texture,
+            specular_color_factor: self.specular_color_factor,
+            ior: self.ior,
+            base_color_factor: self.base_color_factor,
+            base_color_texture: self.base_color_texture,
+            roughness_factor: self.roughness_factor,
+            roughness_texture: self.roughness_texture,
+            metallic_factor: self.metallic_factor,
+            metallic_texture: self.metallic_texture,
+        }
+    }
+}
+#[derive(Clone, Debug, Copy)]
+#[repr(C)]
+pub struct MaterialSendable {
+    pub normal_texture: Option<u32>,
+    // KHR_materials_specular
+        pub specular_color_factor: [f32; 4],
+    // KHR_materials_ior
+        pub ior: f32,
+    // pbrMetallicRoughness
+        pub base_color_factor: [f32; 4],
+        pub base_color_texture: Option<u32>,
+        pub metallic_factor: f32,
+        pub metallic_texture: Option<u32>,
+        pub roughness_factor: f32,
+        pub roughness_texture: Option<u32>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -735,14 +906,14 @@ pub struct Vertex {
 pub struct Instance {
     pub matrix: [f32; 16],
     pub material: u32,
-    pub _pad: [u32; 3],
+    //pub _pad: [u32; 3],
 }
 impl Instance {
     pub fn new(matrix: Matrix, material: u32) -> Self {
         Self {
             matrix: matrix.data,
             material,
-            _pad: [0; 3],
+            //_pad: [0; 3],
         }
     }
 }

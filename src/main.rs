@@ -55,6 +55,15 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
     unsafe {
+        //let mut model_test = Gltf::new("C:\\Graphics\\assets\\bistro2\\untitled.gltf");
+        //1235
+        //println!("{}",model_test.meshes.len());
+        let mut model_test = Gltf::new("C:\\Graphics\\assets\\grassblockGLTF3\\untitled.gltf");
+        //let mut model_test = Gltf::new("C:\\Graphics\\assets\\luna\\MRLunaSnow.gltf");
+        model_test.construct_buffers(base, MAX_FRAMES_IN_FLIGHT);
+        model_test.construct_textures(base);
+        //model_test.transform_node(1235, &Vector::new_empty(), &Vector::new_vec4(1.0,0.0,0.0,0.0), &Vector::new_vec(1.0));
+        model_test.update_instances_all_frames(base);
         //<editor-fold desc = "renderpass init">
         let renderpass_attachments = [
             vk::AttachmentDescription {
@@ -125,91 +134,8 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             })
             .collect();
         //</editor-fold>
-        //<editor-fold desc = "image staging buffer">
-        let image = image::load_from_memory(include_bytes!("C:\\Graphics\\assets\\luna\\textures\\T_1031001_Head_01_D.png"))
-            .unwrap()
-            .to_rgba8();
-        let (img_width, img_height) = image.dimensions();
-        let image_extent = vk::Extent2D { width: img_width, height: img_height };
-        let image_data = image.into_raw();
-        let image_size = (img_width * img_height * 4) as u64;
-
-        let mut image_staging_buffer = Buffer::null();
-        let mut image_staging_buffer_memory = DeviceMemory::null();
-        VkBase::create_buffer(
-          base,
-          image_size,
-          vk::BufferUsageFlags::TRANSFER_SRC,
-          vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
-          &mut image_staging_buffer,
-          &mut image_staging_buffer_memory,
-        );
-        let image_ptr = base
-            .device
-            .map_memory(
-                image_staging_buffer_memory,
-                0,
-                image_size,
-                vk::MemoryMapFlags::empty(),
-            )
-            .expect("Failed to map image buffer memory");
-        copy_data_to_memory(image_ptr, &image_data);
-        base.device.unmap_memory(image_staging_buffer_memory);
-        //</editor-fold>
-        //<editor-fold desc = "texture image">
-        let texture_image_create_info = vk::ImageCreateInfo {
-            s_type: vk::StructureType::IMAGE_CREATE_INFO,
-            image_type: vk::ImageType::TYPE_2D,
-            extent: Extent3D { width: image_extent.width, height: image_extent.height, depth: 1 },
-            mip_levels: 1,
-            array_layers: 1,
-            format: vk::Format::R8G8B8A8_SRGB,
-            tiling: vk::ImageTiling::OPTIMAL,
-            initial_layout: vk::ImageLayout::UNDEFINED,
-            usage: vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED,
-            sharing_mode: vk::SharingMode::EXCLUSIVE,
-            samples: vk::SampleCountFlags::TYPE_1,
-            ..Default::default()
-        };
-        let mut texture_image = Image::null();
-        let mut texture_image_memory = DeviceMemory::null();
-        base.create_image(
-            &texture_image_create_info,
-            vk::MemoryPropertyFlags::DEVICE_LOCAL,
-            &mut texture_image,
-            &mut texture_image_memory,
-        );
-        base.transition_image_layout(texture_image, vk::Format::R8G8B8A8_SRGB, vk::ImageLayout::UNDEFINED, vk::ImageLayout::TRANSFER_DST_OPTIMAL);
-        base.copy_buffer_to_image(image_staging_buffer, texture_image, image_extent.into());
-        base.transition_image_layout(texture_image, vk::Format::R8G8B8A8_SRGB, vk::ImageLayout::TRANSFER_DST_OPTIMAL, vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-
-        base.device.destroy_buffer(image_staging_buffer, None);
-        base.device.free_memory(image_staging_buffer_memory, None);
-
-        let texture_image_view = base.create_2_d_image_view(texture_image, vk::Format::R8G8B8A8_SRGB);
-        //</editor-fold>
-        //<editor-fold desc = "texture sampler">
-        let sampler_info = vk::SamplerCreateInfo {
-            s_type: vk::StructureType::SAMPLER_CREATE_INFO,
-            mag_filter: vk::Filter::LINEAR,
-            min_filter: vk::Filter::LINEAR,
-            address_mode_u: vk::SamplerAddressMode::REPEAT,
-            address_mode_v: vk::SamplerAddressMode::REPEAT,
-            address_mode_w: vk::SamplerAddressMode::REPEAT,
-            anisotropy_enable: vk::TRUE,
-            max_anisotropy: base.pdevice_properties.limits.max_sampler_anisotropy,
-            border_color: vk::BorderColor::INT_OPAQUE_BLACK,
-            unnormalized_coordinates: vk::FALSE,
-            mipmap_mode: vk::SamplerMipmapMode::LINEAR,
-            mip_lod_bias: 0.0,
-            min_lod: 0.0,
-            max_lod: 0.0,
-            ..Default::default()
-        };
-        let texture_sampler = base.device.create_sampler(&sampler_info, None).expect("failed to create sampler");
-        //</editor-fold>
         //<editor-fold desc = "uniform buffers">
-        let ubo_layout_bindings = [
+        let layout_bindings = [
             vk::DescriptorSetLayoutBinding {
                 binding: 0,
                 descriptor_type: vk::DescriptorType::UNIFORM_BUFFER,
@@ -220,18 +146,42 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             vk::DescriptorSetLayoutBinding {
                 binding: 1,
                 descriptor_type: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+                descriptor_count: 1024u32,
+                stage_flags: vk::ShaderStageFlags::FRAGMENT,
+                ..Default::default()
+            },
+            vk::DescriptorSetLayoutBinding {
+                binding: 2,
+                descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
                 descriptor_count: 1,
                 stage_flags: vk::ShaderStageFlags::FRAGMENT,
                 ..Default::default()
             }
         ];
-        let ubo_layout_create_info = vk::DescriptorSetLayoutCreateInfo {
-            s_type: vk::StructureType::DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-            binding_count: ubo_layout_bindings.len() as u32,
-            p_bindings: ubo_layout_bindings.as_ptr(),
+        let binding_flags = [
+            vk::DescriptorBindingFlags::empty(),
+
+            vk::DescriptorBindingFlags::PARTIALLY_BOUND |
+            vk::DescriptorBindingFlags::VARIABLE_DESCRIPTOR_COUNT |
+            vk::DescriptorBindingFlags::UPDATE_AFTER_BIND,
+
+            vk::DescriptorBindingFlags::empty(),
+        ];
+        let binding_flags_info = vk::DescriptorSetLayoutBindingFlagsCreateInfo {
+            s_type: vk::StructureType::DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO,
+            binding_count: binding_flags.len() as u32,
+            p_binding_flags: binding_flags.as_ptr(),
             ..Default::default()
         };
-        let ubo_descriptor_set_layout = base.device.create_descriptor_set_layout(&ubo_layout_create_info, None)?;
+        let layout_info = vk::DescriptorSetLayoutCreateInfo {
+            s_type: vk::StructureType::DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+            p_next: &binding_flags_info as *const _ as *const c_void,
+            binding_count: layout_bindings.len() as u32,
+            p_bindings: layout_bindings.as_ptr(),
+            flags: vk::DescriptorSetLayoutCreateFlags::UPDATE_AFTER_BIND_POOL,
+            ..Default::default()
+        };
+        let ubo_descriptor_set_layout = base.device.create_descriptor_set_layout(&layout_info, None)?;
         
         let ubo_buffer_size = size_of::<UniformData>() as u64;
         let mut uniform_buffers = Vec::new();
@@ -261,27 +211,40 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                 ty: vk::DescriptorType::UNIFORM_BUFFER,
                 descriptor_count: MAX_FRAMES_IN_FLIGHT as u32,
                 ..Default::default()
-            },
+            }, // uniform buffer
             vk::DescriptorPoolSize {
                 ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+                descriptor_count: (MAX_FRAMES_IN_FLIGHT * 1024) as u32,
+                ..Default::default()
+            }, // array of textures
+            vk::DescriptorPoolSize {
+                ty: vk::DescriptorType::STORAGE_BUFFER,
                 descriptor_count: MAX_FRAMES_IN_FLIGHT as u32,
                 ..Default::default()
-            }
+            } // material SSBO
         ];
         let pool_create_info = vk::DescriptorPoolCreateInfo {
             s_type: vk::StructureType::DESCRIPTOR_POOL_CREATE_INFO,
             pool_size_count: pool_sizes.len() as u32,
             p_pool_sizes: pool_sizes.as_ptr(),
             max_sets: MAX_FRAMES_IN_FLIGHT as u32,
+            flags: vk::DescriptorPoolCreateFlags::UPDATE_AFTER_BIND,
             ..Default::default()
         };
         let descriptor_pool = base.device.create_descriptor_pool(&pool_create_info, None).expect("failed to create descriptor pool");
         //</editor-fold>
         //<editor-fold desc = "descriptor set">
         let layouts = vec![ubo_descriptor_set_layout; MAX_FRAMES_IN_FLIGHT];
-
+        let variable_counts = vec![1024u32; MAX_FRAMES_IN_FLIGHT];
+        let variable_count_info = vk::DescriptorSetVariableDescriptorCountAllocateInfo {
+            s_type: vk::StructureType::DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_ALLOCATE_INFO,
+            descriptor_set_count: MAX_FRAMES_IN_FLIGHT as u32,
+            p_descriptor_counts: variable_counts.as_ptr(),
+            ..Default::default()
+        };
         let alloc_info = vk::DescriptorSetAllocateInfo {
             s_type: vk::StructureType::DESCRIPTOR_SET_ALLOCATE_INFO,
+            p_next: &variable_count_info as *const _ as *const c_void,
             descriptor_pool,
             descriptor_set_count: MAX_FRAMES_IN_FLIGHT as u32,
             p_set_layouts: layouts.as_ptr(),
@@ -290,17 +253,25 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
         let descriptor_sets = base.device.allocate_descriptor_sets(&alloc_info)
             .expect("Failed to allocate descriptor sets");
 
+        let mut image_infos: Vec<vk::DescriptorImageInfo> = Vec::with_capacity(1024);
+        for texture in &model_test.textures {
+            image_infos.push(vk::DescriptorImageInfo {
+                image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                image_view: texture.borrow().source.borrow().image_view,
+                sampler: texture.borrow().sampler,
+                ..Default::default()
+            });
+        }
         for i in 0..MAX_FRAMES_IN_FLIGHT {
-            let buffer_info = vk::DescriptorBufferInfo {
+            let uniform_buffer_info = vk::DescriptorBufferInfo {
                 buffer: uniform_buffers[i],
                 offset: 0,
                 range: size_of::<UniformData>() as vk::DeviceSize,
             };
-            let image_info = vk::DescriptorImageInfo {
-                image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                image_view: texture_image_view,
-                sampler: texture_sampler,
-                ..Default::default()
+            let ssbo_info = vk::DescriptorBufferInfo {
+                buffer: model_test.material_buffers[i].0,
+                offset: 0,
+                range: vk::WHOLE_SIZE,
             };
             let descriptor_writes = [
                 vk::WriteDescriptorSet {
@@ -310,7 +281,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                     dst_array_element: 0,
                     descriptor_type: vk::DescriptorType::UNIFORM_BUFFER,
                     descriptor_count: 1,
-                    p_buffer_info: &buffer_info,
+                    p_buffer_info: &uniform_buffer_info,
                     ..Default::default()
                 },
                 vk::WriteDescriptorSet {
@@ -319,44 +290,23 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                     dst_binding: 1,
                     dst_array_element: 0,
                     descriptor_type: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+                    descriptor_count: 1024,
+                    p_image_info: image_infos.as_ptr(),
+                    ..Default::default()
+                },
+                vk::WriteDescriptorSet {
+                    s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
+                    dst_set: descriptor_sets[i],
+                    dst_binding: 2,
+                    dst_array_element: 0,
+                    descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
                     descriptor_count: 1,
-                    p_image_info: &image_info,
+                    p_buffer_info: &ssbo_info,
                     ..Default::default()
                 }
             ];
             base.device.update_descriptor_sets(&descriptor_writes, &[]);
         }
-        //</editor-fold>
-        //<editor-fold desc = "instance buffers">
-        let instance_buffer_size = 3 * size_of::<model::Instance>() as u64;
-        let mut instance_buffers = Vec::new();
-        let mut instance_buffers_memory = Vec::new();
-        let mut instance_ptrs = Vec::new();
-        for i in 0..MAX_FRAMES_IN_FLIGHT {
-            instance_buffers.push(Buffer::null());
-            instance_buffers_memory.push(DeviceMemory::null());
-            base.create_buffer(
-                instance_buffer_size,
-                vk::BufferUsageFlags::VERTEX_BUFFER | vk::BufferUsageFlags::TRANSFER_DST,
-                vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
-                &mut instance_buffers[i],
-                &mut instance_buffers_memory[i],
-            );
-            instance_ptrs.push(base
-                .device
-                .map_memory(
-                    instance_buffers_memory[i],
-                    0,
-                    instance_buffer_size,
-                    vk::MemoryMapFlags::empty(),
-                )
-                .expect("Failed to map instance buffer memory"));
-        }
-        let instance_data = [
-            model::Instance {matrix: Matrix::new_translation_vec3(&Vector::new_vec3(0.0, 0.0, 0.0)).data, material: 0, _pad: [0,0,0]},
-            model::Instance {matrix: Matrix::new_translation_vec3(&Vector::new_vec3(0.0, 0.0, 1.0)).data, material: 1, _pad: [0,0,0]},
-            model::Instance {matrix: Matrix::new_translation_vec3(&Vector::new_vec3(0.0, 0.0, -1.0)).data, material: 2, _pad: [0,0,0]},
-        ];
         //</editor-fold>
         //<editor-fold desc = "shaders">
         let mut vertex_spv_file = Cursor::new(load_file("hello_triangle\\Triangle.vert.spv")?);
@@ -417,7 +367,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             },
             vk::VertexInputBindingDescription {
                 binding: 1,
-                stride: size_of::<model::Instance>() as u32,
+                stride: size_of::<Instance>() as u32,
                 input_rate: vk::VertexInputRate::INSTANCE,
             }
         ];
@@ -559,15 +509,6 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
 
         let graphic_pipeline = graphics_pipelines[0];
         //</editor-fold>
-        let mut model_test = Gltf::new("C:\\Graphics\\assets\\bistro2\\untitled.gltf");
-        //1235
-        //println!("{}",model_test.meshes.len());
-        //let mut model_test = Gltf::new("C:\\Graphics\\assets\\grassblockGLTF3\\untitled.gltf");
-        //let mut model_test = Gltf::new("C:\\Graphics\\assets\\luna\\MRLunaSnow.gltf");
-        model_test.construct_buffers(base, MAX_FRAMES_IN_FLIGHT);
-        //println!("{:?}", model_test.scene.nodes[0].borrow().children[0].borrow().mesh.clone().unwrap().borrow().name);
-        model_test.transform_node(1235, &Vector::new_empty(), &Vector::new_vec4(1.0,0.0,0.0,0.0), &Vector::new_vec(1.0));
-        model_test.update_instances_all_frames(base);
 
         let mut player_camera = Camera::new_perspective_rotation(
             Vector::new_vec3(0.0, 0.0, 0.0),
@@ -706,8 +647,6 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                     };
                     copy_data_to_memory(uniform_buffers_mapped[current_frame], &[ubo]);
 
-                    copy_data_to_memory(instance_ptrs[current_frame], &instance_data);
-
                     let render_pass_begin_info = vk::RenderPassBeginInfo::default()
                         .render_pass(renderpass)
                         .framebuffer(framebuffers[present_index as usize])
@@ -792,19 +731,10 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
         for i in 0..MAX_FRAMES_IN_FLIGHT {
             base.device.destroy_buffer(uniform_buffers[i], None);
             base.device.free_memory(uniform_buffers_memory[i], None);
-
-            base.device.destroy_buffer(instance_buffers[i], None);
-            base.device.unmap_memory(instance_buffers_memory[i]);
-            base.device.free_memory(instance_buffers_memory[i], None);
         }
 
         base.device.destroy_descriptor_set_layout(ubo_descriptor_set_layout, None);
         base.device.destroy_descriptor_pool(descriptor_pool, None);
-
-        base.device.destroy_sampler(texture_sampler, None);
-        base.device.destroy_image_view(texture_image_view, None);
-        base.device.free_memory(texture_image_memory, None);
-        base.device.destroy_image(texture_image, None);
         //</editor-fold>
     }
     Ok(())
