@@ -104,10 +104,24 @@ impl Gltf {
 
         let mut images = Vec::new();
         for image in json["images"].members() {
+            let name_maybe: Option<&str> = image["name"].as_str();
+            let mut name = String::from("unnamed image");
+            match name_maybe {
+                Some(name_str) => name = String::from(name_str),
+                None => (),
+            }
+
+            let mime_type_maybe: Option<&str> = image["mimeType"].as_str();
+            let mut mime_type = String::from("no mime type");
+            match mime_type_maybe {
+                Some(mime_type_str) => mime_type = String::from(mime_type_str),
+                None => (),
+            }
+
             images.push(
                 Rc::new(RefCell::new(Image::new(
-                    image["mimeType"].as_str().unwrap().to_string(),
-                    image["name"].as_str().unwrap().to_string(),
+                    mime_type,
+                    name,
                     resolve_gltf_uri(path, image["uri"].as_str().unwrap())
                 ))))
         }
@@ -182,6 +196,11 @@ impl Gltf {
                 }
                 if let JsonValue::Object(ref json_value) = pbr_metallic_roughness["roughnessTexture"] {
                     roughness_texture = Some(json_value["index"].as_u32().expect("FAULTY GLTF: \n    Missing index for roughnessTexture at pbrMetallicRoughness"));
+                }
+
+                if let JsonValue::Object(ref json_value) = pbr_metallic_roughness["metallicRoughnessTexture"] {
+                    roughness_texture = Some(json_value["index"].as_u32().expect("FAULTY GLTF: \n    Missing index for metallicRoughnessTexture at pbrMetallicRoughness"));
+                    metallic_texture = Some(json_value["index"].as_u32().expect("FAULTY GLTF: \n    Missing index for metallicRoughnessTexture at pbrMetallicRoughness"));
                 }
             }
 
@@ -756,33 +775,36 @@ pub struct Material {
 impl Material {
     fn to_sendable(&self) -> MaterialSendable {
         MaterialSendable {
-            normal_texture: self.normal_texture,
+            normal_texture: self.normal_texture.unwrap_or(0),
+            _pad0: [0; 3],
             specular_color_factor: self.specular_color_factor,
             ior: self.ior,
+            _pad1: [0; 3],
             base_color_factor: self.base_color_factor,
-            base_color_texture: self.base_color_texture,
+            base_color_texture: self.base_color_texture.unwrap_or(0),
             roughness_factor: self.roughness_factor,
-            roughness_texture: self.roughness_texture,
+            roughness_texture: self.roughness_texture.unwrap_or(0),
             metallic_factor: self.metallic_factor,
-            metallic_texture: self.metallic_texture,
+            metallic_texture: self.metallic_texture.unwrap_or(0),
+            _pad2: 0,
         }
     }
 }
 #[derive(Clone, Debug, Copy)]
 #[repr(C)]
 pub struct MaterialSendable {
-    pub normal_texture: Option<u32>,
-    // KHR_materials_specular
-        pub specular_color_factor: [f32; 4],
-    // KHR_materials_ior
-        pub ior: f32,
-    // pbrMetallicRoughness
-        pub base_color_factor: [f32; 4],
-        pub base_color_texture: Option<u32>,
-        pub metallic_factor: f32,
-        pub metallic_texture: Option<u32>,
-        pub roughness_factor: f32,
-        pub roughness_texture: Option<u32>,
+    pub normal_texture: u32,               // 0
+    pub _pad0: [u32; 3],                   // pad to 16
+    pub specular_color_factor: [f32; 4],   // 16
+    pub ior: f32,                          // 32
+    pub _pad1: [u32; 3],                   // 36
+    pub base_color_factor: [f32; 4],       // 48
+    pub base_color_texture: u32,           // 64
+    pub metallic_factor: f32,              // 68
+    pub metallic_texture: u32,             // 72
+    pub roughness_factor: f32,             // 76
+    pub roughness_texture: u32,            // 80
+    pub _pad2: u32,                        // 84
 }
 
 #[derive(Debug, Clone, Copy)]

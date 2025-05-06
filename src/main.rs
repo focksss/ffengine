@@ -56,9 +56,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
     unsafe {
         //let mut model_test = Gltf::new("C:\\Graphics\\assets\\bistro2\\untitled.gltf");
-        //1235
-        //println!("{}",model_test.meshes.len());
-        let mut model_test = Gltf::new("C:\\Graphics\\assets\\grassblockGLTF3\\untitled.gltf");
+        //let mut model_test = Gltf::new("C:\\Graphics\\assets\\grassblockGLTF3\\untitled.gltf");
+        let mut model_test = Gltf::new("C:\\Graphics\\assets\\helmet\\DamagedHelmet.gltf");
         //let mut model_test = Gltf::new("C:\\Graphics\\assets\\luna\\MRLunaSnow.gltf");
         model_test.construct_buffers(base, MAX_FRAMES_IN_FLIGHT);
         model_test.construct_textures(base);
