@@ -10,6 +10,11 @@ layout (location = 2) in vec2 o_uv;
 layout (location = 3 ) flat in uint material;
 
 layout(set = 0, binding = 1) uniform sampler2D textures[];
+
+layout(set = 0, binding = 2) buffer MaterialSSBO {
+    vec4 materials[];
+};
+
 void main() {
     uFragColor = vec4(texture(textures[0],o_uv).rgb, 1.0);
 }
