@@ -468,8 +468,8 @@ impl Gltf {
         }
         self.instance_buffer_size = self.primitive_count as u64 * size_of::<Instance>() as u64;
         self.material_buffer_size = self.materials.len() as u64 * size_of::<MaterialSendable>() as u64;
-        self.vertex_buffer = base.create_device_and_staging_buffer(0, &*all_vertices, true, true).0;
-        self.index_buffer = base.create_device_and_staging_buffer(0, &*all_indices, true, true).0;
+        self.vertex_buffer = base.create_device_and_staging_buffer(0, &*all_vertices, vk::BufferUsageFlags::VERTEX_BUFFER, true, true).0;
+        self.index_buffer = base.create_device_and_staging_buffer(0, &*all_indices, vk::BufferUsageFlags::INDEX_BUFFER, true, true).0;
         let mut materials_send = Vec::new();
         for material in &self.materials {
             materials_send.push(material.to_sendable());
@@ -479,12 +479,12 @@ impl Gltf {
             self.material_buffers.push((vk::Buffer::null(), DeviceMemory::null()));
             if i == 0 {
                 (self.instance_buffers[i], self.instance_staging_buffer) =
-                    base.create_device_and_staging_buffer(self.instance_buffer_size, &[0], false, false);
+                    base.create_device_and_staging_buffer(self.instance_buffer_size, &[0], vk::BufferUsageFlags::VERTEX_BUFFER, false, false);
                 (self.material_buffers[i], self.material_staging_buffer) =
-                    base.create_device_and_staging_buffer(0, &materials_send, false, true);
+                    base.create_device_and_staging_buffer(0, &materials_send, vk::BufferUsageFlags::STORAGE_BUFFER, false, true);
             } else {
-                self.instance_buffers[i] = base.create_device_and_staging_buffer(self.instance_buffer_size, &[0], true, false).0;
-                self.material_buffers[i] = base.create_device_and_staging_buffer(0, &materials_send, true, true).0;
+                self.instance_buffers[i] = base.create_device_and_staging_buffer(self.instance_buffer_size, &[0], vk::BufferUsageFlags::VERTEX_BUFFER, true, false).0;
+                self.material_buffers[i] = base.create_device_and_staging_buffer(0, &materials_send, vk::BufferUsageFlags::STORAGE_BUFFER, true, true).0;
             }
             self.update_instances(base, i);
         }

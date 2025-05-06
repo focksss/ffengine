@@ -18,7 +18,7 @@ use ash::{
     vk, Device, Entry, Instance,
 };
 use ash::util::Align;
-use ash::vk::{Buffer, CommandBuffer, DeviceMemory, Extent3D, Image, ImageSubresourceRange, ImageView, SurfaceFormatKHR, SwapchainKHR};
+use ash::vk::{Buffer, CommandBuffer, DeviceMemory, Extent3D, Image, ImageSubresourceRange, ImageView, Sampler, SurfaceFormatKHR, SwapchainKHR};
 use winit::{
     event::*,
     event_loop::{ControlFlow, EventLoop},
@@ -172,7 +172,7 @@ pub struct VkBase {
     pub depth_image_view: ImageView,
     pub depth_image_memory: DeviceMemory,
 
-    pub present_complete_semaphore: vk::Semaphore,
+    pub present_complete_semaphores: Vec<vk::Semaphore>,
     pub rendering_complete_semaphores: Vec<vk::Semaphore>,
 
     pub draw_commands_reuse_fences: Vec<vk::Fence>,
@@ -451,9 +451,9 @@ impl VkBase {
             //<editor-fold desc = "semaphores">
             let semaphore_create_info = vk::SemaphoreCreateInfo::default();
 
-            let present_complete_semaphore = device
-                .create_semaphore(&semaphore_create_info, None)
-                .unwrap();
+            let present_complete_semaphores = (0..max_frames_in_flight as u32)
+                .map(|_| device.create_semaphore(&semaphore_create_info, None).unwrap())
+                .collect::<Vec<_>>();
 
             let mut rendering_complete_semaphores = Vec::new();
             for _ in 0..max_frames_in_flight {
@@ -488,7 +488,7 @@ impl VkBase {
                 setup_command_buffer,
                 depth_image,
                 depth_image_view,
-                present_complete_semaphore,
+                present_complete_semaphores,
                 rendering_complete_semaphores,
                 draw_commands_reuse_fences,
                 setup_commands_reuse_fence,
@@ -704,7 +704,7 @@ impl VkBase {
         self.device.cmd_copy_buffer(command_buffers[0], *src_buffer, *dst_buffer, &copy_region);
         self.end_single_time_commands(command_buffers);
     } }
-    pub unsafe fn create_device_and_staging_buffer<T: Copy>(&self, buffer_size_in: u64, data: &[T], destroy_staging: bool, do_initial_copy: bool) -> ((Buffer, DeviceMemory), (Buffer, DeviceMemory)) { unsafe {
+    pub unsafe fn create_device_and_staging_buffer<T: Copy>(&self, buffer_size_in: u64, data: &[T], usage: vk::BufferUsageFlags, destroy_staging: bool, do_initial_copy: bool) -> ((Buffer, DeviceMemory), (Buffer, DeviceMemory)) { unsafe {
         let buffer_size;
         if buffer_size_in > 0 {
             buffer_size = buffer_size_in;
@@ -737,7 +737,7 @@ impl VkBase {
         let mut buffer_memory = DeviceMemory::null();
         self.create_buffer(
             buffer_size,
-            vk::BufferUsageFlags::TRANSFER_DST | vk::BufferUsageFlags::INDEX_BUFFER,
+            vk::BufferUsageFlags::TRANSFER_DST | usage,
             vk::MemoryPropertyFlags::DEVICE_LOCAL,
             &mut buffer,
             &mut buffer_memory,
@@ -754,6 +754,87 @@ impl VkBase {
         }
     }
     }
+    pub unsafe fn create_2d_texture_image(&self, uri: &PathBuf) -> ((ImageView, Sampler), (Image, DeviceMemory)) { unsafe {
+        let bytes = fs::read(uri).expect("Failed to read image file");
+        let image = image::load_from_memory(&bytes).expect("Failed to load image").to_rgba8();
+        let (img_width, img_height) = image.dimensions();
+        let image_extent = vk::Extent2D { width: img_width, height: img_height };
+        let image_data = image.into_raw();
+        let image_size = (img_width * img_height * 4) as u64;
+
+        let mut image_staging_buffer = vk::Buffer::null();
+        let mut image_staging_buffer_memory = DeviceMemory::null();
+        VkBase::create_buffer(
+            self,
+            image_size,
+            vk::BufferUsageFlags::TRANSFER_SRC,
+            vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
+            &mut image_staging_buffer,
+            &mut image_staging_buffer_memory,
+        );
+        let image_ptr = self
+            .device
+            .map_memory(
+                image_staging_buffer_memory,
+                0,
+                image_size,
+                vk::MemoryMapFlags::empty(),
+            )
+            .expect("Failed to map image buffer memory");
+        copy_data_to_memory(image_ptr, &image_data);
+        self.device.unmap_memory(image_staging_buffer_memory);
+
+        let texture_image_create_info = vk::ImageCreateInfo {
+            s_type: vk::StructureType::IMAGE_CREATE_INFO,
+            image_type: vk::ImageType::TYPE_2D,
+            extent: Extent3D { width: image_extent.width, height: image_extent.height, depth: 1 },
+            mip_levels: 1,
+            array_layers: 1,
+            format: vk::Format::R8G8B8A8_SRGB,
+            tiling: vk::ImageTiling::OPTIMAL,
+            initial_layout: vk::ImageLayout::UNDEFINED,
+            usage: vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED,
+            sharing_mode: vk::SharingMode::EXCLUSIVE,
+            samples: vk::SampleCountFlags::TYPE_1,
+            ..Default::default()
+        };
+        let mut texture_image = vk::Image::null();
+        let mut texture_image_memory = DeviceMemory::null();
+        self.create_image(
+            &texture_image_create_info,
+            vk::MemoryPropertyFlags::DEVICE_LOCAL,
+            &mut texture_image,
+            &mut texture_image_memory,
+        );
+        self.transition_image_layout(texture_image, vk::Format::R8G8B8A8_SRGB, vk::ImageLayout::UNDEFINED, vk::ImageLayout::TRANSFER_DST_OPTIMAL);
+        self.copy_buffer_to_image(image_staging_buffer, texture_image, image_extent.into());
+        self.transition_image_layout(texture_image, vk::Format::R8G8B8A8_SRGB, vk::ImageLayout::TRANSFER_DST_OPTIMAL, vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+
+        self.device.destroy_buffer(image_staging_buffer, None);
+        self.device.free_memory(image_staging_buffer_memory, None);
+
+        let sampler_info = vk::SamplerCreateInfo {
+            s_type: vk::StructureType::SAMPLER_CREATE_INFO,
+            mag_filter: vk::Filter::LINEAR,
+            min_filter: vk::Filter::LINEAR,
+            address_mode_u: vk::SamplerAddressMode::REPEAT,
+            address_mode_v: vk::SamplerAddressMode::REPEAT,
+            address_mode_w: vk::SamplerAddressMode::REPEAT,
+            anisotropy_enable: vk::TRUE,
+            max_anisotropy: self.pdevice_properties.limits.max_sampler_anisotropy,
+            border_color: vk::BorderColor::INT_OPAQUE_BLACK,
+            unnormalized_coordinates: vk::FALSE,
+            mipmap_mode: vk::SamplerMipmapMode::LINEAR,
+            mip_lod_bias: 0.0,
+            min_lod: 0.0,
+            max_lod: 0.0,
+            ..Default::default()
+        };
+
+        let image = (texture_image, texture_image_memory);
+        let texture = (self.create_2_d_image_view(texture_image, vk::Format::R8G8B8A8_SRGB), self.device.create_sampler(&sampler_info, None).expect("failed to create sampler"));
+        (texture, image)
+    } }
     pub unsafe fn create_image(
         &self,
         create_info: &vk::ImageCreateInfo,
@@ -901,8 +982,10 @@ impl Drop for VkBase {
     fn drop(&mut self) {
         unsafe {
             self.device.device_wait_idle().unwrap();
-            self.device
-                .destroy_semaphore(self.present_complete_semaphore, None);
+            for &present_complete_semaphore in &self.present_complete_semaphores {
+                self.device
+                    .destroy_semaphore(present_complete_semaphore, None);
+            }
             for &rendering_complete_semaphore in &self.rendering_complete_semaphores {
                 self.device
                     .destroy_semaphore(rendering_complete_semaphore, None);

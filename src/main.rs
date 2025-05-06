@@ -63,6 +63,9 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
         model_test.construct_textures(base);
         //model_test.transform_node(1235, &Vector::new_empty(), &Vector::new_vec4(1.0,0.0,0.0,0.0), &Vector::new_vec(1.0));
         model_test.update_instances_all_frames(base);
+
+        let null_tex = base.create_2d_texture_image(&PathBuf::from("C:\\Graphics\\assets\\null8x.png"));
+
         //<editor-fold desc = "renderpass init">
         let renderpass_attachments = [
             vk::AttachmentDescription {
@@ -144,25 +147,27 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             },
             vk::DescriptorSetLayoutBinding {
                 binding: 1,
-                descriptor_type: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
-                descriptor_count: 1024u32,
+                descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
+                descriptor_count: 1,
                 stage_flags: vk::ShaderStageFlags::FRAGMENT,
                 ..Default::default()
             },
             vk::DescriptorSetLayoutBinding {
                 binding: 2,
-                descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
-                descriptor_count: 1,
+                descriptor_type: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+                descriptor_count: 1024u32,
                 stage_flags: vk::ShaderStageFlags::FRAGMENT,
                 ..Default::default()
-            }
+            },
         ];
         let binding_flags = [
-            vk::DescriptorBindingFlags::empty(),  // binding 0
-            vk::DescriptorBindingFlags::empty(),  // binding 1
-            vk::DescriptorBindingFlags::PARTIALLY_BOUND | // binding 2 (now the highest)
-            vk::DescriptorBindingFlags::VARIABLE_DESCRIPTOR_COUNT | // last binding, valid here
-            vk::DescriptorBindingFlags::UPDATE_AFTER_BIND,  // binding 2
+            vk::DescriptorBindingFlags::empty(),
+
+            vk::DescriptorBindingFlags::empty(),
+
+            vk::DescriptorBindingFlags::PARTIALLY_BOUND |
+            vk::DescriptorBindingFlags::VARIABLE_DESCRIPTOR_COUNT |
+            vk::DescriptorBindingFlags::UPDATE_AFTER_BIND,
         ];
         let binding_flags_info = vk::DescriptorSetLayoutBindingFlagsCreateInfo {
             s_type: vk::StructureType::DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO,
@@ -210,15 +215,15 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                 ..Default::default()
             }, // uniform buffer
             vk::DescriptorPoolSize {
+                ty: vk::DescriptorType::STORAGE_BUFFER,
+                descriptor_count: MAX_FRAMES_IN_FLIGHT as u32,
+                ..Default::default()
+            }, // material SSBO
+            vk::DescriptorPoolSize {
                 ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
                 descriptor_count: (MAX_FRAMES_IN_FLIGHT * 1024) as u32,
                 ..Default::default()
             }, // array of textures
-            vk::DescriptorPoolSize {
-                ty: vk::DescriptorType::STORAGE_BUFFER,
-                descriptor_count: MAX_FRAMES_IN_FLIGHT as u32,
-                ..Default::default()
-            } // material SSBO
         ];
         let pool_create_info = vk::DescriptorPoolCreateInfo {
             s_type: vk::StructureType::DESCRIPTOR_POOL_CREATE_INFO,
@@ -259,6 +264,15 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                 ..Default::default()
             });
         }
+        let missing = 1024 - image_infos.len();
+        for _ in 0..missing {
+            image_infos.push(vk::DescriptorImageInfo {
+                image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                image_view: null_tex.0.0,
+                sampler: null_tex.0.1,
+                ..Default::default()
+            });
+        }
         for i in 0..MAX_FRAMES_IN_FLIGHT {
             let uniform_buffer_info = vk::DescriptorBufferInfo {
                 buffer: uniform_buffers[i],
@@ -286,9 +300,9 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                     dst_set: descriptor_sets[i],
                     dst_binding: 1,
                     dst_array_element: 0,
-                    descriptor_type: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
-                    descriptor_count: 1024,
-                    p_image_info: image_infos.as_ptr(),
+                    descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
+                    descriptor_count: 1,
+                    p_buffer_info: &ssbo_info,
                     ..Default::default()
                 },
                 vk::WriteDescriptorSet {
@@ -296,11 +310,11 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                     dst_set: descriptor_sets[i],
                     dst_binding: 2,
                     dst_array_element: 0,
-                    descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
-                    descriptor_count: 1,
-                    p_buffer_info: &ssbo_info,
+                    descriptor_type: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+                    descriptor_count: 1024,
+                    p_image_info: image_infos.as_ptr(),
                     ..Default::default()
-                }
+                },
             ];
             base.device.update_descriptor_sets(&descriptor_writes, &[]);
         }
@@ -620,7 +634,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                         .acquire_next_image(
                             base.swapchain,
                             u64::MAX,
-                            base.present_complete_semaphore,
+                            base.present_complete_semaphores[current_frame],
                             vk::Fence::null(),
                         )
                         .unwrap();
@@ -659,7 +673,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                         current_draw_commands_reuse_fence,
                         base.present_queue,
                         &[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT],
-                        &[base.present_complete_semaphore],
+                        &[base.present_complete_semaphores[current_frame]],
                         &[current_rendering_complete_semaphore],
                         |device, draw_command_buffer| {
                             device.cmd_begin_render_pass(
@@ -732,6 +746,11 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
 
         base.device.destroy_descriptor_set_layout(ubo_descriptor_set_layout, None);
         base.device.destroy_descriptor_pool(descriptor_pool, None);
+
+        base.device.destroy_image_view(null_tex.0.0, None);
+        base.device.destroy_sampler(null_tex.0.1, None);
+        base.device.destroy_image(null_tex.1.0, None);
+        base.device.free_memory(null_tex.1.1, None);
         //</editor-fold>
     }
     Ok(())

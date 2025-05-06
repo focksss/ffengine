@@ -2,9 +2,9 @@
 #extension GL_ARB_separate_shader_objects : enable
 #extension GL_ARB_shading_language_420pack : enable
 
-layout (set = 0, location = 0) in vec3 pos;
-layout (set = 0, location = 1) in vec3 color;
-layout (set = 0, location = 2) in vec2 uv;
+layout (location = 0) in vec3 pos;
+layout (location = 1) in vec3 color;
+layout (location = 2) in vec2 uv;
 
 layout (location = 3) in mat4 model;
 layout (location = 7) in uint material;

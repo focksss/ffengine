@@ -10,7 +10,7 @@ layout (location = 1) in vec3 o_color;
 layout (location = 2) in vec2 o_uv;
 layout (location = 3 ) flat in uint material;
 
-layout(set = 0, binding = 1) uniform sampler2D textures[];
+layout(set = 0, binding = 2) uniform sampler2D textures[];
 
 struct Material {
     uint normal_tex;      // 0
@@ -26,11 +26,11 @@ struct Material {
     float padding;        // 84
 };
 
-layout(set = 0, binding = 2) buffer MaterialSSBO {
+layout(set = 0, binding = 1, std430) readonly buffer MaterialSSBO {
     Material materials[];
-};
+} materialSSBO;
 
 void main() {
-    Material mat = materials[material];
-    uFragColor = vec4(texture(textures[mat.base_color_tex], o_uv).rgb, 1.0);
+    Material mat = materialSSBO.materials[material];
+    uFragColor = vec4(texture(textures[mat.normal_tex], o_uv).rgb, 1.0);
 }
