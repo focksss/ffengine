@@ -158,13 +158,11 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             }
         ];
         let binding_flags = [
-            vk::DescriptorBindingFlags::empty(),
-
-            vk::DescriptorBindingFlags::PARTIALLY_BOUND |
-            vk::DescriptorBindingFlags::VARIABLE_DESCRIPTOR_COUNT |
-            vk::DescriptorBindingFlags::UPDATE_AFTER_BIND,
-
-            vk::DescriptorBindingFlags::empty(),
+            vk::DescriptorBindingFlags::empty(),  // binding 0
+            vk::DescriptorBindingFlags::empty(),  // binding 1
+            vk::DescriptorBindingFlags::PARTIALLY_BOUND | // binding 2 (now the highest)
+            vk::DescriptorBindingFlags::VARIABLE_DESCRIPTOR_COUNT | // last binding, valid here
+            vk::DescriptorBindingFlags::UPDATE_AFTER_BIND,  // binding 2
         ];
         let binding_flags_info = vk::DescriptorSetLayoutBindingFlagsCreateInfo {
             s_type: vk::StructureType::DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO,

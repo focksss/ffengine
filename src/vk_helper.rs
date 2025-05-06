@@ -115,9 +115,9 @@ unsafe extern "system" fn vulkan_debug_callback(
         ffi::CStr::from_ptr(callback_data.p_message).to_string_lossy()
     };
 
-    //println!(
-    //    "{message_severity:?}:\n{message_type:?} [{message_id_name} ({message_id_number})] : {message}\n",
-    //);
+    println!(
+        "{message_severity:?}:\n{message_type:?} [{message_id_name} ({message_id_number})] : {message}\n",
+    );
 
     vk::FALSE
 }
@@ -217,7 +217,7 @@ impl VkBase {
                 .application_version(0)
                 .engine_name(app_name)
                 .engine_version(0)
-                .api_version(vk::make_api_version(0, 1, 0, 0));
+                .api_version(vk::make_api_version(0, 1, 3, 0));
 
             let create_flags = if cfg!(any(target_os = "macos", target_os = "ios")) {
                 vk::InstanceCreateFlags::ENUMERATE_PORTABILITY_KHR
@@ -316,7 +316,20 @@ impl VkBase {
                 .queue_priorities(&priorities);
 
             //<editor-fold desc = "device creation">
+            let mut descriptor_indexing_features = vk::PhysicalDeviceDescriptorIndexingFeatures::default();
+            descriptor_indexing_features.runtime_descriptor_array = vk::TRUE;
+            descriptor_indexing_features.descriptor_binding_partially_bound = vk::TRUE;
+            descriptor_indexing_features.descriptor_binding_variable_descriptor_count = vk::TRUE;
+            descriptor_indexing_features.shader_sampled_image_array_non_uniform_indexing = vk::TRUE;
+            descriptor_indexing_features.descriptor_binding_sampled_image_update_after_bind = vk::TRUE;
+            let mut supported_features2 = vk::PhysicalDeviceFeatures2 {
+                p_next: &mut descriptor_indexing_features as *mut _ as *mut c_void,
+                ..Default::default()
+            };
+            instance.get_physical_device_features2(pdevice, &mut supported_features2);
+
             let device_create_info = vk::DeviceCreateInfo::default()
+                .push_next(&mut descriptor_indexing_features)
                 .queue_create_infos(std::slice::from_ref(&queue_info))
                 .enabled_extension_names(&device_extension_names_raw)
                 .enabled_features(&features);

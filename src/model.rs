@@ -589,14 +589,12 @@ impl Gltf {
     pub unsafe fn cleanup(&self, base: &VkBase) { unsafe {
         for instance_buffer in &self.instance_buffers {
             base.device.destroy_buffer(instance_buffer.0, None);
-            base.device.unmap_memory(instance_buffer.1);
             base.device.free_memory(instance_buffer.1, None);
         }
         base.device.destroy_buffer(self.instance_staging_buffer.0, None);
         base.device.free_memory(self.instance_staging_buffer.1, None);
         for material_buffer in &self.material_buffers {
             base.device.destroy_buffer(material_buffer.0, None);
-            base.device.unmap_memory(material_buffer.1);
             base.device.free_memory(material_buffer.1, None);
         }
         base.device.destroy_buffer(self.material_staging_buffer.0, None);
@@ -612,6 +610,8 @@ impl Gltf {
         for image in &self.images {
             let image = image.borrow();
             base.device.destroy_image_view(image.image_view, None);
+            base.device.destroy_image(image.image.0, None);
+            base.device.free_memory(image.image.1, None);
         }
     } }
 }
@@ -653,6 +653,7 @@ pub struct Image {
     pub name: String,
     pub uri: PathBuf,
 
+    pub image: (vk::Image, DeviceMemory),
     pub image_view: ImageView,
 }
 impl Image {
@@ -661,6 +662,7 @@ impl Image {
             mime_type,
             name,
             uri,
+            image: (vk::Image::null(), DeviceMemory::null()),
             image_view: ImageView::null()
         }
     }
@@ -724,6 +726,7 @@ impl Image {
         base.device.destroy_buffer(image_staging_buffer, None);
         base.device.free_memory(image_staging_buffer_memory, None);
 
+        self.image = (texture_image, texture_image_memory);
         self.image_view = base.create_2_d_image_view(texture_image, vk::Format::R8G8B8A8_SRGB);
     } }
 }
