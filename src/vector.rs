@@ -91,6 +91,19 @@ impl Vector {
     pub fn normalize_4d(&self) -> Vector {
         self.div_float(self.magnitude_4d())
     }
+
+    pub fn normalize_self_3d(&mut self)  {
+        let temp = self.div_float(self.magnitude_3d());
+        self.x = temp.x;
+        self.y = temp.y;
+        self.z = temp.z;
+    }
+    pub fn normalize_self__4d(&mut self) {
+        let temp = self.div_float(self.magnitude_4d());
+        self.x = temp.x;
+        self.y = temp.y;
+        self.z = temp.z;
+    }
     //</editor-fold>
 
     //<editor-fold desc = "vector vector operations">

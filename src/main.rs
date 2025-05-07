@@ -55,9 +55,9 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
     unsafe {
-        //let mut model_test = Gltf::new("C:\\Graphics\\assets\\bistro2\\untitled.gltf");
+        let mut model_test = Gltf::new("C:\\Graphics\\assets\\bistro2\\untitled.gltf");
         //let mut model_test = Gltf::new("C:\\Graphics\\assets\\grassblockGLTF3\\untitled.gltf");
-        let mut model_test = Gltf::new("C:\\Graphics\\assets\\helmet\\DamagedHelmet.gltf");
+        //let mut model_test = Gltf::new("C:\\Graphics\\assets\\helmet\\DamagedHelmet.gltf");
         //let mut model_test = Gltf::new("C:\\Graphics\\assets\\luna\\MRLunaSnow.gltf");
         model_test.construct_buffers(base, MAX_FRAMES_IN_FLIGHT);
         model_test.construct_textures(base);
@@ -401,33 +401,45 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                 format: vk::Format::R32G32_SFLOAT,
                 offset: offset_of!(model::Vertex, uv) as u32,
             },
-
             vk::VertexInputAttributeDescription {
                 location: 3,
+                binding: 0,
+                format: vk::Format::R32G32B32_SFLOAT,
+                offset: offset_of!(model::Vertex, tangent) as u32,
+            },
+            vk::VertexInputAttributeDescription {
+                location: 4,
+                binding: 0,
+                format: vk::Format::R32G32B32_SFLOAT,
+                offset: offset_of!(model::Vertex, bitangent) as u32,
+            },
+
+            vk::VertexInputAttributeDescription {
+                location: 5,
                 binding: 1,
                 format: vk::Format::R32G32B32A32_SFLOAT,
                 offset: 0,
             },
             vk::VertexInputAttributeDescription {
-                location: 4,
+                location: 6,
                 binding: 1,
                 format: vk::Format::R32G32B32A32_SFLOAT,
                 offset: 16,
             },
             vk::VertexInputAttributeDescription {
-                location: 5,
+                location: 7,
                 binding: 1,
                 format: vk::Format::R32G32B32A32_SFLOAT,
                 offset: 32,
             },
             vk::VertexInputAttributeDescription {
-                location: 6,
+                location: 8,
                 binding: 1,
                 format: vk::Format::R32G32B32A32_SFLOAT,
                 offset: 48,
             },
             vk::VertexInputAttributeDescription {
-                location: 7,
+                location: 9,
                 binding: 1,
                 format: vk::Format::R32_UINT,
                 offset: 64,

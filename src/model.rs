@@ -156,7 +156,7 @@ impl Gltf {
 
             let mut normal_texture = None;
             if let JsonValue::Object(ref normal_texture_json) = material["normalTexture"] {
-                normal_texture = Some(normal_texture_json["index"].as_u32().expect(""));
+                normal_texture = Some(normal_texture_json["index"].as_i32().expect(""));
             }
 
             let mut base_color_factor = [0.5, 0.5, 0.5, 1.0];
@@ -177,7 +177,7 @@ impl Gltf {
                     }
                 }
                 if let JsonValue::Object(ref json_value) = pbr_metallic_roughness["baseColorTexture"] {
-                    base_color_texture = Some(json_value["index"].as_u32().expect("FAULTY GLTF: \n    Missing index for baseColorTexture at pbrMetallicRoughness"));
+                    base_color_texture = Some(json_value["index"].as_i32().expect("FAULTY GLTF: \n    Missing index for baseColorTexture at pbrMetallicRoughness"));
                 }
 
                 if let JsonValue::Number(ref json_value) = pbr_metallic_roughness["metallicFactor"] {
@@ -186,7 +186,7 @@ impl Gltf {
                     }
                 }
                 if let JsonValue::Object(ref json_value) = pbr_metallic_roughness["metallicTexture"] {
-                    metallic_texture = Some(json_value["index"].as_u32().expect("FAULTY GLTF: \n    Missing index for metallicTexture at pbrMetallicRoughness"));
+                    metallic_texture = Some(json_value["index"].as_i32().expect("FAULTY GLTF: \n    Missing index for metallicTexture at pbrMetallicRoughness"));
                 }
 
                 if let JsonValue::Number(ref json_value) = pbr_metallic_roughness["roughnessFactor"] {
@@ -195,12 +195,12 @@ impl Gltf {
                     }
                 }
                 if let JsonValue::Object(ref json_value) = pbr_metallic_roughness["roughnessTexture"] {
-                    roughness_texture = Some(json_value["index"].as_u32().expect("FAULTY GLTF: \n    Missing index for roughnessTexture at pbrMetallicRoughness"));
+                    roughness_texture = Some(json_value["index"].as_i32().expect("FAULTY GLTF: \n    Missing index for roughnessTexture at pbrMetallicRoughness"));
                 }
 
                 if let JsonValue::Object(ref json_value) = pbr_metallic_roughness["metallicRoughnessTexture"] {
-                    roughness_texture = Some(json_value["index"].as_u32().expect("FAULTY GLTF: \n    Missing index for metallicRoughnessTexture at pbrMetallicRoughness"));
-                    metallic_texture = Some(json_value["index"].as_u32().expect("FAULTY GLTF: \n    Missing index for metallicRoughnessTexture at pbrMetallicRoughness"));
+                    roughness_texture = Some(json_value["index"].as_i32().expect("FAULTY GLTF: \n    Missing index for metallicRoughnessTexture at pbrMetallicRoughness"));
+                    metallic_texture = Some(json_value["index"].as_i32().expect("FAULTY GLTF: \n    Missing index for metallicRoughnessTexture at pbrMetallicRoughness"));
                 }
             }
 
@@ -491,12 +491,15 @@ impl Gltf {
     } }
 
     pub unsafe fn construct_textures(&mut self, base: &VkBase) { unsafe {
-        for image in &mut self.images {
-            image.borrow_mut().construct_image_view(base);
+        for i in 0..self.images.len() {
+            let mut image = self.images[i].borrow_mut();
+            print!("\rloading image {}/{}, {:?}",i,self.images.len(), image.name);
+            image.construct_image_view(base);
         }
         for texture in &mut self.textures {
             texture.borrow_mut().construct_sampler(base);
         }
+        println!();
     }}
 
     pub unsafe fn update_instances(&mut self, base: &VkBase, frame: usize) { unsafe {
@@ -761,7 +764,7 @@ impl Texture {
 pub struct Material {
     pub alpha_mode: String,
     pub double_sided: bool,
-    pub normal_texture: Option<u32>,
+    pub normal_texture: Option<i32>,
     // KHR_materials_specular
         pub specular_color_factor: [f32; 4],
     // KHR_materials_ior
@@ -769,45 +772,50 @@ pub struct Material {
     pub name: String,
     // pbrMetallicRoughness
         pub base_color_factor: [f32; 4],
-        pub base_color_texture: Option<u32>,
+        pub base_color_texture: Option<i32>,
         pub metallic_factor: f32,
-        pub metallic_texture: Option<u32>,
+        pub metallic_texture: Option<i32>,
         pub roughness_factor: f32,
-        pub roughness_texture: Option<u32>,
+        pub roughness_texture: Option<i32>,
 }
 impl Material {
     fn to_sendable(&self) -> MaterialSendable {
         MaterialSendable {
-            normal_texture: self.normal_texture.unwrap_or(0),
+            normal_texture: self.normal_texture.unwrap_or(-1),
             _pad0: [0; 3],
             specular_color_factor: self.specular_color_factor,
             ior: self.ior,
             _pad1: [0; 3],
             base_color_factor: self.base_color_factor,
-            base_color_texture: self.base_color_texture.unwrap_or(0),
+            base_color_texture: self.base_color_texture.unwrap_or(-1),
             roughness_factor: self.roughness_factor,
-            roughness_texture: self.roughness_texture.unwrap_or(0),
+            roughness_texture: self.roughness_texture.unwrap_or(-1),
             metallic_factor: self.metallic_factor,
-            metallic_texture: self.metallic_texture.unwrap_or(0),
-            _pad2: 0,
+            metallic_texture: self.metallic_texture.unwrap_or(-1),
+            _pad2: [0u32; 3],
         }
     }
 }
 #[derive(Clone, Debug, Copy)]
 #[repr(C)]
 pub struct MaterialSendable {
-    pub normal_texture: u32,               // 0
-    pub _pad0: [u32; 3],                   // pad to 16
-    pub specular_color_factor: [f32; 4],   // 16
-    pub ior: f32,                          // 32
-    pub _pad1: [u32; 3],                   // 36
-    pub base_color_factor: [f32; 4],       // 48
-    pub base_color_texture: u32,           // 64
-    pub metallic_factor: f32,              // 68
-    pub metallic_texture: u32,             // 72
-    pub roughness_factor: f32,             // 76
-    pub roughness_texture: u32,            // 80
-    pub _pad2: u32,                        // 84
+    pub normal_texture: i32,                 // 0
+    pub _pad0: [u32; 3],                     // 4-15 (padding to 16 bytes)
+
+    pub specular_color_factor: [f32; 4],     // 16-31
+
+    pub ior: f32,                            // 32
+    pub _pad1: [u32; 3],                     // 36-47 (pad to next 16-byte boundary)
+
+    pub base_color_factor: [f32; 4],         // 48-63
+
+    pub base_color_texture: i32,             // 64
+    pub metallic_factor: f32,                // 68
+    pub metallic_texture: i32,               // 72
+    pub roughness_factor: f32,               // 76
+
+    pub roughness_texture: i32,              // 80
+    pub _pad2: [u32; 3],                     // 84-95 (pad to 96)
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -909,22 +917,111 @@ impl Primitive {
 
             let mut vertices = Vec::new();
             for i in 0..positions.len() {
-                vertices.push(Vertex {
+                vertices.push(RefCell::new(Vertex {
                     position: positions[i],
                     normal: *normals.get(i).unwrap_or(&[0.0, 0.0, 0.0]),
                     uv: *tex_coords.get(i).unwrap_or(&[0.0, 0.0]),
-                });
+                    tangent: [0.0, 0.0, 0.0],
+                    bitangent: [0.0, 0.0, 0.0],
+                }));
             }
-            self.vertex_data = vertices;
+            match component_type {
+                ComponentType::U8 => {
+                    Primitive::construct_tangents(&mut vertices, &self.index_data_u8);
+                },
+                ComponentType::U16 => {
+                    Primitive::construct_tangents(&mut vertices, &self.index_data_u16);
+                },
+                ComponentType::U32 => {
+                    Primitive::construct_tangents(&mut vertices, &self.index_data_u32);
+                },
+                _ => panic!("Unsupported index type"),
+            }
+            self.vertex_data = vertices
+                .into_iter()
+                .map(|v| v.into_inner())
+                .collect();
         }
     } }
+
+    fn construct_tangents<T: AsUsize>(vertices: &mut Vec<RefCell<Vertex>>, index_data: &Vec<T>) {
+        for i in (0..index_data.len()).step_by(3) {
+            let i0 = index_data[i].as_usize();
+            let i1 = index_data[i + 1].as_usize();
+            let i2 = index_data[i + 2].as_usize();
+            let v1 = &mut vertices[i0].borrow_mut();
+            let v2 = &mut vertices[i1].borrow_mut();
+            let v3 = &mut vertices[i2].borrow_mut();
+
+            let e1 = (
+                v2.position[0] - v1.position[0],
+                v2.position[1] - v1.position[1],
+                v2.position[2] - v1.position[2]
+            );
+            let e2 = (
+                v3.position[0] - v1.position[0],
+                v3.position[1] - v1.position[1],
+                v3.position[2] - v1.position[2]
+            );
+            let delta_uv1 = (
+                v2.uv[0] - v1.uv[0],
+                v2.uv[1] - v1.uv[1],
+            );
+            let delta_uv2 = (
+                v3.uv[0] - v1.uv[0],
+                v3.uv[1] - v1.uv[1],
+            );
+            let f = 1.0 / (delta_uv1.0 * delta_uv2.1 - delta_uv2.0 * delta_uv1.1);
+            let mut tangent = Vector::new_vec3(
+                f * (delta_uv2.1 * e1.0 - delta_uv1.1 * e2.0),
+                f * (delta_uv2.1 * e1.1 + delta_uv1.1 * e2.1),
+                f * (delta_uv2.1 * e2.2 - delta_uv1.1 * e2.2),
+            );
+            let mut bitangent = Vector::new_vec3(
+                f * (-delta_uv2.0 * e1.0 - delta_uv1.0 * e2.0),
+                f * (-delta_uv2.0 * e1.1 + delta_uv1.0 * e2.1),
+                f * (-delta_uv2.0 * e2.2 - delta_uv1.0 * e2.2),
+            );
+            tangent.normalize_self_3d();
+            bitangent.normalize_self_3d();
+
+            v1.tangent = tangent.to_array3();
+            v2.tangent = tangent.to_array3();
+            v3.tangent = tangent.to_array3();
+
+            v1.bitangent = bitangent.to_array3();
+            v2.bitangent = bitangent.to_array3();
+            v3.bitangent = bitangent.to_array3();
+        }
+    }
 }
+trait AsUsize {
+    fn as_usize(&self) -> usize;
+}
+impl AsUsize for u8 {
+    fn as_usize(&self) -> usize {
+        *self as usize
+    }
+}
+impl AsUsize for u16 {
+    fn as_usize(&self) -> usize {
+        *self as usize
+    }
+}
+impl AsUsize for u32 {
+    fn as_usize(&self) -> usize {
+        *self as usize
+    }
+}
+
 #[derive(Clone, Debug, Copy)]
 #[repr(C)]
 pub struct Vertex {
     pub position: [f32; 3],
     pub normal: [f32; 3],
     pub uv: [f32; 2],
+    pub tangent: [f32; 3],
+    pub bitangent: [f32; 3],
 }
 #[derive(Clone, Debug, Copy)]
 #[repr(C)]
