@@ -64,7 +64,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
         //model_test.transform_node(1235, &Vector::new_empty(), &Vector::new_vec4(1.0,0.0,0.0,0.0), &Vector::new_vec(1.0));
         model_test.update_instances_all_frames(base);
 
-        let null_tex = base.create_2d_texture_image(&PathBuf::from("C:\\Graphics\\assets\\null8x.png"));
+        let null_tex = base.create_2d_texture_image(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("local_assets\\null8.png"));
 
         //<editor-fold desc = "renderpass init">
         let renderpass_attachments = [
