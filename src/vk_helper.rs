@@ -755,7 +755,7 @@ impl VkBase {
     }
     }
     pub unsafe fn create_2d_texture_image(&self, uri: &PathBuf) -> ((ImageView, Sampler), (Image, DeviceMemory)) { unsafe {
-        let bytes = fs::read(uri).expect("Failed to read image file");
+        let bytes = fs::read(uri).expect(uri.to_string_lossy().as_ref());
         let image = image::load_from_memory(&bytes).expect("Failed to load image").to_rgba8();
         let (img_width, img_height) = image.dimensions();
         let image_extent = vk::Extent2D { width: img_width, height: img_height };
