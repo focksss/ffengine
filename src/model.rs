@@ -65,7 +65,7 @@ impl Gltf {
                 Rc::new(BufferView {
                     buffer: buffers[buffer_view["buffer"].as_usize().unwrap()].clone(),
                     byte_length: buffer_view["byteLength"].as_usize().unwrap(),
-                    byte_offset: buffer_view["byteOffset"].as_usize().unwrap(),
+                    byte_offset: buffer_view["byteOffset"].as_usize().unwrap_or(0),
                     target: buffer_view["target"].as_usize().unwrap_or(0)
                 }))
         }
@@ -658,6 +658,7 @@ pub struct Image {
 
     pub image: (vk::Image, DeviceMemory),
     pub image_view: ImageView,
+    pub mip_levels: u32,
 }
 impl Image {
     fn new(mime_type: String, name: String, uri: PathBuf) -> Self {
@@ -666,14 +667,16 @@ impl Image {
             name,
             uri,
             image: (vk::Image::null(), DeviceMemory::null()),
-            image_view: ImageView::null()
+            image_view: ImageView::null(),
+            mip_levels: 0,
         }
     }
 
     unsafe fn construct_image_view(&mut self, base: &VkBase) { unsafe {
-        let (image_view, image) = base.create_2d_texture_image(&self.uri);
+        let (image_view, image, mips) = base.create_2d_texture_image(&self.uri, true);
         self.image = image;
         self.image_view = image_view.0;
+        self.mip_levels = mips;
         base.device.destroy_sampler(image_view.1, None);
     } }
 }
@@ -699,9 +702,10 @@ impl Texture {
             mipmap_mode: vk::SamplerMipmapMode::LINEAR,
             mip_lod_bias: 0.0,
             min_lod: 0.0,
-            max_lod: 0.0,
+            max_lod: self.source.borrow().mip_levels as f32,
             ..Default::default()
         };
+        println!("{}",sampler_info.max_lod);
         self.sampler = base.device.create_sampler(&sampler_info, None).expect("failed to create sampler");
     } }
 }
