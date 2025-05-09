@@ -55,8 +55,9 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
     unsafe {
-        let mut model_test = Gltf::new("C:\\Graphics\\assets\\bistro2\\untitled.gltf");
-        //let mut model_test = Gltf::new("C:\\Graphics\\assets\\grassblockGLTF3\\untitled.gltf");
+        let mut model_test = Gltf::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf");
+        //let mut model_test = Gltf::new("C:\\Graphics\\assets\\monke\\untitled.gltf");
+        //let mut model_test = Gltf::new("C:\\Graphics\\assets\\balls\\balls.gltf");
         //let mut model_test = Gltf::new("C:\\Graphics\\assets\\helmet\\DamagedHelmet.gltf");
         //let mut model_test = Gltf::new("C:\\Graphics\\assets\\luna\\MRLunaSnow.gltf");
         model_test.construct_buffers(base, MAX_FRAMES_IN_FLIGHT);
@@ -64,7 +65,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
         //model_test.transform_node(1235, &Vector::new_empty(), &Vector::new_vec4(1.0,0.0,0.0,0.0), &Vector::new_vec(1.0));
         model_test.update_instances_all_frames(base);
 
-        let null_tex = base.create_2d_texture_image(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("local_assets\\null8.png"));
+        let null_tex = base.create_2d_texture_image(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("local_assets\\null8x.png"));
 
         //<editor-fold desc = "renderpass init">
         let renderpass_attachments = [
@@ -533,6 +534,10 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
         let graphic_pipeline = graphics_pipelines[0];
         //</editor-fold>
 
+        /*
+        Vector { x: 14.284356, y: 6.3393226, z: 2.1902442, w: 1.0, null: false }
+        Vector { x: 0.1639992, y: -1.5700009, z: 0.0, w: 0.0, null: false }
+         */
         let mut player_camera = Camera::new_perspective_rotation(
             Vector::new_vec3(0.0, 0.0, 0.0),
             Vector::new_empty(),
@@ -640,6 +645,8 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                     let delta_time = now.duration_since(last_frame_time).as_secs_f32();
                     last_frame_time = now;
                     do_controls(&mut player_camera, &pressed_keys, &mut new_pressed_keys, delta_time, &mut cursor_locked, base, &mut saved_cursor_pos);
+                    // println!("{:?}",&player_camera.position);
+                    // println!("{:?}",&player_camera.rotation);
 
                     let (present_index, _) = base
                         .swapchain_loader

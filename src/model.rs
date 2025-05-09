@@ -5,7 +5,7 @@ use std::rc::Rc;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use ash::vk;
-use ash::vk::{CommandBuffer, DeviceMemory, Extent3D, ImageView, Sampler};
+use ash::vk::{CommandBuffer, DeviceMemory, Extent3D, Format, ImageView, Sampler};
 use image::DynamicImage;
 use json::JsonValue;
 use winit::dpi::Position;
@@ -542,7 +542,7 @@ impl Gltf {
     pub fn update_node(&mut self, base: &VkBase, node: &Rc<RefCell<Node>>, parent_transform: &Matrix) {
         let node = node.borrow();
 
-        let rotate = Matrix::new_rotate_quaternion_vec4(&node.rotation);
+        let rotate = Matrix::new_rotate_quaternion_vec4(&node.rotation.mul_by_vec(&Vector::new_vec4(-1.0, -1.0, -1.0,1.0)));
         let scale = Matrix::new_scale_vec3(&node.scale);
         let translate = Matrix::new_translation_vec3(&node.translation);
 
@@ -671,66 +671,10 @@ impl Image {
     }
 
     unsafe fn construct_image_view(&mut self, base: &VkBase) { unsafe {
-        let bytes = fs::read(&self.uri).expect("Failed to read image file");
-        let image = image::load_from_memory(&bytes).expect("Failed to load image").to_rgba8();
-        let (img_width, img_height) = image.dimensions();
-        let image_extent = vk::Extent2D { width: img_width, height: img_height };
-        let image_data = image.into_raw();
-        let image_size = (img_width * img_height * 4) as u64;
-
-        let mut image_staging_buffer = vk::Buffer::null();
-        let mut image_staging_buffer_memory = DeviceMemory::null();
-        VkBase::create_buffer(
-            base,
-            image_size,
-            vk::BufferUsageFlags::TRANSFER_SRC,
-            vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
-            &mut image_staging_buffer,
-            &mut image_staging_buffer_memory,
-        );
-        let image_ptr = base
-            .device
-            .map_memory(
-                image_staging_buffer_memory,
-                0,
-                image_size,
-                vk::MemoryMapFlags::empty(),
-            )
-            .expect("Failed to map image buffer memory");
-        copy_data_to_memory(image_ptr, &image_data);
-        base.device.unmap_memory(image_staging_buffer_memory);
-
-        let texture_image_create_info = vk::ImageCreateInfo {
-            s_type: vk::StructureType::IMAGE_CREATE_INFO,
-            image_type: vk::ImageType::TYPE_2D,
-            extent: Extent3D { width: image_extent.width, height: image_extent.height, depth: 1 },
-            mip_levels: 1,
-            array_layers: 1,
-            format: vk::Format::R8G8B8A8_SRGB,
-            tiling: vk::ImageTiling::OPTIMAL,
-            initial_layout: vk::ImageLayout::UNDEFINED,
-            usage: vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED,
-            sharing_mode: vk::SharingMode::EXCLUSIVE,
-            samples: vk::SampleCountFlags::TYPE_1,
-            ..Default::default()
-        };
-        let mut texture_image = vk::Image::null();
-        let mut texture_image_memory = DeviceMemory::null();
-        base.create_image(
-            &texture_image_create_info,
-            vk::MemoryPropertyFlags::DEVICE_LOCAL,
-            &mut texture_image,
-            &mut texture_image_memory,
-        );
-        base.transition_image_layout(texture_image, vk::Format::R8G8B8A8_SRGB, vk::ImageLayout::UNDEFINED, vk::ImageLayout::TRANSFER_DST_OPTIMAL);
-        base.copy_buffer_to_image(image_staging_buffer, texture_image, image_extent.into());
-        base.transition_image_layout(texture_image, vk::Format::R8G8B8A8_SRGB, vk::ImageLayout::TRANSFER_DST_OPTIMAL, vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-
-        base.device.destroy_buffer(image_staging_buffer, None);
-        base.device.free_memory(image_staging_buffer_memory, None);
-
-        self.image = (texture_image, texture_image_memory);
-        self.image_view = base.create_2_d_image_view(texture_image, vk::Format::R8G8B8A8_SRGB);
+        let (image_view, image) = base.create_2d_texture_image(&self.uri);
+        self.image = image;
+        self.image_view = image_view.0;
+        base.device.destroy_sampler(image_view.1, None);
     } }
 }
 

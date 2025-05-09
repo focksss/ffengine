@@ -46,5 +46,8 @@ void main() {
     } else {
         base_color = mat.base_color;
     }
+    if (base_color.a < 0.5) {
+        discard;
+    }
     uFragColor = vec4(base_color.rgb, 1.0);
 }

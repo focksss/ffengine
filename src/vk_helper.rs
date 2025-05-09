@@ -761,8 +761,9 @@ impl VkBase {
         let image_extent = vk::Extent2D { width: img_width, height: img_height };
         let image_data = image.into_raw();
         let image_size = (img_width * img_height * 4) as u64;
+        let image_mip_levels = 1 + image_extent.height.max(image_extent.width).ilog2();
 
-        let mut image_staging_buffer = vk::Buffer::null();
+        let mut image_staging_buffer = Buffer::null();
         let mut image_staging_buffer_memory = DeviceMemory::null();
         VkBase::create_buffer(
             self,
@@ -788,7 +789,7 @@ impl VkBase {
             s_type: vk::StructureType::IMAGE_CREATE_INFO,
             image_type: vk::ImageType::TYPE_2D,
             extent: Extent3D { width: image_extent.width, height: image_extent.height, depth: 1 },
-            mip_levels: 1,
+            mip_levels: image_mip_levels,
             array_layers: 1,
             format: vk::Format::R8G8B8A8_SRGB,
             tiling: vk::ImageTiling::OPTIMAL,
@@ -798,7 +799,7 @@ impl VkBase {
             samples: vk::SampleCountFlags::TYPE_1,
             ..Default::default()
         };
-        let mut texture_image = vk::Image::null();
+        let mut texture_image = Image::null();
         let mut texture_image_memory = DeviceMemory::null();
         self.create_image(
             &texture_image_create_info,
@@ -806,13 +807,42 @@ impl VkBase {
             &mut texture_image,
             &mut texture_image_memory,
         );
-        self.transition_image_layout(texture_image, vk::Format::R8G8B8A8_SRGB, vk::ImageLayout::UNDEFINED, vk::ImageLayout::TRANSFER_DST_OPTIMAL);
+        self.transition_image_layout(texture_image, ImageSubresourceRange {
+            aspect_mask: vk::ImageAspectFlags::COLOR,
+            base_mip_level: 0,
+            level_count: image_mip_levels,
+            base_array_layer: 0,
+            layer_count: 1,
+            ..Default::default()
+        }, vk::ImageLayout::UNDEFINED, vk::ImageLayout::TRANSFER_DST_OPTIMAL);
         self.copy_buffer_to_image(image_staging_buffer, texture_image, image_extent.into());
-        self.transition_image_layout(texture_image, vk::Format::R8G8B8A8_SRGB, vk::ImageLayout::TRANSFER_DST_OPTIMAL, vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+        self.transition_image_layout(texture_image, ImageSubresourceRange {
+            aspect_mask: vk::ImageAspectFlags::COLOR,
+            base_mip_level: 0,
+            level_count: image_mip_levels,
+            base_array_layer: 0,
+            layer_count: 1,
+            ..Default::default()
+        }, vk::ImageLayout::TRANSFER_DST_OPTIMAL, vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
 
         self.device.destroy_buffer(image_staging_buffer, None);
         self.device.free_memory(image_staging_buffer_memory, None);
-
+        
+        let view_info = vk::ImageViewCreateInfo {
+            s_type: vk::StructureType::IMAGE_VIEW_CREATE_INFO,
+            image: texture_image,
+            view_type: vk::ImageViewType::TYPE_2D,
+            format: vk::Format::R8G8B8A8_SRGB,
+            subresource_range: ImageSubresourceRange {
+                aspect_mask: vk::ImageAspectFlags::COLOR,
+                base_mip_level: 0,
+                level_count: image_mip_levels,
+                base_array_layer: 0,
+                layer_count: 1,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
         let sampler_info = vk::SamplerCreateInfo {
             s_type: vk::StructureType::SAMPLER_CREATE_INFO,
             mag_filter: vk::Filter::LINEAR,
@@ -832,7 +862,7 @@ impl VkBase {
         };
 
         let image = (texture_image, texture_image_memory);
-        let texture = (self.create_2_d_image_view(texture_image, vk::Format::R8G8B8A8_SRGB), self.device.create_sampler(&sampler_info, None).expect("failed to create sampler"));
+        let texture = (self.device.create_image_view(&view_info, None).expect("failed to create image view"), self.device.create_sampler(&sampler_info, None).expect("failed to create sampler"));
         (texture, image)
     } }
     pub unsafe fn create_image(
@@ -909,7 +939,7 @@ impl VkBase {
         self.device.queue_wait_idle(self.graphics_queue).unwrap();
         self.device.free_command_buffers(self.pool, &command_buffers);
     } }
-    pub unsafe fn transition_image_layout(&self, image: Image, format: vk::Format, old_layout: vk::ImageLayout, new_layout: vk::ImageLayout) { unsafe {
+    pub unsafe fn transition_image_layout(&self, image: Image, subresource_range: ImageSubresourceRange, old_layout: vk::ImageLayout, new_layout: vk::ImageLayout) { unsafe {
         let command_buffers = self.begin_single_time_commands(1);
         let mut barrier = vk::ImageMemoryBarrier {
             s_type: vk::StructureType::IMAGE_MEMORY_BARRIER,
@@ -918,25 +948,20 @@ impl VkBase {
             src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
             dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
             image,
-            subresource_range: ImageSubresourceRange {
-                aspect_mask: vk::ImageAspectFlags::COLOR,
-                base_mip_level: 0,
-                level_count: 1,
-                base_array_layer: 0,
-                layer_count: 1,
-                ..Default::default()
-            },
+            subresource_range,
             ..Default::default()
         };
         let mut source_stage = vk::PipelineStageFlags::empty();
         let mut destination_stage = vk::PipelineStageFlags::empty();
+
         if old_layout == vk::ImageLayout::UNDEFINED && new_layout == vk::ImageLayout::TRANSFER_DST_OPTIMAL {
             barrier.src_access_mask = vk::AccessFlags::empty();
             barrier.dst_access_mask = vk::AccessFlags::TRANSFER_WRITE;
 
             source_stage = vk::PipelineStageFlags::TOP_OF_PIPE;
             destination_stage = vk::PipelineStageFlags::TRANSFER;
-        } else if old_layout == vk::ImageLayout::TRANSFER_DST_OPTIMAL && new_layout == vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL {
+        } 
+        else if old_layout == vk::ImageLayout::TRANSFER_DST_OPTIMAL && new_layout == vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL {
             barrier.src_access_mask = vk::AccessFlags::TRANSFER_WRITE;
             barrier.dst_access_mask = vk::AccessFlags::SHADER_READ;
 
@@ -945,6 +970,7 @@ impl VkBase {
         } else {
             eprintln!("unsupported layout transition");
         }
+        
         self.device.cmd_pipeline_barrier(
             command_buffers[0],
             source_stage,

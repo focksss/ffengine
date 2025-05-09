@@ -172,7 +172,7 @@ impl Matrix {
         let f = 1.0 / (fov_y / 2.0).tan();
 
         result.data[0] = f / aspect;
-        result.data[5] = f;
+        result.data[5] = -f;
         result.data[10] = far / (near - far);
         result.data[11] = -1.0;
         result.data[14] = (far * near) / (near - far);
@@ -199,8 +199,8 @@ impl Matrix {
     }
 
     pub fn new_view(pos: &Vector, rot: &Vector) -> Self {
-        let t = Matrix::new_translation_vec3(pos);
-        let r = Matrix::new_rotate_euler_vec3(rot);
+        let t = Matrix::new_translation_vec3(&pos.mul_by_vec(&Vector::new_vec3(1.0, -1.0, 1.0)));
+        let r = Matrix::new_rotate_euler_vec3(&rot.mul_by_vec(&Vector::new_vec3(-1.0,1.0, 1.0)));
 
         let result = t.mul_mat4(&r);
 

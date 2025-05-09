@@ -24,10 +24,11 @@ layout(binding = 0) uniform UniformBuffer {
 } ubo;
 
 void main() {
-    fragPos = pos;
+    vec4 position = model * vec4(pos, 1.0);
+    fragPos = position.xyz;
     o_uv = vec2(uv.x, uv.y);
     o_material = material;
-    gl_Position = ubo.projection * ubo.view * model * vec4(pos, 1.0);
+    gl_Position = ubo.projection * ubo.view * position;
 
     mat3 normalMatrix = mat3(transpose(inverse(model)));
 //    mat3 viewNormalMatrix = transpose(inverse(mat3(ubo.view * model)));
