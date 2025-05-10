@@ -6,6 +6,7 @@ use ash::vk;
 use ash::vk::{CommandBuffer, DeviceMemory, ImageView, Sampler};
 use json::JsonValue;
 use crate::matrix::Matrix;
+use crate::scene::Frustum;
 use crate::vector::Vector;
 use crate::vk_helper::{copy_data_to_memory, VkBase};
 
@@ -281,6 +282,9 @@ impl Gltf {
                         index_data_u32: Vec::new(),
                         vertex_data: Vec::new(),
                         material_index,
+                        min: Vector::new_null(),
+                        max: Vector::new_null(),
+                        corners: [Vector::new_null(); 8],
                         id: primitive_count,
                     });
                     primitive_count += 1;
@@ -359,6 +363,7 @@ impl Gltf {
                     rotation,
                     scale,
                     translation,
+                    transform: Matrix::new_empty(),
                     children: Vec::new(),
                     children_indices,
                 }))
@@ -459,6 +464,7 @@ impl Gltf {
                     );
                 }
                 self.instance_data.push(Instance::new(Matrix::new(), primitive.material_index));
+                primitive.construct_min_max()
             }
         }
         self.instance_buffer_size = self.primitive_count as u64 * size_of::<Instance>() as u64;
@@ -535,7 +541,7 @@ impl Gltf {
         }
     } }
     pub fn update_node(&mut self, base: &VkBase, node: &Rc<RefCell<Node>>, parent_transform: &Matrix) {
-        let node = node.borrow();
+        let mut node = node.borrow_mut();
 
         let rotate = Matrix::new_rotate_quaternion_vec4(&node.rotation.mul_by_vec(&Vector::new_vec4(-1.0, -1.0, -1.0,1.0)));
         let scale = Matrix::new_scale_vec3(&node.scale);
@@ -549,6 +555,8 @@ impl Gltf {
         let mut world_transform = parent_transform.clone();
         world_transform.set_and_mul_mat4(&local_transform);
 
+        node.transform = world_transform.clone();
+
         if let Some(mesh) = &node.mesh {
             for primitive in mesh.borrow().primitives.iter() {
                 self.instance_data[primitive.id].matrix = world_transform.data;
@@ -560,7 +568,7 @@ impl Gltf {
         }
     }
 
-    pub unsafe fn draw(&self, base: &VkBase, draw_command_buffer: &CommandBuffer, frame: usize) { unsafe {
+    pub unsafe fn draw(&self, base: &VkBase, draw_command_buffer: &CommandBuffer, frame: usize, frustum: &Frustum) { unsafe {
         base.device.cmd_bind_vertex_buffers(
             *draw_command_buffer,
             1,
@@ -580,7 +588,7 @@ impl Gltf {
             vk::IndexType::UINT32,
         );
         for node in self.scene.nodes.iter() {
-            node.borrow().draw(base, &draw_command_buffer)
+            node.borrow().draw(base, &draw_command_buffer, frustum)
         }
     } }
 
@@ -791,6 +799,10 @@ pub struct Primitive {
     pub material_index: u32,
     pub id: usize,
 
+    pub min: Vector,
+    pub max: Vector,
+    pub corners: [Vector; 8],
+
     pub indices_count: usize,
     pub index_buffer_offset: usize,
     pub vertex_buffer_offset: usize,
@@ -938,6 +950,27 @@ impl Primitive {
             v3.bitangent = bitangent.to_array3();
         }
     }
+
+    fn construct_min_max(&mut self) {
+        let mut min = Vector::new_vec(f32::MAX);
+        let mut max = Vector::new_vec(f32::MIN);
+        for vertex in self.vertex_data.iter() {
+            min = Vector::min(&Vector::new_from_array(&vertex.position), &min);
+            max = Vector::max(&Vector::new_from_array(&vertex.position), &max);
+        }
+        self.min = min;
+        self.max = max;
+        self.corners = [
+            self.min,
+            Vector::new_vec3(max.x, min.y, min.z),
+            Vector::new_vec3(max.x, min.y, max.z),
+            Vector::new_vec3(min.x, min.y, max.z),
+            Vector::new_vec3(min.x, max.y, min.z),
+            Vector::new_vec3(max.x, max.y, min.z),
+            self.max,
+            Vector::new_vec3(min.x, max.y, max.z),
+        ]
+    }
 }
 trait AsUsize {
     fn as_usize(&self) -> usize;
@@ -995,25 +1028,48 @@ pub struct Node {
     pub rotation: Vector,
     pub scale: Vector,
     pub translation: Vector,
+    pub transform: Matrix,
     pub children: Vec<Rc<RefCell<Node>>>,
     pub children_indices: Vec<usize>,
 }
 impl Node {
-    pub unsafe fn draw(&self, base: &VkBase, draw_command_buffer: &CommandBuffer) { unsafe {
+    pub unsafe fn draw(&self, base: &VkBase, draw_command_buffer: &CommandBuffer, frustum: &Frustum) { unsafe {
         if self.mesh.is_some() {
             for primitive in self.mesh.as_ref().unwrap().borrow().primitives.iter() {
-                base.device.cmd_draw_indexed(
-                    *draw_command_buffer,
-                    primitive.indices.count as u32,
-                    1,
-                    primitive.index_buffer_offset as u32,
-                    0,
-                    primitive.id as u32,
-                );
+                let mut all_points_outside_of_same_plane = false;
+
+                for plane_idx in 0..6 {
+                    let mut all_outside_this_plane = true;
+
+                    for corner in primitive.corners.iter() {
+                        let world_pos = self.transform.mul_vector4(&Vector::new_vec4(corner.x, corner.y, corner.z, 1.0));
+
+                        if frustum.planes[plane_idx].test_point_within(&world_pos) {
+                            all_outside_this_plane = false;
+                            break;
+                        }
+                    }
+                    if all_outside_this_plane {
+                        all_points_outside_of_same_plane = true;
+                        break;
+                    }
+                }
+                if !all_points_outside_of_same_plane {
+                    base.device.cmd_draw_indexed(
+                        *draw_command_buffer,
+                        primitive.indices.count as u32,
+                        1,
+                        primitive.index_buffer_offset as u32,
+                        0,
+                        primitive.id as u32,
+                    );
+                }
             }
         }
+
+        // Recursively draw children
         for child in self.children.iter() {
-            child.borrow().draw(base, draw_command_buffer);
+            child.borrow().draw(base, draw_command_buffer, frustum);
         }
     } }
 }

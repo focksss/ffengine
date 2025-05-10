@@ -25,6 +25,7 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
 use winit::window::CursorGrabMode;
 use crate::{vk_helper::*, vector::*};
+use crate::matrix::Matrix;
 use crate::model::{Gltf, Instance};
 use crate::scene::Camera;
 
@@ -55,7 +56,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
     unsafe {
         //let mut model_test = Gltf::new("C:\\Graphics\\assets\\gtlf_models\\DamagedHelmet\\glTF\\DamagedHelmet.gltf");
-        let mut model_test = Gltf::new("C:\\Graphics\\assets\\bistro2\\untitled.gltf");
+        let mut model_test = Gltf::new("C:\\Graphics\\assets\\monke\\untitled.gltf");
         //let mut model_test = Gltf::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf");
         //let mut model_test = Gltf::new("C:\\Graphics\\assets\\helmet\\DamagedHelmet.gltf");
         //let mut model_test = Gltf::new("C:\\Graphics\\assets\\luna\\MRLunaSnow.gltf");
@@ -570,6 +571,13 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
         let mut last_frame_time = Instant::now();
         let mut cursor_locked = false;
         let mut saved_cursor_pos = PhysicalPosition::new(0.0, 0.0);
+
+        let mut pause_frustum = false;
+        base.window.set_cursor_position(PhysicalPosition::new(
+            base.window.inner_size().width as f32 * 0.5,
+            base.window.inner_size().height as f32 * 0.5))
+            .expect("failed to reset mouse position");
+
         base.event_loop.borrow_mut().run_on_demand(|event, elwp| {
             elwp.set_control_flow(ControlFlow::Poll);
             match event {
@@ -662,9 +670,11 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                     let now = Instant::now();
                     let delta_time = now.duration_since(last_frame_time).as_secs_f32();
                     last_frame_time = now;
-                    do_controls(&mut player_camera, &pressed_keys, &mut new_pressed_keys, delta_time, &mut cursor_locked, base, &mut saved_cursor_pos);
-                    // println!("{:?}",&player_camera.position);
-                    // println!("{:?}",&player_camera.rotation);
+                    do_controls(&mut player_camera, &pressed_keys, &mut new_pressed_keys, delta_time, &mut cursor_locked, base, &mut saved_cursor_pos, &mut pause_frustum);
+                    player_camera.update_matrices(&base);
+                    if !pause_frustum {
+                        player_camera.update_frustum()
+                    }
 
                     let current_fence = base.draw_commands_reuse_fences[current_frame];
                     base.device.wait_for_fences(&[current_fence], true, u64::MAX).expect("wait failed");
@@ -693,7 +703,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                             },
                         },
                     ];
-                    player_camera.update_matrices(&base);
+
                     let ubo = UniformData {
                         view: player_camera.view_matrix.data,
                         projection: player_camera.projection_matrix.data,
@@ -738,7 +748,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                                 &[],
                             );
 
-                            model_test.draw(base, &draw_command_buffer, current_frame);
+                            model_test.draw(base, &draw_command_buffer, current_frame, &player_camera.frustum);
 
                             device.cmd_end_render_pass(draw_command_buffer);
                         },
@@ -759,6 +769,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                 _ => (),
             }
         }).expect("Failed to initiate render loop");
+
 
         println!("Render loop exited successfully, cleaning up");
         //<editor-fold desc = "cleanup">
@@ -805,21 +816,22 @@ fn do_controls(
     cursor_locked: &mut bool,
     base: &VkBase,
     saved_cursor_pos: &mut PhysicalPosition<f64>,
+    paused: &mut bool,
 ) {
     if pressed_keys.contains(&PhysicalKey::Code(KeyCode::KeyW)) {
-        player_camera.position.x -= player_camera.speed*delta_time * (player_camera.rotation.y + PI/2.0).cos();
+        player_camera.position.x += player_camera.speed*delta_time * (player_camera.rotation.y + PI/2.0).cos();
         player_camera.position.z += player_camera.speed*delta_time * (player_camera.rotation.y + PI/2.0).sin();
     }
     if pressed_keys.contains(&PhysicalKey::Code(KeyCode::KeyA)) {
-        player_camera.position.x += player_camera.speed*delta_time * player_camera.rotation.y.cos();
+        player_camera.position.x -= player_camera.speed*delta_time * player_camera.rotation.y.cos();
         player_camera.position.z -= player_camera.speed*delta_time * player_camera.rotation.y.sin();
     }
     if pressed_keys.contains(&PhysicalKey::Code(KeyCode::KeyS)) {
-        player_camera.position.x += player_camera.speed*delta_time * (player_camera.rotation.y + PI/2.0).cos();
+        player_camera.position.x -= player_camera.speed*delta_time * (player_camera.rotation.y + PI/2.0).cos();
         player_camera.position.z -= player_camera.speed*delta_time * (player_camera.rotation.y + PI/2.0).sin();
     }
     if pressed_keys.contains(&PhysicalKey::Code(KeyCode::KeyD)) {
-        player_camera.position.x -= player_camera.speed*delta_time * player_camera.rotation.y.cos();
+        player_camera.position.x += player_camera.speed*delta_time * player_camera.rotation.y.cos();
         player_camera.position.z += player_camera.speed*delta_time * player_camera.rotation.y.sin();
     }
     if pressed_keys.contains(&PhysicalKey::Code(KeyCode::Space)) {
@@ -828,12 +840,11 @@ fn do_controls(
     if pressed_keys.contains(&PhysicalKey::Code(KeyCode::ShiftLeft)) {
         player_camera.position.y -= player_camera.speed*delta_time;
     }
-
     if pressed_keys.contains(&PhysicalKey::Code(KeyCode::ArrowUp)) {
-        player_camera.rotation.x -= delta_time;
+        player_camera.rotation.x += delta_time;
     }
     if pressed_keys.contains(&PhysicalKey::Code(KeyCode::ArrowDown)) {
-        player_camera.rotation.x += delta_time;
+        player_camera.rotation.x -= delta_time;
     }
     if pressed_keys.contains(&PhysicalKey::Code(KeyCode::ArrowLeft)) {
         player_camera.rotation.y += delta_time;
@@ -869,6 +880,9 @@ fn do_controls(
             }
             base.window.set_cursor_position(*saved_cursor_pos).expect("Cursor pos reset failed");
         }
+    }
+    if new_pressed_keys.contains(&PhysicalKey::Code(KeyCode::KeyP)) {
+        *paused = !*paused
     }
 
     new_pressed_keys.clear();

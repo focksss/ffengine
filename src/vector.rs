@@ -98,11 +98,12 @@ impl Vector {
         self.y = temp.y;
         self.z = temp.z;
     }
-    pub fn normalize_self__4d(&mut self) {
+    pub fn normalize_self_4d(&mut self) {
         let temp = self.div_float(self.magnitude_4d());
         self.x = temp.x;
         self.y = temp.y;
         self.z = temp.z;
+        self.w = temp.w;
     }
     //</editor-fold>
 
@@ -160,6 +161,49 @@ impl Vector {
         self.y = temp.y;
         self.z = temp.z;
         self.w = temp.w;
+    }
+    
+    pub fn max(a: &Vector, b: &Vector) -> Vector {
+        return Vector::new_vec4(
+            a.x.max(b.x),
+            a.y.max(b.y),
+            a.z.max(b.z),
+            a.w.max(b.w)
+        )
+    }
+    pub fn min(a: &Vector, b: &Vector) -> Vector {
+        return Vector::new_vec4(
+            a.x.min(b.x),
+            a.y.min(b.y),
+            a.z.min(b.z),
+            a.w.min(b.w)
+        )
+    }
+
+    pub fn rotate(&self, rot: &Vector) -> Vector {
+        let rx = rot.x;
+        let ry = rot.y;
+        let rz = rot.z;
+
+        let cos_x = rx.cos();
+        let sin_x = rx.sin();
+        let mut new_y = cos_x * self.y - sin_x * self.z;
+        let mut new_z = sin_x * self.y + cos_x * self.z;
+        let y = new_y;
+        let z = new_z;
+        
+        let cos_y = ry.cos();
+        let sin_y = ry.sin();
+        let mut new_x = cos_y * self.x + sin_y * z;
+        new_z = -sin_y * self.x + cos_y * z;
+        let x = new_x;
+            
+        let cos_z = rz.cos();
+        let sin_z = rz.sin();
+        new_x = cos_z * x - sin_z * y;
+        new_y = sin_z * x + cos_z * y;
+    
+        Vector::new_vec3(new_x, new_y, new_z)
     }
     //</editor-fold>
 

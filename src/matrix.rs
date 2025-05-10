@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 use crate::vector::Vector;
-
+const PI: f32 = std::f32::consts::PI;
 #[derive(Debug, Copy, Clone)]
 pub struct Matrix {
     pub data: [f32; 16],
@@ -51,15 +51,11 @@ impl Matrix {
 
     //<editor-fold desc = "matrix vector operations">
     pub fn mul_vector4(&self, other: &Vector) -> Vector {
-        let mut result = [0.0; 4];
-        for row in 0..4 {
-            result[row] =
-                self.data[row * 4] * other.x +
-                    self.data[row * 4 + 1] * other.y +
-                    self.data[row * 4 + 2] * other.z +
-                    self.data[row * 4 + 3] * other.w;
-        }
-        Vector::new_from_array(&result)
+        let x = self.data[0] * other.x + self.data[4] * other.y + self.data[8] * other.z + self.data[12] * other.w;
+        let y = self.data[1] * other.x + self.data[5] * other.y + self.data[9] * other.z + self.data[13] * other.w;
+        let z = self.data[2] * other.x + self.data[6] * other.y + self.data[10] * other.z + self.data[14] * other.w;
+        let w = self.data[3] * other.x + self.data[7] * other.y + self.data[11] * other.z + self.data[15] * other.w;
+        Vector::new_vec4(x, y, z, w)
     }
     //</editor-fold>
 
@@ -166,13 +162,14 @@ impl Matrix {
         result
     }
 
-    pub fn new_projection(fov_y: f32, aspect: f32, near: f32, far: f32) -> Self {
+    pub fn new_projection(fov_y: f32, aspect: f32, near: f32, far: f32) -> Matrix {
         let mut result = Matrix::new();
 
         let f = 1.0 / (fov_y / 2.0).tan();
 
         result.data[0] = f / aspect;
         result.data[5] = -f;
+
         result.data[10] = far / (near - far);
         result.data[11] = -1.0;
         result.data[14] = (far * near) / (near - far);
@@ -199,8 +196,8 @@ impl Matrix {
     }
 
     pub fn new_view(pos: &Vector, rot: &Vector) -> Self {
-        let t = Matrix::new_translation_vec3(&pos.mul_by_vec(&Vector::new_vec3(1.0, -1.0, 1.0)));
-        let r = Matrix::new_rotate_euler_vec3(&rot.mul_by_vec(&Vector::new_vec3(-1.0,1.0, 1.0)));
+        let t = Matrix::new_translation_vec3(&pos.mul_by_vec(&Vector::new_vec3(-1.0, -1.0, 1.0)));
+        let r = Matrix::new_rotate_euler_vec3(&rot.mul_by_vec(&Vector::new_vec3(-1.0,1.0,-1.0)));
 
         let result = t.mul_mat4(&r);
 
@@ -243,4 +240,5 @@ impl Matrix {
             println!("{:?}", &self.data[i * 4..(i + 1) * 4]);
         }
     }
+
 }
