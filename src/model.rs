@@ -1,14 +1,10 @@
 use std::cell::RefCell;
-use std::ffi::c_void;
 use std::fs;
 use std::rc::Rc;
-use std::io::Read;
 use std::path::{Path, PathBuf};
 use ash::vk;
-use ash::vk::{CommandBuffer, DeviceMemory, Extent3D, Format, ImageView, Sampler};
-use image::DynamicImage;
+use ash::vk::{CommandBuffer, DeviceMemory, ImageView, Sampler};
 use json::JsonValue;
-use winit::dpi::Position;
 use crate::matrix::Matrix;
 use crate::vector::Vector;
 use crate::vk_helper::{copy_data_to_memory, VkBase};
@@ -218,7 +214,6 @@ impl Gltf {
             }
 
             let mut ior = 1.0;
-            let mut specular_color_factor = [0.0; 4];
             if let JsonValue::Object(ref khr_materials_ior) = material["KHR_materials_ior"] {
                 if let JsonValue::Number(ref json_value) = khr_materials_ior["ior"] {
                     if let Ok(f) = json_value.to_string().parse::<f32>() {
@@ -267,7 +262,7 @@ impl Gltf {
                         }
                     }
 
-                    let mut indices = accessors[primitive_json["indices"].as_usize().unwrap()].clone();
+                    let indices = accessors[primitive_json["indices"].as_usize().unwrap()].clone();
 
                     let material_index_maybe: Option<u32> = primitive_json["material"].as_u32();
                     let mut material_index = 0u32;
@@ -309,7 +304,7 @@ impl Gltf {
                 None => (),
             }
 
-            let mut mesh_maybe: Option<usize> = node["mesh"].as_usize();
+            let mesh_maybe: Option<usize> = node["mesh"].as_usize();
             let mut mesh = None;
             match mesh_maybe {
                 Some(mesh_index) => mesh = Some(meshes[mesh_index].clone()),
@@ -713,7 +708,7 @@ pub struct Material {
     pub double_sided: bool,
     pub normal_texture: Option<i32>,
     // KHR_materials_specular
-        pub specular_color_factor: [f32; 4],
+        pub specular_color_factor: [f32; 3],
     // KHR_materials_ior
         pub ior: f32,
     pub name: String,
@@ -731,15 +726,16 @@ impl Material {
             normal_texture: self.normal_texture.unwrap_or(-1),
             _pad0: [0; 3],
             specular_color_factor: self.specular_color_factor,
+            _pad1: 0.0,
             ior: self.ior,
-            _pad1: [0; 3],
+            _pad2: [0; 3],
             base_color_factor: self.base_color_factor,
             base_color_texture: self.base_color_texture.unwrap_or(-1),
             roughness_factor: self.roughness_factor,
             roughness_texture: self.roughness_texture.unwrap_or(-1),
             metallic_factor: self.metallic_factor,
             metallic_texture: self.metallic_texture.unwrap_or(-1),
-            _pad2: [0u32; 3],
+            _pad3: [0u32; 3],
         }
     }
 }
@@ -749,10 +745,11 @@ pub struct MaterialSendable {
     pub normal_texture: i32,                 // 0
     pub _pad0: [u32; 3],                     // 4-15 (padding to 16 bytes)
 
-    pub specular_color_factor: [f32; 4],     // 16-31
+    pub specular_color_factor: [f32; 3],     // 16-31
 
+    pub _pad1: f32,
     pub ior: f32,                            // 32
-    pub _pad1: [u32; 3],                     // 36-47 (pad to next 16-byte boundary)
+    pub _pad2: [u32; 3],                     // 36-47 (pad to next 16-byte boundary)
 
     pub base_color_factor: [f32; 4],         // 48-63
 
@@ -762,11 +759,11 @@ pub struct MaterialSendable {
     pub roughness_factor: f32,               // 76
 
     pub roughness_texture: i32,              // 80
-    pub _pad2: [u32; 3],                     // 84-95 (pad to 96)
+    pub _pad3: [u32; 3],                     // 84-95 (pad to 96)
 }
 
 #[derive(Debug, Clone, Copy)]
-enum ComponentType {
+pub enum ComponentType {
     I8,
     U8,
     I16,
@@ -804,7 +801,7 @@ pub struct Primitive {
     pub vertex_data: Vec<Vertex>,
 }
 impl Primitive {
-    unsafe fn construct_data(&mut self) { unsafe {
+    fn construct_data(&mut self) {
         let mut position_accessor: Option<&Rc<Accessor>> = None;
         let mut normal_accessor: Option<&Rc<Accessor>> = None;
         let mut texcoord_accessor: Option<&Rc<Accessor>> = None;
@@ -889,7 +886,7 @@ impl Primitive {
                 .map(|v| v.into_inner())
                 .collect();
         }
-    } }
+    }
 
     fn construct_tangents<T: AsUsize>(vertices: &mut Vec<RefCell<Vertex>>, index_data: &Vec<T>) {
         for i in (0..index_data.len()).step_by(3) {

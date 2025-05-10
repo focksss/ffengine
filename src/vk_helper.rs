@@ -20,9 +20,7 @@ use ash::{
 use ash::util::Align;
 use ash::vk::{Buffer, CommandBuffer, DeviceMemory, Extent3D, Image, ImageAspectFlags, ImageSubresourceLayers, ImageSubresourceRange, ImageUsageFlags, ImageView, MemoryPropertyFlags, Offset3D, Sampler, SurfaceFormatKHR, SwapchainKHR};
 use winit::{
-    event::*,
-    event_loop::{ControlFlow, EventLoop},
-    keyboard::{Key, NamedKey},
+    event_loop::EventLoop,
     platform::run_on_demand::EventLoopExtRunOnDemand,
     raw_window_handle::{HasDisplayHandle, HasWindowHandle},
     window::WindowBuilder,
@@ -54,13 +52,15 @@ pub fn record_submit_commandbuffer<F: FnOnce(&Device, CommandBuffer)>(
     f: F,
 ) {
     unsafe {
-        device
-            .wait_for_fences(&[command_buffer_reuse_fence], true, u64::MAX)
-            .expect("Wait for fence failed.");
+        // device
+        //     .wait_for_fences(&[command_buffer_reuse_fence], true, u64::MAX)
+        //     .expect("Wait for fence failed.");
+        //
+        // device
+        //     .reset_fences(&[command_buffer_reuse_fence])
+        //     .expect("Reset fences failed.");
 
-        device
-            .reset_fences(&[command_buffer_reuse_fence])
-            .expect("Reset fences failed.");
+        //println!("1, {:?}",device.get_fence_status(command_buffer_reuse_fence));
 
         device
             .reset_command_buffer(
@@ -87,6 +87,8 @@ pub fn record_submit_commandbuffer<F: FnOnce(&Device, CommandBuffer)>(
             .wait_dst_stage_mask(wait_mask)
             .command_buffers(&command_buffers)
             .signal_semaphores(signal_semaphores);
+
+        //println!("2, {:?}",device.get_fence_status(command_buffer_reuse_fence));
 
         device
             .queue_submit(submit_queue, &[submit_info], command_buffer_reuse_fence)
@@ -126,7 +128,7 @@ unsafe extern "system" fn vulkan_debug_callback(
 pub fn find_memorytype_index(
     memory_req: &vk::MemoryRequirements,
     memory_prop: &vk::PhysicalDeviceMemoryProperties,
-    flags: vk::MemoryPropertyFlags,
+    flags: MemoryPropertyFlags,
 ) -> Option<u32> {
     memory_prop.memory_types[..memory_prop.memory_type_count as _]
         .iter()
@@ -301,12 +303,30 @@ impl VkBase {
             let pdevice_properties = instance.get_physical_device_properties(pdevice);
             let counts = pdevice_properties.limits.framebuffer_color_sample_counts & pdevice_properties.limits.framebuffer_depth_sample_counts;
             let mut msaa_samples = vk::SampleCountFlags::TYPE_1;
-            if counts.contains(vk::SampleCountFlags::TYPE_2) { msaa_samples = vk::SampleCountFlags::TYPE_2; println!("2x MSAA {:?}", msaa_samples)}
-            if counts.contains(vk::SampleCountFlags::TYPE_4) { msaa_samples = vk::SampleCountFlags::TYPE_4; println!("4x MSAA {:?}", msaa_samples)}
-            if counts.contains(vk::SampleCountFlags::TYPE_8) { msaa_samples = vk::SampleCountFlags::TYPE_8; println!("8x MSAA {:?}", msaa_samples)}
-            if counts.contains(vk::SampleCountFlags::TYPE_16) { msaa_samples = vk::SampleCountFlags::TYPE_16; println!("16x MSAA {:?}", msaa_samples)}
-            if counts.contains(vk::SampleCountFlags::TYPE_32) { msaa_samples = vk::SampleCountFlags::TYPE_32; println!("32x MSAA {:?}", msaa_samples)}
-            if counts.contains(vk::SampleCountFlags::TYPE_64) { msaa_samples = vk::SampleCountFlags::TYPE_64; println!("64x MSAA {:?}", msaa_samples)}
+            if counts.contains(vk::SampleCountFlags::TYPE_2) {
+                msaa_samples = vk::SampleCountFlags::TYPE_2;
+                println!("2x MSAA {:?}", msaa_samples)
+            }
+            if counts.contains(vk::SampleCountFlags::TYPE_4) {
+                msaa_samples = vk::SampleCountFlags::TYPE_4;
+                println!("4x MSAA {:?}", msaa_samples)
+            }
+            if counts.contains(vk::SampleCountFlags::TYPE_8) {
+                msaa_samples = vk::SampleCountFlags::TYPE_8;
+                println!("8x MSAA {:?}", msaa_samples)
+            }
+            if counts.contains(vk::SampleCountFlags::TYPE_16) {
+                msaa_samples = vk::SampleCountFlags::TYPE_16;
+                println!("16x MSAA {:?}", msaa_samples)
+            }
+            if counts.contains(vk::SampleCountFlags::TYPE_32) {
+                msaa_samples = vk::SampleCountFlags::TYPE_32;
+                println!("32x MSAA {:?}", msaa_samples)
+            }
+            if counts.contains(vk::SampleCountFlags::TYPE_64) {
+                msaa_samples = vk::SampleCountFlags::TYPE_64;
+                println!("64x MSAA {:?}", msaa_samples)
+            }
             //</editor-fold>
 
             let queue_family_index = queue_family_index as u32;
@@ -356,6 +376,45 @@ impl VkBase {
             let graphics_queue = device.get_device_queue(queue_family_index, 0);
             let swapchain_loader = swapchain::Device::new(&instance, &device);
             let device_memory_properties = instance.get_physical_device_memory_properties(pdevice);
+            //<editor-fold desc = "command pool/buffers">
+            let pool_create_info = vk::CommandPoolCreateInfo::default()
+                .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER)
+                .queue_family_index(queue_family_index);
+
+            let pool = device.create_command_pool(&pool_create_info, None).unwrap();
+
+            let command_buffer_allocate_info = vk::CommandBufferAllocateInfo::default()
+                .command_buffer_count(1 + max_frames_in_flight as u32)
+                .command_pool(pool)
+                .level(vk::CommandBufferLevel::PRIMARY);
+
+            let command_buffers = device
+                .allocate_command_buffers(&command_buffer_allocate_info)
+                .unwrap();
+            let setup_command_buffer = command_buffers[0];
+            let mut draw_command_buffers = Vec::new();
+            for i in 0..max_frames_in_flight {
+                draw_command_buffers.push(
+                    command_buffers[i]);
+            }
+            //</editor-fold>
+            //<editor-fold desc = "fencing">
+            let fence_create_info =
+                vk::FenceCreateInfo::default().flags(vk::FenceCreateFlags::SIGNALED);
+
+            let mut draw_commands_reuse_fences = Vec::new();
+            for _ in 0..max_frames_in_flight {
+                draw_commands_reuse_fences.push(
+                    device
+                        .create_fence(&fence_create_info, None)
+                        .expect("Create fence failed.")
+                )
+            }
+            let setup_commands_reuse_fence = device
+                .create_fence(&fence_create_info, None)
+                .expect("Create fence failed.");
+            //</editor-fold>
+
             //<editor-fold desc = "swapchain"
             let (surface_format, surface_resolution, swapchain) =
                 VkBase::create_swapchain(
@@ -402,44 +461,7 @@ impl VkBase {
             let color_image_view = color_image_create_info.1;
             let color_image_memory = color_image_create_info.2;
             //</editor-fold>
-            //<editor-fold desc = "command pool/buffers">
-            let pool_create_info = vk::CommandPoolCreateInfo::default()
-                .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER)
-                .queue_family_index(queue_family_index);
 
-            let pool = device.create_command_pool(&pool_create_info, None).unwrap();
-
-            let command_buffer_allocate_info = vk::CommandBufferAllocateInfo::default()
-                .command_buffer_count(1 + max_frames_in_flight as u32)
-                .command_pool(pool)
-                .level(vk::CommandBufferLevel::PRIMARY);
-
-            let command_buffers = device
-                .allocate_command_buffers(&command_buffer_allocate_info)
-                .unwrap();
-            let setup_command_buffer = command_buffers[0];
-            let mut draw_command_buffers = Vec::new();
-            for i in 0..max_frames_in_flight {
-                draw_command_buffers.push(
-                    command_buffers[i]);
-            }
-            //</editor-fold>
-            //<editor-fold desc = "fencing">
-            let fence_create_info =
-                vk::FenceCreateInfo::default().flags(vk::FenceCreateFlags::SIGNALED);
-
-            let mut draw_commands_reuse_fences = Vec::new();
-            for _ in 0..max_frames_in_flight {
-                draw_commands_reuse_fences.push(
-                    device
-                        .create_fence(&fence_create_info, None)
-                        .expect("Create fence failed.")
-                )
-            }
-            let setup_commands_reuse_fence = device
-                .create_fence(&fence_create_info, None)
-                .expect("Create fence failed.");
-            //</editor-fold>
             record_submit_commandbuffer(
                 &device,
                 setup_command_buffer,
@@ -458,8 +480,8 @@ impl VkBase {
                         .new_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
                         .old_layout(vk::ImageLayout::UNDEFINED)
                         .subresource_range(
-                            vk::ImageSubresourceRange::default()
-                                .aspect_mask(vk::ImageAspectFlags::DEPTH)
+                            ImageSubresourceRange::default()
+                                .aspect_mask(ImageAspectFlags::DEPTH)
                                 .layer_count(1)
                                 .level_count(1),
                         );
@@ -530,7 +552,54 @@ impl VkBase {
             })
         }
     }
-    
+    pub unsafe fn resize_swapchain(&mut self) { unsafe {
+        //<editor-fold desc = "swapchain"
+        let (surface_format, surface_resolution, swapchain) =
+            VkBase::create_swapchain(
+                &self.surface_loader,
+                &self.pdevice,
+                &self.surface,
+                &self.window,
+                &self.instance,
+                &self.device
+            );
+        //</editor-fold>
+        //<editor-fold desc = "present images">
+        let present_images_create_info = VkBase::create_present_images(
+            &swapchain,
+            &surface_format,
+            &self.device,
+            &self.instance,
+        );
+        self.present_images = present_images_create_info.0;
+        self.present_image_views = present_images_create_info.1;
+        //</editor-fold>
+        //<editor-fold desc = "depth">
+        let depth_image_create_info = VkBase::create_depth_image(
+            &self.instance,
+            &self.pdevice,
+            &surface_resolution,
+            &self.device,
+            self.msaa_samples
+        );
+        self.depth_image = depth_image_create_info.0;
+        self.depth_image_view = depth_image_create_info.1;
+        self.depth_image_memory = depth_image_create_info.2;
+        //</editor-fold>
+        //<editor-fold desc = "color">
+        let color_image_create_info = VkBase::create_color_image(
+            &self.instance,
+            &self.pdevice,
+            &surface_resolution,
+            &self.device,
+            self.msaa_samples,
+            surface_format.format,
+        );
+        self.color_image = color_image_create_info.0;
+        self.color_image_view = color_image_create_info.1;
+        self.color_image_memory = color_image_create_info.2;
+        //</editor-fold> {
+    } }
     pub fn create_swapchain(
         surface_loader: &surface::Instance,
         pdevice: &vk::PhysicalDevice,
@@ -583,7 +652,7 @@ impl VkBase {
             .image_color_space(surface_format.color_space)
             .image_format(surface_format.format)
             .image_extent(surface_resolution)
-            .image_usage(vk::ImageUsageFlags::COLOR_ATTACHMENT)
+            .image_usage(ImageUsageFlags::COLOR_ATTACHMENT)
             .image_sharing_mode(vk::SharingMode::EXCLUSIVE)
             .pre_transform(pre_transform)
             .composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE)
@@ -605,7 +674,7 @@ impl VkBase {
     ) -> (Vec<Image>, Vec<ImageView>) { unsafe {
         let swapchain_loader = swapchain::Device::new(&instance, &device);
         let present_images = swapchain_loader.get_swapchain_images(*swapchain).unwrap();
-        let present_image_views: Vec<vk::ImageView> = present_images
+        let present_image_views: Vec<ImageView> = present_images
             .iter()
             .map(|&image| {
                 let create_view_info = vk::ImageViewCreateInfo::default()
@@ -617,8 +686,8 @@ impl VkBase {
                         b: vk::ComponentSwizzle::B,
                         a: vk::ComponentSwizzle::A,
                     })
-                    .subresource_range(vk::ImageSubresourceRange {
-                        aspect_mask: vk::ImageAspectFlags::COLOR,
+                    .subresource_range(ImageSubresourceRange {
+                        aspect_mask: ImageAspectFlags::COLOR,
                         base_mip_level: 0,
                         level_count: 1,
                         base_array_layer: 0,
@@ -646,7 +715,7 @@ impl VkBase {
             .array_layers(1)
             .samples(samples)
             .tiling(vk::ImageTiling::OPTIMAL)
-            .usage(vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT)
+            .usage(ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT)
             .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
         let depth_image = device.create_image(&depth_image_create_info, None).unwrap();
@@ -654,7 +723,7 @@ impl VkBase {
         let depth_image_memory_index = find_memorytype_index(
             &depth_image_memory_req,
             &device_memory_properties,
-            vk::MemoryPropertyFlags::DEVICE_LOCAL,
+            MemoryPropertyFlags::DEVICE_LOCAL,
         )
             .expect("Unable to find suitable memory index for depth image.");
 
@@ -672,8 +741,8 @@ impl VkBase {
 
         let depth_image_view_info = vk::ImageViewCreateInfo::default()
             .subresource_range(
-                vk::ImageSubresourceRange::default()
-                    .aspect_mask(vk::ImageAspectFlags::DEPTH)
+                ImageSubresourceRange::default()
+                    .aspect_mask(ImageAspectFlags::DEPTH)
                     .level_count(1)
                     .layer_count(1),
             )
@@ -801,7 +870,7 @@ impl VkBase {
         self.create_buffer(
             buffer_size,
             vk::BufferUsageFlags::TRANSFER_SRC,
-            vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
+            MemoryPropertyFlags::HOST_VISIBLE | MemoryPropertyFlags::HOST_COHERENT,
             &mut staging_buffer,
             &mut staging_buffer_memory,
         );
@@ -823,7 +892,7 @@ impl VkBase {
         self.create_buffer(
             buffer_size,
             vk::BufferUsageFlags::TRANSFER_DST | usage,
-            vk::MemoryPropertyFlags::DEVICE_LOCAL,
+            MemoryPropertyFlags::DEVICE_LOCAL,
             &mut buffer,
             &mut buffer_memory,
         );
@@ -861,7 +930,7 @@ impl VkBase {
             self,
             image_size,
             vk::BufferUsageFlags::TRANSFER_SRC,
-            vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
+            MemoryPropertyFlags::HOST_VISIBLE | MemoryPropertyFlags::HOST_COHERENT,
             &mut image_staging_buffer,
             &mut image_staging_buffer_memory,
         );
@@ -900,7 +969,7 @@ impl VkBase {
             &mut texture_image_memory,
         );
         self.transition_image_layout(texture_image, ImageSubresourceRange {
-            aspect_mask: vk::ImageAspectFlags::COLOR,
+            aspect_mask: ImageAspectFlags::COLOR,
             base_mip_level: 0,
             level_count: image_mip_levels,
             base_array_layer: 0,
@@ -930,7 +999,7 @@ impl VkBase {
             view_type: vk::ImageViewType::TYPE_2D,
             format: vk::Format::R8G8B8A8_SRGB,
             subresource_range: ImageSubresourceRange {
-                aspect_mask: vk::ImageAspectFlags::COLOR,
+                aspect_mask: ImageAspectFlags::COLOR,
                 base_mip_level: 0,
                 level_count: image_mip_levels,
                 base_array_layer: 0,
@@ -1065,8 +1134,8 @@ impl VkBase {
     } }
     pub unsafe fn create_image(
         &self,
-        create_info: &vk::ImageCreateInfo,
-        properties: vk::MemoryPropertyFlags,
+        create_info: &vk::ImageCreateInfo<'_>,
+        properties: MemoryPropertyFlags,
         image: &mut Image,
         image_memory: &mut DeviceMemory)
     { unsafe {
@@ -1084,25 +1153,6 @@ impl VkBase {
         };
         *image_memory = self.device.allocate_memory(&texture_image_alloc_info, None).expect("Failed to allocate image memory");
         self.device.bind_image_memory(*image, *image_memory, 0).expect("Failed to bind image memory");
-    } }
-    pub unsafe fn create_2_d_image_view(&self, image: Image, format: vk::Format) -> ImageView { unsafe {
-        let view_info = vk::ImageViewCreateInfo {
-            s_type: vk::StructureType::IMAGE_VIEW_CREATE_INFO,
-            image,
-            view_type: vk::ImageViewType::TYPE_2D,
-            format,
-            subresource_range: ImageSubresourceRange {
-                aspect_mask: vk::ImageAspectFlags::COLOR,
-                base_mip_level: 0,
-                level_count: 1,
-                base_array_layer: 0,
-                layer_count: 1,
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-        let image_view = self.device.create_image_view(&view_info, None).expect("failed to create image view");
-        image_view
     } }
     pub unsafe fn begin_single_time_commands(&self, command_buffer_count: u32) -> Vec<CommandBuffer> { unsafe {
         let alloc_info = vk::CommandBufferAllocateInfo {
@@ -1187,14 +1237,14 @@ impl VkBase {
             buffer_offset: 0,
             buffer_row_length: 0,
             buffer_image_height: 0,
-            image_subresource: vk::ImageSubresourceLayers {
-                aspect_mask: vk::ImageAspectFlags::COLOR,
+            image_subresource: ImageSubresourceLayers {
+                aspect_mask: ImageAspectFlags::COLOR,
                 mip_level: 0,
                 base_array_layer: 0,
                 layer_count: 1,
                 ..Default::default()
             },
-            image_offset: vk::Offset3D { x: 0, y: 0, z: 0 },
+            image_offset: Offset3D { x: 0, y: 0, z: 0 },
             image_extent: extent,
             ..Default::default()
         };

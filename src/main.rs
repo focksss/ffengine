@@ -8,24 +8,23 @@ mod model;
 use std::default::Default;
 use std::error::Error;
 use std::io::Cursor;
-use std::{fs, io, mem};
+use std::mem;
 use std::collections::HashSet;
 use std::ffi::c_void;
-use std::mem::{align_of, size_of};
-use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::mem::size_of;
+use std::path::PathBuf;
 use std::time::Instant;
 
 use ash::util::*;
 use ash::vk;
-use ash::vk::{Buffer, BufferMemoryBarrier, CommandBuffer, DeviceMemory, Extent3D, Image, ImageSubresourceRange, ImageView};
+use ash::vk::{Buffer, DeviceMemory};
 use winit::dpi::PhysicalPosition;
 use winit::event::{ElementState, Event, KeyEvent, WindowEvent};
 use winit::event_loop::ControlFlow;
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
 use winit::window::CursorGrabMode;
-use crate::{vk_helper::*, matrix::*, vector::*};
+use crate::{vk_helper::*, vector::*};
 use crate::model::{Gltf, Instance};
 use crate::scene::Camera;
 
@@ -55,8 +54,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
     unsafe {
-        let mut model_test = Gltf::new("C:\\Graphics\\assets\\gtlf_models\\DamagedHelmet\\glTF\\DamagedHelmet.gltf");
-        //let mut model_test = Gltf::new("C:\\Graphics\\assets\\bistro2\\untitled.gltf");
+        //let mut model_test = Gltf::new("C:\\Graphics\\assets\\gtlf_models\\DamagedHelmet\\glTF\\DamagedHelmet.gltf");
+        let mut model_test = Gltf::new("C:\\Graphics\\assets\\bistro2\\untitled.gltf");
         //let mut model_test = Gltf::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf");
         //let mut model_test = Gltf::new("C:\\Graphics\\assets\\helmet\\DamagedHelmet.gltf");
         //let mut model_test = Gltf::new("C:\\Graphics\\assets\\luna\\MRLunaSnow.gltf");
@@ -559,7 +558,10 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             Vector::new_empty(),
             1.0,
             0.001,
-            100.0
+            100.0,
+            base.window.inner_size().width as f32 / base.window.inner_size().height as f32,
+            0.15,
+            1000.0
         );
         let mut current_frame = 0usize;
         let mut pressed_keys = HashSet::new();
@@ -664,6 +666,11 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                     // println!("{:?}",&player_camera.position);
                     // println!("{:?}",&player_camera.rotation);
 
+                    let current_fence = base.draw_commands_reuse_fences[current_frame];
+                    base.device.wait_for_fences(&[current_fence], true, u64::MAX).expect("wait failed");
+                    base.device.reset_fences(&[current_fence]).expect("reset failed");
+                    //println!("0, {:?}",base.device.get_fence_status(current_fence));
+
                     let (present_index, _) = base
                         .swapchain_loader
                         .acquire_next_image(
@@ -701,11 +708,10 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
 
                     let current_rendering_complete_semaphore = base.rendering_complete_semaphores[current_frame];
                     let current_draw_command_buffer = base.draw_command_buffers[current_frame];
-                    let current_draw_commands_reuse_fence = base.draw_commands_reuse_fences[current_frame];
                     record_submit_commandbuffer(
                         &base.device,
                         current_draw_command_buffer,
-                        current_draw_commands_reuse_fence,
+                        current_fence,
                         base.present_queue,
                         &[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT],
                         &[base.present_complete_semaphores[current_frame]],
