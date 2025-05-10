@@ -55,9 +55,9 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
     unsafe {
-        // let mut model_test = Gltf::new("C:\\Graphics\\assets\\gtlf_models\\DamagedHelmet\\glTF\\DamagedHelmet.gltf");
-        //let mut model_test = Gltf::new("C:\\Graphics\\assets\\monke\\untitled.gltf");
-        let mut model_test = Gltf::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf");
+        let mut model_test = Gltf::new("C:\\Graphics\\assets\\gtlf_models\\DamagedHelmet\\glTF\\DamagedHelmet.gltf");
+        //let mut model_test = Gltf::new("C:\\Graphics\\assets\\bistro2\\untitled.gltf");
+        //let mut model_test = Gltf::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf");
         //let mut model_test = Gltf::new("C:\\Graphics\\assets\\helmet\\DamagedHelmet.gltf");
         //let mut model_test = Gltf::new("C:\\Graphics\\assets\\luna\\MRLunaSnow.gltf");
         model_test.construct_buffers(base, MAX_FRAMES_IN_FLIGHT);
@@ -71,18 +71,29 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
         let renderpass_attachments = [
             vk::AttachmentDescription {
                 format: base.surface_format.format,
-                samples: vk::SampleCountFlags::TYPE_1,
+                samples: base.msaa_samples,
                 load_op: vk::AttachmentLoadOp::CLEAR,
                 store_op: vk::AttachmentStoreOp::STORE,
-                final_layout: vk::ImageLayout::PRESENT_SRC_KHR,
+                final_layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
                 ..Default::default()
             },
             vk::AttachmentDescription {
                 format: vk::Format::D16_UNORM,
-                samples: vk::SampleCountFlags::TYPE_1,
+                samples: base.msaa_samples,
                 load_op: vk::AttachmentLoadOp::CLEAR,
                 initial_layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
                 final_layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                ..Default::default()
+            },
+            vk::AttachmentDescription {
+                format: base.surface_format.format,
+                samples: vk::SampleCountFlags::TYPE_1,
+                load_op: vk::AttachmentLoadOp::DONT_CARE,
+                store_op: vk::AttachmentStoreOp::STORE,
+                stencil_load_op: vk::AttachmentLoadOp::DONT_CARE,
+                stencil_store_op: vk::AttachmentStoreOp::DONT_CARE,
+                initial_layout: vk::ImageLayout::UNDEFINED,
+                final_layout: vk::ImageLayout::PRESENT_SRC_KHR,
                 ..Default::default()
             },
         ];
@@ -94,6 +105,10 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             attachment: 1,
             layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
         };
+        let resolve_attachment_ref = [vk::AttachmentReference {
+            attachment: 2,
+            layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+        }];
         let dependencies = [vk::SubpassDependency {
             src_subpass: vk::SUBPASS_EXTERNAL,
             src_stage_mask: vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
@@ -106,6 +121,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
         let subpass = vk::SubpassDescription::default()
             .color_attachments(&color_attachment_refs)
             .depth_stencil_attachment(&depth_attachment_ref)
+            .resolve_attachments(&resolve_attachment_ref)
             .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS);
 
         let renderpass_create_info = vk::RenderPassCreateInfo::default()
@@ -123,7 +139,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             .present_image_views
             .iter()
             .map(|&present_image_view| {
-                let framebuffer_attachments = [present_image_view, base.depth_image_view];
+                let framebuffer_attachments = [base.color_image_view, base.depth_image_view, present_image_view];
                 let frame_buffer_create_info = vk::FramebufferCreateInfo::default()
                     .render_pass(renderpass)
                     .attachments(&framebuffer_attachments)
@@ -476,7 +492,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             ..Default::default()
         };
         let multisample_state_info = vk::PipelineMultisampleStateCreateInfo {
-            rasterization_samples: vk::SampleCountFlags::TYPE_1,
+            rasterization_samples: base.msaa_samples,
             ..Default::default()
         };
         let noop_stencil_state = vk::StencilOpState {

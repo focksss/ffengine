@@ -705,7 +705,6 @@ impl Texture {
             max_lod: self.source.borrow().mip_levels as f32,
             ..Default::default()
         };
-        println!("{}",sampler_info.max_lod);
         self.sampler = base.device.create_sampler(&sampler_info, None).expect("failed to create sampler");
     } }
 }
