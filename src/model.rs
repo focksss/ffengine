@@ -133,6 +133,20 @@ impl Gltf {
         }
 
         let mut materials = Vec::new();
+        materials.push(Material {
+            alpha_mode: String::from("BLEND"),
+            double_sided: false,
+            normal_texture: None,
+            specular_color_factor: [1.0; 3],
+            ior: 1.0,
+            name: String::from("default material"),
+            base_color_factor: [1.0; 4],
+            base_color_texture: None,
+            metallic_factor: 0.1,
+            metallic_texture: None,
+            roughness_factor: 0.5,
+            roughness_texture: None,
+        });
         for material in json["materials"].members() {
             let name_maybe: Option<&str> = material["name"].as_str();
             let mut name = String::from("unnamed node");
@@ -268,7 +282,7 @@ impl Gltf {
                     let material_index_maybe: Option<u32> = primitive_json["material"].as_u32();
                     let mut material_index = 0u32;
                     match material_index_maybe {
-                        Some(material_index_value) => material_index = material_index_value,
+                        Some(material_index_value) => material_index = material_index_value + 1,
                         None => (),
                     }
                     primitives.push(Primitive {
@@ -312,7 +326,7 @@ impl Gltf {
             let mut mesh = None;
             match mesh_maybe {
                 Some(mesh_index) => mesh = Some(meshes[mesh_index].clone()),
-                None => mesh = None,
+                None => (),
             }
 
             let mut rotation = Vector::new_empty();
@@ -734,7 +748,7 @@ impl Material {
             normal_texture: self.normal_texture.unwrap_or(-1),
             _pad0: [0; 3],
             specular_color_factor: self.specular_color_factor,
-            _pad1: 0.0,
+            _pad1: 0,
             ior: self.ior,
             _pad2: [0; 3],
             base_color_factor: self.base_color_factor,
@@ -750,24 +764,24 @@ impl Material {
 #[derive(Clone, Debug, Copy)]
 #[repr(C)]
 pub struct MaterialSendable {
-    pub normal_texture: i32,                 // 0
-    pub _pad0: [u32; 3],                     // 4-15 (padding to 16 bytes)
+    pub normal_texture: i32,
+    pub _pad0: [u32; 3],
 
-    pub specular_color_factor: [f32; 3],     // 16-31
+    pub specular_color_factor: [f32; 3],
+    pub _pad1: u32,
 
-    pub _pad1: f32,
-    pub ior: f32,                            // 32
-    pub _pad2: [u32; 3],                     // 36-47 (pad to next 16-byte boundary)
+    pub ior: f32,
+    pub _pad2: [u32; 3],
 
-    pub base_color_factor: [f32; 4],         // 48-63
+    pub base_color_factor: [f32; 4],
 
-    pub base_color_texture: i32,             // 64
-    pub metallic_factor: f32,                // 68
-    pub metallic_texture: i32,               // 72
-    pub roughness_factor: f32,               // 76
+    pub base_color_texture: i32,
+    pub metallic_factor: f32,
+    pub metallic_texture: i32,
+    pub roughness_factor: f32,
 
-    pub roughness_texture: i32,              // 80
-    pub _pad3: [u32; 3],                     // 84-95 (pad to 96)
+    pub roughness_texture: i32,
+    pub _pad3: [u32; 3],
 }
 
 #[derive(Debug, Clone, Copy)]

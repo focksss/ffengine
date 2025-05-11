@@ -25,7 +25,6 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
 use winit::window::CursorGrabMode;
 use crate::{vk_helper::*, vector::*};
-use crate::matrix::Matrix;
 use crate::model::{Gltf, Instance};
 use crate::scene::Camera;
 
@@ -43,7 +42,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     unsafe {
         println!("main code running");
         let mut shader_paths = Vec::new();
-        shader_paths.push("src\\shaders\\glsl\\hello_triangle");
+        shader_paths.push("src\\shaders\\glsl\\geometry");
 
         compile_shaders(shader_paths).expect("Failed to compile shaders");
 
@@ -67,92 +66,6 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
 
         let null_tex = base.create_2d_texture_image(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("local_assets\\null8x.png"), true);
 
-        //<editor-fold desc = "renderpass init">
-        let renderpass_attachments = [
-            vk::AttachmentDescription {
-                format: base.surface_format.format,
-                samples: base.msaa_samples,
-                load_op: vk::AttachmentLoadOp::CLEAR,
-                store_op: vk::AttachmentStoreOp::STORE,
-                final_layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-                ..Default::default()
-            },
-            vk::AttachmentDescription {
-                format: vk::Format::D16_UNORM,
-                samples: base.msaa_samples,
-                load_op: vk::AttachmentLoadOp::CLEAR,
-                initial_layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-                final_layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-                ..Default::default()
-            },
-            vk::AttachmentDescription {
-                format: base.surface_format.format,
-                samples: vk::SampleCountFlags::TYPE_1,
-                load_op: vk::AttachmentLoadOp::DONT_CARE,
-                store_op: vk::AttachmentStoreOp::STORE,
-                stencil_load_op: vk::AttachmentLoadOp::DONT_CARE,
-                stencil_store_op: vk::AttachmentStoreOp::DONT_CARE,
-                initial_layout: vk::ImageLayout::UNDEFINED,
-                final_layout: vk::ImageLayout::PRESENT_SRC_KHR,
-                ..Default::default()
-            },
-        ];
-        let color_attachment_refs = [vk::AttachmentReference {
-            attachment: 0,
-            layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-        }];
-        let depth_attachment_ref = vk::AttachmentReference {
-            attachment: 1,
-            layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-        };
-        let resolve_attachment_ref = [vk::AttachmentReference {
-            attachment: 2,
-            layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-        }];
-        let dependencies = [vk::SubpassDependency {
-            src_subpass: vk::SUBPASS_EXTERNAL,
-            src_stage_mask: vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-            dst_access_mask: vk::AccessFlags::COLOR_ATTACHMENT_READ
-                | vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
-            dst_stage_mask: vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-            ..Default::default()
-        }];
-
-        let subpass = vk::SubpassDescription::default()
-            .color_attachments(&color_attachment_refs)
-            .depth_stencil_attachment(&depth_attachment_ref)
-            .resolve_attachments(&resolve_attachment_ref)
-            .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS);
-
-        let renderpass_create_info = vk::RenderPassCreateInfo::default()
-            .attachments(&renderpass_attachments)
-            .subpasses(std::slice::from_ref(&subpass))
-            .dependencies(&dependencies);
-
-        let renderpass = base
-            .device
-            .create_render_pass(&renderpass_create_info, None)
-            .unwrap();
-        //</editor-fold>
-        //<editor-fold desc = "framebuffers">
-        let framebuffers: Vec<vk::Framebuffer> = base
-            .present_image_views
-            .iter()
-            .map(|&present_image_view| {
-                let framebuffer_attachments = [base.color_image_view, base.depth_image_view, present_image_view];
-                let frame_buffer_create_info = vk::FramebufferCreateInfo::default()
-                    .render_pass(renderpass)
-                    .attachments(&framebuffer_attachments)
-                    .width(base.surface_resolution.width)
-                    .height(base.surface_resolution.height)
-                    .layers(1);
-
-                base.device
-                    .create_framebuffer(&frame_buffer_create_info, None)
-                    .unwrap()
-            })
-            .collect();
-        //</editor-fold>
         //<editor-fold desc = "uniform buffers">
         let layout_bindings = [
             vk::DescriptorSetLayoutBinding {
@@ -183,8 +96,8 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             vk::DescriptorBindingFlags::empty(),
 
             vk::DescriptorBindingFlags::PARTIALLY_BOUND |
-            vk::DescriptorBindingFlags::VARIABLE_DESCRIPTOR_COUNT |
-            vk::DescriptorBindingFlags::UPDATE_AFTER_BIND,
+                vk::DescriptorBindingFlags::VARIABLE_DESCRIPTOR_COUNT |
+                vk::DescriptorBindingFlags::UPDATE_AFTER_BIND,
         ];
         let binding_flags_info = vk::DescriptorSetLayoutBindingFlagsCreateInfo {
             s_type: vk::StructureType::DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO,
@@ -201,7 +114,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             ..Default::default()
         };
         let ubo_descriptor_set_layout = base.device.create_descriptor_set_layout(&layout_info, None)?;
-        
+
         let ubo_buffer_size = size_of::<UniformData>() as u64;
         let mut uniform_buffers = Vec::new();
         let mut uniform_buffers_memory = Vec::new();
@@ -336,9 +249,96 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             base.device.update_descriptor_sets(&descriptor_writes, &[]);
         }
         //</editor-fold>
+
+        //<editor-fold desc = "renderpass init">
+        let renderpass_attachments = [
+            vk::AttachmentDescription {
+                format: base.surface_format.format,
+                samples: base.msaa_samples,
+                load_op: vk::AttachmentLoadOp::CLEAR,
+                store_op: vk::AttachmentStoreOp::STORE,
+                final_layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                ..Default::default()
+            },
+            vk::AttachmentDescription {
+                format: vk::Format::D16_UNORM,
+                samples: base.msaa_samples,
+                load_op: vk::AttachmentLoadOp::CLEAR,
+                initial_layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                final_layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                ..Default::default()
+            },
+            vk::AttachmentDescription {
+                format: base.surface_format.format,
+                samples: vk::SampleCountFlags::TYPE_1,
+                load_op: vk::AttachmentLoadOp::DONT_CARE,
+                store_op: vk::AttachmentStoreOp::STORE,
+                stencil_load_op: vk::AttachmentLoadOp::DONT_CARE,
+                stencil_store_op: vk::AttachmentStoreOp::DONT_CARE,
+                initial_layout: vk::ImageLayout::UNDEFINED,
+                final_layout: vk::ImageLayout::PRESENT_SRC_KHR,
+                ..Default::default()
+            },
+        ];
+        let color_attachment_refs = [vk::AttachmentReference {
+            attachment: 0,
+            layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+        }];
+        let depth_attachment_ref = vk::AttachmentReference {
+            attachment: 1,
+            layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+        };
+        let resolve_attachment_ref = [vk::AttachmentReference {
+            attachment: 2,
+            layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+        }];
+        let dependencies = [vk::SubpassDependency {
+            src_subpass: vk::SUBPASS_EXTERNAL,
+            src_stage_mask: vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+            dst_access_mask: vk::AccessFlags::COLOR_ATTACHMENT_READ
+                | vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
+            dst_stage_mask: vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+            ..Default::default()
+        }];
+
+        let subpass = vk::SubpassDescription::default()
+            .color_attachments(&color_attachment_refs)
+            .depth_stencil_attachment(&depth_attachment_ref)
+            .resolve_attachments(&resolve_attachment_ref)
+            .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS);
+
+        let renderpass_create_info = vk::RenderPassCreateInfo::default()
+            .attachments(&renderpass_attachments)
+            .subpasses(std::slice::from_ref(&subpass))
+            .dependencies(&dependencies);
+
+        let renderpass = base
+            .device
+            .create_render_pass(&renderpass_create_info, None)
+            .unwrap();
+        //</editor-fold>
+        //<editor-fold desc = "framebuffers">
+        let framebuffers: Vec<vk::Framebuffer> = base
+            .present_image_views
+            .iter()
+            .map(|&present_image_view| {
+                let framebuffer_attachments = [base.color_image_view, base.depth_image_view, present_image_view];
+                let frame_buffer_create_info = vk::FramebufferCreateInfo::default()
+                    .render_pass(renderpass)
+                    .attachments(&framebuffer_attachments)
+                    .width(base.surface_resolution.width)
+                    .height(base.surface_resolution.height)
+                    .layers(1);
+
+                base.device
+                    .create_framebuffer(&frame_buffer_create_info, None)
+                    .unwrap()
+            })
+            .collect();
+        //</editor-fold>
         //<editor-fold desc = "shaders">
-        let mut vertex_spv_file = Cursor::new(load_file("hello_triangle\\Triangle.vert.spv")?);
-        let mut frag_spv_file = Cursor::new(load_file("hello_triangle\\Triangle.frag.spv")?);
+        let mut vertex_spv_file = Cursor::new(load_file("geometry\\geometry.vert.spv")?);
+        let mut frag_spv_file = Cursor::new(load_file("geometry\\geometry.frag.spv")?);
 
         let vertex_code =
             read_spv(&mut vertex_spv_file).expect("Failed to read vertex shader spv file");
@@ -571,6 +571,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
         let mut last_frame_time = Instant::now();
         let mut cursor_locked = false;
         let mut saved_cursor_pos = PhysicalPosition::new(0.0, 0.0);
+        let mut needs_resize = false;
 
         let mut pause_frustum = false;
         base.window.set_cursor_position(PhysicalPosition::new(
@@ -593,6 +594,8 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                     ..
                 } => {
                     println!("bruh");
+                    player_camera.aspect_ratio = base.window.inner_size().width as f32 / base.window.inner_size().height as f32;
+                    needs_resize = true;
                 }
                 Event::WindowEvent {
                     event: WindowEvent::RedrawRequested,
@@ -670,8 +673,11 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                     let now = Instant::now();
                     let delta_time = now.duration_since(last_frame_time).as_secs_f32();
                     last_frame_time = now;
+                    if needs_resize {
+
+                    }
                     do_controls(&mut player_camera, &pressed_keys, &mut new_pressed_keys, delta_time, &mut cursor_locked, base, &mut saved_cursor_pos, &mut pause_frustum);
-                    player_camera.update_matrices(&base);
+                    player_camera.update_matrices();
                     if !pause_frustum {
                         player_camera.update_frustum()
                     }
@@ -679,7 +685,6 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                     let current_fence = base.draw_commands_reuse_fences[current_frame];
                     base.device.wait_for_fences(&[current_fence], true, u64::MAX).expect("wait failed");
                     base.device.reset_fences(&[current_fence]).expect("reset failed");
-                    //println!("0, {:?}",base.device.get_fence_status(current_fence));
 
                     let (present_index, _) = base
                         .swapchain_loader

@@ -9,9 +9,12 @@
 )]
 
 use std::{borrow::Cow, cell::RefCell, default::Default, error::Error, ffi, fs, io, ops::Drop, os::raw::c_char};
+use std::alloc::System;
 use std::ffi::c_void;
+use std::fs::Metadata;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::SystemTime;
 use ash::{
     ext::debug_utils,
     khr::{surface, swapchain},
@@ -21,7 +24,6 @@ use ash::util::Align;
 use ash::vk::{Buffer, CommandBuffer, DeviceMemory, Extent3D, Image, ImageAspectFlags, ImageSubresourceLayers, ImageSubresourceRange, ImageUsageFlags, ImageView, MemoryPropertyFlags, Offset3D, Sampler, SurfaceFormatKHR, SwapchainKHR};
 use winit::{
     event_loop::EventLoop,
-    platform::run_on_demand::EventLoopExtRunOnDemand,
     raw_window_handle::{HasDisplayHandle, HasWindowHandle},
     window::WindowBuilder,
 };
@@ -52,16 +54,6 @@ pub fn record_submit_commandbuffer<F: FnOnce(&Device, CommandBuffer)>(
     f: F,
 ) {
     unsafe {
-        // device
-        //     .wait_for_fences(&[command_buffer_reuse_fence], true, u64::MAX)
-        //     .expect("Wait for fence failed.");
-        //
-        // device
-        //     .reset_fences(&[command_buffer_reuse_fence])
-        //     .expect("Reset fences failed.");
-
-        //println!("1, {:?}",device.get_fence_status(command_buffer_reuse_fence));
-
         device
             .reset_command_buffer(
                 command_buffer,
@@ -90,6 +82,9 @@ pub fn record_submit_commandbuffer<F: FnOnce(&Device, CommandBuffer)>(
 
         //println!("2, {:?}",device.get_fence_status(command_buffer_reuse_fence));
 
+        if device.get_fence_status(command_buffer_reuse_fence).unwrap() {
+            println!("FENCE SIGNALED PRIOR TO QUEUE SUBMIT")
+        }
         device
             .queue_submit(submit_queue, &[submit_info], command_buffer_reuse_fence)
             .expect("queue submit failed.");
@@ -102,28 +97,28 @@ unsafe extern "system" fn vulkan_debug_callback(
     p_callback_data: *const vk::DebugUtilsMessengerCallbackDataEXT<'_>,
     _user_data: *mut std::os::raw::c_void,
 ) -> vk::Bool32 { unsafe {
-    let callback_data = *p_callback_data;
-    let message_id_number = callback_data.message_id_number;
+    if !message_severity.contains(vk::DebugUtilsMessageSeverityFlagsEXT::INFO) {
+        let callback_data = *p_callback_data;
+        let message_id_number = callback_data.message_id_number;
 
-    let message_id_name = if callback_data.p_message_id_name.is_null() {
-        Cow::from("")
-    } else {
-        ffi::CStr::from_ptr(callback_data.p_message_id_name).to_string_lossy()
-    };
+        let message_id_name = if callback_data.p_message_id_name.is_null() {
+            Cow::from("")
+        } else {
+            ffi::CStr::from_ptr(callback_data.p_message_id_name).to_string_lossy()
+        };
 
-    let message = if callback_data.p_message.is_null() {
-        Cow::from("")
-    } else {
-        ffi::CStr::from_ptr(callback_data.p_message).to_string_lossy()
-    };
+        let message = if callback_data.p_message.is_null() {
+            Cow::from("")
+        } else {
+            ffi::CStr::from_ptr(callback_data.p_message).to_string_lossy()
+        };
 
-    println!(
-        "{message_severity:?}:\n{message_type:?} [{message_id_name} ({message_id_number})] : {message}\n",
-    );
-
+        println!(
+            "{message_severity:?}:\n{message_type:?} [{message_id_name} ({message_id_number})] : {message}\n",
+        );
+    }
     vk::FALSE
-}
-}
+} }
 
 pub fn find_memorytype_index(
     memory_req: &vk::MemoryRequirements,
@@ -305,27 +300,27 @@ impl VkBase {
             let mut msaa_samples = vk::SampleCountFlags::TYPE_1;
             if counts.contains(vk::SampleCountFlags::TYPE_2) {
                 msaa_samples = vk::SampleCountFlags::TYPE_2;
-                println!("2x MSAA {:?}", msaa_samples)
+                println!("MSAA updated to {:?}", msaa_samples)
             }
             if counts.contains(vk::SampleCountFlags::TYPE_4) {
                 msaa_samples = vk::SampleCountFlags::TYPE_4;
-                println!("4x MSAA {:?}", msaa_samples)
+                println!("MSAA updated to {:?}", msaa_samples)
             }
             if counts.contains(vk::SampleCountFlags::TYPE_8) {
                 msaa_samples = vk::SampleCountFlags::TYPE_8;
-                println!("8x MSAA {:?}", msaa_samples)
+                println!("MSAA updated to {:?}", msaa_samples)
             }
             if counts.contains(vk::SampleCountFlags::TYPE_16) {
                 msaa_samples = vk::SampleCountFlags::TYPE_16;
-                println!("16x MSAA {:?}", msaa_samples)
+                println!("MSAA updated to {:?}", msaa_samples)
             }
             if counts.contains(vk::SampleCountFlags::TYPE_32) {
                 msaa_samples = vk::SampleCountFlags::TYPE_32;
-                println!("32x MSAA {:?}", msaa_samples)
+                println!("MSAA updated to {:?}", msaa_samples)
             }
             if counts.contains(vk::SampleCountFlags::TYPE_64) {
                 msaa_samples = vk::SampleCountFlags::TYPE_64;
-                println!("64x MSAA {:?}", msaa_samples)
+                println!("MSAA updated to {:?}", msaa_samples)
             }
             //</editor-fold>
 
@@ -413,6 +408,7 @@ impl VkBase {
             let setup_commands_reuse_fence = device
                 .create_fence(&fence_create_info, None)
                 .expect("Create fence failed.");
+            device.reset_fences(&[setup_commands_reuse_fence]).unwrap();
             //</editor-fold>
 
             //<editor-fold desc = "swapchain"
@@ -552,7 +548,7 @@ impl VkBase {
             })
         }
     }
-    pub unsafe fn resize_swapchain(&mut self) { unsafe {
+    pub unsafe fn resize_swapchain(&mut self)  {
         //<editor-fold desc = "swapchain"
         let (surface_format, surface_resolution, swapchain) =
             VkBase::create_swapchain(
@@ -599,7 +595,7 @@ impl VkBase {
         self.color_image_view = color_image_create_info.1;
         self.color_image_memory = color_image_create_info.2;
         //</editor-fold> {
-    } }
+    }
     pub fn create_swapchain(
         surface_loader: &surface::Instance,
         pdevice: &vk::PhysicalDevice,
@@ -1321,11 +1317,10 @@ pub fn compile_shaders(shader_directories: Vec<&str>) -> io::Result<()> {
                     if ext == "vert" || ext == "frag" || ext == "geom" {
                         let file_name = path.file_name().unwrap().to_string_lossy();
                         let spv_file = spv_folder.join(format!("{}.spv", file_name));
-
+                        
                         let glsl_modified = path.metadata()?.modified()?;
-                        let spv_modified = spv_file.metadata()?.modified()?;
-
-                        if glsl_modified > spv_modified || !spv_file.exists() {
+                        let spv: Result<Metadata, _> = spv_file.metadata();
+                        if spv.is_err() || glsl_modified > spv?.modified()? {
                             println!("RECOMPILING:\n{}", spv_file.display());
                             let compile_cmd = Command::new("glslc")
                                 .arg(&path)

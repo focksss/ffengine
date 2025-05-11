@@ -1,5 +1,3 @@
-use std::fmt::Pointer;
-use std::ptr::null;
 use crate::matrix::Matrix;
 use crate::vector::Vector;
 use crate::vk_helper::VkBase;
@@ -37,7 +35,7 @@ impl Camera {
         }
     }
 
-    pub fn update_matrices(&mut self, base: &VkBase) {
+    pub fn update_matrices(&mut self) {
         self.view_matrix = Matrix::new_view(&self.position, &self.rotation);
         self.projection_matrix = Matrix::new_projection(
             self.fov_y.to_radians(), 

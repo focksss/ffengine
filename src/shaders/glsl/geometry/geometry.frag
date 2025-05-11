@@ -49,5 +49,9 @@ void main() {
     if (base_color.a < 0.5) {
         discard;
     }
-    uFragColor = vec4(base_color.rgb, 1.0);
+    //uFragColor = vec4(base_color.rgb * max(0.2, dot(normal, normalize(vec3(1.0,1.0,1.0)))), 1.0);
+    //uFragColor = vec4(base_color.rgb, 1.0);
+    vec3 mapped = vec3(1.0) - exp(-base_color.rgb * 1.0);
+    mapped = pow(mapped, vec3(1.0 / 1.8));
+    uFragColor = vec4(mapped, 1.0);
 }
