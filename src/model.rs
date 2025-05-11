@@ -418,7 +418,7 @@ impl Gltf {
             )
         }
 
-        let scene = scenes[json["scene"].as_usize().unwrap()].clone();
+        let scene = scenes[json["scene"].as_usize().unwrap_or(0)].clone();
 
 
 
@@ -448,11 +448,13 @@ impl Gltf {
         }
     }
 
-    pub fn transform_node(&mut self, node_index: usize, translation: &Vector, rotation: &Vector, scale: &Vector) {
-        let mut node = self.nodes[node_index].borrow_mut();
-        node.translation.add_vec_to_self(translation);
-        node.rotation.combine_to_self(&rotation.normalize_4d());
-        node.scale.mul_by_vec_to_self(scale);
+    pub fn transform_roots(&mut self, translation: &Vector, rotation: &Vector, scale: &Vector) {
+        for node in self.scene.nodes.iter() {
+            let mut node = node.borrow_mut();
+            node.translation.add_vec_to_self(translation);
+            node.rotation.combine_to_self(&rotation.normalize_4d());
+            node.scale.mul_by_vec_to_self(scale);
+        }
     }
 
     pub unsafe fn construct_buffers(&mut self, base: &VkBase, frames_in_flight: usize) { unsafe {

@@ -40,7 +40,6 @@ const PI: f32 = std::f32::consts::PI;
 
 fn main() -> Result<(), Box<dyn Error>> {
     unsafe {
-        println!("main code running");
         let mut shader_paths = Vec::new();
         shader_paths.push("src\\shaders\\glsl\\geometry");
 
@@ -54,11 +53,11 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
     unsafe {
-        //let mut model_test = Gltf::new("C:\\Graphics\\assets\\gtlf_models\\DamagedHelmet\\glTF\\DamagedHelmet.gltf");
-        let mut model_test = Gltf::new("C:\\Graphics\\assets\\monke\\untitled.gltf");
+        //let mut model_test = Gltf::new("C:\\Graphics\\assets\\gtlf_models\\Fox\\glTF\\Fox.gltf");
+        let mut model_test = Gltf::new("C:\\Graphics\\assets\\fox\\untitled.gltf");
         //let mut model_test = Gltf::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf");
-        //let mut model_test = Gltf::new("C:\\Graphics\\assets\\helmet\\DamagedHelmet.gltf");
         //let mut model_test = Gltf::new("C:\\Graphics\\assets\\luna\\MRLunaSnow.gltf");
+        model_test.transform_roots(&Vector::new_vec(0.0), &Vector::new_vec(0.0), &Vector::new_vec(0.01));
         model_test.construct_buffers(base, MAX_FRAMES_IN_FLIGHT);
         model_test.construct_textures(base);
         //model_test.transform_node(1235, &Vector::new_empty(), &Vector::new_vec4(1.0,0.0,0.0,0.0), &Vector::new_vec(1.0));

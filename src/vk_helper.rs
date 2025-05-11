@@ -1317,11 +1317,11 @@ pub fn compile_shaders(shader_directories: Vec<&str>) -> io::Result<()> {
                     if ext == "vert" || ext == "frag" || ext == "geom" {
                         let file_name = path.file_name().unwrap().to_string_lossy();
                         let spv_file = spv_folder.join(format!("{}.spv", file_name));
-                        
+
                         let glsl_modified = path.metadata()?.modified()?;
                         let spv: Result<Metadata, _> = spv_file.metadata();
                         if spv.is_err() || glsl_modified > spv?.modified()? {
-                            println!("RECOMPILING:\n{}", spv_file.display());
+                            println!("RECOMPILING:\n    {}", spv_file.display());
                             let compile_cmd = Command::new("glslc")
                                 .arg(&path)
                                 .arg("-o")

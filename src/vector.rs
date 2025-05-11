@@ -74,7 +74,7 @@ impl Vector {
             self.x * self.x +
             self.y * self.y +
             self.z * self.z
-            ).sqrt()
+            ).sqrt().max(1e-10)
     }
     pub fn magnitude_4d(&self) -> f32 {
         (
@@ -82,7 +82,7 @@ impl Vector {
             self.y * self.y +
             self.z * self.z +
             self.w * self.w
-            ).sqrt()
+            ).sqrt().max(1e-10)
     }
 
     pub fn normalize_3d(&self) -> Vector {
