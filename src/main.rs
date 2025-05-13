@@ -54,7 +54,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
     unsafe {
         //let mut model_test = Gltf::new("C:\\Graphics\\assets\\gltf_test_models\\RiggedFigure\\glTF\\RiggedFigure.gltf");
-        let mut model_test = Gltf::new("C:\\Graphics\\assets\\fox\\untitled.gltf");
+        let mut model_test = Gltf::new(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("local_assets\\ffocks\\untitled.gltf").to_str().unwrap());
         //let mut model_test = Gltf::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf");
         //let mut model_test = Gltf::new("C:\\Graphics\\assets\\luna\\MRLunaSnow.gltf");
         //model_test.transform_roots(&Vector::new_vec(0.0), &Vector::new_vec(0.0), &Vector::new_vec(0.01));
