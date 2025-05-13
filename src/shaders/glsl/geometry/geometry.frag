@@ -10,9 +10,9 @@ layout (location = 1) in vec3 o_normal;
 layout (location = 2) in vec2 o_uv;
 layout (location = 3) flat in uint material;
 layout (location = 4) in mat3 TBN;
-//layout (location = 5) in mat3 viewTBN;
+layout (location = 7) in mat3 viewTBN;
 
-layout(set = 0, binding = 2) uniform sampler2D textures[];
+layout(set = 0, binding = 3) uniform sampler2D textures[];
 
 struct Material {
     int normal_tex;      // 0
@@ -51,7 +51,8 @@ void main() {
     }
     //uFragColor = vec4(base_color.rgb * max(0.2, dot(normal, normalize(vec3(1.0,1.0,1.0)))), 1.0);
     //uFragColor = vec4(base_color.rgb, 1.0);
-    vec3 mapped = vec3(1.0) - exp(-base_color.rgb * 1.0);
+    vec3 Lo = base_color.rgb * max(0.2, dot(normal, normalize(vec3(1.0,1.0,1.0))));
+    vec3 mapped = vec3(1.0) - exp(-Lo * 1.0);
     mapped = pow(mapped, vec3(1.0 / 1.8));
     uFragColor = vec4(mapped, 1.0);
 }

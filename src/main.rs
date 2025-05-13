@@ -53,15 +53,12 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
     unsafe {
-        //let mut model_test = Gltf::new("C:\\Graphics\\assets\\gtlf_models\\Fox\\glTF\\Fox.gltf");
+        //let mut model_test = Gltf::new("C:\\Graphics\\assets\\gltf_test_models\\RiggedFigure\\glTF\\RiggedFigure.gltf");
         let mut model_test = Gltf::new("C:\\Graphics\\assets\\fox\\untitled.gltf");
         //let mut model_test = Gltf::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf");
         //let mut model_test = Gltf::new("C:\\Graphics\\assets\\luna\\MRLunaSnow.gltf");
-        model_test.transform_roots(&Vector::new_vec(0.0), &Vector::new_vec(0.0), &Vector::new_vec(0.01));
-        model_test.construct_buffers(base, MAX_FRAMES_IN_FLIGHT);
-        model_test.construct_textures(base);
-        //model_test.transform_node(1235, &Vector::new_empty(), &Vector::new_vec4(1.0,0.0,0.0,0.0), &Vector::new_vec(1.0));
-        model_test.update_instances_all_frames(base);
+        //model_test.transform_roots(&Vector::new_vec(0.0), &Vector::new_vec(0.0), &Vector::new_vec(0.01));
+        model_test.initialize(base, MAX_FRAMES_IN_FLIGHT);
 
         let null_tex = base.create_2d_texture_image(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("local_assets\\null8x.png"), true);
 
@@ -83,6 +80,13 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             },
             vk::DescriptorSetLayoutBinding {
                 binding: 2,
+                descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
+                descriptor_count: 1,
+                stage_flags: vk::ShaderStageFlags::VERTEX,
+                ..Default::default()
+            },
+            vk::DescriptorSetLayoutBinding {
+                binding: 3,
                 descriptor_type: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
                 descriptor_count: 1024u32,
                 stage_flags: vk::ShaderStageFlags::FRAGMENT,
@@ -90,6 +94,8 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             },
         ];
         let binding_flags = [
+            vk::DescriptorBindingFlags::empty(),
+
             vk::DescriptorBindingFlags::empty(),
 
             vk::DescriptorBindingFlags::empty(),
@@ -148,6 +154,11 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                 descriptor_count: MAX_FRAMES_IN_FLIGHT as u32,
                 ..Default::default()
             }, // material SSBO
+            vk::DescriptorPoolSize {
+                ty: vk::DescriptorType::STORAGE_BUFFER,
+                descriptor_count: MAX_FRAMES_IN_FLIGHT as u32,
+                ..Default::default()
+            }, // joint SSBO
             vk::DescriptorPoolSize {
                 ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
                 descriptor_count: (MAX_FRAMES_IN_FLIGHT * 1024) as u32,
@@ -208,8 +219,13 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                 offset: 0,
                 range: size_of::<UniformData>() as vk::DeviceSize,
             };
-            let ssbo_info = vk::DescriptorBufferInfo {
+            let material_ssbo_info = vk::DescriptorBufferInfo {
                 buffer: model_test.material_buffers[i].0,
+                offset: 0,
+                range: vk::WHOLE_SIZE,
+            };
+            let joints_ssbo_info = vk::DescriptorBufferInfo {
+                buffer: model_test.joints_buffers[i].0,
                 offset: 0,
                 range: vk::WHOLE_SIZE,
             };
@@ -231,13 +247,23 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                     dst_array_element: 0,
                     descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
                     descriptor_count: 1,
-                    p_buffer_info: &ssbo_info,
+                    p_buffer_info: &material_ssbo_info,
                     ..Default::default()
                 },
                 vk::WriteDescriptorSet {
                     s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
                     dst_set: descriptor_sets[i],
                     dst_binding: 2,
+                    dst_array_element: 0,
+                    descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
+                    descriptor_count: 1,
+                    p_buffer_info: &joints_ssbo_info,
+                    ..Default::default()
+                },
+                vk::WriteDescriptorSet {
+                    s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
+                    dst_set: descriptor_sets[i],
+                    dst_binding: 3,
                     dst_array_element: 0,
                     descriptor_type: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
                     descriptor_count: 1024,
@@ -429,33 +455,45 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                 format: vk::Format::R32G32B32_SFLOAT,
                 offset: offset_of!(model::Vertex, bitangent) as u32,
             },
-
             vk::VertexInputAttributeDescription {
                 location: 5,
+                binding: 0,
+                format: vk::Format::R32G32B32A32_UINT,
+                offset: offset_of!(model::Vertex, joint_indices) as u32,
+            },
+            vk::VertexInputAttributeDescription {
+                location: 6,
+                binding: 0,
+                format: vk::Format::R32G32B32A32_SFLOAT,
+                offset: offset_of!(model::Vertex, joint_weights) as u32,
+            },
+
+            vk::VertexInputAttributeDescription {
+                location: 7,
                 binding: 1,
                 format: vk::Format::R32G32B32A32_SFLOAT,
                 offset: 0,
             },
             vk::VertexInputAttributeDescription {
-                location: 6,
+                location: 8,
                 binding: 1,
                 format: vk::Format::R32G32B32A32_SFLOAT,
                 offset: 16,
             },
             vk::VertexInputAttributeDescription {
-                location: 7,
+                location: 9,
                 binding: 1,
                 format: vk::Format::R32G32B32A32_SFLOAT,
                 offset: 32,
             },
             vk::VertexInputAttributeDescription {
-                location: 8,
+                location: 10,
                 binding: 1,
                 format: vk::Format::R32G32B32A32_SFLOAT,
                 offset: 48,
             },
             vk::VertexInputAttributeDescription {
-                location: 9,
+                location: 11,
                 binding: 1,
                 format: vk::Format::R32_UINT,
                 offset: 64,
@@ -578,6 +616,8 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             base.window.inner_size().height as f32 * 0.5))
             .expect("failed to reset mouse position");
 
+        model_test.animations[0].borrow_mut().start();
+
         base.event_loop.borrow_mut().run_on_demand(|event, elwp| {
             elwp.set_control_flow(ControlFlow::Poll);
             match event {
@@ -677,6 +717,10 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                     }
                     do_controls(&mut player_camera, &pressed_keys, &mut new_pressed_keys, delta_time, &mut cursor_locked, base, &mut saved_cursor_pos, &mut pause_frustum);
                     player_camera.update_matrices();
+
+                    model_test.animations[0].borrow().update();
+                    model_test.update_nodes(base, current_frame);
+
                     if !pause_frustum {
                         player_camera.update_frustum()
                     }

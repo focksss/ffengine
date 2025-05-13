@@ -9,12 +9,10 @@
 )]
 
 use std::{borrow::Cow, cell::RefCell, default::Default, error::Error, ffi, fs, io, ops::Drop, os::raw::c_char};
-use std::alloc::System;
 use std::ffi::c_void;
 use std::fs::Metadata;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::SystemTime;
 use ash::{
     ext::debug_utils,
     khr::{surface, swapchain},

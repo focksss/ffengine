@@ -27,6 +27,80 @@ impl Matrix {
     pub fn new_manual(data: [f32; 16]) -> Self {
         Self { data }
     }
+    pub fn new_manual_from_column_major(data: [f32; 16]) -> Self {
+        Self {
+            data: [
+                data[0],  data[4],  data[8],  data[12],
+                data[1],  data[5],  data[9],  data[13],
+                data[2],  data[6],  data[10], data[14],
+                data[3],  data[7],  data[11], data[15],
+            ],
+        }
+    }
+    //</editor-fold>
+
+    //<editor-fold desc ="matrix operations">
+    pub fn inverse(&self) -> Matrix {
+        let det = self.determinant();
+        if det.abs() < f32::EPSILON {
+            panic!("Matrix is not invertible (determinant is zero)");
+        }
+
+        let adjugate = self.adjugate();
+        let mut result = Matrix::new_empty();
+        for i in 0..16 {
+            result.data[i] = adjugate.data[i] / det;
+        }
+        result
+    }
+
+    pub fn determinant(&self) -> f32 {
+        let m = &self.data;
+
+        let subfactor00 = m[10] * m[15] - m[11] * m[14];
+        let subfactor01 = m[9] * m[15] - m[11] * m[13];
+        let subfactor02 = m[9] * m[14] - m[10] * m[13];
+        let subfactor03 = m[8] * m[15] - m[11] * m[12];
+        let subfactor04 = m[8] * m[14] - m[10] * m[12];
+        let subfactor05 = m[8] * m[13] - m[9] * m[12];
+
+        m[0] * (m[5] * subfactor00 - m[6] * subfactor01 + m[7] * subfactor02)
+            - m[1] * (m[4] * subfactor00 - m[6] * subfactor03 + m[7] * subfactor04)
+            + m[2] * (m[4] * subfactor01 - m[5] * subfactor03 + m[7] * subfactor05)
+            - m[3] * (m[4] * subfactor02 - m[5] * subfactor04 + m[6] * subfactor05)
+    }
+
+    fn adjugate(&self) -> Matrix {
+        let m = &self.data;
+        let mut cofactors = [0.0f32; 16];
+
+        for row in 0..4 {
+            for col in 0..4 {
+                let minor = self.minor(row, col);
+                let cofactor = if (row + col) % 2 == 0 { minor } else { -minor };
+                cofactors[col * 4 + row] = cofactor; // transpose
+            }
+        }
+
+        Matrix::new_manual(cofactors)
+    }
+
+    fn minor(&self, row: usize, col: usize) -> f32 {
+        let mut sub = [0.0f32; 9];
+        let mut idx = 0;
+        for r in 0..4 {
+            for c in 0..4 {
+                if r != row && c != col {
+                    sub[idx] = self.data[r * 4 + c];
+                    idx += 1;
+                }
+            }
+        }
+
+        sub[0] * (sub[4] * sub[8] - sub[5] * sub[7])
+            - sub[1] * (sub[3] * sub[8] - sub[5] * sub[6])
+            + sub[2] * (sub[3] * sub[7] - sub[4] * sub[6])
+    }
     //</editor-fold>
 
     //<editor-fold desc = "matrix matrix operations">

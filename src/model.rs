@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::fs;
 use std::rc::Rc;
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 use ash::vk;
 use ash::vk::{CommandBuffer, DeviceMemory, ImageView, Sampler};
 use json::JsonValue;
@@ -15,6 +16,8 @@ pub struct Gltf {
     pub extensions_used: Vec<String>,
     pub scene: Rc<Scene>,
     pub scenes: Vec<Rc<Scene>>,
+    pub animations: Vec<Rc<RefCell<Animation>>>,
+    pub skins: Vec<Rc<RefCell<Skin>>>,
     pub nodes: Vec<Rc<RefCell<Node>>>,
     pub meshes: Vec<Rc<RefCell<Mesh>>>,
     pub materials: Vec<Material>,
@@ -34,6 +37,10 @@ pub struct Gltf {
     pub material_staging_buffer: (vk::Buffer, DeviceMemory),
     pub material_buffers: Vec<(vk::Buffer, DeviceMemory)>,
     pub material_buffer_size: u64,
+
+    pub joints_staging_buffer: (vk::Buffer, DeviceMemory),
+    pub joints_buffers: Vec<(vk::Buffer, DeviceMemory)>,
+    pub joints_buffers_size: u64,
 
     pub instance_data: Vec<Instance>,
     pub primitive_count: usize,
@@ -377,6 +384,9 @@ impl Gltf {
                     rotation,
                     scale,
                     translation,
+                    animated_rotation: Vector::new_null(),
+                    animated_scale: Vector::new_null(),
+                    animated_translation: Vector::new_null(),
                     transform: Matrix::new_empty(),
                     children: Vec::new(),
                     children_indices,
@@ -394,10 +404,83 @@ impl Gltf {
             }
         }
 
+        let mut skins = Vec::new();
+        for skin in json["skins"].members() {
+            let name_maybe: Option<&str> = skin["name"].as_str();
+            let mut name = String::from("unnamed skin");
+            match name_maybe {
+                Some(name_str) => name = String::from(name_str),
+                None => (),
+            }
+
+            let mut joint_indices = Vec::new();
+            if let JsonValue::Array(ref joint_json) = skin["joints"] {
+                for joint in joint_json.iter() {
+                    joint_indices.push(joint.as_usize().unwrap());
+                }
+            }
+
+            let inverse_bind_matrices_accessor = accessors[skin["inverseBindMatrices"].as_usize().unwrap()].clone();
+
+            let mut skeleton: Option<Rc<RefCell<Node>>> = None;
+            match skin["skeleton"].as_usize() {
+                Some(skeleton_idx) => skeleton = Some(nodes[skeleton_idx].clone()),
+                None => (),
+            }
+
+            skins.push(Rc::new(RefCell::new(Skin {
+                name,
+                inverse_bind_matrices_accessor,
+                inverse_bind_matrices: Vec::new(),
+                joint_indices,
+                joint_matrices: Vec::new(),
+                skeleton,
+            })))
+        }
+
+        let mut animations = Vec::new();
+        for animation in json["animations"].members() {
+            let name_maybe: Option<&str> = animation["name"].as_str();
+            let mut name = String::from("unnamed animation");
+            match name_maybe {
+                Some(name_str) => name = String::from(name_str),
+                None => (),
+            }
+
+            let mut channels = Vec::new();
+            if let JsonValue::Array(ref channels_json) = animation["channels"] {
+                for channel in channels_json {
+                    channels.push((
+                        channel["sampler"].as_usize().unwrap(),
+                        channel["target"]["node"].as_usize().unwrap(),
+                        String::from(channel["target"]["path"].as_str().unwrap())
+                    ))
+                }
+            }
+
+            let mut samplers = Vec::new();
+            if let JsonValue::Array(ref samplers_json) = animation["samplers"] {
+                for sampler_json in samplers_json {
+                    samplers.push((
+                        accessors[sampler_json["input"].as_usize().unwrap()].clone(),
+                        String::from(sampler_json["interpolation"].as_str().unwrap()),
+                        accessors[sampler_json["output"].as_usize().unwrap()].clone()
+                    ))
+                }
+            }
+
+            animations.push(Rc::new(RefCell::new(Animation::new(
+                name,
+                channels,
+                samplers,
+                &nodes,
+            ))))
+        }
+
         let mut scenes = Vec::new();
         for scene in json["scenes"].members() {
             let name_maybe: Option<&str> = scene["name"].as_str();
-            let mut name = String::from("unnamed node");
+            let mut name = String::from("unnamed scene");
             match name_maybe {
                 Some(name_str) => name = String::from(name_str),
                 None => (),
@@ -427,6 +510,8 @@ impl Gltf {
             extensions_used,
             scene,
             scenes,
+            animations,
+            skins,
             nodes,
             meshes,
             materials,
@@ -443,21 +528,15 @@ impl Gltf {
             material_staging_buffer: (vk::Buffer::null(), DeviceMemory::null()),
             material_buffers: Vec::new(),
             material_buffer_size: 0,
+            joints_staging_buffer: (vk::Buffer::null(), DeviceMemory::null()),
+            joints_buffers: Vec::new(),
+            joints_buffers_size: 0,
             instance_data: Vec::new(),
             primitive_count,
         }
     }
 
-    pub fn transform_roots(&mut self, translation: &Vector, rotation: &Vector, scale: &Vector) {
-        for node in self.scene.nodes.iter() {
-            let mut node = node.borrow_mut();
-            node.translation.add_vec_to_self(translation);
-            node.rotation.combine_to_self(&rotation.normalize_4d());
-            node.scale.mul_by_vec_to_self(scale);
-        }
-    }
-
-    pub unsafe fn construct_buffers(&mut self, base: &VkBase, frames_in_flight: usize) { unsafe {
+    pub unsafe fn initialize(&mut self, base: &VkBase, frames_in_flight: usize) { unsafe {
         let mut all_vertices: Vec<Vertex> = vec![];
         let mut all_indices: Vec<u32> = vec![];
         for mesh in &self.meshes {
@@ -494,6 +573,7 @@ impl Gltf {
         for i in 0..frames_in_flight {
             self.instance_buffers.push((vk::Buffer::null(), DeviceMemory::null()));
             self.material_buffers.push((vk::Buffer::null(), DeviceMemory::null()));
+            self.joints_buffers.push((vk::Buffer::null(), DeviceMemory::null()));
             if i == 0 {
                 (self.instance_buffers[i], self.instance_staging_buffer) =
                     base.create_device_and_staging_buffer(self.instance_buffer_size, &[0], vk::BufferUsageFlags::VERTEX_BUFFER, false, false);
@@ -505,7 +585,43 @@ impl Gltf {
             }
             self.update_instances(base, i);
         }
+
+        if self.skins.is_empty() { return }
+        self.joints_buffers_size = 0;
+        let mut joints_send = Vec::new();
+        for skin in &self.skins {
+            skin.borrow_mut().construct_joint_matrices(&self.nodes);
+            for joint in skin.borrow_mut().joint_matrices.iter() {
+                self.joints_buffers_size = self.joints_buffers_size + size_of::<Matrix>() as u64;
+                joints_send.push(joint.clone());
+            }
+        }
+        for i in 0..self.instance_buffers.len() {
+            self.joints_buffers.push((vk::Buffer::null(), DeviceMemory::null()));
+            if i == 0 {
+                (self.joints_buffers[i], self.joints_staging_buffer) =
+                    base.create_device_and_staging_buffer(0, &joints_send, vk::BufferUsageFlags::STORAGE_BUFFER, false, true);
+            } else {
+                self.joints_buffers[i] = base.create_device_and_staging_buffer(0, &joints_send, vk::BufferUsageFlags::STORAGE_BUFFER, true, true).0;
+            }
+        }
+
+        self.construct_textures(base);
     } }
+
+    pub unsafe fn update_nodes(&mut self, base: &VkBase, frame: usize) { unsafe {
+        self.update_instances(base, frame);
+        self.update_joints(base, frame);
+    } }
+
+    pub fn transform_roots(&mut self, translation: &Vector, rotation: &Vector, scale: &Vector) {
+        for node in self.scene.nodes.iter() {
+            let mut node = node.borrow_mut();
+            node.translation.add_vec_to_self(translation);
+            node.rotation.combine_to_self(&rotation.normalize_4d());
+            node.scale.mul_by_vec_to_self(scale);
+        }
+    }
 
     pub unsafe fn construct_textures(&mut self, base: &VkBase) { unsafe {
         for i in 0..self.images.len() {
@@ -521,7 +637,7 @@ impl Gltf {
 
     pub unsafe fn update_instances(&mut self, base: &VkBase, frame: usize) { unsafe {
         for node in &self.scene.nodes.clone() {
-            self.update_node(base, node, &mut Matrix::new());
+            self.update_node(node, &mut Matrix::new());
         }
         let ptr = base
             .device
@@ -537,9 +653,28 @@ impl Gltf {
         base.copy_buffer(&self.instance_staging_buffer.0, &self.instance_buffers[frame].0, &self.instance_buffer_size);
     } }
 
+    pub unsafe fn update_joints(&mut self, base: &VkBase, frame: usize) { unsafe {
+        if self.skins.is_empty() { return }
+        for skin in &self.skins {
+            skin.borrow_mut().update_joint_matrices(&self.nodes);
+        }
+        let ptr = base
+            .device
+            .map_memory(
+                self.joints_staging_buffer.1,
+                0,
+                self.joints_buffers_size,
+                vk::MemoryMapFlags::empty(),
+            )
+            .expect("Failed to map index buffer memory");
+        copy_data_to_memory(ptr, &self.skins[0].borrow().joint_matrices);
+        base.device.unmap_memory(self.joints_staging_buffer.1);
+        base.copy_buffer(&self.joints_staging_buffer.0, &self.joints_buffers[frame].0, &self.joints_buffers_size);
+    }}
+
     pub unsafe fn update_instances_all_frames(&mut self, base: &VkBase) { unsafe {
         for node in &self.scene.nodes.clone() {
-            self.update_node(base, node, &mut Matrix::new());
+            self.update_node(node, &mut Matrix::new());
         }
         let ptr = base
             .device
@@ -556,7 +691,8 @@ impl Gltf {
             base.copy_buffer(&self.instance_staging_buffer.0, &instance_buffer.0, &self.instance_buffer_size);
         }
     } }
-    pub fn update_node(&mut self, base: &VkBase, node: &Rc<RefCell<Node>>, parent_transform: &Matrix) {
+
+    pub fn update_node(&mut self, node: &Rc<RefCell<Node>>, parent_transform: &Matrix) {
         let mut node = node.borrow_mut();
 
         let rotate = Matrix::new_rotate_quaternion_vec4(&node.rotation.mul_by_vec(&Vector::new_vec4(-1.0, -1.0, -1.0,1.0)));
@@ -580,7 +716,7 @@ impl Gltf {
         }
 
         for child in node.children.iter() {
-            self.update_node(base, child, &world_transform);
+            self.update_node(child, &world_transform);
         }
     }
 
@@ -615,12 +751,21 @@ impl Gltf {
         }
         base.device.destroy_buffer(self.instance_staging_buffer.0, None);
         base.device.free_memory(self.instance_staging_buffer.1, None);
+
         for material_buffer in &self.material_buffers {
             base.device.destroy_buffer(material_buffer.0, None);
             base.device.free_memory(material_buffer.1, None);
         }
         base.device.destroy_buffer(self.material_staging_buffer.0, None);
         base.device.free_memory(self.material_staging_buffer.1, None);
+
+        for joints_buffer in &self.joints_buffers {
+            base.device.destroy_buffer(joints_buffer.0, None);
+            base.device.free_memory(joints_buffer.1, None);
+        }
+        base.device.destroy_buffer(self.joints_staging_buffer.0, None);
+        base.device.free_memory(self.joints_staging_buffer.1, None);
+
         base.device.destroy_buffer(self.index_buffer.0, None);
         base.device.free_memory(self.index_buffer.1, None);
         base.device.destroy_buffer(self.vertex_buffer.0, None);
@@ -833,6 +978,8 @@ impl Primitive {
         let mut position_accessor: Option<&Rc<Accessor>> = None;
         let mut normal_accessor: Option<&Rc<Accessor>> = None;
         let mut texcoord_accessor: Option<&Rc<Accessor>> = None;
+        let mut joint_accessor: Option<&Rc<Accessor>> = None;
+        let mut weight_accessor: Option<&Rc<Accessor>> = None;
         for attribute in self.attributes.iter() {
             if attribute.0.eq("POSITION") {
                 position_accessor = Some(&attribute.1);
@@ -840,6 +987,10 @@ impl Primitive {
                 normal_accessor = Some(&attribute.1);
             } else if attribute.0.eq("TEXCOORD_0") {
                 texcoord_accessor = Some(&attribute.1);
+            } else if attribute.0.eq("JOINTS_0") {
+                joint_accessor = Some(&attribute.1);
+            } else if attribute.0.eq("WEIGHTS_0") {
+                weight_accessor = Some(&attribute.1);
             }
         }
         if position_accessor.is_none() {
@@ -887,14 +1038,49 @@ impl Primitive {
                 tex_coords = bytemuck::cast_slice(bytes);
             }
 
+            let mut joints= Vec::new();
+            if !joint_accessor.is_none() {
+                let component_type = joint_accessor.unwrap().component_type;
+                byte_offset = joint_accessor.unwrap().buffer_view.byte_offset;
+                byte_length = joint_accessor.unwrap().buffer_view.byte_length;
+                let bytes = &joint_accessor.unwrap().buffer_view.buffer.data[byte_offset..(byte_offset + byte_length)];
+                match component_type {
+                    ComponentType::U8 => {
+                        let raw: &[[u8; 4]] = bytemuck::cast_slice(bytes);
+                        let converted: Vec<[u32; 4]> = raw.iter().map(|x| [x[0] as u32, x[1] as u32, x[2] as u32, x[3] as u32]).collect();
+                        joints = converted;
+                    },
+                    ComponentType::U16 => {
+                        let raw: &[[u16; 4]] = bytemuck::cast_slice(bytes);
+                        let converted: Vec<[u32; 4]> = raw.iter().map(|x| [x[0] as u32, x[1] as u32, x[2] as u32, x[3] as u32]).collect();
+                        joints = converted;
+                    },
+                    ComponentType::U32 => {
+                        let raw: &[[u32; 4]] = bytemuck::cast_slice(bytes);
+                        joints = raw.to_vec();
+                    },
+                    _ => panic!("Unsupported joint index component type"),
+                }
+            }
+
+            let mut weights: &[[f32; 4]] = &[];
+            if !weight_accessor.is_none() {
+                byte_offset = weight_accessor.unwrap().buffer_view.byte_offset;
+                byte_length = weight_accessor.unwrap().buffer_view.byte_length;
+                let bytes = &weight_accessor.unwrap().buffer_view.buffer.data[byte_offset..(byte_offset + byte_length)];
+                weights = bytemuck::cast_slice(bytes);
+            }
+
             let mut vertices = Vec::new();
             for i in 0..positions.len() {
                 vertices.push(RefCell::new(Vertex {
                     position: positions[i],
-                    normal: *normals.get(i).unwrap_or(&[0.0, 0.0, 0.0]),
-                    uv: *tex_coords.get(i).unwrap_or(&[0.0, 0.0]),
-                    tangent: [0.0, 0.0, 0.0],
-                    bitangent: [0.0, 0.0, 0.0],
+                    normal: *normals.get(i).unwrap_or(&[0.0; 3]),
+                    uv: *tex_coords.get(i).unwrap_or(&[0.0; 2]),
+                    tangent: [0.0; 3],
+                    bitangent: [0.0; 3],
+                    joint_indices: *joints.get(i).unwrap_or(&[0; 4]),
+                    joint_weights: *weights.get(i).unwrap_or(&[0.0; 4]),
                 }));
             }
             match component_type {
@@ -1015,6 +1201,8 @@ pub struct Vertex {
     pub uv: [f32; 2],
     pub tangent: [f32; 3],
     pub bitangent: [f32; 3],
+    pub joint_indices: [u32; 4],
+    pub joint_weights: [f32; 4],
 }
 #[derive(Clone, Debug, Copy)]
 #[repr(C)]
@@ -1044,6 +1232,11 @@ pub struct Node {
     pub rotation: Vector,
     pub scale: Vector,
     pub translation: Vector,
+
+    pub animated_rotation: Vector,
+    pub animated_scale: Vector,
+    pub animated_translation: Vector,
+
     pub transform: Matrix,
     pub children: Vec<Rc<RefCell<Node>>>,
     pub children_indices: Vec<usize>,
@@ -1088,6 +1281,145 @@ impl Node {
             child.borrow().draw(base, draw_command_buffer, frustum);
         }
     } }
+}
+
+pub struct Skin {
+    name: String,
+    inverse_bind_matrices_accessor: Rc<Accessor>,
+    inverse_bind_matrices: Vec<Matrix>,
+    joint_indices: Vec<usize>,
+    joint_matrices: Vec<Matrix>,
+    skeleton: Option<Rc<RefCell<Node>>>,
+}
+impl Skin {
+    pub fn construct_joint_matrices(&mut self, nodes: &Vec<Rc<RefCell<Node>>>) {
+        let inverse_bind_matrices_accessor = &self.inverse_bind_matrices_accessor;
+        let byte_offset = inverse_bind_matrices_accessor.buffer_view.byte_offset;
+        let byte_length = inverse_bind_matrices_accessor.buffer_view.byte_length;
+        let bytes = &inverse_bind_matrices_accessor.buffer_view.buffer.data[byte_offset..(byte_offset + byte_length)];
+        let inverse_bind_matrices: &[[f32; 16]] = bytemuck::cast_slice(bytes);
+        self.inverse_bind_matrices.clear();
+        for matrix_data in inverse_bind_matrices.iter() {
+            self.inverse_bind_matrices.push(Matrix::new_manual(matrix_data.clone()));
+        }
+
+        self.joint_matrices.clear();
+        let mut joint = 0;
+        for node_index in self.joint_indices.iter() {
+            self.inverse_bind_matrices[joint] = nodes[*node_index].borrow().transform.inverse();
+            self.joint_matrices.push(
+                nodes[*node_index].borrow().transform.clone().
+                    mul_mat4(&self.inverse_bind_matrices[joint])
+            );
+            joint += 1
+        }
+    }
+
+    pub fn update_joint_matrices(&mut self, nodes: &Vec<Rc<RefCell<Node>>>) {
+        self.joint_matrices.clear();
+        let mut joint = 0;
+        for node_index in self.joint_indices.iter() {
+            self.joint_matrices.push(
+                nodes[*node_index].borrow().transform.clone().
+                    mul_mat4(&self.inverse_bind_matrices[joint])
+            );
+            joint += 1
+        }
+    }
+}
+
+pub struct Animation {
+    pub name: String,
+    pub channels: Vec<(usize, Rc<RefCell<Node>>, String)>, // sampler index, impacted node, target transform component
+    pub samplers: Vec<(Vec<f32>, String, Vec<Vector>)>, // input times, interpolation method, output vectors
+    pub start_time: SystemTime,
+    pub running: bool,
+}
+impl Animation {
+    fn new(name: String, channels: Vec<(usize, usize, String)>, samplers: Vec<(Rc<Accessor>, String, Rc<Accessor>)>, nodes: &Vec<Rc<RefCell<Node>>>) -> Self {
+        let mut compiled_samplers = Vec::new();
+        for sampler in samplers.iter() {
+            let mut byte_offset = sampler.0.buffer_view.byte_offset;
+            let mut byte_length = sampler.0.buffer_view.byte_length;
+            let mut bytes = &sampler.0.buffer_view.buffer.data[byte_offset..(byte_offset + byte_length)];
+            let times: &[f32] = bytemuck::cast_slice(bytes);
+
+            byte_offset = sampler.2.buffer_view.byte_offset;
+            byte_length = sampler.2.buffer_view.byte_length;
+            bytes = &sampler.2.buffer_view.buffer.data[byte_offset..(byte_offset + byte_length)];
+            let mut vectors = Vec::new();
+            if sampler.2.r#type.eq("VEC3") {
+                let vec3s: &[[f32; 3]] = bytemuck::cast_slice(bytes);
+                for vec3 in vec3s.iter() {
+                    vectors.push(Vector::new_vec3(vec3[0], vec3[1], vec3[2]));
+                }
+                compiled_samplers.push((times.to_vec(), sampler.1.clone(), vectors));
+            } else if sampler.2.r#type.eq("VEC4") {
+                let vec4s: &[[f32; 4]] = bytemuck::cast_slice(bytes);
+                for vec4 in vec4s.iter() {
+                    vectors.push(Vector::new_vec4(vec4[0], vec4[1], vec4[2], vec4[3]));
+                }
+                compiled_samplers.push((times.to_vec(), sampler.1.clone(), vectors));
+            } else {
+                panic!("Illogical animation sampler output type! Should be VEC3 or VEC4");
+            }
+        }
+        Self {
+            name,
+            channels: channels.iter().map(|channel| (channel.0, nodes[channel.1].clone(), channel.2.clone())).collect(),
+            samplers: compiled_samplers,
+            start_time: SystemTime::now(),
+            running: false,
+        }
+    }
+
+    pub fn start(&mut self) {
+        self.start_time = SystemTime::now();
+        self.running = true;
+    }
+
+    pub fn update(&self) {
+        // if !self.running {
+        //     return;
+        // }
+        let current_time = SystemTime::now();
+        let elapsed_time = current_time.duration_since(self.start_time).unwrap().as_secs_f32();
+        for channel in self.channels.iter() {
+            let sampler = &self.samplers[channel.0];
+            let mut current_time_index = 0;
+            for i in 0..sampler.0.len()-2 {
+                if elapsed_time >= sampler.0[i] && elapsed_time < sampler.0[i + 1] {
+                    current_time_index = i;
+                    break;
+                }
+            }
+            let current_time_index = current_time_index.min(sampler.0.len() - 1);
+            let interpolation_factor = ((elapsed_time - sampler.0[current_time_index]) / (sampler.0[current_time_index + 1] - sampler.0[current_time_index])).min(1.0).max(0.0);
+            println!("{:?},{:?}", interpolation_factor, elapsed_time);
+            let vector1 = &sampler.2[current_time_index];
+            let vector2 = &sampler.2[current_time_index + 1];
+            let mut new_vector = Vector::new_null();
+            if channel.2.eq("translation") || channel.2.eq("scale") {
+                new_vector = Vector::new_vec3(
+                    vector1.x + interpolation_factor * (vector2.x - vector1.x),
+                    vector1.y + interpolation_factor * (vector2.y - vector1.y),
+                    vector1.z + interpolation_factor * (vector2.z - vector1.z),
+                );
+            } else {
+                new_vector = Vector::spherical_lerp(vector1, vector2, interpolation_factor);
+            }
+
+            if channel.2.eq("translation") {
+                channel.1.borrow_mut().translation = new_vector
+            } else if channel.2.eq("rotation") {
+                channel.1.borrow_mut().rotation = new_vector
+            } else if channel.2.eq("scale") {
+                channel.1.borrow_mut().scale = new_vector
+            } else {
+                panic!("Illogical animation channel target! Should be translation, rotation or scale");
+            }
+        }
+    }
 }
 
 pub struct Scene {
