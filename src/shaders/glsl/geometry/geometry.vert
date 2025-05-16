@@ -30,23 +30,23 @@ layout(set = 0, binding = 2, std430) readonly buffer JointsSSBO {
 } jointsSSBO;
 
 void main() {
-    mat4 skinMatrix = model;
+    mat4 model_matrix = model;
     if (joint_indices.x+joint_indices.y+joint_indices.z+joint_indices.w != 0) {
-        skinMatrix =
+        model_matrix =
             weights.x * jointsSSBO.joint_matrices[joint_indices.x] +
             weights.y * jointsSSBO.joint_matrices[joint_indices.y] +
             weights.z * jointsSSBO.joint_matrices[joint_indices.z] +
             weights.w * jointsSSBO.joint_matrices[joint_indices.w];
     }
 
-    vec4 position = skinMatrix * vec4(pos, 1.0);
+    vec4 position = model_matrix * vec4(pos, 1.0);
     fragPos = position.xyz;
     o_uv = vec2(uv.x, uv.y);
     o_material = material;
     gl_Position = ubo.projection * ubo.view * position;
 
-    mat3 normalMatrix = mat3(transpose(inverse(skinMatrix)));
-    mat3 viewNormalMatrix = transpose(inverse(mat3(ubo.view * skinMatrix)));
+    mat3 normalMatrix = mat3(transpose(inverse(model_matrix)));
+    mat3 viewNormalMatrix = transpose(inverse(mat3(ubo.view * model_matrix)));
     o_normal = normalize(normalMatrix * normal);
     vec3 vertexViewNormal = normalize(viewNormalMatrix * normal);
 
