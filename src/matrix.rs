@@ -110,9 +110,8 @@ impl Matrix {
             for col in 0..4 {
                 let mut sum = 0.0;
                 for i in 0..4 {
-                    sum += self.data[row * 4 + i] * other.data[i * 4 + col];
+                    result.data[col * 4 + row] += self.data[i * 4 + row] * other.data[col * 4 + i];
                 }
-                result.data[row * 4 + col] = sum;
             }
         }
         result
@@ -199,39 +198,40 @@ impl Matrix {
         let rx = Matrix::new_rotate_x(x);
         let ry = Matrix::new_rotate_y(y);
         let rz = Matrix::new_rotate_z(z);
-        rz.mul_mat4(&ry).mul_mat4(&rx)
+        rx.mul_mat4(&ry).mul_mat4(&rz)
     }
     pub fn new_rotate_euler_3f(x: f32, y: f32, z: f32) -> Self {
         let rx = Matrix::new_rotate_x(x);
         let ry = Matrix::new_rotate_y(y);
         let rz = Matrix::new_rotate_z(z);
-        rz.mul_mat4(&ry).mul_mat4(&rx)
+        rx.mul_mat4(&ry).mul_mat4(&rz)
     }
 
     pub fn new_rotate_quaternion_vec4(quaternion: &Vector) -> Self {
         let mut result = Matrix::new();
         let (x, y, z, w) = (quaternion.x, quaternion.y, quaternion.z, quaternion.w);
+
         result.data[0] = 1.0 - 2.0 * (y * y + z * z);
-        result.data[1] = 2.0 * (x * y - z * w);
-        result.data[2] = 2.0 * (x * z + y * w);
-        result.data[4] = 2.0 * (x * y + z * w);
+        result.data[1] = 2.0 * (x * y + z * w);
+        result.data[2] = 2.0 * (x * z - y * w);
+        result.data[4] = 2.0 * (x * y - z * w);
         result.data[5] = 1.0 - 2.0 * (x * x + z * z);
-        result.data[6] = 2.0 * (y * z - x * w);
-        result.data[8] = 2.0 * (x * z - y * w);
-        result.data[9] = 2.0 * (y * z + x * w);
+        result.data[6] = 2.0 * (y * z + x * w);
+        result.data[8] = 2.0 * (x * z + y * w);
+        result.data[9] = 2.0 * (y * z - x * w);
         result.data[10] = 1.0 - 2.0 * (x * x + y * y);
         result
     }
     pub fn new_rotate_quaternion_4f(x: f32, y: f32, z: f32, w: f32) -> Self {
         let mut result = Matrix::new();
         result.data[0] = 1.0 - 2.0 * (y * y + z * z);
-        result.data[1] = 2.0 * (x * y - z * w);
-        result.data[2] = 2.0 * (x * z + y * w);
-        result.data[4] = 2.0 * (x * y + z * w);
+        result.data[1] = 2.0 * (x * y + z * w);
+        result.data[2] = 2.0 * (x * z - y * w);
+        result.data[4] = 2.0 * (x * y - z * w);
         result.data[5] = 1.0 - 2.0 * (x * x + z * z);
-        result.data[6] = 2.0 * (y * z - x * w);
-        result.data[8] = 2.0 * (x * z - y * w);
-        result.data[9] = 2.0 * (y * z + x * w);
+        result.data[6] = 2.0 * (y * z + x * w);
+        result.data[8] = 2.0 * (x * z + y * w);
+        result.data[9] = 2.0 * (y * z - x * w);
         result.data[10] = 1.0 - 2.0 * (x * x + y * y);
         result
     }
@@ -273,7 +273,7 @@ impl Matrix {
         let t = Matrix::new_translation_vec3(&pos.mul_by_vec(&Vector::new_vec3(-1.0, -1.0, 1.0)));
         let r = Matrix::new_rotate_euler_vec3(&rot.mul_by_vec(&Vector::new_vec3(-1.0,1.0,-1.0)));
 
-        let result = t.mul_mat4(&r);
+        let result = r.mul_mat4(&t);
 
         result
     }

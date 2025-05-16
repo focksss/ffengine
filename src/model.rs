@@ -695,14 +695,14 @@ impl Gltf {
     pub fn update_node(&mut self, node: &Rc<RefCell<Node>>, parent_transform: &Matrix) {
         let mut node = node.borrow_mut();
 
-        let rotate = Matrix::new_rotate_quaternion_vec4(&node.rotation.mul_by_vec(&Vector::new_vec4(-1.0, -1.0, -1.0,1.0)));
+        let rotate = Matrix::new_rotate_quaternion_vec4(&node.rotation.mul_by_vec(&Vector::new_vec4(1.0, 1.0, 1.0,1.0)));
         let scale = Matrix::new_scale_vec3(&node.scale);
         let translate = Matrix::new_translation_vec3(&node.translation);
 
         let mut local_transform = Matrix::new();
-        local_transform.set_and_mul_mat4(&scale);
-        local_transform.set_and_mul_mat4(&rotate);
         local_transform.set_and_mul_mat4(&translate);
+        local_transform.set_and_mul_mat4(&rotate);
+        local_transform.set_and_mul_mat4(&scale);
 
         let mut world_transform = parent_transform.clone();
         world_transform.set_and_mul_mat4(&local_transform);
@@ -1306,7 +1306,7 @@ impl Skin {
         self.joint_matrices.clear();
         let mut joint = 0;
         for node_index in self.joint_indices.iter() {
-            self.inverse_bind_matrices[joint] = nodes[*node_index].borrow().transform.inverse();
+            //self.inverse_bind_matrices[joint] = nodes[*node_index].borrow().transform.inverse();
             self.joint_matrices.push(
                 nodes[*node_index].borrow().transform.clone().
                     mul_mat4(&self.inverse_bind_matrices[joint])
@@ -1379,15 +1379,15 @@ impl Animation {
     }
 
     pub fn update(&self) {
-        // if !self.running {
-        //     return;
-        // }
+        if !self.running {
+             return;
+        }
         let current_time = SystemTime::now();
-        let elapsed_time = current_time.duration_since(self.start_time).unwrap().as_secs_f32();
+        let elapsed_time = current_time.duration_since(self.start_time).unwrap().as_secs_f32() * 0.1;
         for channel in self.channels.iter() {
             let sampler = &self.samplers[channel.0];
             let mut current_time_index = 0;
-            for i in 0..sampler.0.len()-2 {
+            for i in 0..sampler.0.len() - 1 {
                 if elapsed_time >= sampler.0[i] && elapsed_time < sampler.0[i + 1] {
                     current_time_index = i;
                     break;
