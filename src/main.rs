@@ -57,7 +57,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
         let mut model_test = Gltf::new(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("local_assets\\ffocks\\untitled.gltf").to_str().unwrap());
         //let mut model_test = Gltf::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf");
         //let mut model_test = Gltf::new("C:\\Graphics\\assets\\luna\\MRLunaSnow.gltf");
-        //model_test.transform_roots(&Vector::new_vec(0.0), &Vector::new_vec(0.0), &Vector::new_vec(0.01));
+        model_test.transform_roots(&Vector::new_vec(0.0), &Vector::new_vec(0.0), &Vector::new_vec(0.01));
         model_test.initialize(base, MAX_FRAMES_IN_FLIGHT);
 
         let null_tex = base.create_2d_texture_image(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("local_assets\\null8x.png"), true);
@@ -616,6 +616,9 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             base.window.inner_size().height as f32 * 0.5))
             .expect("failed to reset mouse position");
 
+        model_test.animations[2].borrow_mut().repeat = true;
+        model_test.animations[2].borrow_mut().start();
+
         base.event_loop.borrow_mut().run_on_demand(|event, elwp| {
             elwp.set_control_flow(ControlFlow::Poll);
             match event {
@@ -716,10 +719,6 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                     do_controls(&mut player_camera, &pressed_keys, &mut new_pressed_keys, delta_time, &mut cursor_locked, base, &mut saved_cursor_pos, &mut pause_frustum);
                     player_camera.update_matrices();
 
-                    model_test.animations[0].borrow_mut().update();
-                    if !model_test.animations[0].borrow().running {
-                        model_test.animations[0].borrow_mut().start();
-                    }
                     model_test.update_nodes(base, current_frame);
 
                     if !pause_frustum {
