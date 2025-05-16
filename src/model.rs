@@ -1334,6 +1334,7 @@ pub struct Animation {
     pub samplers: Vec<(Vec<f32>, String, Vec<Vector>)>, // input times, interpolation method, output vectors
     pub start_time: SystemTime,
     pub running: bool,
+    pub duration: f32,
 }
 impl Animation {
     fn new(name: String, channels: Vec<(usize, usize, String)>, samplers: Vec<(Rc<Accessor>, String, Rc<Accessor>)>, nodes: &Vec<Rc<RefCell<Node>>>) -> Self {
@@ -1364,12 +1365,16 @@ impl Animation {
                 panic!("Illogical animation sampler output type! Should be VEC3 or VEC4");
             }
         }
+        let duration = compiled_samplers.iter()
+            .map(|s| *s.0.last().unwrap_or(&0.0))
+            .fold(0.0_f32, f32::max);
         Self {
             name,
             channels: channels.iter().map(|channel| (channel.0, nodes[channel.1].clone(), channel.2.clone())).collect(),
             samplers: compiled_samplers,
             start_time: SystemTime::now(),
             running: false,
+            duration,
         }
     }
 
@@ -1378,12 +1383,15 @@ impl Animation {
         self.running = true;
     }
 
-    pub fn update(&self) {
+    pub fn update(&mut self) {
         if !self.running {
              return;
         }
         let current_time = SystemTime::now();
-        let elapsed_time = current_time.duration_since(self.start_time).unwrap().as_secs_f32() * 0.1;
+        let elapsed_time = current_time.duration_since(self.start_time).unwrap().as_secs_f32();
+        if elapsed_time > self.duration {
+            self.running = false;
+        }
         for channel in self.channels.iter() {
             let sampler = &self.samplers[channel.0];
             let mut current_time_index = 0;
@@ -1395,10 +1403,9 @@ impl Animation {
             }
             let current_time_index = current_time_index.min(sampler.0.len() - 1);
             let interpolation_factor = ((elapsed_time - sampler.0[current_time_index]) / (sampler.0[current_time_index + 1] - sampler.0[current_time_index])).min(1.0).max(0.0);
-            println!("{:?},{:?}", interpolation_factor, elapsed_time);
             let vector1 = &sampler.2[current_time_index];
             let vector2 = &sampler.2[current_time_index + 1];
-            let mut new_vector = Vector::new_null();
+            let new_vector;
             if channel.2.eq("translation") || channel.2.eq("scale") {
                 new_vector = Vector::new_vec3(
                     vector1.x + interpolation_factor * (vector2.x - vector1.x),

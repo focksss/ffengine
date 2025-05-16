@@ -1,7 +1,5 @@
 #![allow(dead_code)]
 
-use std::ops::Mul;
-
 #[derive(Clone, Debug, Copy)]
 pub struct Vector {
     pub x: f32,
@@ -194,9 +192,14 @@ impl Vector {
 
     pub fn spherical_lerp(a: &Vector, b: &Vector, t: f32) -> Vector {
         let a = a.normalize_4d();
-        let b = b.normalize_4d();
+        let mut b = b.normalize_4d();
 
-        let dot = a.dot(&b).clamp(-1.0, 1.0);
+        let mut dot = a.dot(&b).clamp(-1.0, 1.0);
+        
+        if dot < 0.0 {
+            b = b.mul_float(-1.0);
+            dot = -dot;
+        }
 
         let theta = dot.acos();
         let sin_theta = theta.sin();
@@ -204,10 +207,10 @@ impl Vector {
         if sin_theta < 1e-10 {
             return Vector::mix(&a, &b, t).normalize_4d();
         }
-        
+
         let w1 = ((1.0 - t) * theta).sin() / sin_theta;
         let w2 = (t * theta).sin() / sin_theta;
-        
+
         a.mul_float(w1).add_vec(&b.mul_float(w2)).normalize_4d()
     }
 

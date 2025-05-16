@@ -616,8 +616,6 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             base.window.inner_size().height as f32 * 0.5))
             .expect("failed to reset mouse position");
 
-        model_test.animations[0].borrow_mut().start();
-
         base.event_loop.borrow_mut().run_on_demand(|event, elwp| {
             elwp.set_control_flow(ControlFlow::Poll);
             match event {
@@ -718,7 +716,10 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                     do_controls(&mut player_camera, &pressed_keys, &mut new_pressed_keys, delta_time, &mut cursor_locked, base, &mut saved_cursor_pos, &mut pause_frustum);
                     player_camera.update_matrices();
 
-                    model_test.animations[0].borrow().update();
+                    model_test.animations[0].borrow_mut().update();
+                    if !model_test.animations[0].borrow().running {
+                        model_test.animations[0].borrow_mut().start();
+                    }
                     model_test.update_nodes(base, current_frame);
 
                     if !pause_frustum {
