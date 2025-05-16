@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 
+use crate::matrix::Matrix;
+
 #[derive(Clone, Debug, Copy)]
 pub struct Vector {
     pub x: f32,
@@ -106,6 +108,22 @@ impl Vector {
         self.z = temp.z;
         self.w = temp.w;
     }
+
+    pub fn euler_to_quat(&self) -> Vector {
+        let cr = (self.x * 0.5).cos();
+        let sr = (self.x * 0.5).sin();
+        let cp = (self.y * 0.5).cos();
+        let sp = (self.y * 0.5).sin();
+        let cy = (self.z * 0.5).cos();
+        let sy = (self.z * 0.5).sin();
+
+        Vector::new_vec4(
+            sr * cp * cy - cr * sp * sy,
+            cr * sp * cy + sr * cp * sy,
+            cr * cp * sy - sr * sp * cy,
+            cr * cp * cy + sr * sp * sy
+        )
+    }
     //</editor-fold>
 
     //<editor-fold desc = "vector vector operations">
@@ -195,7 +213,7 @@ impl Vector {
         let mut b = b.normalize_4d();
 
         let mut dot = a.dot(&b).clamp(-1.0, 1.0);
-        
+
         if dot < 0.0 {
             b = b.mul_float(-1.0);
             dot = -dot;
