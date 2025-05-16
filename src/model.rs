@@ -384,9 +384,9 @@ impl Gltf {
                     rotation,
                     scale,
                     translation,
-                    animated_rotation: Vector::new_null(),
-                    animated_scale: Vector::new_null(),
-                    animated_translation: Vector::new_null(),
+                    original_rotation: rotation,
+                    original_scale: scale,
+                    original_translation: translation,
                     transform: Matrix::new_empty(),
                     children: Vec::new(),
                     children_indices,
@@ -610,6 +610,9 @@ impl Gltf {
     } }
 
     pub unsafe fn update_nodes(&mut self, base: &VkBase, frame: usize) { unsafe {
+        for animation in self.animations.iter_mut() {
+            animation.borrow_mut().update()
+        }
         self.update_instances(base, frame);
         self.update_joints(base, frame);
     } }
@@ -1233,9 +1236,9 @@ pub struct Node {
     pub scale: Vector,
     pub translation: Vector,
 
-    pub animated_rotation: Vector,
-    pub animated_scale: Vector,
-    pub animated_translation: Vector,
+    pub original_rotation: Vector,
+    pub original_scale: Vector,
+    pub original_translation: Vector,
 
     pub transform: Matrix,
     pub children: Vec<Rc<RefCell<Node>>>,
@@ -1333,8 +1336,10 @@ pub struct Animation {
     pub channels: Vec<(usize, Rc<RefCell<Node>>, String)>, // sampler index, impacted node, target transform component
     pub samplers: Vec<(Vec<f32>, String, Vec<Vector>)>, // input times, interpolation method, output vectors
     pub start_time: SystemTime,
-    pub running: bool,
     pub duration: f32,
+    pub running: bool,
+    pub repeat: bool,
+    pub snap_back: bool,
 }
 impl Animation {
     fn new(name: String, channels: Vec<(usize, usize, String)>, samplers: Vec<(Rc<Accessor>, String, Rc<Accessor>)>, nodes: &Vec<Rc<RefCell<Node>>>) -> Self {
@@ -1373,8 +1378,10 @@ impl Animation {
             channels: channels.iter().map(|channel| (channel.0, nodes[channel.1].clone(), channel.2.clone())).collect(),
             samplers: compiled_samplers,
             start_time: SystemTime::now(),
-            running: false,
             duration,
+            running: false,
+            repeat: false,
+            snap_back: false,
         }
     }
 
@@ -1383,14 +1390,38 @@ impl Animation {
         self.running = true;
     }
 
+    pub fn stop(&mut self) {
+        self.running = false;
+        if self.snap_back {
+            for channel in self.channels.iter() {
+                if channel.2 == "translation" {
+                    let value = channel.1.borrow().original_translation.clone();
+                    channel.1.borrow_mut().translation = value;
+                } else if channel.2 == "rotation" {
+                    let value = channel.1.borrow().original_rotation.clone();
+                    channel.1.borrow_mut().rotation = value;
+                } else if channel.2 == "scale" {
+                    let value = channel.1.borrow().original_scale.clone();
+                    channel.1.borrow_mut().scale = value;
+                }
+            }
+        }
+    }
+
     pub fn update(&mut self) {
         if !self.running {
-             return;
+             return
         }
         let current_time = SystemTime::now();
         let elapsed_time = current_time.duration_since(self.start_time).unwrap().as_secs_f32();
+        let mut repeat = false;
         if elapsed_time > self.duration {
-            self.running = false;
+            if self.repeat {
+                repeat = true
+            } else {
+                self.stop();
+                return
+            }
         }
         for channel in self.channels.iter() {
             let sampler = &self.samplers[channel.0];
@@ -1398,7 +1429,7 @@ impl Animation {
             for i in 0..sampler.0.len() - 1 {
                 if elapsed_time >= sampler.0[i] && elapsed_time < sampler.0[i + 1] {
                     current_time_index = i;
-                    break;
+                    break
                 }
             }
             let current_time_index = current_time_index.min(sampler.0.len() - 1);
@@ -1411,9 +1442,9 @@ impl Animation {
                     vector1.x + interpolation_factor * (vector2.x - vector1.x),
                     vector1.y + interpolation_factor * (vector2.y - vector1.y),
                     vector1.z + interpolation_factor * (vector2.z - vector1.z),
-                );
+                )
             } else {
-                new_vector = Vector::spherical_lerp(vector1, vector2, interpolation_factor);
+                new_vector = Vector::spherical_lerp(vector1, vector2, interpolation_factor)
             }
 
             if channel.2.eq("translation") {
@@ -1425,6 +1456,9 @@ impl Animation {
             } else {
                 panic!("Illogical animation channel target! Should be translation, rotation or scale");
             }
+        }
+        if repeat {
+            self.start()
         }
     }
 }
