@@ -384,6 +384,9 @@ impl Gltf {
                     rotation,
                     scale,
                     translation,
+                    user_rotation: Vector::new_empty(),
+                    user_scale: Vector::new_vec(1.0),
+                    user_translation: Vector::new_empty(),
                     original_rotation: rotation,
                     original_scale: scale,
                     original_translation: translation,
@@ -620,9 +623,9 @@ impl Gltf {
     pub fn transform_roots(&mut self, translation: &Vector, rotation: &Vector, scale: &Vector) {
         for node in self.scene.nodes.iter() {
             let mut node = node.borrow_mut();
-            node.translation.add_vec_to_self(translation);
-            node.rotation.combine_to_self(&rotation.normalize_4d());
-            node.scale.mul_by_vec_to_self(scale);
+            node.user_translation.add_vec_to_self(translation);
+            node.user_rotation.combine_to_self(&rotation.normalize_4d());
+            node.user_scale.mul_by_vec_to_self(scale);
         }
     }
 
@@ -698,9 +701,9 @@ impl Gltf {
     pub fn update_node(&mut self, node: &Rc<RefCell<Node>>, parent_transform: &Matrix) {
         let mut node = node.borrow_mut();
 
-        let rotate = Matrix::new_rotate_quaternion_vec4(&node.rotation.mul_by_vec(&Vector::new_vec4(1.0, 1.0, 1.0,1.0)));
-        let scale = Matrix::new_scale_vec3(&node.scale);
-        let translate = Matrix::new_translation_vec3(&node.translation);
+        let rotate = Matrix::new_rotate_quaternion_vec4(&node.rotation.combine(&node.user_rotation.euler_to_quat()));
+        let scale = Matrix::new_scale_vec3(&node.scale.mul_by_vec(&node.user_scale));
+        let translate = Matrix::new_translation_vec3(&node.translation.add_vec(&node.user_translation));
 
         let mut local_transform = Matrix::new();
         local_transform.set_and_mul_mat4(&translate);
@@ -1235,6 +1238,10 @@ pub struct Node {
     pub rotation: Vector,
     pub scale: Vector,
     pub translation: Vector,
+
+    pub user_rotation: Vector,
+    pub user_scale: Vector,
+    pub user_translation: Vector,
 
     pub original_rotation: Vector,
     pub original_scale: Vector,
