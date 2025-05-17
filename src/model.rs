@@ -336,6 +336,13 @@ impl Gltf {
                 None => (),
             }
 
+            let skin_maybe: Option<usize> = node["skin"].as_usize();
+            let mut skin = None;
+            match skin_maybe {
+                Some(skin_index) => skin = Some(skin_index as i32),
+                None => (),
+            }
+
             let mut rotation = Vector::new_empty();
             if let JsonValue::Array(ref rotation_json) = node["rotation"] {
                 if rotation_json.len() >= 4 {
@@ -381,6 +388,7 @@ impl Gltf {
                 Rc::new(RefCell::new(Node {
                     name,
                     mesh,
+                    skin,
                     rotation,
                     scale,
                     translation,
@@ -561,7 +569,7 @@ impl Gltf {
                         primitive.index_data_u32.iter().map(|&i| i + primitive.vertex_buffer_offset as u32)
                     );
                 }
-                self.instance_data.push(Instance::new(Matrix::new(), primitive.material_index));
+                self.instance_data.push(Instance::new(Matrix::new(), primitive.material_index, 0));
                 primitive.construct_min_max()
             }
         }
@@ -593,19 +601,20 @@ impl Gltf {
         self.joints_buffers_size = 0;
         let mut joints_send = Vec::new();
         for skin in &self.skins {
+            self.joints_buffers_size += size_of::<Matrix>() as u64; // for skin joint offset matrix
             skin.borrow_mut().construct_joint_matrices(&self.nodes);
             for joint in skin.borrow_mut().joint_matrices.iter() {
-                self.joints_buffers_size = self.joints_buffers_size + size_of::<Matrix>() as u64;
+                self.joints_buffers_size += size_of::<Matrix>() as u64;
                 joints_send.push(joint.clone());
             }
         }
-        for i in 0..self.instance_buffers.len() {
+        for i in 0..frames_in_flight {
             self.joints_buffers.push((vk::Buffer::null(), DeviceMemory::null()));
             if i == 0 {
                 (self.joints_buffers[i], self.joints_staging_buffer) =
-                    base.create_device_and_staging_buffer(0, &joints_send, vk::BufferUsageFlags::STORAGE_BUFFER, false, true);
+                    base.create_device_and_staging_buffer(self.joints_buffers_size, &joints_send, vk::BufferUsageFlags::STORAGE_BUFFER, false, true);
             } else {
-                self.joints_buffers[i] = base.create_device_and_staging_buffer(0, &joints_send, vk::BufferUsageFlags::STORAGE_BUFFER, true, true).0;
+                self.joints_buffers[i] = base.create_device_and_staging_buffer(self.joints_buffers_size, &joints_send, vk::BufferUsageFlags::STORAGE_BUFFER, true, true).0;
             }
         }
 
@@ -673,7 +682,18 @@ impl Gltf {
                 vk::MemoryMapFlags::empty(),
             )
             .expect("Failed to map index buffer memory");
-        copy_data_to_memory(ptr, &self.skins[0].borrow().joint_matrices);
+        let mut joints = Vec::new();
+        let mut total = 1f32;
+        for skin in &self.skins {
+            joints.push(Matrix::new_manual([total; 16]));
+            total += 1f32 + skin.borrow().joint_matrices.len() as f32;
+        }
+        for skin in &self.skins {
+            for joint in skin.borrow().joint_matrices.iter() {
+                joints.push(joint.clone());
+            }
+        }
+        copy_data_to_memory(ptr, &joints);
         base.device.unmap_memory(self.joints_staging_buffer.1);
         base.copy_buffer(&self.joints_staging_buffer.0, &self.joints_buffers[frame].0, &self.joints_buffers_size);
     }}
@@ -718,6 +738,9 @@ impl Gltf {
         if let Some(mesh) = &node.mesh {
             for primitive in mesh.borrow().primitives.iter() {
                 self.instance_data[primitive.id].matrix = world_transform.data;
+            }
+            for primitive in mesh.borrow().primitives.iter() {
+                self.instance_data[primitive.id].indices[1] = node.skin.unwrap_or(-1);
             }
         }
 
@@ -1214,15 +1237,13 @@ pub struct Vertex {
 #[repr(C)]
 pub struct Instance {
     pub matrix: [f32; 16],
-    pub material: u32,
-    //pub _pad: [u32; 3],
+    pub indices: [i32; 2],
 }
 impl Instance {
-    pub fn new(matrix: Matrix, material: u32) -> Self {
+    pub fn new(matrix: Matrix, material: u32, skin: i32) -> Self {
         Self {
             matrix: matrix.data,
-            material,
-            //_pad: [0; 3],
+            indices: [material as i32, skin],
         }
     }
 }
@@ -1234,6 +1255,7 @@ pub struct Mesh {
 
 pub struct Node {
     pub mesh: Option<Rc<RefCell<Mesh>>>,
+    pub skin: Option<i32>,
     pub name: String,
     pub rotation: Vector,
     pub scale: Vector,

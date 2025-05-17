@@ -53,11 +53,11 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
     unsafe {
-        //let mut model_test = Gltf::new("C:\\Graphics\\assets\\gltf_test_models\\RiggedFigure\\glTF\\RiggedFigure.gltf");
-        let mut model_test = Gltf::new(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("local_assets\\ffocks\\untitled.gltf").to_str().unwrap());
-        //let mut model_test = Gltf::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf");
+        let mut model_test = Gltf::new("C:\\Graphics\\assets\\rivals\\luna\\gltf\\luna.gltf");
+        //let mut model_test = Gltf::new(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("local_assets\\ffocks\\untitled.gltf").to_str().unwrap());
+        //let mut model_test = Gltf::new("C:\\Graphics\\assets\\flower\\scene.gltf");
         //let mut model_test = Gltf::new("C:\\Graphics\\assets\\luna\\MRLunaSnow.gltf");
-        model_test.transform_roots(&Vector::new_vec(0.0), &Vector::new_vec(0.0), &Vector::new_vec(0.01));
+        //model_test.transform_roots(&Vector::new_vec(0.0), &Vector::new_vec(0.0), &Vector::new_vec(0.01));
         model_test.initialize(base, MAX_FRAMES_IN_FLIGHT);
 
         let null_tex = base.create_2d_texture_image(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("local_assets\\null8x.png"), true);
@@ -495,8 +495,8 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             vk::VertexInputAttributeDescription {
                 location: 11,
                 binding: 1,
-                format: vk::Format::R32_UINT,
-                offset: 64,
+                format: vk::Format::R32G32_SINT,
+                offset: offset_of!(Instance, indices) as u32,
             },
         ];
 
@@ -616,8 +616,8 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             base.window.inner_size().height as f32 * 0.5))
             .expect("failed to reset mouse position");
 
-        model_test.animations[2].borrow_mut().repeat = true;
-        model_test.animations[2].borrow_mut().start();
+        model_test.animations[0].borrow_mut().repeat = true;
+        model_test.animations[0].borrow_mut().start();
 
         base.event_loop.borrow_mut().run_on_demand(|event, elwp| {
             elwp.set_control_flow(ControlFlow::Poll);

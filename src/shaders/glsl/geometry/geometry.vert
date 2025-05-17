@@ -11,7 +11,7 @@ layout (location = 5) in uvec4 joint_indices;
 layout (location = 6) in vec4 weights;
 
 layout (location = 7) in mat4 model;
-layout (location = 11) in uint material;
+layout (location = 11) in ivec2 indices;
 
 layout (location = 0) out vec3 fragPos;
 layout (location = 1) out vec3 o_normal;
@@ -30,13 +30,16 @@ layout(set = 0, binding = 2, std430) readonly buffer JointsSSBO {
 } jointsSSBO;
 
 void main() {
+    int material = indices.x;
+    int skin = indices.y;
     mat4 model_matrix = model;
-    if (joint_indices.x+joint_indices.y+joint_indices.z+joint_indices.w != 0) {
+    if (skin > -1) {
+        uint joint_offset = uint((jointsSSBO.joint_matrices[uint(skin)])[0][0]);
         model_matrix =
-            weights.x * jointsSSBO.joint_matrices[joint_indices.x] +
-            weights.y * jointsSSBO.joint_matrices[joint_indices.y] +
-            weights.z * jointsSSBO.joint_matrices[joint_indices.z] +
-            weights.w * jointsSSBO.joint_matrices[joint_indices.w];
+            weights.x * jointsSSBO.joint_matrices[joint_indices.x + joint_offset] +
+            weights.y * jointsSSBO.joint_matrices[joint_indices.y + joint_offset] +
+            weights.z * jointsSSBO.joint_matrices[joint_indices.z + joint_offset] +
+            weights.w * jointsSSBO.joint_matrices[joint_indices.w + joint_offset];
     }
 
     vec4 position = model_matrix * vec4(pos, 1.0);
