@@ -547,7 +547,7 @@ impl Gltf {
         }
     }
 
-    pub unsafe fn initialize(&mut self, base: &VkBase, frames_in_flight: usize) { unsafe {
+    pub unsafe fn initialize(&mut self, base: &VkBase, frames_in_flight: usize, load_textures: bool) { unsafe {
         let mut all_vertices: Vec<Vertex> = vec![];
         let mut all_indices: Vec<u32> = vec![];
         for mesh in &self.meshes {
@@ -618,7 +618,9 @@ impl Gltf {
             }
         }
 
-        self.construct_textures(base);
+        if load_textures {
+            self.construct_textures(base)
+        }
     } }
 
     pub unsafe fn update_nodes(&mut self, base: &VkBase, frame: usize) { unsafe {

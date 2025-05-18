@@ -58,7 +58,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
         //let mut model_test = Gltf::new("C:\\Graphics\\assets\\flower\\scene.gltf");
         //let mut model_test = Gltf::new("C:\\Graphics\\assets\\luna\\MRLunaSnow.gltf");
         //model_test.transform_roots(&Vector::new_vec(0.0), &Vector::new_vec(0.0), &Vector::new_vec(0.01));
-        model_test.initialize(base, MAX_FRAMES_IN_FLIGHT);
+        model_test.initialize(base, MAX_FRAMES_IN_FLIGHT, false);
 
         let null_tex = base.create_2d_texture_image(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("local_assets\\null8x.png"), true);
 
@@ -587,10 +587,6 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
         let graphic_pipeline = graphics_pipelines[0];
         //</editor-fold>
 
-        /*
-        Vector { x: 14.284356, y: 6.3393226, z: 2.1902442, w: 1.0, null: false }
-        Vector { x: 0.1639992, y: -1.5700009, z: 0.0, w: 0.0, null: false }
-         */
         let mut player_camera = Camera::new_perspective_rotation(
             Vector::new_vec3(0.0, 0.0, 0.0),
             Vector::new_empty(),
