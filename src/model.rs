@@ -597,24 +597,25 @@ impl Gltf {
             self.update_instances(base, i);
         }
 
-        if self.skins.is_empty() { return }
-        self.joints_buffers_size = 0;
-        let mut joints_send = Vec::new();
-        for skin in &self.skins {
-            self.joints_buffers_size += size_of::<Matrix>() as u64; // for skin joint offset matrix
-            skin.borrow_mut().construct_joint_matrices(&self.nodes);
-            for joint in skin.borrow_mut().joint_matrices.iter() {
-                self.joints_buffers_size += size_of::<Matrix>() as u64;
-                joints_send.push(joint.clone());
+        if !self.skins.is_empty() {
+            self.joints_buffers_size = 0;
+            let mut joints_send = Vec::new();
+            for skin in &self.skins {
+                self.joints_buffers_size += size_of::<Matrix>() as u64; // for skin joint offset matrix
+                skin.borrow_mut().construct_joint_matrices(&self.nodes);
+                for joint in skin.borrow_mut().joint_matrices.iter() {
+                    self.joints_buffers_size += size_of::<Matrix>() as u64;
+                    joints_send.push(joint.clone());
+                }
             }
-        }
-        for i in 0..frames_in_flight {
-            self.joints_buffers.push((vk::Buffer::null(), DeviceMemory::null()));
-            if i == 0 {
-                (self.joints_buffers[i], self.joints_staging_buffer) =
-                    base.create_device_and_staging_buffer(self.joints_buffers_size, &joints_send, vk::BufferUsageFlags::STORAGE_BUFFER, false, true);
-            } else {
-                self.joints_buffers[i] = base.create_device_and_staging_buffer(self.joints_buffers_size, &joints_send, vk::BufferUsageFlags::STORAGE_BUFFER, true, true).0;
+            for i in 0..frames_in_flight {
+                self.joints_buffers.push((vk::Buffer::null(), DeviceMemory::null()));
+                if i == 0 {
+                    (self.joints_buffers[i], self.joints_staging_buffer) =
+                        base.create_device_and_staging_buffer(self.joints_buffers_size, &joints_send, vk::BufferUsageFlags::STORAGE_BUFFER, false, true);
+                } else {
+                    self.joints_buffers[i] = base.create_device_and_staging_buffer(self.joints_buffers_size, &joints_send, vk::BufferUsageFlags::STORAGE_BUFFER, true, true).0;
+                }
             }
         }
 
@@ -851,6 +852,7 @@ pub struct Image {
     pub name: String,
     pub uri: PathBuf,
 
+    pub generated: bool,
     pub image: (vk::Image, DeviceMemory),
     pub image_view: ImageView,
     pub mip_levels: u32,
@@ -861,6 +863,7 @@ impl Image {
             mime_type,
             name,
             uri,
+            generated: false,
             image: (vk::Image::null(), DeviceMemory::null()),
             image_view: ImageView::null(),
             mip_levels: 0,
@@ -872,6 +875,7 @@ impl Image {
         self.image = image;
         self.image_view = image_view.0;
         self.mip_levels = mips;
+        self.generated = true;
         base.device.destroy_sampler(image_view.1, None);
     } }
 }
