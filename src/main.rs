@@ -25,6 +25,7 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
 use winit::window::CursorGrabMode;
 use crate::{vk_helper::*, vector::*};
+use crate::matrix::Matrix;
 use crate::model::{Gltf, Instance};
 use crate::scene::Camera;
 
@@ -60,8 +61,9 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
         let mut model_test = Gltf::new("C:\\Graphics\\assets\\bistro2\\untitled.gltf");
         //model_test.transform_roots(&Vector::new_vec(0.0), &Vector::new_vec(0.0), &Vector::new_vec(0.01));
         model_test.initialize(base, MAX_FRAMES_IN_FLIGHT, true);
-        //model_test.animations[1].borrow_mut().repeat = true;
-        //model_test.animations[1].borrow_mut().start();
+        model_test.update_instances_all_frames(base);
+        //model_test.animations[0].borrow_mut().repeat = true;
+        //model_test.animations[0].borrow_mut().start();
 
         let null_tex = base.create_2d_texture_image(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("local_assets\\null8x.png"), true);
 
@@ -215,6 +217,15 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                     ..Default::default()
                 });
             }
+        }
+        let missing = 1024 - image_infos.len();
+        for _ in 0..missing {
+            image_infos.push(vk::DescriptorImageInfo {
+                image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                image_view: null_tex.0.0,
+                sampler: null_tex.0.1,
+                ..Default::default()
+            });
         }
         for i in 0..MAX_FRAMES_IN_FLIGHT {
             let uniform_buffer_info = vk::DescriptorBufferInfo {
@@ -715,7 +726,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                     do_controls(&mut player_camera, &pressed_keys, &mut new_pressed_keys, delta_time, &mut cursor_locked, base, &mut saved_cursor_pos, &mut pause_frustum);
                     player_camera.update_matrices();
 
-                    //model_test.update_nodes(base, current_frame);
+                    model_test.update_nodes(base, current_frame);
 
                     if !pause_frustum {
                         player_camera.update_frustum()

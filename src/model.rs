@@ -43,6 +43,7 @@ pub struct Gltf {
     pub joints_buffers_size: u64,
 
     pub instance_data: Vec<Instance>,
+    pub dirty_instances: Vec<usize>,
     pub primitive_count: usize,
 }
 impl Gltf {
@@ -392,6 +393,7 @@ impl Gltf {
                     rotation,
                     scale,
                     translation,
+                    needs_update: true,
                     user_rotation: Vector::new_empty(),
                     user_scale: Vector::new_vec(1.0),
                     user_translation: Vector::new_empty(),
@@ -543,6 +545,7 @@ impl Gltf {
             joints_buffers: Vec::new(),
             joints_buffers_size: 0,
             instance_data: Vec::new(),
+            dirty_instances: Vec::new(),
             primitive_count,
         }
     }
@@ -609,7 +612,6 @@ impl Gltf {
                 }
             }
             for i in 0..frames_in_flight {
-                self.joints_buffers.push((vk::Buffer::null(), DeviceMemory::null()));
                 if i == 0 {
                     (self.joints_buffers[i], self.joints_staging_buffer) =
                         base.create_device_and_staging_buffer(self.joints_buffers_size, &joints_send, vk::BufferUsageFlags::STORAGE_BUFFER, false, true);
@@ -638,6 +640,7 @@ impl Gltf {
             node.user_translation.add_vec_to_self(translation);
             node.user_rotation.combine_to_self(&rotation.normalize_4d());
             node.user_scale.mul_by_vec_to_self(scale);
+            node.needs_update = true;
         }
     }
 
@@ -654,21 +657,48 @@ impl Gltf {
     }}
 
     pub unsafe fn update_instances(&mut self, base: &VkBase, frame: usize) { unsafe {
-        for node in &self.scene.nodes.clone() {
-            self.update_node(node, &mut Matrix::new());
+        self.dirty_instances.clear();
+        for node in &self.nodes.clone() {
+            if node.borrow().needs_update {
+                self.update_node(node, &mut Matrix::new());
+            }
         }
-        let ptr = base
-            .device
-            .map_memory(
-                self.instance_staging_buffer.1,
-                0,
-                self.instance_buffer_size,
-                vk::MemoryMapFlags::empty(),
-            )
-            .expect("Failed to map index buffer memory");
-        copy_data_to_memory(ptr, &self.instance_data);
-        base.device.unmap_memory(self.instance_staging_buffer.1);
-        base.copy_buffer(&self.instance_staging_buffer.0, &self.instance_buffers[frame].0, &self.instance_buffer_size);
+        if self.dirty_instances.len() > 0 {
+            let ptr = base
+                .device
+                .map_memory(
+                    self.instance_staging_buffer.1,
+                    0,
+                    self.instance_buffer_size,
+                    vk::MemoryMapFlags::empty(),
+                )
+                .expect("Failed to map index buffer memory");
+            for idx in &self.dirty_instances {
+                let dst = (ptr as *mut u8).add(idx * size_of::<Instance>());
+                std::ptr::copy_nonoverlapping(
+                    &self.instance_data[*idx] as *const _ as *const u8,
+                    dst,
+                    size_of::<Instance>(),
+                );
+            }
+            base.device.unmap_memory(self.instance_staging_buffer.1);
+            let copy_regions: Vec<vk::BufferCopy> = self.dirty_instances.iter().map(|&idx| {
+                let offset = (idx * size_of::<Instance>()) as u64;
+                vk::BufferCopy {
+                    src_offset: offset,
+                    dst_offset: offset,
+                    size: size_of::<Instance>() as u64,
+                }
+            }).collect();
+            let command_buffers = base.begin_single_time_commands(1);
+            base.device.cmd_copy_buffer(
+                command_buffers[0],
+                self.instance_staging_buffer.0,
+                self.instance_buffers[frame].0,
+                &copy_regions,
+            );
+            base.end_single_time_commands(command_buffers);
+        }
     } }
 
     pub unsafe fn update_joints(&mut self, base: &VkBase, frame: usize) { unsafe {
@@ -741,11 +771,12 @@ impl Gltf {
         if let Some(mesh) = &node.mesh {
             for primitive in mesh.borrow().primitives.iter() {
                 self.instance_data[primitive.id].matrix = world_transform.data;
-            }
-            for primitive in mesh.borrow().primitives.iter() {
                 self.instance_data[primitive.id].indices[1] = node.skin.unwrap_or(-1);
+                self.dirty_instances.push(primitive.id);
             }
         }
+
+        node.needs_update = false;
 
         for child in node.children.iter() {
             self.update_node(child, &world_transform);
@@ -1267,6 +1298,8 @@ pub struct Node {
     pub scale: Vector,
     pub translation: Vector,
 
+    pub needs_update: bool,
+
     pub user_rotation: Vector,
     pub user_scale: Vector,
     pub user_translation: Vector,
@@ -1491,6 +1524,7 @@ impl Animation {
             } else {
                 panic!("Illogical animation channel target! Should be translation, rotation or scale");
             }
+            channel.1.borrow_mut().needs_update = true;
         }
         if repeat {
             self.start()
