@@ -61,9 +61,8 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
         let mut model_test = Gltf::new("C:\\Graphics\\assets\\bistro2\\untitled.gltf");
         //model_test.transform_roots(&Vector::new_vec(0.0), &Vector::new_vec(0.0), &Vector::new_vec(0.01));
         model_test.initialize(base, MAX_FRAMES_IN_FLIGHT, true);
-        model_test.update_instances_all_frames(base);
-        //model_test.animations[0].borrow_mut().repeat = true;
-        //model_test.animations[0].borrow_mut().start();
+//        model_test.animations[0].repeat = true;
+//        model_test.animations[0].start();
 
         let null_tex = base.create_2d_texture_image(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("local_assets\\null8x.png"), true);
 

@@ -13,6 +13,7 @@ use std::ffi::c_void;
 use std::fs::Metadata;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::ptr::null_mut;
 use ash::{
     ext::debug_utils,
     khr::{surface, swapchain},
@@ -852,7 +853,7 @@ impl VkBase {
         self.device.cmd_copy_buffer(command_buffers[0], *src_buffer, *dst_buffer, &copy_region);
         self.end_single_time_commands(command_buffers);
     } }
-    pub unsafe fn create_device_and_staging_buffer<T: Copy>(&self, buffer_size_in: u64, data: &[T], usage: vk::BufferUsageFlags, destroy_staging: bool, do_initial_copy: bool) -> ((Buffer, DeviceMemory), (Buffer, DeviceMemory)) { unsafe {
+    pub unsafe fn create_device_and_staging_buffer<T: Copy>(&self, buffer_size_in: u64, data: &[T], usage: vk::BufferUsageFlags, destroy_staging: bool, keep_ptr: bool, do_initial_copy: bool) -> ((Buffer, DeviceMemory), (Buffer, DeviceMemory, *mut c_void)) { unsafe {
         let buffer_size;
         if buffer_size_in > 0 {
             buffer_size = buffer_size_in;
@@ -868,8 +869,9 @@ impl VkBase {
             &mut staging_buffer,
             &mut staging_buffer_memory,
         );
-        if do_initial_copy {
-            let index_ptr = self
+        let mut ptr = null_mut();
+        if do_initial_copy || keep_ptr {
+            ptr = self
                 .device
                 .map_memory(
                     staging_buffer_memory,
@@ -878,8 +880,9 @@ impl VkBase {
                     vk::MemoryMapFlags::empty(),
                 )
                 .expect("Failed to map index buffer memory");
-            copy_data_to_memory(index_ptr, &data);
-            self.device.unmap_memory(staging_buffer_memory);
+            if do_initial_copy {
+                copy_data_to_memory(ptr, &data);
+            }
         }
         let mut buffer = Buffer::null();
         let mut buffer_memory = DeviceMemory::null();
@@ -896,12 +899,15 @@ impl VkBase {
         if destroy_staging {
             self.device.destroy_buffer(staging_buffer, None);
             self.device.free_memory(staging_buffer_memory, None);
-            ((buffer, buffer_memory), (Buffer::null(), DeviceMemory::null()))
+            ((buffer, buffer_memory), (Buffer::null(), DeviceMemory::null(), null_mut()))
         } else {
-            ((buffer, buffer_memory), (staging_buffer, staging_buffer_memory))
+            if !keep_ptr {
+                self.device.unmap_memory(staging_buffer_memory);
+                ptr = null_mut();
+            }
+            ((buffer, buffer_memory), (staging_buffer, staging_buffer_memory, ptr))
         }
-    }
-    }
+    } }
     pub unsafe fn create_2d_texture_image(&self, uri: &PathBuf, generate_mipmaps: bool) -> ((ImageView, Sampler), (Image, DeviceMemory), u32) { unsafe {
         let bytes = fs::read(uri).expect(uri.to_string_lossy().as_ref());
         let image = image::load_from_memory(&bytes).expect("Failed to load image").to_rgba8();

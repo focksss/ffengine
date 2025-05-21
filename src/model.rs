@@ -1,7 +1,9 @@
 use std::cell::RefCell;
+use std::ffi::c_void;
 use std::fs;
 use std::rc::Rc;
 use std::path::{Path, PathBuf};
+use std::ptr::null_mut;
 use std::time::SystemTime;
 use ash::vk;
 use ash::vk::{CommandBuffer, DeviceMemory, ImageView, Sampler};
@@ -16,9 +18,9 @@ pub struct Gltf {
     pub extensions_used: Vec<String>,
     pub scene: Rc<Scene>,
     pub scenes: Vec<Rc<Scene>>,
-    pub animations: Vec<Rc<RefCell<Animation>>>,
-    pub skins: Vec<Rc<RefCell<Skin>>>,
-    pub nodes: Vec<Rc<RefCell<Node>>>,
+    pub animations: Vec<Animation>,
+    pub skins: Vec<Skin>,
+    pub nodes: Vec<Node>,
     pub meshes: Vec<Rc<RefCell<Mesh>>>,
     pub materials: Vec<Material>,
     pub textures: Vec<Rc<RefCell<Texture>>>,
@@ -30,15 +32,15 @@ pub struct Gltf {
     pub index_buffer: (vk::Buffer, DeviceMemory),
     pub vertex_buffer: (vk::Buffer, DeviceMemory),
 
-    pub instance_staging_buffer: (vk::Buffer, DeviceMemory),
+    pub instance_staging_buffer: (vk::Buffer, DeviceMemory, *mut c_void),
     pub instance_buffers: Vec<(vk::Buffer, DeviceMemory)>,
     pub instance_buffer_size: u64,
 
-    pub material_staging_buffer: (vk::Buffer, DeviceMemory),
+    pub material_staging_buffer: (vk::Buffer, DeviceMemory, *mut c_void),
     pub material_buffers: Vec<(vk::Buffer, DeviceMemory)>,
     pub material_buffer_size: u64,
 
-    pub joints_staging_buffer: (vk::Buffer, DeviceMemory),
+    pub joints_staging_buffer: (vk::Buffer, DeviceMemory, *mut c_void),
     pub joints_buffers: Vec<(vk::Buffer, DeviceMemory)>,
     pub joints_buffers_size: u64,
 
@@ -386,7 +388,7 @@ impl Gltf {
             }
 
             nodes.push(
-                Rc::new(RefCell::new(Node {
+                Node {
                     name,
                     mesh,
                     skin,
@@ -401,20 +403,9 @@ impl Gltf {
                     original_scale: scale,
                     original_translation: translation,
                     transform: Matrix::new_empty(),
-                    children: Vec::new(),
                     children_indices,
-                }))
+                }
             )
-        }
-        for node_reference in &nodes {
-            let children_indices: Vec<usize>; {
-                let node = node_reference.borrow();
-                children_indices = node.children_indices.clone();
-            }
-            let mut node = node_reference.borrow_mut();
-            for &child_index in &children_indices {
-                node.children.push(Rc::clone(&nodes[child_index]));
-            }
         }
 
         let mut skins = Vec::new();
@@ -435,20 +426,20 @@ impl Gltf {
 
             let inverse_bind_matrices_accessor = accessors[skin["inverseBindMatrices"].as_usize().unwrap()].clone();
 
-            let mut skeleton: Option<Rc<RefCell<Node>>> = None;
+            let mut skeleton: Option<usize> = None;
             match skin["skeleton"].as_usize() {
-                Some(skeleton_idx) => skeleton = Some(nodes[skeleton_idx].clone()),
+                Some(skeleton_idx) => skeleton = Some(skeleton_idx),
                 None => (),
             }
 
-            skins.push(Rc::new(RefCell::new(Skin {
+            skins.push(Skin {
                 name,
                 inverse_bind_matrices_accessor,
                 inverse_bind_matrices: Vec::new(),
                 joint_indices,
                 joint_matrices: Vec::new(),
                 skeleton,
-            })))
+            })
         }
 
         let mut animations = Vec::new();
@@ -482,12 +473,11 @@ impl Gltf {
                 }
             }
 
-            animations.push(Rc::new(RefCell::new(Animation::new(
+            animations.push(Animation::new(
                 name,
                 channels,
                 samplers,
-                &nodes,
-            ))))
+            ))
         }
 
         let mut scenes = Vec::new();
@@ -502,7 +492,7 @@ impl Gltf {
             let mut scene_nodes = Vec::new();
             if let JsonValue::Array(ref nodes_json) = scene["nodes"] {
                 for node_json in nodes_json {
-                    scene_nodes.push(nodes[node_json.as_usize().unwrap()].clone());
+                    scene_nodes.push(node_json.as_usize().unwrap());
                 }
             }
 
@@ -535,13 +525,13 @@ impl Gltf {
             buffers,
             index_buffer: (vk::Buffer::null(), DeviceMemory::null()),
             vertex_buffer: (vk::Buffer::null(), DeviceMemory::null()),
-            instance_staging_buffer: (vk::Buffer::null(), DeviceMemory::null()),
+            instance_staging_buffer: (vk::Buffer::null(), DeviceMemory::null(), null_mut()),
             instance_buffers: Vec::new(),
             instance_buffer_size: 0,
-            material_staging_buffer: (vk::Buffer::null(), DeviceMemory::null()),
+            material_staging_buffer: (vk::Buffer::null(), DeviceMemory::null(), null_mut()),
             material_buffers: Vec::new(),
             material_buffer_size: 0,
-            joints_staging_buffer: (vk::Buffer::null(), DeviceMemory::null()),
+            joints_staging_buffer: (vk::Buffer::null(), DeviceMemory::null(), null_mut()),
             joints_buffers: Vec::new(),
             joints_buffers_size: 0,
             instance_data: Vec::new(),
@@ -578,8 +568,8 @@ impl Gltf {
         }
         self.instance_buffer_size = self.primitive_count as u64 * size_of::<Instance>() as u64;
         self.material_buffer_size = self.materials.len() as u64 * size_of::<MaterialSendable>() as u64;
-        self.vertex_buffer = base.create_device_and_staging_buffer(0, &*all_vertices, vk::BufferUsageFlags::VERTEX_BUFFER, true, true).0;
-        self.index_buffer = base.create_device_and_staging_buffer(0, &*all_indices, vk::BufferUsageFlags::INDEX_BUFFER, true, true).0;
+        self.vertex_buffer = base.create_device_and_staging_buffer(0, &*all_vertices, vk::BufferUsageFlags::VERTEX_BUFFER, true, false, true).0;
+        self.index_buffer = base.create_device_and_staging_buffer(0, &*all_indices, vk::BufferUsageFlags::INDEX_BUFFER, true, false, true).0;
         let mut materials_send = Vec::new();
         for material in &self.materials {
             materials_send.push(material.to_sendable());
@@ -590,23 +580,24 @@ impl Gltf {
             self.joints_buffers.push((vk::Buffer::null(), DeviceMemory::null()));
             if i == 0 {
                 (self.instance_buffers[i], self.instance_staging_buffer) =
-                    base.create_device_and_staging_buffer(self.instance_buffer_size, &[0], vk::BufferUsageFlags::VERTEX_BUFFER, false, false);
+                    base.create_device_and_staging_buffer(self.instance_buffer_size, &[0], vk::BufferUsageFlags::VERTEX_BUFFER, false, true, false);
                 (self.material_buffers[i], self.material_staging_buffer) =
-                    base.create_device_and_staging_buffer(0, &materials_send, vk::BufferUsageFlags::STORAGE_BUFFER, false, true);
+                    base.create_device_and_staging_buffer(0, &materials_send, vk::BufferUsageFlags::STORAGE_BUFFER, false, false, true);
             } else {
-                self.instance_buffers[i] = base.create_device_and_staging_buffer(self.instance_buffer_size, &[0], vk::BufferUsageFlags::VERTEX_BUFFER, true, false).0;
-                self.material_buffers[i] = base.create_device_and_staging_buffer(0, &materials_send, vk::BufferUsageFlags::STORAGE_BUFFER, true, true).0;
+                self.instance_buffers[i] = base.create_device_and_staging_buffer(self.instance_buffer_size, &[0], vk::BufferUsageFlags::VERTEX_BUFFER, true, false, false).0;
+                self.material_buffers[i] = base.create_device_and_staging_buffer(0, &materials_send, vk::BufferUsageFlags::STORAGE_BUFFER, true, false, true).0;
             }
-            self.update_instances(base, i);
         }
+        self.update_instances_all_frames(base);
 
         if !self.skins.is_empty() {
             self.joints_buffers_size = 0;
             let mut joints_send = Vec::new();
-            for skin in &self.skins {
+            for skin_index in 0..self.skins.len() {
+                let mut skin = &mut self.skins[skin_index];
                 self.joints_buffers_size += size_of::<Matrix>() as u64; // for skin joint offset matrix
-                skin.borrow_mut().construct_joint_matrices(&self.nodes);
-                for joint in skin.borrow_mut().joint_matrices.iter() {
+                skin.construct_joint_matrices(&self.nodes);
+                for joint in skin.joint_matrices.iter() {
                     self.joints_buffers_size += size_of::<Matrix>() as u64;
                     joints_send.push(joint.clone());
                 }
@@ -614,9 +605,9 @@ impl Gltf {
             for i in 0..frames_in_flight {
                 if i == 0 {
                     (self.joints_buffers[i], self.joints_staging_buffer) =
-                        base.create_device_and_staging_buffer(self.joints_buffers_size, &joints_send, vk::BufferUsageFlags::STORAGE_BUFFER, false, true);
+                        base.create_device_and_staging_buffer(self.joints_buffers_size, &joints_send, vk::BufferUsageFlags::STORAGE_BUFFER, false, true,true);
                 } else {
-                    self.joints_buffers[i] = base.create_device_and_staging_buffer(self.joints_buffers_size, &joints_send, vk::BufferUsageFlags::STORAGE_BUFFER, true, true).0;
+                    self.joints_buffers[i] = base.create_device_and_staging_buffer(self.joints_buffers_size, &joints_send, vk::BufferUsageFlags::STORAGE_BUFFER, true, false, true).0;
                 }
             }
         }
@@ -628,15 +619,15 @@ impl Gltf {
 
     pub unsafe fn update_nodes(&mut self, base: &VkBase, frame: usize) { unsafe {
         for animation in self.animations.iter_mut() {
-            animation.borrow_mut().update()
+            animation.update(&mut self.nodes)
         }
         self.update_instances(base, frame);
         self.update_joints(base, frame);
     } }
 
     pub fn transform_roots(&mut self, translation: &Vector, rotation: &Vector, scale: &Vector) {
-        for node in self.scene.nodes.iter() {
-            let mut node = node.borrow_mut();
+        for node_index in self.scene.nodes.iter() {
+            let node = &mut self.nodes[*node_index];
             node.user_translation.add_vec_to_self(translation);
             node.user_rotation.combine_to_self(&rotation.normalize_4d());
             node.user_scale.mul_by_vec_to_self(scale);
@@ -658,30 +649,18 @@ impl Gltf {
 
     pub unsafe fn update_instances(&mut self, base: &VkBase, frame: usize) { unsafe {
         self.dirty_instances.clear();
-        for node in &self.nodes.clone() {
-            if node.borrow().needs_update {
-                self.update_node(node, &mut Matrix::new());
-            }
+        for node in &self.scene.nodes.clone() {
+            self.update_node(*node, &mut Matrix::new(), false);
         }
         if self.dirty_instances.len() > 0 {
-            let ptr = base
-                .device
-                .map_memory(
-                    self.instance_staging_buffer.1,
-                    0,
-                    self.instance_buffer_size,
-                    vk::MemoryMapFlags::empty(),
-                )
-                .expect("Failed to map index buffer memory");
             for idx in &self.dirty_instances {
-                let dst = (ptr as *mut u8).add(idx * size_of::<Instance>());
+                let dst = (self.instance_staging_buffer.2 as *mut u8).add(idx * size_of::<Instance>());
                 std::ptr::copy_nonoverlapping(
                     &self.instance_data[*idx] as *const _ as *const u8,
                     dst,
                     size_of::<Instance>(),
                 );
             }
-            base.device.unmap_memory(self.instance_staging_buffer.1);
             let copy_regions: Vec<vk::BufferCopy> = self.dirty_instances.iter().map(|&idx| {
                 let offset = (idx * size_of::<Instance>()) as u64;
                 vk::BufferCopy {
@@ -703,83 +682,66 @@ impl Gltf {
 
     pub unsafe fn update_joints(&mut self, base: &VkBase, frame: usize) { unsafe {
         if self.skins.is_empty() { return }
-        for skin in &self.skins {
-            skin.borrow_mut().update_joint_matrices(&self.nodes);
+        for skin in &mut self.skins {
+            skin.update_joint_matrices(&self.nodes);
         }
-        let ptr = base
-            .device
-            .map_memory(
-                self.joints_staging_buffer.1,
-                0,
-                self.joints_buffers_size,
-                vk::MemoryMapFlags::empty(),
-            )
-            .expect("Failed to map index buffer memory");
         let mut joints = Vec::new();
         let mut total = 1f32;
         for skin in &self.skins {
             joints.push(Matrix::new_manual([total; 16]));
-            total += 1f32 + skin.borrow().joint_matrices.len() as f32;
+            total += 1f32 + skin.joint_matrices.len() as f32;
         }
         for skin in &self.skins {
-            for joint in skin.borrow().joint_matrices.iter() {
+            for joint in skin.joint_matrices.iter() {
                 joints.push(joint.clone());
             }
         }
-        copy_data_to_memory(ptr, &joints);
-        base.device.unmap_memory(self.joints_staging_buffer.1);
+        copy_data_to_memory(self.joints_staging_buffer.2, &joints);
         base.copy_buffer(&self.joints_staging_buffer.0, &self.joints_buffers[frame].0, &self.joints_buffers_size);
     }}
 
     pub unsafe fn update_instances_all_frames(&mut self, base: &VkBase) { unsafe {
-        for node in &self.scene.nodes.clone() {
-            self.update_node(node, &mut Matrix::new());
+        for i in 0..self.scene.nodes.len() {
+            self.update_node(i, &mut Matrix::new(), false);
         }
-        let ptr = base
-            .device
-            .map_memory(
-                self.instance_staging_buffer.1,
-                0,
-                self.instance_buffer_size,
-                vk::MemoryMapFlags::empty(),
-            )
-            .expect("Failed to map index buffer memory");
-        copy_data_to_memory(ptr, &self.instance_data);
-        base.device.unmap_memory(self.instance_staging_buffer.1);
+        copy_data_to_memory(self.instance_staging_buffer.2, &self.instance_data);
         for instance_buffer in &self.instance_buffers {
             base.copy_buffer(&self.instance_staging_buffer.0, &instance_buffer.0, &self.instance_buffer_size);
         }
     } }
 
-    pub fn update_node(&mut self, node: &Rc<RefCell<Node>>, parent_transform: &Matrix) {
-        let mut node = node.borrow_mut();
+    pub fn update_node(&mut self, node_index: usize, parent_transform: &Matrix, parent_needs_update: bool) {
+        let (transform, children_indices, needs_update) = {
+            let node = &mut self.nodes[node_index];
+            if node.needs_update || parent_needs_update {
+                node.needs_update = false;
 
-        let rotate = Matrix::new_rotate_quaternion_vec4(&node.rotation.combine(&node.user_rotation.euler_to_quat()));
-        let scale = Matrix::new_scale_vec3(&node.scale.mul_by_vec(&node.user_scale));
-        let translate = Matrix::new_translation_vec3(&node.translation.add_vec(&node.user_translation));
+                let rotate = Matrix::new_rotate_quaternion_vec4(&node.rotation.combine(&node.user_rotation.euler_to_quat()));
+                let scale = Matrix::new_scale_vec3(&node.scale.mul_by_vec(&node.user_scale));
+                let translate = Matrix::new_translation_vec3(&node.translation.add_vec(&node.user_translation));
 
-        let mut local_transform = Matrix::new();
-        local_transform.set_and_mul_mat4(&translate);
-        local_transform.set_and_mul_mat4(&rotate);
-        local_transform.set_and_mul_mat4(&scale);
+                let mut local_transform = Matrix::new();
+                local_transform.set_and_mul_mat4(&translate);
+                local_transform.set_and_mul_mat4(&rotate);
+                local_transform.set_and_mul_mat4(&scale);
 
-        let mut world_transform = parent_transform.clone();
-        world_transform.set_and_mul_mat4(&local_transform);
+                let mut world_transform = parent_transform.clone();
+                world_transform.set_and_mul_mat4(&local_transform);
 
-        node.transform = world_transform.clone();
+                node.transform = world_transform.clone();
 
-        if let Some(mesh) = &node.mesh {
-            for primitive in mesh.borrow().primitives.iter() {
-                self.instance_data[primitive.id].matrix = world_transform.data;
-                self.instance_data[primitive.id].indices[1] = node.skin.unwrap_or(-1);
-                self.dirty_instances.push(primitive.id);
+                if let Some(mesh) = &node.mesh {
+                    for primitive in mesh.borrow().primitives.iter() {
+                        self.instance_data[primitive.id].matrix = world_transform.data;
+                        self.dirty_instances.push(primitive.id);
+                    }
+                }
             }
-        }
-
-        node.needs_update = false;
-
-        for child in node.children.iter() {
-            self.update_node(child, &world_transform);
+            let node = &mut self.nodes[node_index];
+            (node.transform.clone(), node.children_indices.clone(), node.needs_update)
+        };
+        for &child in &children_indices {
+            self.update_node(child, &transform, parent_needs_update || needs_update);
         }
     }
 
@@ -802,8 +764,9 @@ impl Gltf {
             0,
             vk::IndexType::UINT32,
         );
-        for node in self.scene.nodes.iter() {
-            node.borrow().draw(base, &draw_command_buffer, frustum)
+        for node_index in self.scene.nodes.iter() {
+            let node = &self.nodes[*node_index];
+            node.draw(base, &self, &draw_command_buffer, frustum)
         }
     } }
 
@@ -812,6 +775,7 @@ impl Gltf {
             base.device.destroy_buffer(instance_buffer.0, None);
             base.device.free_memory(instance_buffer.1, None);
         }
+        base.device.unmap_memory(self.instance_staging_buffer.1);
         base.device.destroy_buffer(self.instance_staging_buffer.0, None);
         base.device.free_memory(self.instance_staging_buffer.1, None);
 
@@ -826,6 +790,7 @@ impl Gltf {
             base.device.destroy_buffer(joints_buffer.0, None);
             base.device.free_memory(joints_buffer.1, None);
         }
+        base.device.unmap_memory(self.joints_staging_buffer.1);
         base.device.destroy_buffer(self.joints_staging_buffer.0, None);
         base.device.free_memory(self.joints_staging_buffer.1, None);
 
@@ -1309,11 +1274,10 @@ pub struct Node {
     pub original_translation: Vector,
 
     pub transform: Matrix,
-    pub children: Vec<Rc<RefCell<Node>>>,
     pub children_indices: Vec<usize>,
 }
 impl Node {
-    pub unsafe fn draw(&self, base: &VkBase, draw_command_buffer: &CommandBuffer, frustum: &Frustum) { unsafe {
+    pub unsafe fn draw(&self, base: &VkBase, gltf: &Gltf, draw_command_buffer: &CommandBuffer, frustum: &Frustum) { unsafe {
         if self.mesh.is_some() {
             for primitive in self.mesh.as_ref().unwrap().borrow().primitives.iter() {
                 let mut all_points_outside_of_same_plane = false;
@@ -1348,8 +1312,8 @@ impl Node {
         }
 
         // Recursively draw children
-        for child in self.children.iter() {
-            child.borrow().draw(base, draw_command_buffer, frustum);
+        for child in &self.children_indices {
+            gltf.nodes[*child].draw(base, &gltf, draw_command_buffer, frustum);
         }
     } }
 }
@@ -1360,10 +1324,10 @@ pub struct Skin {
     inverse_bind_matrices: Vec<Matrix>,
     joint_indices: Vec<usize>,
     joint_matrices: Vec<Matrix>,
-    skeleton: Option<Rc<RefCell<Node>>>,
+    skeleton: Option<usize>,
 }
 impl Skin {
-    pub fn construct_joint_matrices(&mut self, nodes: &Vec<Rc<RefCell<Node>>>) {
+    pub fn construct_joint_matrices(&mut self, nodes: &Vec<Node>) {
         let inverse_bind_matrices_accessor = &self.inverse_bind_matrices_accessor;
         let byte_offset = inverse_bind_matrices_accessor.buffer_view.byte_offset;
         let byte_length = inverse_bind_matrices_accessor.buffer_view.byte_length;
@@ -1377,21 +1341,20 @@ impl Skin {
         self.joint_matrices.clear();
         let mut joint = 0;
         for node_index in self.joint_indices.iter() {
-            //self.inverse_bind_matrices[joint] = nodes[*node_index].borrow().transform.inverse();
             self.joint_matrices.push(
-                nodes[*node_index].borrow().transform.clone().
+                nodes[*node_index].transform.clone().
                     mul_mat4(&self.inverse_bind_matrices[joint])
             );
             joint += 1
         }
     }
 
-    pub fn update_joint_matrices(&mut self, nodes: &Vec<Rc<RefCell<Node>>>) {
+    pub fn update_joint_matrices(&mut self, nodes: &Vec<Node>) {
         self.joint_matrices.clear();
         let mut joint = 0;
         for node_index in self.joint_indices.iter() {
             self.joint_matrices.push(
-                nodes[*node_index].borrow().transform.clone().
+                nodes[*node_index].transform.clone().
                     mul_mat4(&self.inverse_bind_matrices[joint])
             );
             joint += 1
@@ -1401,7 +1364,7 @@ impl Skin {
 
 pub struct Animation {
     pub name: String,
-    pub channels: Vec<(usize, Rc<RefCell<Node>>, String)>, // sampler index, impacted node, target transform component
+    pub channels: Vec<(usize, usize, String)>, // sampler index, impacted node, target transform component
     pub samplers: Vec<(Vec<f32>, String, Vec<Vector>)>, // input times, interpolation method, output vectors
     pub start_time: SystemTime,
     pub duration: f32,
@@ -1410,7 +1373,7 @@ pub struct Animation {
     pub snap_back: bool,
 }
 impl Animation {
-    fn new(name: String, channels: Vec<(usize, usize, String)>, samplers: Vec<(Rc<Accessor>, String, Rc<Accessor>)>, nodes: &Vec<Rc<RefCell<Node>>>) -> Self {
+    fn new(name: String, channels: Vec<(usize, usize, String)>, samplers: Vec<(Rc<Accessor>, String, Rc<Accessor>)>) -> Self {
         let mut compiled_samplers = Vec::new();
         for sampler in samplers.iter() {
             let mut byte_offset = sampler.0.buffer_view.byte_offset;
@@ -1443,7 +1406,7 @@ impl Animation {
             .fold(0.0_f32, f32::max);
         Self {
             name,
-            channels: channels.iter().map(|channel| (channel.0, nodes[channel.1].clone(), channel.2.clone())).collect(),
+            channels: channels.iter().map(|channel| (channel.0, channel.1, channel.2.clone())).collect(),
             samplers: compiled_samplers,
             start_time: SystemTime::now(),
             duration,
@@ -1458,25 +1421,25 @@ impl Animation {
         self.running = true;
     }
 
-    pub fn stop(&mut self) {
+    pub fn stop(&mut self, nodes: &mut Vec<Node>) {
         self.running = false;
         if self.snap_back {
             for channel in self.channels.iter() {
                 if channel.2 == "translation" {
-                    let value = channel.1.borrow().original_translation.clone();
-                    channel.1.borrow_mut().translation = value;
+                    let value = nodes[channel.1].original_translation.clone();
+                    nodes[channel.1].translation = value;
                 } else if channel.2 == "rotation" {
-                    let value = channel.1.borrow().original_rotation.clone();
-                    channel.1.borrow_mut().rotation = value;
+                    let value = nodes[channel.1].original_rotation.clone();
+                    nodes[channel.1].rotation = value;
                 } else if channel.2 == "scale" {
-                    let value = channel.1.borrow().original_scale.clone();
-                    channel.1.borrow_mut().scale = value;
+                    let value = nodes[channel.1].original_scale.clone();
+                    nodes[channel.1].scale = value;
                 }
             }
         }
     }
 
-    pub fn update(&mut self) {
+    pub fn update(&mut self, nodes: &mut Vec<Node>) {
         if !self.running {
              return
         }
@@ -1487,7 +1450,7 @@ impl Animation {
             if self.repeat {
                 repeat = true
             } else {
-                self.stop();
+                self.stop(nodes);
                 return
             }
         }
@@ -1516,15 +1479,15 @@ impl Animation {
             }
 
             if channel.2.eq("translation") {
-                channel.1.borrow_mut().translation = new_vector
+                nodes[channel.1].translation = new_vector
             } else if channel.2.eq("rotation") {
-                channel.1.borrow_mut().rotation = new_vector
+                nodes[channel.1].rotation = new_vector
             } else if channel.2.eq("scale") {
-                channel.1.borrow_mut().scale = new_vector
+                nodes[channel.1].scale = new_vector
             } else {
                 panic!("Illogical animation channel target! Should be translation, rotation or scale");
             }
-            channel.1.borrow_mut().needs_update = true;
+            nodes[channel.1].needs_update = true;
         }
         if repeat {
             self.start()
@@ -1534,7 +1497,7 @@ impl Animation {
 
 pub struct Scene {
     pub name: String,
-    pub nodes: Vec<Rc<RefCell<Node>>>,
+    pub nodes: Vec<usize>,
 }
 
 fn resolve_gltf_uri(gltf_path: &str, uri: &str) -> PathBuf {
