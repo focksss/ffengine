@@ -701,8 +701,8 @@ impl Gltf {
     }}
 
     pub unsafe fn update_instances_all_frames(&mut self, base: &VkBase) { unsafe {
-        for i in 0..self.scene.nodes.len() {
-            self.update_node(i, &mut Matrix::new(), false);
+        for node in &self.scene.nodes.clone() {
+            self.update_node(*node, &mut Matrix::new(), true);
         }
         copy_data_to_memory(self.instance_staging_buffer.2, &self.instance_data);
         for instance_buffer in &self.instance_buffers {
