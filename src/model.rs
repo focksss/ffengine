@@ -9,7 +9,7 @@ use ash::vk;
 use ash::vk::{CommandBuffer, DeviceMemory, ImageView, Sampler};
 use json::JsonValue;
 use crate::matrix::Matrix;
-use crate::scene::Frustum;
+use crate::camera::Frustum;
 use crate::vector::Vector;
 use crate::vk_helper::{copy_data_to_memory, VkBase};
 
@@ -733,6 +733,7 @@ impl Gltf {
                 if let Some(mesh) = &node.mesh {
                     for primitive in mesh.borrow().primitives.iter() {
                         self.instance_data[primitive.id].matrix = world_transform.data;
+                        self.instance_data[primitive.id].indices[1] = node.skin.unwrap_or(-1);
                         self.dirty_instances.push(primitive.id);
                     }
                 }
