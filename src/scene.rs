@@ -78,6 +78,7 @@ impl Scene {
         for model in self.models.iter_mut() {
             for mesh in &model.meshes {
                 for primitive in &mut mesh.borrow_mut().primitives {
+                    primitive.id = self.primitive_count;
                     self.primitive_count += 1;
                     primitive.construct_data();
                     primitive.vertex_buffer_offset = all_vertices.len();
@@ -212,15 +213,18 @@ impl Scene {
 
     pub unsafe fn update_joints(&mut self, base: &VkBase, frame: usize) { unsafe {
         let mut joints = Vec::new();
-        let mut total = 1f32;
+        let mut total_skins = 0f32;
         for model in self.models.iter_mut() {
-            if model.skins.is_empty() { return }
             for skin in &mut model.skins {
                 skin.update_joint_matrices(&model.nodes);
+                total_skins += 1.0;
             }
-            for skin in &model.skins {
-                joints.push(Matrix::new_manual([total; 16]));
-                total += 1f32 + skin.joint_matrices.len() as f32;
+        }
+        let mut total = 0f32;
+        for model in self.models.iter() {
+            for skin in model.skins.iter() {
+                joints.push(Matrix::new_manual([total_skins + total; 16]));
+                total += skin.joint_matrices.len() as f32;
             }
         }
         for model in self.models.iter_mut() {
