@@ -55,14 +55,14 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
     unsafe {
         let mut world = Scene::new();
         world.add_model(Model::new(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("local_assets\\ffocks\\untitled.gltf").to_str().unwrap()));
-        world.add_model(Model::new("C:\\Graphics\\assets\\flower\\scene.gltf"));
-        //world.add_model(Model::new("C:\\Graphics\\assets\\rivals\\luna\\gltf\\luna.gltf"));
-        //let mut model_test = Model::new(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("local_assets\\ffocks\\untitled.gltf").to_str().unwrap());
-        //let mut model_test = Model::new("C:\\Graphics\\assets\\flower\\scene.gltf");
-        //world.add_model(Model::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf"));
-        //let mut model_test = Model::new("C:\\Graphics\\assets\\bistro2\\untitled.gltf");
-        //model_test.transform_roots(&Vector::new_vec(0.0), &Vector::new_vec(0.0), &Vector::new_vec(0.01));
+        world.models[0].transform_roots(&Vector::new_vec(0.0), &Vector::new_vec(0.0), &Vector::new_vec(0.01));
+        world.add_model(Model::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf"));
+        //world.add_model(Model::new("C:\\Graphics\\assets\\flower\\scene.gltf"));
+        world.add_model(Model::new("C:\\Graphics\\assets\\rivals\\luna\\gltf\\luna.gltf"));
+        //world.add_model(Model::new("C:\\Graphics\\assets\\bistro2\\untitled.gltf"));
         world.initialize(base, MAX_FRAMES_IN_FLIGHT, true);
+        world.models[2].animations[0].repeat = true;
+        world.models[2].animations[0].start();
         world.models[0].animations[0].repeat = true;
         world.models[0].animations[0].start();
 
