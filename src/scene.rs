@@ -815,8 +815,10 @@ impl Model {
     pub fn update_node(&mut self, instances: &mut Vec<Instance>, dirty_instances: &mut Vec<usize>, node_index: usize, parent_transform: &Matrix, parent_needs_update: bool) {
         let (transform, children_indices, needs_update) = {
             let node = &mut self.nodes[node_index];
+            let mut node_needs_update = false;
             if node.needs_update {
                 node.needs_update = false;
+                node_needs_update = true;
                 node.update_local_transform();
                 node.update_world_transform(parent_transform);
                 node.update_instances(instances, dirty_instances, true);
@@ -825,7 +827,7 @@ impl Model {
                 node.update_instances(instances, dirty_instances, true);
             }
             let node = &self.nodes[node_index];
-            (&node.world_transform.clone(), &node.children_indices.clone(), node.needs_update)
+            (&node.world_transform.clone(), &node.children_indices.clone(), node_needs_update)
         };
         for child in children_indices {
             self.update_node(instances, dirty_instances, *child, transform, parent_needs_update || needs_update);
@@ -1373,7 +1375,7 @@ impl Node {
     pub fn update_world_transform(&mut self, parent_transform: &Matrix) {
         self.world_transform = parent_transform.mul_mat4(&self.local_transform);
     }
-    
+
     pub fn update_instances(&self, instances: &mut Vec<Instance>, dirty_instances: &mut Vec<usize>, add_dirty: bool) {
         if let Some(mesh) = &self.mesh {
             for primitive in mesh.borrow().primitives.iter() {
