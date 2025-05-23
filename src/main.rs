@@ -54,15 +54,15 @@ fn main() -> Result<(), Box<dyn Error>> {
 unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
     unsafe {
         let mut world = Scene::new();
-        world.add_model(Model::new(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("local_assets\\ffocks\\untitled.gltf").to_str().unwrap()));
-        world.models[0].transform_roots(&Vector::new_vec(0.0), &Vector::new_vec(0.0), &Vector::new_vec(0.01));
-        world.add_model(Model::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf"));
+        //world.add_model(Model::new(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("local_assets\\ffocks\\untitled.gltf").to_str().unwrap()));
+        //world.models[0].transform_roots(&Vector::new_vec(0.0), &Vector::new_vec(0.0), &Vector::new_vec(0.01));
+        //world.add_model(Model::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf"));
         //world.add_model(Model::new("C:\\Graphics\\assets\\flower\\scene.gltf"));
         world.add_model(Model::new("C:\\Graphics\\assets\\rivals\\luna\\gltf\\luna.gltf"));
         //world.add_model(Model::new("C:\\Graphics\\assets\\bistro2\\untitled.gltf"));
         world.initialize(base, MAX_FRAMES_IN_FLIGHT, true);
-        world.models[2].animations[0].repeat = true;
-        world.models[2].animations[0].start();
+        // world.models[2].animations[0].repeat = true;
+        // world.models[2].animations[0].start();
         world.models[0].animations[0].repeat = true;
         world.models[0].animations[0].start();
 
@@ -379,26 +379,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             .collect();
         //</editor-fold>
         //<editor-fold desc = "shaders">
-        let mut vertex_spv_file = Cursor::new(load_file("geometry\\geometry.vert.spv")?);
-        let mut frag_spv_file = Cursor::new(load_file("geometry\\geometry.frag.spv")?);
-
-        let vertex_code =
-            read_spv(&mut vertex_spv_file).expect("Failed to read vertex shader spv file");
-        let vertex_shader_info = vk::ShaderModuleCreateInfo::default().code(&vertex_code);
-
-        let frag_code =
-            read_spv(&mut frag_spv_file).expect("Failed to read fragment shader spv file");
-        let frag_shader_info = vk::ShaderModuleCreateInfo::default().code(&frag_code);
-
-        let vertex_shader_module = base
-            .device
-            .create_shader_module(&vertex_shader_info, None)
-            .expect("Vertex shader module error");
-
-        let fragment_shader_module = base
-            .device
-            .create_shader_module(&frag_shader_info, None)
-            .expect("Fragment shader module error");
+        let shader = Shader::new(base, "geometry\\geometry.vert.spv", "geometry\\geometry.frag.spv");
         //</editor-fold>
         //<editor-fold desc = "full graphics pipeline initiation">
         let layout_create_info = vk::PipelineLayoutCreateInfo {
@@ -412,23 +393,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             .device
             .create_pipeline_layout(&layout_create_info, None)
             .unwrap();
-
-        let shader_entry_name = c"main";
-        let shader_stage_create_infos = [
-            vk::PipelineShaderStageCreateInfo {
-                module: vertex_shader_module,
-                p_name: shader_entry_name.as_ptr(),
-                stage: vk::ShaderStageFlags::VERTEX,
-                ..Default::default()
-            },
-            vk::PipelineShaderStageCreateInfo {
-                s_type: vk::StructureType::PIPELINE_SHADER_STAGE_CREATE_INFO,
-                module: fragment_shader_module,
-                p_name: shader_entry_name.as_ptr(),
-                stage: vk::ShaderStageFlags::FRAGMENT,
-                ..Default::default()
-            },
-        ];
+        
         let vertex_input_binding_descriptions = [
             vk::VertexInputBindingDescription {
                 binding: 0,
@@ -582,9 +547,10 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
         let dynamic_state = [vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR];
         let dynamic_state_info =
             vk::PipelineDynamicStateCreateInfo::default().dynamic_states(&dynamic_state);
-
+        
+        let shader_create_info = shader.generate_shader_stage_create_infos();
         let graphic_pipeline_info = vk::GraphicsPipelineCreateInfo::default()
-            .stages(&shader_stage_create_infos)
+            .stages(&shader_create_info)
             .vertex_input_state(&vertex_input_state_info)
             .input_assembly_state(&vertex_input_assembly_state_info)
             .viewport_state(&viewport_state_info)
@@ -838,13 +804,11 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
         }
         base.device.destroy_pipeline_layout(pipeline_layout, None);
 
-        base.device.destroy_shader_module(vertex_shader_module, None);
-        base.device.destroy_shader_module(fragment_shader_module, None);
-
         for framebuffer in framebuffers {
             base.device.destroy_framebuffer(framebuffer, None);
         }
 
+        shader.destroy(base);
         world.destroy(base);
 
         base.device.destroy_render_pass(renderpass, None);

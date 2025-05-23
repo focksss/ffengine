@@ -11,6 +11,7 @@
 use std::{borrow::Cow, cell::RefCell, default::Default, error::Error, ffi, fs, io, ops::Drop, os::raw::c_char};
 use std::ffi::c_void;
 use std::fs::Metadata;
+use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::ptr::null_mut;
@@ -19,8 +20,8 @@ use ash::{
     khr::{surface, swapchain},
     vk, Device, Entry, Instance,
 };
-use ash::util::Align;
-use ash::vk::{Buffer, CommandBuffer, DeviceMemory, Extent3D, Image, ImageAspectFlags, ImageSubresourceLayers, ImageSubresourceRange, ImageUsageFlags, ImageView, MemoryPropertyFlags, Offset3D, Sampler, SurfaceFormatKHR, SwapchainKHR};
+use ash::util::{read_spv, Align};
+use ash::vk::{Buffer, CommandBuffer, DeviceMemory, Extent3D, Image, ImageAspectFlags, ImageSubresourceLayers, ImageSubresourceRange, ImageUsageFlags, ImageView, MemoryPropertyFlags, Offset3D, PipelineShaderStageCreateInfo, Sampler, ShaderModule, SurfaceFormatKHR, SwapchainKHR};
 use winit::{
     event_loop::EventLoop,
     raw_window_handle::{HasDisplayHandle, HasWindowHandle},
@@ -1291,6 +1292,57 @@ impl Drop for VkBase {
             self.instance.destroy_instance(None);
         }
     }
+}
+
+pub struct Shader {
+    pub modules: (ShaderModule, ShaderModule),
+}
+impl Shader {
+    pub unsafe fn new(base: &VkBase, vert_path: &str, frag_path: &str) -> Self { unsafe {
+        let mut vertex_spv_file = Cursor::new(load_file(vert_path).unwrap());
+        let mut frag_spv_file = Cursor::new(load_file(frag_path).unwrap());
+
+        let vertex_code = read_spv(&mut vertex_spv_file).expect("Failed to read vertex shader spv file");
+        let vertex_shader_info = vk::ShaderModuleCreateInfo::default().code(&vertex_code);
+
+        let frag_code = read_spv(&mut frag_spv_file).expect("Failed to read fragment shader spv file");
+        let frag_shader_info = vk::ShaderModuleCreateInfo::default().code(&frag_code);
+
+        let vertex_shader_module = base
+            .device
+            .create_shader_module(&vertex_shader_info, None)
+            .expect("Vertex shader module error");
+
+        let fragment_shader_module = base
+            .device
+            .create_shader_module(&frag_shader_info, None)
+            .expect("Fragment shader module error");
+        Shader { modules: (vertex_shader_module, fragment_shader_module)}
+    } }
+
+    pub fn generate_shader_stage_create_infos(&self) -> [PipelineShaderStageCreateInfo<'_>; 2] {
+        let shader_entry_name = c"main";
+        [
+            PipelineShaderStageCreateInfo {
+                module: self.modules.0,
+                p_name: shader_entry_name.as_ptr(),
+                stage: vk::ShaderStageFlags::VERTEX,
+                ..Default::default()
+            },
+            PipelineShaderStageCreateInfo {
+                s_type: vk::StructureType::PIPELINE_SHADER_STAGE_CREATE_INFO,
+                module: self.modules.1,
+                p_name: shader_entry_name.as_ptr(),
+                stage: vk::ShaderStageFlags::FRAGMENT,
+                ..Default::default()
+            },
+        ]
+    }
+
+    pub unsafe fn destroy(&self, base: &VkBase) { unsafe {
+        base.device.destroy_shader_module(self.modules.0, None);
+        base.device.destroy_shader_module(self.modules.1, None);
+    } }
 }
 
 pub unsafe fn copy_data_to_memory<T: Copy>(ptr: *mut c_void, data: &[T]) { unsafe {
