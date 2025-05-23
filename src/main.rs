@@ -2,8 +2,8 @@
 mod matrix;
 mod vector;
 mod vk_helper;
+mod camera;
 mod scene;
-mod model;
 
 use std::default::Default;
 use std::error::Error;
@@ -25,9 +25,8 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
 use winit::window::CursorGrabMode;
 use crate::{vk_helper::*, vector::*};
-use crate::matrix::Matrix;
-use crate::model::{Gltf, Instance};
-use crate::scene::Camera;
+use crate::scene::{Scene, Model, Instance};
+use crate::camera::Camera;
 
 #[derive(Clone, Debug, Copy)]
 #[repr(C)]
@@ -54,15 +53,18 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
     unsafe {
-        //let mut model_test = Gltf::new("C:\\Graphics\\assets\\rivals\\luna\\gltf\\luna.gltf");
-        //let mut model_test = Gltf::new(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("local_assets\\ffocks\\untitled.gltf").to_str().unwrap());
-        //let mut model_test = Gltf::new("C:\\Graphics\\assets\\flower\\scene.gltf");
-        //let mut model_test = Gltf::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf");
-        let mut model_test = Gltf::new("C:\\Graphics\\assets\\bistro2\\untitled.gltf");
+        let mut world = Scene::new();
+        world.add_model(Model::new(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("local_assets\\ffocks\\untitled.gltf").to_str().unwrap()));
+        world.add_model(Model::new("C:\\Graphics\\assets\\flower\\scene.gltf"));
+        //world.add_model(Model::new("C:\\Graphics\\assets\\rivals\\luna\\gltf\\luna.gltf"));
+        //let mut model_test = Model::new(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("local_assets\\ffocks\\untitled.gltf").to_str().unwrap());
+        //let mut model_test = Model::new("C:\\Graphics\\assets\\flower\\scene.gltf");
+        //world.add_model(Model::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf"));
+        //let mut model_test = Model::new("C:\\Graphics\\assets\\bistro2\\untitled.gltf");
         //model_test.transform_roots(&Vector::new_vec(0.0), &Vector::new_vec(0.0), &Vector::new_vec(0.01));
-        model_test.initialize(base, MAX_FRAMES_IN_FLIGHT, true);
-//        model_test.animations[0].repeat = true;
-//        model_test.animations[0].start();
+        world.initialize(base, MAX_FRAMES_IN_FLIGHT, true);
+        world.models[0].animations[0].repeat = true;
+        world.models[0].animations[0].start();
 
         let null_tex = base.create_2d_texture_image(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("local_assets\\null8x.png"), true);
 
@@ -200,21 +202,23 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             .expect("Failed to allocate descriptor sets");
 
         let mut image_infos: Vec<vk::DescriptorImageInfo> = Vec::with_capacity(1024);
-        for texture in &model_test.textures {
-            if texture.borrow().source.borrow().generated {
-                image_infos.push(vk::DescriptorImageInfo {
-                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                    image_view: texture.borrow().source.borrow().image_view,
-                    sampler: texture.borrow().sampler,
-                    ..Default::default()
-                });
-            } else {
-                image_infos.push(vk::DescriptorImageInfo {
-                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                    image_view: null_tex.0.0,
-                    sampler: null_tex.0.1,
-                    ..Default::default()
-                });
+        for model in &world.models {
+            for texture in &model.textures {
+                if texture.borrow().source.borrow().generated {
+                    image_infos.push(vk::DescriptorImageInfo {
+                        image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                        image_view: texture.borrow().source.borrow().image_view,
+                        sampler: texture.borrow().sampler,
+                        ..Default::default()
+                    });
+                } else {
+                    image_infos.push(vk::DescriptorImageInfo {
+                        image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                        image_view: null_tex.0.0,
+                        sampler: null_tex.0.1,
+                        ..Default::default()
+                    });
+                }
             }
         }
         let missing = 1024 - image_infos.len();
@@ -233,12 +237,12 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                 range: size_of::<UniformData>() as vk::DeviceSize,
             };
             let material_ssbo_info = vk::DescriptorBufferInfo {
-                buffer: model_test.material_buffers[i].0,
+                buffer: world.material_buffers[i].0,
                 offset: 0,
                 range: vk::WHOLE_SIZE,
             };
             let joints_ssbo_info = vk::DescriptorBufferInfo {
-                buffer: model_test.joints_buffers[i].0,
+                buffer: world.joints_buffers[i].0,
                 offset: 0,
                 range: vk::WHOLE_SIZE,
             };
@@ -428,7 +432,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
         let vertex_input_binding_descriptions = [
             vk::VertexInputBindingDescription {
                 binding: 0,
-                stride: size_of::<model::Vertex>() as u32,
+                stride: size_of::<scene::Vertex>() as u32,
                 input_rate: vk::VertexInputRate::VERTEX,
             },
             vk::VertexInputBindingDescription {
@@ -442,43 +446,43 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                 location: 0,
                 binding: 0,
                 format: vk::Format::R32G32B32_SFLOAT,
-                offset: offset_of!(model::Vertex, position) as u32,
+                offset: offset_of!(scene::Vertex, position) as u32,
             },
             vk::VertexInputAttributeDescription {
                 location: 1,
                 binding: 0,
                 format: vk::Format::R32G32B32_SFLOAT,
-                offset: offset_of!(model::Vertex, normal) as u32,
+                offset: offset_of!(scene::Vertex, normal) as u32,
             },
             vk::VertexInputAttributeDescription {
                 location: 2,
                 binding: 0,
                 format: vk::Format::R32G32_SFLOAT,
-                offset: offset_of!(model::Vertex, uv) as u32,
+                offset: offset_of!(scene::Vertex, uv) as u32,
             },
             vk::VertexInputAttributeDescription {
                 location: 3,
                 binding: 0,
                 format: vk::Format::R32G32B32_SFLOAT,
-                offset: offset_of!(model::Vertex, tangent) as u32,
+                offset: offset_of!(scene::Vertex, tangent) as u32,
             },
             vk::VertexInputAttributeDescription {
                 location: 4,
                 binding: 0,
                 format: vk::Format::R32G32B32_SFLOAT,
-                offset: offset_of!(model::Vertex, bitangent) as u32,
+                offset: offset_of!(scene::Vertex, bitangent) as u32,
             },
             vk::VertexInputAttributeDescription {
                 location: 5,
                 binding: 0,
                 format: vk::Format::R32G32B32A32_UINT,
-                offset: offset_of!(model::Vertex, joint_indices) as u32,
+                offset: offset_of!(scene::Vertex, joint_indices) as u32,
             },
             vk::VertexInputAttributeDescription {
                 location: 6,
                 binding: 0,
                 format: vk::Format::R32G32B32A32_SFLOAT,
-                offset: offset_of!(model::Vertex, joint_weights) as u32,
+                offset: offset_of!(scene::Vertex, joint_weights) as u32,
             },
 
             vk::VertexInputAttributeDescription {
@@ -725,7 +729,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                     do_controls(&mut player_camera, &pressed_keys, &mut new_pressed_keys, delta_time, &mut cursor_locked, base, &mut saved_cursor_pos, &mut pause_frustum);
                     player_camera.update_matrices();
 
-                    model_test.update_nodes(base, current_frame);
+                    world.update_nodes(base, current_frame);
 
                     if !pause_frustum {
                         player_camera.update_frustum()
@@ -802,7 +806,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                                 &[],
                             );
 
-                            model_test.draw(base, &draw_command_buffer, current_frame, &player_camera.frustum);
+                            world.draw(base, &draw_command_buffer, current_frame, &player_camera.frustum);
 
                             device.cmd_end_render_pass(draw_command_buffer);
                         },
@@ -841,7 +845,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             base.device.destroy_framebuffer(framebuffer, None);
         }
 
-        model_test.cleanup(base);
+        world.destroy(base);
 
         base.device.destroy_render_pass(renderpass, None);
 
