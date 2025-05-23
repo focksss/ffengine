@@ -666,7 +666,8 @@ impl Model {
                     original_rotation: rotation,
                     original_scale: scale,
                     original_translation: translation,
-                    transform: Matrix::new_empty(),
+                    local_transform: Matrix::new_empty(),
+                    world_transform: Matrix::new_empty(),
                     children_indices,
                 }
             )
@@ -814,36 +815,20 @@ impl Model {
     pub fn update_node(&mut self, instances: &mut Vec<Instance>, dirty_instances: &mut Vec<usize>, node_index: usize, parent_transform: &Matrix, parent_needs_update: bool) {
         let (transform, children_indices, needs_update) = {
             let node = &mut self.nodes[node_index];
-            if node.needs_update || parent_needs_update {
+            if node.needs_update {
                 node.needs_update = false;
-
-                let rotate = Matrix::new_rotate_quaternion_vec4(&node.rotation.combine(&node.user_rotation.euler_to_quat()));
-                let scale = Matrix::new_scale_vec3(&node.scale.mul_by_vec(&node.user_scale));
-                let translate = Matrix::new_translation_vec3(&node.translation.add_vec(&node.user_translation));
-
-                let mut local_transform = Matrix::new();
-                local_transform.set_and_mul_mat4(&translate);
-                local_transform.set_and_mul_mat4(&rotate);
-                local_transform.set_and_mul_mat4(&scale);
-
-                let mut world_transform = parent_transform.clone();
-                world_transform.set_and_mul_mat4(&local_transform);
-
-                node.transform = world_transform.clone();
-
-                if let Some(mesh) = &node.mesh {
-                    for primitive in mesh.borrow().primitives.iter() {
-                        instances[primitive.id].matrix = world_transform.data;
-                        instances[primitive.id].indices[1] = node.skin.unwrap_or(-1);
-                        dirty_instances.push(primitive.id);
-                    }
-                }
+                node.update_local_transform();
+                node.update_world_transform(parent_transform);
+                node.update_instances(instances, dirty_instances, true);
+            } else if parent_needs_update {
+                node.update_world_transform(parent_transform);
+                node.update_instances(instances, dirty_instances, true);
             }
-            let node = &mut self.nodes[node_index];
-            (node.transform.clone(), node.children_indices.clone(), node.needs_update)
+            let node = &self.nodes[node_index];
+            (&node.world_transform.clone(), &node.children_indices.clone(), node.needs_update)
         };
-        for &child in &children_indices {
-            self.update_node(instances, dirty_instances, child, &transform, parent_needs_update || needs_update);
+        for child in children_indices {
+            self.update_node(instances, dirty_instances, *child, transform, parent_needs_update || needs_update);
         }
     }
 
@@ -1330,7 +1315,8 @@ pub struct Node {
     pub original_scale: Vector,
     pub original_translation: Vector,
 
-    pub transform: Matrix,
+    pub local_transform: Matrix,
+    pub world_transform: Matrix,
     pub children_indices: Vec<usize>,
 }
 impl Node {
@@ -1343,7 +1329,7 @@ impl Node {
                     let mut all_outside_this_plane = true;
 
                     for corner in primitive.corners.iter() {
-                        let world_pos = self.transform.mul_vector4(&Vector::new_vec4(corner.x, corner.y, corner.z, 1.0));
+                        let world_pos = self.world_transform.mul_vector4(&Vector::new_vec4(corner.x, corner.y, corner.z, 1.0));
 
                         if frustum.planes[plane_idx].test_point_within(&world_pos) {
                             all_outside_this_plane = false;
@@ -1372,6 +1358,31 @@ impl Node {
             owner.nodes[*child].draw(base, &owner, draw_command_buffer, frustum);
         }
     } }
+
+    pub fn update_local_transform(&mut self) {
+        let rotate = Matrix::new_rotate_quaternion_vec4(&self.rotation.combine(&self.user_rotation.euler_to_quat()));
+        let scale = Matrix::new_scale_vec3(&self.scale.mul_by_vec(&self.user_scale));
+        let translate = Matrix::new_translation_vec3(&self.translation.add_vec(&self.user_translation));
+
+        self.local_transform = Matrix::new();
+        self.local_transform.set_and_mul_mat4(&translate);
+        self.local_transform.set_and_mul_mat4(&rotate);
+        self.local_transform.set_and_mul_mat4(&scale);
+    }
+
+    pub fn update_world_transform(&mut self, parent_transform: &Matrix) {
+        self.world_transform = parent_transform.mul_mat4(&self.local_transform);
+    }
+    
+    pub fn update_instances(&self, instances: &mut Vec<Instance>, dirty_instances: &mut Vec<usize>, add_dirty: bool) {
+        if let Some(mesh) = &self.mesh {
+            for primitive in mesh.borrow().primitives.iter() {
+                instances[primitive.id].matrix = self.world_transform.data;
+                instances[primitive.id].indices[1] = self.skin.unwrap_or(-1);
+                dirty_instances.push(primitive.id);
+            }
+        }
+    }
 }
 
 pub struct Skin {
@@ -1398,7 +1409,7 @@ impl Skin {
         let mut joint = 0;
         for node_index in self.joint_indices.iter() {
             self.joint_matrices.push(
-                nodes[*node_index].transform.clone().
+                nodes[*node_index].world_transform.clone().
                     mul_mat4(&self.inverse_bind_matrices[joint])
             );
             joint += 1
@@ -1410,7 +1421,7 @@ impl Skin {
         let mut joint = 0;
         for node_index in self.joint_indices.iter() {
             self.joint_matrices.push(
-                nodes[*node_index].transform.clone().
+                nodes[*node_index].world_transform.clone().
                     mul_mat4(&self.inverse_bind_matrices[joint])
             );
             joint += 1
