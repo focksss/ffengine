@@ -239,8 +239,26 @@ impl Scene {
     }}
 
     pub unsafe fn draw(&self, base: &VkBase, draw_command_buffer: &CommandBuffer, frame: usize, frustum: &Frustum) { unsafe {
+        base.device.cmd_bind_vertex_buffers(
+            *draw_command_buffer,
+            1,
+            &[self.instance_buffers[frame].0],
+            &[0],
+        );
+        base.device.cmd_bind_vertex_buffers(
+            *draw_command_buffer,
+            0,
+            &[self.vertex_buffer.0],
+            &[0],
+        );
+        base.device.cmd_bind_index_buffer(
+            *draw_command_buffer,
+            self.index_buffer.0,
+            0,
+            vk::IndexType::UINT32,
+        );
         for model in self.models.iter() {
-            model.draw(base, &self, draw_command_buffer, frame, frustum);
+            model.draw(base, draw_command_buffer, frame, frustum);
         }
     } }
 
@@ -829,25 +847,7 @@ impl Model {
         }
     }
 
-    pub unsafe fn draw(&self, base: &VkBase, owner: &Scene, draw_command_buffer: &CommandBuffer, frame: usize, frustum: &Frustum) { unsafe {
-        base.device.cmd_bind_vertex_buffers(
-            *draw_command_buffer,
-            1,
-            &[owner.instance_buffers[frame].0],
-            &[0],
-        );
-        base.device.cmd_bind_vertex_buffers(
-            *draw_command_buffer,
-            0,
-            &[owner.vertex_buffer.0],
-            &[0],
-        );
-        base.device.cmd_bind_index_buffer(
-            *draw_command_buffer,
-            owner.index_buffer.0,
-            0,
-            vk::IndexType::UINT32,
-        );
+    pub unsafe fn draw(&self, base: &VkBase, draw_command_buffer: &CommandBuffer, frame: usize, frustum: &Frustum) { unsafe {
         for node_index in self.scene.nodes.iter() {
             let node = &self.nodes[*node_index];
             node.draw(base, &self, &draw_command_buffer, frustum)
