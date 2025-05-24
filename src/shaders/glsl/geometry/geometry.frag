@@ -16,7 +16,11 @@ layout(set = 0, binding = 3) uniform sampler2D textures[];
 
 struct Material {
     int normal_tex;      // 0
-    vec4 specular_color;  // 16
+    float alpha_cutoff;
+    float emissive_strength;
+    int emissive_texture;
+    vec4 specular_color;
+    vec4 emissive_color;
     float ior;            // 32
     vec4 base_color;      // 48
     int base_color_tex;  // 64
@@ -46,7 +50,7 @@ void main() {
     } else {
         base_color = mat.base_color;
     }
-    if (base_color.a < 0.5) {
+    if (base_color.a < mat.alpha_cutoff) {
         discard;
     }
     //uFragColor = vec4(base_color.rgb * max(0.2, dot(normal, normalize(vec3(1.0,1.0,1.0)))), 1.0);

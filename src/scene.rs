@@ -409,6 +409,7 @@ impl Model {
         let mut materials = Vec::new();
         materials.push(Material {
             alpha_mode: String::from("BLEND"),
+            alpha_cutoff: 0.5,
             double_sided: false,
             normal_texture: None,
             specular_color_factor: [1.0; 3],
@@ -420,6 +421,9 @@ impl Model {
             metallic_texture: None,
             roughness_factor: 0.5,
             roughness_texture: None,
+            emissive_factor: [1.0; 3],
+            emissive_texture: None,
+            emissive_strength: 1.0,
         });
         for material in json["materials"].members() {
             let name_maybe: Option<&str> = material["name"].as_str();
@@ -434,6 +438,13 @@ impl Model {
                 alpha_mode = (*alpha_mode_json).parse().unwrap();
             }
 
+            let mut alpha_cutoff = 0.5;
+            if let JsonValue::Number(ref alpha_cutoff_json) = material["alphaCutoff"] {
+                if let Ok(f) = alpha_cutoff_json.to_string().parse::<f32>() {
+                    alpha_cutoff = f;
+                }
+            }
+
             let mut double_sided = false;
             if let JsonValue::Boolean(ref double_sided_json) = material["doubleSided"] {
                 double_sided = *double_sided_json;
@@ -442,6 +453,21 @@ impl Model {
             let mut normal_texture = None;
             if let JsonValue::Object(ref normal_texture_json) = material["normalTexture"] {
                 normal_texture = Some(normal_texture_json["index"].as_i32().expect(""));
+            }
+
+            let mut emissive_factor = [0.0; 3];
+            let mut emissive_texture = None;
+            if let JsonValue::Array(ref json_value) = material["emissiveFactor"] {
+                if json_value.len() >= 3 {
+                    emissive_factor = [
+                        json_value[0].as_f32().unwrap(),
+                        json_value[1].as_f32().unwrap(),
+                        json_value[2].as_f32().unwrap(),
+                    ];
+                }
+            }
+            if let JsonValue::Object(ref json_value) = material["emissiveTexture"] {
+                emissive_texture = Some(json_value["index"].as_i32().expect("FAULTY GLTF: \n    Missing index for emissiveTexture"));
             }
 
             let mut base_color_factor = [0.5, 0.5, 0.5, 1.0];
@@ -511,10 +537,18 @@ impl Model {
                 }
             }
 
+            let mut emissive_strength = 1.0;
+            if let JsonValue::Object(ref extensions) = material["extensions"] {
+                if let JsonValue::Object(ref json_value) = extensions["KHR_materials_emissive_strength"] {
+                    emissive_strength = json_value["emissiveStrength"].as_f32().expect("FAULTY GLTF: \n    Missing emissiveStrength for KHR_materials_emissive_strength");
+                }
+            }
+
             materials.push(
                 Material {
                     name,
                     alpha_mode,
+                    alpha_cutoff,
                     double_sided,
                     normal_texture,
                     // KHR_materials_specular
@@ -528,6 +562,10 @@ impl Model {
                         metallic_texture,
                         roughness_factor,
                         roughness_texture,
+                    emissive_factor,
+                    emissive_texture,
+                    // extensions
+                        emissive_strength,
                 })
         }
 
@@ -949,6 +987,7 @@ impl Texture {
 }
 pub struct Material {
     pub alpha_mode: String,
+    pub alpha_cutoff: f32,
     pub double_sided: bool,
     pub normal_texture: Option<i32>,
     // KHR_materials_specular
@@ -963,23 +1002,31 @@ pub struct Material {
         pub metallic_texture: Option<i32>,
         pub roughness_factor: f32,
         pub roughness_texture: Option<i32>,
+    pub emissive_factor: [f32; 3],
+    pub emissive_texture: Option<i32>,
+    // KHR_materials_emissive_strength
+        pub emissive_strength: f32,
 }
 impl Material {
     fn to_sendable(&self, texture_offset: i32) -> MaterialSendable {
         MaterialSendable {
             normal_texture: self.normal_texture.map(|val| val + texture_offset).unwrap_or(-1),
-            _pad0: [0; 3],
+            alpha_cutoff: self.alpha_cutoff,
+            emissive_strength: self.emissive_strength,
+            emissive_texture: self.emissive_texture.map(|val| val + texture_offset).unwrap_or(-1),
             specular_color_factor: self.specular_color_factor,
             _pad1: 0,
+            emissive_factor: self.emissive_factor,
+            _pad2: 0,
             ior: self.ior,
-            _pad2: [0; 3],
+            _pad3: [0; 3],
             base_color_factor: self.base_color_factor,
             base_color_texture: self.base_color_texture.map(|val| val + texture_offset).unwrap_or(-1),
             roughness_factor: self.roughness_factor,
             roughness_texture: self.roughness_texture.map(|val| val + texture_offset).unwrap_or(-1),
             metallic_factor: self.metallic_factor,
             metallic_texture: self.metallic_texture.map(|val| val + texture_offset).unwrap_or(-1),
-            _pad3: [0u32; 3],
+            _pad4: [0u32; 3],
         }
     }
 }
@@ -987,13 +1034,18 @@ impl Material {
 #[repr(C)]
 pub struct MaterialSendable {
     pub normal_texture: i32,
-    pub _pad0: [u32; 3],
+    pub alpha_cutoff: f32,
+    pub emissive_strength: f32,
+    pub emissive_texture: i32,
 
     pub specular_color_factor: [f32; 3],
     pub _pad1: u32,
+    
+    pub emissive_factor: [f32; 3],
+    pub _pad2: u32,
 
     pub ior: f32,
-    pub _pad2: [u32; 3],
+    pub _pad3: [u32; 3],
 
     pub base_color_factor: [f32; 4],
 
@@ -1003,7 +1055,9 @@ pub struct MaterialSendable {
     pub roughness_factor: f32,
 
     pub roughness_texture: i32,
-    pub _pad3: [u32; 3],
+    pub _pad4: [u32; 3],
+
+
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1381,7 +1435,9 @@ impl Node {
             for primitive in mesh.borrow().primitives.iter() {
                 instances[primitive.id].matrix = self.world_transform.data;
                 instances[primitive.id].indices[1] = self.skin.unwrap_or(-1);
-                dirty_instances.push(primitive.id);
+                if add_dirty {
+                    dirty_instances.push(primitive.id);
+                }
             }
         }
     }
