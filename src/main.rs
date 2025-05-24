@@ -57,8 +57,8 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
         //world.add_model(Model::new(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("local_assets\\ffocks\\untitled.gltf").to_str().unwrap()));
         //world.models[0].transform_roots(&Vector::new_vec(0.0), &Vector::new_vec(0.0), &Vector::new_vec(0.01));
         //world.add_model(Model::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf"));
-        //world.add_model(Model::new("C:\\Graphics\\assets\\flower\\scene.gltf"));
-        world.add_model(Model::new("C:\\Graphics\\assets\\rivals\\luna\\gltf\\luna.gltf"));
+        world.add_model(Model::new("C:\\Graphics\\assets\\flower\\scene.gltf"));
+        //world.add_model(Model::new("C:\\Graphics\\assets\\rivals\\luna\\gltf\\luna.gltf"));
         //world.add_model(Model::new("C:\\Graphics\\assets\\bistro2\\untitled.gltf"));
         world.initialize(base, MAX_FRAMES_IN_FLIGHT, true);
         // world.models[2].animations[0].repeat = true;
@@ -292,7 +292,168 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
         }
         //</editor-fold>
 
-        //<editor-fold desc = "renderpass init">
+        //<editor-fold desc = "geometry pass">
+        let g_depth_view = VkBase::create_color_image(
+            &base.instance,
+            &base.pdevice,
+            &base.surface_resolution,
+            &base.device,
+            vk::SampleCountFlags::TYPE_1,
+            vk::Format::D16_UNORM,
+        );
+        let mut g_material_views = Vec::new();
+        let mut g_position_views = Vec::new();
+        let mut g_normal_views = Vec::new();
+        let mut g_view_position_views = Vec::new();
+        let mut g_view_normal_views = Vec::new();
+        for _ in 0..MAX_FRAMES_IN_FLIGHT {
+            g_material_views.push(VkBase::create_color_image(
+                &base.instance,
+                &base.pdevice,
+                &base.surface_resolution,
+                &base.device,
+                vk::SampleCountFlags::TYPE_1,
+                vk::Format::R8G8B8A8_SINT,
+            ));
+            g_position_views.push(VkBase::create_color_image(
+                &base.instance,
+                &base.pdevice,
+                &base.surface_resolution,
+                &base.device,
+                vk::SampleCountFlags::TYPE_1,
+                vk::Format::R16G16B16A16_SFLOAT,
+            ));
+            g_normal_views.push(VkBase::create_color_image(
+                &base.instance,
+                &base.pdevice,
+                &base.surface_resolution,
+                &base.device,
+                vk::SampleCountFlags::TYPE_1,
+                vk::Format::R16G16B16A16_SFLOAT,
+            ));
+            g_view_position_views.push(VkBase::create_color_image(
+                &base.instance,
+                &base.pdevice,
+                &base.surface_resolution,
+                &base.device,
+                vk::SampleCountFlags::TYPE_1,
+                vk::Format::R16G16B16A16_SFLOAT,
+            ));
+            g_view_normal_views.push(VkBase::create_color_image(
+                &base.instance,
+                &base.pdevice,
+                &base.surface_resolution,
+                &base.device,
+                vk::SampleCountFlags::TYPE_1,
+                vk::Format::R16G16B16A16_SFLOAT,
+            ));
+        }
+        let renderpass_attachments = [
+            //depth
+            vk::AttachmentDescription {
+                format: vk::Format::D16_UNORM,
+                samples: vk::SampleCountFlags::TYPE_1,
+                load_op: vk::AttachmentLoadOp::CLEAR,
+                initial_layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                final_layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                ..Default::default()
+            },
+            //material
+            vk::AttachmentDescription {
+                format: vk::Format::R8G8B8A8_SINT,
+                samples: vk::SampleCountFlags::TYPE_1,
+                load_op: vk::AttachmentLoadOp::CLEAR,
+                store_op: vk::AttachmentStoreOp::STORE,
+                final_layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                ..Default::default()
+            },
+            //position
+            vk::AttachmentDescription {
+                format: vk::Format::R16G16B16A16_SFLOAT,
+                samples: vk::SampleCountFlags::TYPE_1,
+                load_op: vk::AttachmentLoadOp::CLEAR,
+                store_op: vk::AttachmentStoreOp::STORE,
+                final_layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                ..Default::default()
+            },
+            //normal
+            vk::AttachmentDescription {
+                format: vk::Format::R16G16B16A16_SFLOAT,
+                samples: vk::SampleCountFlags::TYPE_1,
+                load_op: vk::AttachmentLoadOp::CLEAR,
+                store_op: vk::AttachmentStoreOp::STORE,
+                final_layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                ..Default::default()
+            },
+            //view position
+            vk::AttachmentDescription {
+                format: vk::Format::R16G16B16A16_SFLOAT,
+                samples: vk::SampleCountFlags::TYPE_1,
+                load_op: vk::AttachmentLoadOp::CLEAR,
+                store_op: vk::AttachmentStoreOp::STORE,
+                final_layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                ..Default::default()
+            },
+            //view normal
+            vk::AttachmentDescription {
+                format: vk::Format::R16G16B16A16_SFLOAT,
+                samples: vk::SampleCountFlags::TYPE_1,
+                load_op: vk::AttachmentLoadOp::CLEAR,
+                store_op: vk::AttachmentStoreOp::STORE,
+                final_layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                ..Default::default()
+            },
+        ];
+        let color_attachment_refs = [
+            vk::AttachmentReference {
+                attachment: 1,
+                layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+
+            },
+            vk::AttachmentReference {
+                attachment: 2,
+                layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+            },
+            vk::AttachmentReference {
+                attachment: 3,
+                layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+
+            },
+            vk::AttachmentReference {
+                attachment: 4,
+                layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+            },
+            vk::AttachmentReference {
+                attachment: 5,
+                layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+            },
+        ];
+        let depth_attachment_ref = vk::AttachmentReference {
+            attachment: 0,
+            layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+        };
+        let dependencies = [vk::SubpassDependency {
+            src_subpass: vk::SUBPASS_EXTERNAL,
+            src_stage_mask: vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+            dst_access_mask: vk::AccessFlags::COLOR_ATTACHMENT_READ
+                | vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
+            dst_stage_mask: vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+            ..Default::default()
+        }];
+        let subpass = vk::SubpassDescription::default()
+            .color_attachments(&color_attachment_refs)
+            .depth_stencil_attachment(&depth_attachment_ref)
+            .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS);
+        let renderpass_create_info = vk::RenderPassCreateInfo::default()
+            .attachments(&renderpass_attachments)
+            .subpasses(std::slice::from_ref(&subpass))
+            .dependencies(&dependencies);
+        let geometry_pass = base
+            .device
+            .create_render_pass(&renderpass_create_info, None)
+            .unwrap();
+        //</editor-fold>
+        //<editor-fold desc = "present pass">
         let renderpass_attachments = [
             vk::AttachmentDescription {
                 format: base.surface_format.format,
@@ -354,26 +515,46 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             .subpasses(std::slice::from_ref(&subpass))
             .dependencies(&dependencies);
 
-        let renderpass = base
+        let present_pass = base
             .device
             .create_render_pass(&renderpass_create_info, None)
             .unwrap();
         //</editor-fold>
         //<editor-fold desc = "framebuffers">
-        let framebuffers: Vec<vk::Framebuffer> = base
+        let present_framebuffers: Vec<vk::Framebuffer> = base
             .present_image_views
             .iter()
             .map(|&present_image_view| {
                 let framebuffer_attachments = [base.color_image_view, base.depth_image_view, present_image_view];
-                let frame_buffer_create_info = vk::FramebufferCreateInfo::default()
-                    .render_pass(renderpass)
+                let framebuffer_create_info = vk::FramebufferCreateInfo::default()
+                    .render_pass(present_pass)
                     .attachments(&framebuffer_attachments)
                     .width(base.surface_resolution.width)
                     .height(base.surface_resolution.height)
                     .layers(1);
-
                 base.device
-                    .create_framebuffer(&frame_buffer_create_info, None)
+                    .create_framebuffer(&framebuffer_create_info, None)
+                    .unwrap()
+            })
+            .collect();
+        let geometry_framebuffers: Vec<vk::Framebuffer> = (0..MAX_FRAMES_IN_FLIGHT)
+            .map(|i| {
+                let framebuffer_attachments = [
+                    g_depth_view.1,
+                    g_material_views[i].1,
+                    g_position_views[i].1,
+                    g_normal_views[i].1,
+                    g_view_position_views[i].1,
+                    g_view_normal_views[i].1,
+                ];
+                let framebuffer_create_info = vk::FramebufferCreateInfo::default()
+                    .render_pass(geometry_pass)
+                    .attachments(&framebuffer_attachments)
+                    .width(base.surface_resolution.width)
+                    .height(base.surface_resolution.height)
+                    .layers(1);
+                base.device
+                    .create_framebuffer(&framebuffer_create_info, None)
                     .unwrap()
             })
             .collect();
@@ -393,7 +574,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             .device
             .create_pipeline_layout(&layout_create_info, None)
             .unwrap();
-        
+
         let vertex_input_binding_descriptions = [
             vk::VertexInputBindingDescription {
                 binding: 0,
@@ -547,7 +728,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
         let dynamic_state = [vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR];
         let dynamic_state_info =
             vk::PipelineDynamicStateCreateInfo::default().dynamic_states(&dynamic_state);
-        
+
         let shader_create_info = shader.generate_shader_stage_create_infos();
         let graphic_pipeline_info = vk::GraphicsPipelineCreateInfo::default()
             .stages(&shader_create_info)
@@ -560,7 +741,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             .color_blend_state(&color_blend_state)
             .dynamic_state(&dynamic_state_info)
             .layout(pipeline_layout)
-            .render_pass(renderpass);
+            .render_pass(present_pass);
 
         let graphics_pipelines = base
             .device
@@ -735,8 +916,8 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                     copy_data_to_memory(uniform_buffers_mapped[current_frame], &[ubo]);
 
                     let render_pass_begin_info = vk::RenderPassBeginInfo::default()
-                        .render_pass(renderpass)
-                        .framebuffer(framebuffers[present_index as usize])
+                        .render_pass(present_pass)
+                        .framebuffer(present_framebuffers[present_index as usize])
                         .render_area(base.surface_resolution.into())
                         .clear_values(&clear_values);
 
@@ -761,6 +942,8 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                                 vk::PipelineBindPoint::GRAPHICS,
                                 graphic_pipeline,
                             );
+
+                            // draw scene
                             device.cmd_set_viewport(draw_command_buffer, 0, &viewports);
                             device.cmd_set_scissor(draw_command_buffer, 0, &scissors);
                             device.cmd_bind_descriptor_sets(
@@ -771,7 +954,6 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                                 &[descriptor_sets[current_frame]],
                                 &[],
                             );
-
                             world.draw(base, &draw_command_buffer, current_frame, &player_camera.frustum);
 
                             device.cmd_end_render_pass(draw_command_buffer);
@@ -804,18 +986,37 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
         }
         base.device.destroy_pipeline_layout(pipeline_layout, None);
 
-        for framebuffer in framebuffers {
-            base.device.destroy_framebuffer(framebuffer, None);
-        }
-
         shader.destroy(base);
         world.destroy(base);
 
-        base.device.destroy_render_pass(renderpass, None);
+        base.device.destroy_render_pass(geometry_pass, None);
+        base.device.destroy_render_pass(present_pass, None);
 
+        base.device.destroy_image(g_depth_view.0, None);
+        base.device.destroy_image_view(g_depth_view.1, None);
+        base.device.free_memory(g_depth_view.2, None);
         for i in 0..MAX_FRAMES_IN_FLIGHT {
             base.device.destroy_buffer(uniform_buffers[i], None);
             base.device.free_memory(uniform_buffers_memory[i], None);
+            
+            base.device.destroy_framebuffer(present_framebuffers[i], None);
+            base.device.destroy_framebuffer(geometry_framebuffers[i], None);
+
+            base.device.destroy_image(g_material_views[i].0, None);
+            base.device.destroy_image_view(g_material_views[i].1, None);
+            base.device.free_memory(g_material_views[i].2, None);
+            base.device.destroy_image(g_position_views[i].0, None);
+            base.device.destroy_image_view(g_position_views[i].1, None);
+            base.device.free_memory(g_position_views[i].2, None);
+            base.device.destroy_image(g_normal_views[i].0, None);
+            base.device.destroy_image_view(g_normal_views[i].1, None);
+            base.device.free_memory(g_normal_views[i].2, None);
+            base.device.destroy_image(g_view_position_views[i].0, None);
+            base.device.destroy_image_view(g_view_position_views[i].1, None);
+            base.device.free_memory(g_view_position_views[i].2, None);
+            base.device.destroy_image(g_view_normal_views[i].0, None);
+            base.device.destroy_image_view(g_view_normal_views[i].1, None);
+            base.device.free_memory(g_view_normal_views[i].2, None);
         }
 
         base.device.destroy_descriptor_set_layout(ubo_descriptor_set_layout, None);

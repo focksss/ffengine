@@ -258,7 +258,7 @@ impl Scene {
             vk::IndexType::UINT32,
         );
         for model in self.models.iter() {
-            model.draw(base, draw_command_buffer, frame, frustum);
+            model.draw(base, draw_command_buffer, frustum);
         }
     } }
 
@@ -872,7 +872,7 @@ impl Model {
         }
     }
 
-    pub unsafe fn draw(&self, base: &VkBase, draw_command_buffer: &CommandBuffer, frame: usize, frustum: &Frustum) { unsafe {
+    pub unsafe fn draw(&self, base: &VkBase, draw_command_buffer: &CommandBuffer, frustum: &Frustum) { unsafe {
         for node_index in self.scene.nodes.iter() {
             let node = &self.nodes[*node_index];
             node.draw(base, &self, &draw_command_buffer, frustum)
@@ -1040,7 +1040,7 @@ pub struct MaterialSendable {
 
     pub specular_color_factor: [f32; 3],
     pub _pad1: u32,
-    
+
     pub emissive_factor: [f32; 3],
     pub _pad2: u32,
 
