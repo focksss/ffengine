@@ -42,6 +42,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     unsafe {
         let mut shader_paths = Vec::new();
         shader_paths.push("src\\shaders\\glsl\\geometry");
+        shader_paths.push("src\\shaders\\glsl\\quad.vert");
 
         compile_shaders(shader_paths).expect("Failed to compile shaders");
 
@@ -54,10 +55,10 @@ fn main() -> Result<(), Box<dyn Error>> {
 unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
     unsafe {
         let mut world = Scene::new();
-        //world.add_model(Model::new(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("local_assets\\ffocks\\untitled.gltf").to_str().unwrap()));
+        world.add_model(Model::new(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("local_assets\\ffocks\\untitled.gltf").to_str().unwrap()));
         //world.models[0].transform_roots(&Vector::new_vec(0.0), &Vector::new_vec(0.0), &Vector::new_vec(0.01));
         //world.add_model(Model::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf"));
-        world.add_model(Model::new("C:\\Graphics\\assets\\flower\\scene.gltf"));
+        //world.add_model(Model::new("C:\\Graphics\\assets\\flower\\scene.gltf"));
         //world.add_model(Model::new("C:\\Graphics\\assets\\rivals\\luna\\gltf\\luna.gltf"));
         //world.add_model(Model::new("C:\\Graphics\\assets\\bistro2\\untitled.gltf"));
         world.initialize(base, MAX_FRAMES_IN_FLIGHT, true);
@@ -293,13 +294,12 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
         //</editor-fold>
 
         //<editor-fold desc = "geometry pass">
-        let g_depth_view = VkBase::create_color_image(
+        let g_depth_view = VkBase::create_depth_image(
             &base.instance,
             &base.pdevice,
             &base.surface_resolution,
             &base.device,
             vk::SampleCountFlags::TYPE_1,
-            vk::Format::D16_UNORM,
         );
         let mut g_material_views = Vec::new();
         let mut g_position_views = Vec::new();
@@ -742,6 +742,23 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             .dynamic_state(&dynamic_state_info)
             .layout(pipeline_layout)
             .render_pass(present_pass);
+        /*
+        let geometry_pipeline_info = vk::GraphicsPipelineCreateInfo::default()
+            .stages(&geometry_shader_stages) // your VS + FS for geometry
+            .vertex_input_state(&vertex_input_state_info)
+            .input_assembly_state(&vertex_input_assembly_state_info)
+            .viewport_state(&viewport_state_info)
+            .rasterization_state(&rasterization_info)
+            .multisample_state(&vk::PipelineMultisampleStateCreateInfo {
+                rasterization_samples: vk::SampleCountFlags::TYPE_1,
+                ..Default::default()
+            })
+            .depth_stencil_state(&depth_state_info)
+            .color_blend_state(&color_blend_state) // blending config for g-buffers
+            .dynamic_state(&dynamic_state_info)
+            .layout(pipeline_layout)
+            .render_pass(geometry_pass);
+         */
 
         let graphics_pipelines = base
             .device
@@ -898,7 +915,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                     let clear_values = [
                         vk::ClearValue {
                             color: vk::ClearColorValue {
-                                float32: [0.0, 0.0, 0.0, 0.0],
+                                float32: [0.2, 0.2, 0.2, 0.0],
                             },
                         },
                         vk::ClearValue {
@@ -995,11 +1012,13 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
         base.device.destroy_image(g_depth_view.0, None);
         base.device.destroy_image_view(g_depth_view.1, None);
         base.device.free_memory(g_depth_view.2, None);
+        for framebuffer in present_framebuffers {
+            base.device.destroy_framebuffer(framebuffer, None);
+        }
         for i in 0..MAX_FRAMES_IN_FLIGHT {
             base.device.destroy_buffer(uniform_buffers[i], None);
             base.device.free_memory(uniform_buffers_memory[i], None);
-            
-            base.device.destroy_framebuffer(present_framebuffers[i], None);
+
             base.device.destroy_framebuffer(geometry_framebuffers[i], None);
 
             base.device.destroy_image(g_material_views[i].0, None);
