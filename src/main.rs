@@ -7,7 +7,6 @@ mod scene;
 
 use std::default::Default;
 use std::error::Error;
-use std::io::Cursor;
 use std::mem;
 use std::collections::HashSet;
 use std::ffi::c_void;
@@ -15,9 +14,8 @@ use std::mem::size_of;
 use std::path::PathBuf;
 use std::time::Instant;
 
-use ash::util::*;
 use ash::vk;
-use ash::vk::{Buffer, DeviceMemory};
+use ash::vk::{Buffer, DeviceMemory, Handle};
 use winit::dpi::PhysicalPosition;
 use winit::event::{ElementState, Event, KeyEvent, WindowEvent};
 use winit::event_loop::ControlFlow;
@@ -54,10 +52,10 @@ fn main() -> Result<(), Box<dyn Error>> {
 unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
     unsafe {
         let mut world = Scene::new();
-        //world.add_model(Model::new(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("local_assets\\ffocks\\untitled.gltf").to_str().unwrap()));
-        //world.models[0].transform_roots(&Vector::new_vec(0.0), &Vector::new_vec(0.0), &Vector::new_vec(0.01));
+        world.add_model(Model::new(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("local_assets\\ffocks\\untitled.gltf").to_str().unwrap()));
+        world.models[0].transform_roots(&Vector::new_vec(0.0), &Vector::new_vec(0.0), &Vector::new_vec(0.01));
         //world.add_model(Model::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf"));
-        world.add_model(Model::new("C:\\Graphics\\assets\\flower\\scene.gltf"));
+        //world.add_model(Model::new("C:\\Graphics\\assets\\flower\\scene.gltf"));
         //world.add_model(Model::new("C:\\Graphics\\assets\\rivals\\luna\\gltf\\luna.gltf"));
         //world.add_model(Model::new("C:\\Graphics\\assets\\bistro2\\untitled.gltf"));
         world.initialize(base, MAX_FRAMES_IN_FLIGHT, true);
@@ -293,13 +291,12 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
         //</editor-fold>
 
         //<editor-fold desc = "geometry pass">
-        let g_depth_view = VkBase::create_color_image(
+        let g_depth_view = VkBase::create_depth_image(
             &base.instance,
             &base.pdevice,
             &base.surface_resolution,
             &base.device,
             vk::SampleCountFlags::TYPE_1,
-            vk::Format::D16_UNORM,
         );
         let mut g_material_views = Vec::new();
         let mut g_position_views = Vec::new();
@@ -532,9 +529,12 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                     .width(base.surface_resolution.width)
                     .height(base.surface_resolution.height)
                     .layers(1);
-                base.device
+                let fb = base
+                    .device
                     .create_framebuffer(&framebuffer_create_info, None)
-                    .unwrap()
+                    .expect("Failed to create framebuffer");
+                println!("Created present framebuffer: 0x{:x}", fb.as_raw());
+                fb
             })
             .collect();
         let geometry_framebuffers: Vec<vk::Framebuffer> = (0..MAX_FRAMES_IN_FLIGHT)
@@ -553,9 +553,12 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                     .width(base.surface_resolution.width)
                     .height(base.surface_resolution.height)
                     .layers(1);
-                base.device
+                let fb = base
+                    .device
                     .create_framebuffer(&framebuffer_create_info, None)
-                    .unwrap()
+                    .expect("Failed to create framebuffer");
+                println!("Created geometry framebuffer[{}]: 0x{:x}", i, fb.as_raw());
+                fb
             })
             .collect();
         //</editor-fold>
@@ -998,8 +1001,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
         for i in 0..MAX_FRAMES_IN_FLIGHT {
             base.device.destroy_buffer(uniform_buffers[i], None);
             base.device.free_memory(uniform_buffers_memory[i], None);
-            
-            base.device.destroy_framebuffer(present_framebuffers[i], None);
+
             base.device.destroy_framebuffer(geometry_framebuffers[i], None);
 
             base.device.destroy_image(g_material_views[i].0, None);
@@ -1017,6 +1019,9 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             base.device.destroy_image(g_view_normal_views[i].0, None);
             base.device.destroy_image_view(g_view_normal_views[i].1, None);
             base.device.free_memory(g_view_normal_views[i].2, None);
+        }
+        for i in 0..3 {
+            base.device.destroy_framebuffer(present_framebuffers[i], None);
         }
 
         base.device.destroy_descriptor_set_layout(ubo_descriptor_set_layout, None);
