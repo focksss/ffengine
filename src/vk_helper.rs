@@ -21,7 +21,7 @@ use ash::{
     vk, Device, Entry, Instance,
 };
 use ash::util::{read_spv, Align};
-use ash::vk::{Buffer, CommandBuffer, DeviceMemory, Extent3D, Image, ImageAspectFlags, ImageSubresourceLayers, ImageSubresourceRange, ImageUsageFlags, ImageView, MemoryPropertyFlags, Offset3D, PipelineShaderStageCreateInfo, Sampler, ShaderModule, SurfaceFormatKHR, SwapchainKHR};
+use ash::vk::{Buffer, CommandBuffer, DeviceMemory, Extent3D, Format, Image, ImageAspectFlags, ImageSubresourceLayers, ImageSubresourceRange, ImageUsageFlags, ImageView, MemoryPropertyFlags, Offset3D, PipelineShaderStageCreateInfo, Sampler, ShaderModule, SurfaceFormatKHR, SwapchainKHR};
 use winit::{
     event_loop::EventLoop,
     raw_window_handle::{HasDisplayHandle, HasWindowHandle},
@@ -438,7 +438,9 @@ impl VkBase {
                 &pdevice,
                 &surface_resolution,
                 &device,
-                msaa_samples
+                msaa_samples,
+                Format::D16_UNORM,
+                ImageUsageFlags::empty(),
             );
             let depth_image = depth_image_create_info.0;
             let depth_image_view = depth_image_create_info.1;
@@ -577,7 +579,9 @@ impl VkBase {
             &self.pdevice,
             &surface_resolution,
             &self.device,
-            self.msaa_samples
+            self.msaa_samples,
+            Format::D16_UNORM,
+            ImageUsageFlags::empty(),
         );
         self.depth_image = depth_image_create_info.0;
         self.depth_image_view = depth_image_create_info.1;
@@ -703,17 +707,19 @@ impl VkBase {
         surface_resolution: &vk::Extent2D,
         device: &Device,
         samples: vk::SampleCountFlags,
+        format: Format,
+        usage: ImageUsageFlags,
     ) -> (Image, ImageView, DeviceMemory) { unsafe {
         let device_memory_properties = instance.get_physical_device_memory_properties(*pdevice);
         let depth_image_create_info = vk::ImageCreateInfo::default()
             .image_type(vk::ImageType::TYPE_2D)
-            .format(vk::Format::D16_UNORM)
+            .format(format)
             .extent((*surface_resolution).into())
             .mip_levels(1)
             .array_layers(1)
             .samples(samples)
             .tiling(vk::ImageTiling::OPTIMAL)
-            .usage(ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT)
+            .usage(ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT | usage)
             .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
         let depth_image = device.create_image(&depth_image_create_info, None).unwrap();
