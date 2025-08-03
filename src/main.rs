@@ -372,18 +372,12 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
         //</editor-fold>
 
         //<editor-fold desc = "geometry pass">
-        let g_depth_view = VkBase::create_depth_image(
-            &base.instance,
-            &base.pdevice,
-            &base.surface_resolution,
-            &base.device,
-            vk::SampleCountFlags::TYPE_1,
-        );
         let mut g_material_views = Vec::new();
         let mut g_albedo_views = Vec::new();
         let mut g_metallic_roughness_views = Vec::new();
         let mut g_extra_material_properties_views = Vec::new();
         let mut g_view_normal_views = Vec::new();
+        let mut g_depth_views = Vec::new();
         for _ in 0..MAX_FRAMES_IN_FLIGHT {
             g_material_views.push(VkBase::create_color_image(
                 &base.instance,
@@ -429,6 +423,13 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                 vk::SampleCountFlags::TYPE_1,
                 vk::Format::R16G16B16A16_SFLOAT,
                 ImageUsageFlags::SAMPLED,
+            ));
+            g_depth_views.push(VkBase::create_depth_image(
+                &base.instance,
+                &base.pdevice,
+                &base.surface_resolution,
+                &base.device,
+                vk::SampleCountFlags::TYPE_1,
             ));
         }
         let renderpass_attachments = [
@@ -629,7 +630,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                     g_metallic_roughness_views[i].1,
                     g_extra_material_properties_views[i].1,
                     g_view_normal_views[i].1,
-                    g_depth_view.1,
+                    g_depth_views[i].1,
                 ];
                 let framebuffer_create_info = vk::FramebufferCreateInfo::default()
                     .render_pass(geometry_pass)
@@ -1150,7 +1151,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                                 .dst_access_mask(vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE)
                                 .old_layout(vk::ImageLayout::UNDEFINED)
                                 .new_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
-                                .image(g_depth_view.0)
+                                .image(g_depth_views[current_frame].0)
                                 .subresource_range(vk::ImageSubresourceRange {
                                     aspect_mask: vk::ImageAspectFlags::DEPTH,
                                     base_mip_level: 0,
@@ -1292,9 +1293,6 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
         base.device.destroy_render_pass(geometry_pass, None);
         base.device.destroy_render_pass(present_pass, None);
 
-        base.device.destroy_image(g_depth_view.0, None);
-        base.device.destroy_image_view(g_depth_view.1, None);
-        base.device.free_memory(g_depth_view.2, None);
         for i in 0..MAX_FRAMES_IN_FLIGHT {
             base.device.destroy_buffer(geometry_uniform_buffers[i], None);
             base.device.free_memory(geometry_uniform_buffers_memory[i], None);
@@ -1316,6 +1314,9 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             base.device.destroy_image(g_view_normal_views[i].0, None);
             base.device.destroy_image_view(g_view_normal_views[i].1, None);
             base.device.free_memory(g_view_normal_views[i].2, None);
+            base.device.destroy_image(g_depth_views[i].0, None);
+            base.device.destroy_image_view(g_depth_views[i].1, None);
+            base.device.free_memory(g_depth_views[i].2, None);
         }
         for i in 0..3 {
             base.device.destroy_framebuffer(present_framebuffers[i], None);
