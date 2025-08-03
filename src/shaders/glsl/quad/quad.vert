@@ -1,4 +1,5 @@
 #version 460
+
 const vec2 vertices[6] = vec2[](
 vec2(-1.0, -1.0), // Bottom-left
 vec2( 1.0, -1.0), // Bottom-right

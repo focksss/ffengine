@@ -15,7 +15,7 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use ash::vk;
-use ash::vk::{Buffer, DeviceMemory, Handle};
+use ash::vk::{Buffer, DeviceMemory, Handle, ImageUsageFlags};
 use winit::dpi::PhysicalPosition;
 use winit::event::{ElementState, Event, KeyEvent, WindowEvent};
 use winit::event_loop::ControlFlow;
@@ -40,6 +40,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     unsafe {
         let mut shader_paths = Vec::new();
         shader_paths.push("src\\shaders\\glsl\\geometry");
+        shader_paths.push("src\\shaders\\glsl\\quad");
 
         compile_shaders(shader_paths).expect("Failed to compile shaders");
 
@@ -59,15 +60,15 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
         //world.add_model(Model::new("C:\\Graphics\\assets\\rivals\\luna\\gltf\\luna.gltf"));
         //world.add_model(Model::new("C:\\Graphics\\assets\\bistro2\\untitled.gltf"));
         world.initialize(base, MAX_FRAMES_IN_FLIGHT, true);
-        // world.models[2].animations[0].repeat = true;
-        // world.models[2].animations[0].start();
+        //world.models[2].animations[0].repeat = true;
+        //world.models[2].animations[0].start();
         world.models[0].animations[0].repeat = true;
         world.models[0].animations[0].start();
 
         let null_tex = base.create_2d_texture_image(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("local_assets\\null8x.png"), true);
 
         //<editor-fold desc = "uniform buffers">
-        let layout_bindings = [
+        let geometry_ubo_layout_bindings = [
             vk::DescriptorSetLayoutBinding {
                 binding: 0,
                 descriptor_type: vk::DescriptorType::UNIFORM_BUFFER,
@@ -97,57 +98,54 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                 ..Default::default()
             },
         ];
-        let binding_flags = [
+        let geometry_ubo_binding_flags = [
             vk::DescriptorBindingFlags::empty(),
-
             vk::DescriptorBindingFlags::empty(),
-
             vk::DescriptorBindingFlags::empty(),
-
             vk::DescriptorBindingFlags::PARTIALLY_BOUND |
                 vk::DescriptorBindingFlags::VARIABLE_DESCRIPTOR_COUNT |
                 vk::DescriptorBindingFlags::UPDATE_AFTER_BIND,
         ];
-        let binding_flags_info = vk::DescriptorSetLayoutBindingFlagsCreateInfo {
+        let geometry_ubo_binding_flags_info = vk::DescriptorSetLayoutBindingFlagsCreateInfo {
             s_type: vk::StructureType::DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO,
-            binding_count: binding_flags.len() as u32,
-            p_binding_flags: binding_flags.as_ptr(),
+            binding_count: geometry_ubo_binding_flags.len() as u32,
+            p_binding_flags: geometry_ubo_binding_flags.as_ptr(),
             ..Default::default()
         };
-        let layout_info = vk::DescriptorSetLayoutCreateInfo {
+        let geometry_ubo_layout_info = vk::DescriptorSetLayoutCreateInfo {
             s_type: vk::StructureType::DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-            p_next: &binding_flags_info as *const _ as *const c_void,
-            binding_count: layout_bindings.len() as u32,
-            p_bindings: layout_bindings.as_ptr(),
+            p_next: &geometry_ubo_binding_flags_info as *const _ as *const c_void,
+            binding_count: geometry_ubo_layout_bindings.len() as u32,
+            p_bindings: geometry_ubo_layout_bindings.as_ptr(),
             flags: vk::DescriptorSetLayoutCreateFlags::UPDATE_AFTER_BIND_POOL,
             ..Default::default()
         };
-        let ubo_descriptor_set_layout = base.device.create_descriptor_set_layout(&layout_info, None)?;
+        let geometry_ubo_descriptor_set_layout = base.device.create_descriptor_set_layout(&geometry_ubo_layout_info, None)?;
 
-        let ubo_buffer_size = size_of::<UniformData>() as u64;
-        let mut uniform_buffers = Vec::new();
-        let mut uniform_buffers_memory = Vec::new();
-        let mut uniform_buffers_mapped = Vec::new();
+        let geometry_ubo_buffer_size = size_of::<UniformData>() as u64;
+        let mut geometry_uniform_buffers = Vec::new();
+        let mut geometry_uniform_buffers_memory = Vec::new();
+        let mut geometry_uniform_buffers_mapped = Vec::new();
         for i in 0..MAX_FRAMES_IN_FLIGHT {
-            uniform_buffers.push(Buffer::null());
-            uniform_buffers_memory.push(DeviceMemory::null());
+            geometry_uniform_buffers.push(Buffer::null());
+            geometry_uniform_buffers_memory.push(DeviceMemory::null());
             base.create_buffer(
-                ubo_buffer_size,
+                geometry_ubo_buffer_size,
                 vk::BufferUsageFlags::UNIFORM_BUFFER,
                 vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
-                &mut uniform_buffers[i],
-                &mut uniform_buffers_memory[i],
+                &mut geometry_uniform_buffers[i],
+                &mut geometry_uniform_buffers_memory[i],
             );
-            uniform_buffers_mapped.push(base.device.map_memory(
-                uniform_buffers_memory[i],
+            geometry_uniform_buffers_mapped.push(base.device.map_memory(
+                geometry_uniform_buffers_memory[i],
                 0,
-                ubo_buffer_size,
+                geometry_ubo_buffer_size,
                 vk::MemoryMapFlags::empty()
             ).expect("failed to map uniform buffer"));
         }
         //</editor-fold>
-        //<editor-fold desc = "descriptor pool">
-        let pool_sizes = [
+        //<editor-fold desc = "geometry descriptor pools">
+        let geometry_descriptor_pool_sizes = [
             vk::DescriptorPoolSize {
                 ty: vk::DescriptorType::UNIFORM_BUFFER,
                 descriptor_count: MAX_FRAMES_IN_FLIGHT as u32,
@@ -169,18 +167,18 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                 ..Default::default()
             }, // array of textures
         ];
-        let pool_create_info = vk::DescriptorPoolCreateInfo {
+        let geometry_descriptor_pool_create_info = vk::DescriptorPoolCreateInfo {
             s_type: vk::StructureType::DESCRIPTOR_POOL_CREATE_INFO,
-            pool_size_count: pool_sizes.len() as u32,
-            p_pool_sizes: pool_sizes.as_ptr(),
+            pool_size_count: geometry_descriptor_pool_sizes.len() as u32,
+            p_pool_sizes: geometry_descriptor_pool_sizes.as_ptr(),
             max_sets: MAX_FRAMES_IN_FLIGHT as u32,
             flags: vk::DescriptorPoolCreateFlags::UPDATE_AFTER_BIND,
             ..Default::default()
         };
-        let descriptor_pool = base.device.create_descriptor_pool(&pool_create_info, None).expect("failed to create descriptor pool");
+        let geometry_descriptor_pool = base.device.create_descriptor_pool(&geometry_descriptor_pool_create_info, None).expect("failed to create descriptor pool");
         //</editor-fold>
-        //<editor-fold desc = "descriptor set">
-        let layouts = vec![ubo_descriptor_set_layout; MAX_FRAMES_IN_FLIGHT];
+        //<editor-fold desc = "geometry descriptor sets">
+        let geometry_ubo_layouts = vec![geometry_ubo_descriptor_set_layout; MAX_FRAMES_IN_FLIGHT];
         let variable_counts = vec![1024u32; MAX_FRAMES_IN_FLIGHT];
         let variable_count_info = vk::DescriptorSetVariableDescriptorCountAllocateInfo {
             s_type: vk::StructureType::DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_ALLOCATE_INFO,
@@ -191,13 +189,13 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
         let alloc_info = vk::DescriptorSetAllocateInfo {
             s_type: vk::StructureType::DESCRIPTOR_SET_ALLOCATE_INFO,
             p_next: &variable_count_info as *const _ as *const c_void,
-            descriptor_pool,
+            descriptor_pool: geometry_descriptor_pool,
             descriptor_set_count: MAX_FRAMES_IN_FLIGHT as u32,
-            p_set_layouts: layouts.as_ptr(),
+            p_set_layouts: geometry_ubo_layouts.as_ptr(),
             ..Default::default()
         };
-        let descriptor_sets = base.device.allocate_descriptor_sets(&alloc_info)
-            .expect("Failed to allocate descriptor sets");
+        let geometry_descriptor_sets = base.device.allocate_descriptor_sets(&alloc_info)
+            .expect("Failed to allocate geometry descriptor sets");
 
         let mut image_infos: Vec<vk::DescriptorImageInfo> = Vec::with_capacity(1024);
         for model in &world.models {
@@ -230,7 +228,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
         }
         for i in 0..MAX_FRAMES_IN_FLIGHT {
             let uniform_buffer_info = vk::DescriptorBufferInfo {
-                buffer: uniform_buffers[i],
+                buffer: geometry_uniform_buffers[i],
                 offset: 0,
                 range: size_of::<UniformData>() as vk::DeviceSize,
             };
@@ -247,7 +245,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             let descriptor_writes = [
                 vk::WriteDescriptorSet {
                     s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
-                    dst_set: descriptor_sets[i],
+                    dst_set: geometry_descriptor_sets[i],
                     dst_binding: 0,
                     dst_array_element: 0,
                     descriptor_type: vk::DescriptorType::UNIFORM_BUFFER,
@@ -257,7 +255,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                 },
                 vk::WriteDescriptorSet {
                     s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
-                    dst_set: descriptor_sets[i],
+                    dst_set: geometry_descriptor_sets[i],
                     dst_binding: 1,
                     dst_array_element: 0,
                     descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
@@ -267,7 +265,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                 },
                 vk::WriteDescriptorSet {
                     s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
-                    dst_set: descriptor_sets[i],
+                    dst_set: geometry_descriptor_sets[i],
                     dst_binding: 2,
                     dst_array_element: 0,
                     descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
@@ -277,7 +275,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                 },
                 vk::WriteDescriptorSet {
                     s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
-                    dst_set: descriptor_sets[i],
+                    dst_set: geometry_descriptor_sets[i],
                     dst_binding: 3,
                     dst_array_element: 0,
                     descriptor_type: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
@@ -289,6 +287,89 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             base.device.update_descriptor_sets(&descriptor_writes, &[]);
         }
         //</editor-fold>
+        //<editor-fold desc = "lighting descriptor pools">
+        let lighting_descriptor_pool_sizes = [
+            vk::DescriptorPoolSize {
+                ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+                descriptor_count: (MAX_FRAMES_IN_FLIGHT * 5) as u32, // position, normal, albedo, etc.
+                ..Default::default()
+            },
+        ];
+        let lighting_descriptor_pool_create_info = vk::DescriptorPoolCreateInfo {
+            s_type: vk::StructureType::DESCRIPTOR_POOL_CREATE_INFO,
+            pool_size_count: lighting_descriptor_pool_sizes.len() as u32,
+            p_pool_sizes: lighting_descriptor_pool_sizes.as_ptr(),
+            max_sets: MAX_FRAMES_IN_FLIGHT as u32,
+            ..Default::default()
+        };
+        let bindings = [
+            vk::DescriptorSetLayoutBinding {
+                binding: 0,
+                descriptor_type: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+                descriptor_count: 1,
+                stage_flags: vk::ShaderStageFlags::FRAGMENT,
+                p_immutable_samplers: std::ptr::null(),
+                _marker: Default::default(),
+            },
+            vk::DescriptorSetLayoutBinding {
+                binding: 1,
+                descriptor_type: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+                descriptor_count: 1,
+                stage_flags: vk::ShaderStageFlags::FRAGMENT,
+                p_immutable_samplers: std::ptr::null(),
+                _marker: Default::default(),
+            },
+            vk::DescriptorSetLayoutBinding {
+                binding: 2,
+                descriptor_type: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+                descriptor_count: 1,
+                stage_flags: vk::ShaderStageFlags::FRAGMENT,
+                p_immutable_samplers: std::ptr::null(),
+                _marker: Default::default(),
+            },
+            vk::DescriptorSetLayoutBinding {
+                binding: 3,
+                descriptor_type: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+                descriptor_count: 1,
+                stage_flags: vk::ShaderStageFlags::FRAGMENT,
+                p_immutable_samplers: std::ptr::null(),
+                _marker: Default::default(),
+            },
+            vk::DescriptorSetLayoutBinding {
+                binding: 4,
+                descriptor_type: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+                descriptor_count: 1,
+                stage_flags: vk::ShaderStageFlags::FRAGMENT,
+                p_immutable_samplers: std::ptr::null(),
+                _marker: Default::default(),
+            },
+        ];
+        let descriptor_layout_create_info = vk::DescriptorSetLayoutCreateInfo {
+            s_type: vk::StructureType::DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+            binding_count: bindings.len() as u32,
+            p_bindings: bindings.as_ptr(),
+            ..Default::default()
+        };
+        let lighting_descriptor_set_layout = base.device
+            .create_descriptor_set_layout(&descriptor_layout_create_info, None)
+            .expect("Failed to create lighting descriptor set layout");
+        let lighting_descriptor_pool = base.device
+            .create_descriptor_pool(&lighting_descriptor_pool_create_info, None)
+            .expect("Failed to create lighting descriptor pool");
+        //</editor-fold>
+        //<editor-fold desc = "lighting descriptor sets">
+        let lighting_descriptor_set_layouts = vec![lighting_descriptor_set_layout; MAX_FRAMES_IN_FLIGHT];
+        let alloc_info = vk::DescriptorSetAllocateInfo {
+            s_type: vk::StructureType::DESCRIPTOR_SET_ALLOCATE_INFO,
+            descriptor_pool: lighting_descriptor_pool,
+            descriptor_set_count: MAX_FRAMES_IN_FLIGHT as u32,
+            p_set_layouts: lighting_descriptor_set_layouts.as_ptr(),
+            ..Default::default()
+        };
+        let lighting_descriptor_sets = base.device
+            .allocate_descriptor_sets(&alloc_info)
+            .expect("Failed to allocate lighting descriptor sets");
+        //</editor-fold>
 
         //<editor-fold desc = "geometry pass">
         let g_depth_view = VkBase::create_depth_image(
@@ -299,8 +380,8 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             vk::SampleCountFlags::TYPE_1,
         );
         let mut g_material_views = Vec::new();
-        let mut g_position_views = Vec::new();
-        let mut g_normal_views = Vec::new();
+        let mut g_albedo_views = Vec::new();
+        let mut g_metallic_roughness_views = Vec::new();
         let mut g_view_position_views = Vec::new();
         let mut g_view_normal_views = Vec::new();
         for _ in 0..MAX_FRAMES_IN_FLIGHT {
@@ -311,22 +392,25 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                 &base.device,
                 vk::SampleCountFlags::TYPE_1,
                 vk::Format::R8G8B8A8_SINT,
+                ImageUsageFlags::SAMPLED,
             ));
-            g_position_views.push(VkBase::create_color_image(
+            g_albedo_views.push(VkBase::create_color_image(
                 &base.instance,
                 &base.pdevice,
                 &base.surface_resolution,
                 &base.device,
                 vk::SampleCountFlags::TYPE_1,
                 vk::Format::R16G16B16A16_SFLOAT,
+                ImageUsageFlags::SAMPLED,
             ));
-            g_normal_views.push(VkBase::create_color_image(
+            g_metallic_roughness_views.push(VkBase::create_color_image(
                 &base.instance,
                 &base.pdevice,
                 &base.surface_resolution,
                 &base.device,
                 vk::SampleCountFlags::TYPE_1,
                 vk::Format::R16G16B16A16_SFLOAT,
+                ImageUsageFlags::SAMPLED,
             ));
             g_view_position_views.push(VkBase::create_color_image(
                 &base.instance,
@@ -335,6 +419,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                 &base.device,
                 vk::SampleCountFlags::TYPE_1,
                 vk::Format::R16G16B16A16_SFLOAT,
+                ImageUsageFlags::SAMPLED,
             ));
             g_view_normal_views.push(VkBase::create_color_image(
                 &base.instance,
@@ -343,18 +428,10 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                 &base.device,
                 vk::SampleCountFlags::TYPE_1,
                 vk::Format::R16G16B16A16_SFLOAT,
+                ImageUsageFlags::SAMPLED,
             ));
         }
         let renderpass_attachments = [
-            //depth
-            vk::AttachmentDescription {
-                format: vk::Format::D16_UNORM,
-                samples: vk::SampleCountFlags::TYPE_1,
-                load_op: vk::AttachmentLoadOp::CLEAR,
-                initial_layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-                final_layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-                ..Default::default()
-            },
             //material
             vk::AttachmentDescription {
                 format: vk::Format::R8G8B8A8_SINT,
@@ -400,12 +477,24 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                 final_layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
                 ..Default::default()
             },
+            //depth
+            vk::AttachmentDescription {
+                format: vk::Format::D16_UNORM,
+                samples: vk::SampleCountFlags::TYPE_1,
+                load_op: vk::AttachmentLoadOp::CLEAR,
+                initial_layout: vk::ImageLayout::UNDEFINED,
+                final_layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                ..Default::default()
+            },
         ];
         let color_attachment_refs = [
             vk::AttachmentReference {
+                attachment: 0,
+                layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+            },
+            vk::AttachmentReference {
                 attachment: 1,
                 layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-
             },
             vk::AttachmentReference {
                 attachment: 2,
@@ -414,19 +503,14 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             vk::AttachmentReference {
                 attachment: 3,
                 layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-
             },
             vk::AttachmentReference {
                 attachment: 4,
                 layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
             },
-            vk::AttachmentReference {
-                attachment: 5,
-                layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-            },
         ];
         let depth_attachment_ref = vk::AttachmentReference {
-            attachment: 0,
+            attachment: 5,
             layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
         };
         let dependencies = [vk::SubpassDependency {
@@ -540,12 +624,12 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
         let geometry_framebuffers: Vec<vk::Framebuffer> = (0..MAX_FRAMES_IN_FLIGHT)
             .map(|i| {
                 let framebuffer_attachments = [
-                    g_depth_view.1,
                     g_material_views[i].1,
-                    g_position_views[i].1,
-                    g_normal_views[i].1,
+                    g_albedo_views[i].1,
+                    g_metallic_roughness_views[i].1,
                     g_view_position_views[i].1,
                     g_view_normal_views[i].1,
+                    g_depth_view.1,
                 ];
                 let framebuffer_create_info = vk::FramebufferCreateInfo::default()
                     .render_pass(geometry_pass)
@@ -563,20 +647,30 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             .collect();
         //</editor-fold>
         //<editor-fold desc = "shaders">
-        let shader = Shader::new(base, "geometry\\geometry.vert.spv", "geometry\\geometry.frag.spv");
+        let geom_shader = Shader::new(base, "geometry\\geometry.vert.spv", "geometry\\geometry.frag.spv");
+        let screen_shader = Shader::new(base, "quad\\quad.vert.spv", "quad\\quad.frag.spv");
         //</editor-fold>
         //<editor-fold desc = "full graphics pipeline initiation">
-        let layout_create_info = vk::PipelineLayoutCreateInfo {
-            s_type: vk::StructureType::PIPELINE_LAYOUT_CREATE_INFO,
-            set_layout_count: 1,
-            p_set_layouts: &ubo_descriptor_set_layout,
-            ..Default::default()
-        };
-
-        let pipeline_layout = base
+        let geometry_pipeline_layout = base
             .device
-            .create_pipeline_layout(&layout_create_info, None)
-            .unwrap();
+            .create_pipeline_layout(
+                &vk::PipelineLayoutCreateInfo {
+                    s_type: vk::StructureType::PIPELINE_LAYOUT_CREATE_INFO,
+                    set_layout_count: 1,
+                    p_set_layouts: &geometry_ubo_descriptor_set_layout,
+                    ..Default::default()
+                }, None
+            ).unwrap();
+        let lighting_pipeline_layout = base
+            .device
+            .create_pipeline_layout(
+                &vk::PipelineLayoutCreateInfo {
+                    s_type: vk::StructureType::PIPELINE_LAYOUT_CREATE_INFO,
+                    set_layout_count: 1,
+                    p_set_layouts: lighting_descriptor_set_layouts.as_ptr(),
+                    ..Default::default()
+                }, None
+            ).unwrap();
 
         let vertex_input_binding_descriptions = [
             vk::VertexInputBindingDescription {
@@ -669,6 +763,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
         let vertex_input_state_info = vk::PipelineVertexInputStateCreateInfo::default()
             .vertex_attribute_descriptions(&vertex_input_attribute_descriptions)
             .vertex_binding_descriptions(&vertex_input_binding_descriptions);
+        let null_vertex_input_state_info = vk::PipelineVertexInputStateCreateInfo::default();
         let vertex_input_assembly_state_info = vk::PipelineInputAssemblyStateCreateInfo {
             topology: vk::PrimitiveTopology::TRIANGLE_LIST,
             primitive_restart_enable: vk::FALSE,
@@ -698,6 +793,10 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             rasterization_samples: base.msaa_samples,
             ..Default::default()
         };
+        let null_multisample_state_info = vk::PipelineMultisampleStateCreateInfo {
+            rasterization_samples: vk::SampleCountFlags::TYPE_1,
+            ..Default::default()
+        };
         let noop_stencil_state = vk::StencilOpState {
             fail_op: vk::StencilOp::KEEP,
             pass_op: vk::StencilOp::KEEP,
@@ -724,6 +823,19 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             alpha_blend_op: vk::BlendOp::ADD,
             color_write_mask: vk::ColorComponentFlags::RGBA,
         }];
+        let null_blend_attachment = vk::PipelineColorBlendAttachmentState {
+            blend_enable: vk::FALSE,  // Disable blending
+            src_color_blend_factor: vk::BlendFactor::ONE,
+            dst_color_blend_factor: vk::BlendFactor::ZERO,
+            color_blend_op: vk::BlendOp::ADD,
+            src_alpha_blend_factor: vk::BlendFactor::ONE,
+            dst_alpha_blend_factor: vk::BlendFactor::ZERO,
+            alpha_blend_op: vk::BlendOp::ADD,
+            color_write_mask: vk::ColorComponentFlags::RGBA,
+        };
+        let null_blend_states = [null_blend_attachment; 5];
+        let null_blend_state = vk::PipelineColorBlendStateCreateInfo::default()
+            .attachments(&null_blend_states);
         let color_blend_state = vk::PipelineColorBlendStateCreateInfo::default()
             .logic_op(vk::LogicOp::CLEAR)
             .attachments(&color_blend_attachment_states);
@@ -732,27 +844,49 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
         let dynamic_state_info =
             vk::PipelineDynamicStateCreateInfo::default().dynamic_states(&dynamic_state);
 
-        let shader_create_info = shader.generate_shader_stage_create_infos();
-        let graphic_pipeline_info = vk::GraphicsPipelineCreateInfo::default()
-            .stages(&shader_create_info)
-            .vertex_input_state(&vertex_input_state_info)
+        let screen_shader_create_info = screen_shader.generate_shader_stage_create_infos();
+        let geom_shader_create_info = geom_shader.generate_shader_stage_create_infos();
+        let base_pipeline_info = vk::GraphicsPipelineCreateInfo::default()
             .input_assembly_state(&vertex_input_assembly_state_info)
             .viewport_state(&viewport_state_info)
             .rasterization_state(&rasterization_info)
-            .multisample_state(&multisample_state_info)
             .depth_stencil_state(&depth_state_info)
+            .dynamic_state(&dynamic_state_info);
+        let geometry_pipeline_info = base_pipeline_info
+            .stages(&geom_shader_create_info)
+            .vertex_input_state(&vertex_input_state_info)
+            .multisample_state(&null_multisample_state_info)
+            .render_pass(geometry_pass)
+            .color_blend_state(&null_blend_state)
+            .layout(geometry_pipeline_layout);
+        let screen_pipeline_info = base_pipeline_info
+            .stages(&screen_shader_create_info)
+            .vertex_input_state(&null_vertex_input_state_info)
+            .multisample_state(&multisample_state_info)
+            .render_pass(present_pass)
             .color_blend_state(&color_blend_state)
-            .dynamic_state(&dynamic_state_info)
-            .layout(pipeline_layout)
-            .render_pass(present_pass);
+            .layout(lighting_pipeline_layout);
 
         let graphics_pipelines = base
             .device
-            .create_graphics_pipelines(vk::PipelineCache::null(), &[graphic_pipeline_info], None)
+            .create_graphics_pipelines(vk::PipelineCache::null(), &[geometry_pipeline_info, screen_pipeline_info], None)
             .expect("Unable to create graphics pipeline");
 
-        let graphic_pipeline = graphics_pipelines[0];
+        let geometry_pipeline = graphics_pipelines[0];
+        println!("geometry_pipeline is {:?}", geometry_pipeline);
+        let present_pipeline = graphics_pipelines[1];
+        println!("present_pipeline is {:?}", present_pipeline);
         //</editor-fold>
+
+        let sampler = base.device.create_sampler(&vk::SamplerCreateInfo {
+            mag_filter: vk::Filter::LINEAR,
+            min_filter: vk::Filter::LINEAR,
+            address_mode_u: vk::SamplerAddressMode::CLAMP_TO_EDGE,
+            address_mode_v: vk::SamplerAddressMode::CLAMP_TO_EDGE,
+            address_mode_w: vk::SamplerAddressMode::CLAMP_TO_EDGE,
+            border_color: vk::BorderColor::FLOAT_OPAQUE_WHITE,
+            ..Default::default()
+        }, None)?;
 
         let mut player_camera = Camera::new_perspective_rotation(
             Vector::new_vec3(0.0, 0.0, 0.0),
@@ -898,7 +1032,40 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                             vk::Fence::null(),
                         )
                         .unwrap();
-                    let clear_values = [
+                    let geometry_clear_values = [
+                        vk::ClearValue {
+                            color: vk::ClearColorValue {
+                                int32: [0, 0, 0, 0],
+                            },
+                        },
+                        vk::ClearValue {
+                            color: vk::ClearColorValue {
+                                float32: [0.0, 0.0, 0.0, 0.0],
+                            },
+                        },
+                        vk::ClearValue {
+                            color: vk::ClearColorValue {
+                                float32: [0.0, 0.0, 0.0, 0.0],
+                            },
+                        },
+                        vk::ClearValue {
+                            color: vk::ClearColorValue {
+                                float32: [0.0, 0.0, 0.0, 0.0],
+                            },
+                        },
+                        vk::ClearValue {
+                            color: vk::ClearColorValue {
+                                float32: [0.0, 0.0, 0.0, 0.0],
+                            },
+                        },
+                        vk::ClearValue {
+                            depth_stencil: vk::ClearDepthStencilValue {
+                                depth: 1.0,
+                                stencil: 0,
+                            },
+                        },
+                    ];
+                    let present_clear_values = [
                         vk::ClearValue {
                             color: vk::ClearColorValue {
                                 float32: [0.0, 0.0, 0.0, 0.0],
@@ -912,18 +1079,60 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                         },
                     ];
 
-                    let ubo = UniformData {
+                    let geometry_ubo = UniformData {
                         view: player_camera.view_matrix.data,
                         projection: player_camera.projection_matrix.data,
                     };
-                    copy_data_to_memory(uniform_buffers_mapped[current_frame], &[ubo]);
+                    copy_data_to_memory(geometry_uniform_buffers_mapped[current_frame], &[geometry_ubo]);
 
-                    let render_pass_begin_info = vk::RenderPassBeginInfo::default()
+                    let image_infos = [
+                        vk::DescriptorImageInfo {
+                            sampler,
+                            image_view: g_material_views[current_frame].1,
+                            image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                        },
+                        vk::DescriptorImageInfo {
+                            sampler,
+                            image_view: g_albedo_views[current_frame].1,
+                            image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                        },
+                        vk::DescriptorImageInfo {
+                            sampler,
+                            image_view: g_metallic_roughness_views[current_frame].1,
+                            image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                        },
+                        vk::DescriptorImageInfo {
+                            sampler,
+                            image_view: g_view_position_views[current_frame].1,
+                            image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                        },
+                        vk::DescriptorImageInfo {
+                            sampler,
+                            image_view: g_view_normal_views[current_frame].1,
+                            image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                        },
+                    ];
+
+                    let lighting_descriptor_writes: Vec<vk::WriteDescriptorSet> = image_infos.iter().enumerate().map(|(i, info)| {
+                        vk::WriteDescriptorSet::default()
+                            .dst_set(lighting_descriptor_sets[current_frame])
+                            .dst_binding(i as u32)
+                            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                            .image_info(std::slice::from_ref(info))
+                    }).collect();
+
+                    base.device.update_descriptor_sets(&lighting_descriptor_writes, &[]);
+
+                    let geometry_pass_pass_begin_info = vk::RenderPassBeginInfo::default()
+                        .render_pass(geometry_pass)
+                        .framebuffer(geometry_framebuffers[current_frame])
+                        .render_area(base.surface_resolution.into())
+                        .clear_values(&geometry_clear_values);
+                    let present_pass_pass_begin_info = vk::RenderPassBeginInfo::default()
                         .render_pass(present_pass)
                         .framebuffer(present_framebuffers[present_index as usize])
                         .render_area(base.surface_resolution.into())
-                        .clear_values(&clear_values);
-
+                        .clear_values(&present_clear_values);
                     let current_rendering_complete_semaphore = base.rendering_complete_semaphores[current_frame];
                     let current_draw_command_buffer = base.draw_command_buffers[current_frame];
                     record_submit_commandbuffer(
@@ -934,32 +1143,118 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                         &[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT],
                         &[base.present_complete_semaphores[current_frame]],
                         &[current_rendering_complete_semaphore],
-                        |device, draw_command_buffer| {
+                        |device, frame_command_buffer| {
+                            //<editor-fold desc = "transition g-buffer depth">
+                            let depth_barrier = vk::ImageMemoryBarrier::default()
+                                .src_access_mask(vk::AccessFlags::empty())
+                                .dst_access_mask(vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE)
+                                .old_layout(vk::ImageLayout::UNDEFINED)
+                                .new_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+                                .image(g_depth_view.0)
+                                .subresource_range(vk::ImageSubresourceRange {
+                                    aspect_mask: vk::ImageAspectFlags::DEPTH,
+                                    base_mip_level: 0,
+                                    level_count: 1,
+                                    base_array_layer: 0,
+                                    layer_count: 1,
+                                });
+                            device.cmd_pipeline_barrier(
+                                frame_command_buffer,
+                                vk::PipelineStageFlags::TOP_OF_PIPE,
+                                vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS,
+                                vk::DependencyFlags::empty(),
+                                &[],
+                                &[],
+                                &[depth_barrier],
+                            );
+                            //</editor-fold>
+                            //<editor-fold desc = "geometry pass">
                             device.cmd_begin_render_pass(
-                                draw_command_buffer,
-                                &render_pass_begin_info,
+                                frame_command_buffer,
+                                &geometry_pass_pass_begin_info,
                                 vk::SubpassContents::INLINE,
                             );
                             device.cmd_bind_pipeline(
-                                draw_command_buffer,
+                                frame_command_buffer,
                                 vk::PipelineBindPoint::GRAPHICS,
-                                graphic_pipeline,
+                                geometry_pipeline,
                             );
 
                             // draw scene
-                            device.cmd_set_viewport(draw_command_buffer, 0, &viewports);
-                            device.cmd_set_scissor(draw_command_buffer, 0, &scissors);
+                            device.cmd_set_viewport(frame_command_buffer, 0, &viewports);
+                            device.cmd_set_scissor(frame_command_buffer, 0, &scissors);
                             device.cmd_bind_descriptor_sets(
-                                draw_command_buffer,
+                                frame_command_buffer,
                                 vk::PipelineBindPoint::GRAPHICS,
-                                pipeline_layout,
+                                geometry_pipeline_layout,
                                 0,
-                                &[descriptor_sets[current_frame]],
+                                &[geometry_descriptor_sets[current_frame]],
                                 &[],
                             );
-                            world.draw(base, &draw_command_buffer, current_frame, &player_camera.frustum);
+                            world.draw(base, &frame_command_buffer, current_frame, &player_camera.frustum);
 
-                            device.cmd_end_render_pass(draw_command_buffer);
+                            device.cmd_end_render_pass(frame_command_buffer);
+                            //</editor-fold>
+                            //<editor-fold desc = "transition g-buffer color attachments to be readable">
+                            for &image_view in [
+                                &g_material_views[current_frame],
+                                &g_albedo_views[current_frame],
+                                &g_metallic_roughness_views[current_frame],
+                                &g_view_position_views[current_frame],
+                                &g_view_normal_views[current_frame],
+                            ] {
+                                let image = image_view.0;
+                                let barrier = vk::ImageMemoryBarrier::default()
+                                    .src_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
+                                    .dst_access_mask(vk::AccessFlags::SHADER_READ)
+                                    .old_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                                    .new_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                                    .image(image)
+                                    .subresource_range(vk::ImageSubresourceRange {
+                                        aspect_mask: vk::ImageAspectFlags::COLOR,
+                                        base_mip_level: 0,
+                                        level_count: 1,
+                                        base_array_layer: 0,
+                                        layer_count: 1,
+                                    });
+                                device.cmd_pipeline_barrier(
+                                    frame_command_buffer,
+                                    vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+                                    vk::PipelineStageFlags::FRAGMENT_SHADER,
+                                    vk::DependencyFlags::empty(),
+                                    &[],
+                                    &[],
+                                    &[barrier],
+                                );
+                            }
+                            //</editor-fold>
+                            //<editor-fold desc = "present pass">
+                            device.cmd_begin_render_pass(
+                                frame_command_buffer,
+                                &present_pass_pass_begin_info,
+                                vk::SubpassContents::INLINE,
+                            );
+                            device.cmd_bind_pipeline(
+                                frame_command_buffer,
+                                vk::PipelineBindPoint::GRAPHICS,
+                                present_pipeline,
+                            );
+
+                            // draw quad
+                            device.cmd_set_viewport(frame_command_buffer, 0, &viewports);
+                            device.cmd_set_scissor(frame_command_buffer, 0, &scissors);
+                            device.cmd_bind_descriptor_sets(
+                                frame_command_buffer,
+                                vk::PipelineBindPoint::GRAPHICS,
+                                lighting_pipeline_layout,
+                                0,
+                                &[lighting_descriptor_sets[current_frame]],
+                                &[],
+                            );
+                            device.cmd_draw(current_draw_command_buffer, 6, 1, 0, 0);
+
+                            device.cmd_end_render_pass(frame_command_buffer);
+                            //</editor-fold>
                         },
                     );
                     let wait_semaphores = [current_rendering_complete_semaphore];
@@ -987,9 +1282,11 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
         for pipeline in graphics_pipelines {
             base.device.destroy_pipeline(pipeline, None);
         }
-        base.device.destroy_pipeline_layout(pipeline_layout, None);
+        base.device.destroy_pipeline_layout(geometry_pipeline_layout, None);
+        base.device.destroy_pipeline_layout(lighting_pipeline_layout, None);
 
-        shader.destroy(base);
+        geom_shader.destroy(base);
+        screen_shader.destroy(base);
         world.destroy(base);
 
         base.device.destroy_render_pass(geometry_pass, None);
@@ -999,20 +1296,20 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
         base.device.destroy_image_view(g_depth_view.1, None);
         base.device.free_memory(g_depth_view.2, None);
         for i in 0..MAX_FRAMES_IN_FLIGHT {
-            base.device.destroy_buffer(uniform_buffers[i], None);
-            base.device.free_memory(uniform_buffers_memory[i], None);
+            base.device.destroy_buffer(geometry_uniform_buffers[i], None);
+            base.device.free_memory(geometry_uniform_buffers_memory[i], None);
 
             base.device.destroy_framebuffer(geometry_framebuffers[i], None);
 
             base.device.destroy_image(g_material_views[i].0, None);
             base.device.destroy_image_view(g_material_views[i].1, None);
             base.device.free_memory(g_material_views[i].2, None);
-            base.device.destroy_image(g_position_views[i].0, None);
-            base.device.destroy_image_view(g_position_views[i].1, None);
-            base.device.free_memory(g_position_views[i].2, None);
-            base.device.destroy_image(g_normal_views[i].0, None);
-            base.device.destroy_image_view(g_normal_views[i].1, None);
-            base.device.free_memory(g_normal_views[i].2, None);
+            base.device.destroy_image(g_albedo_views[i].0, None);
+            base.device.destroy_image_view(g_albedo_views[i].1, None);
+            base.device.free_memory(g_albedo_views[i].2, None);
+            base.device.destroy_image(g_metallic_roughness_views[i].0, None);
+            base.device.destroy_image_view(g_metallic_roughness_views[i].1, None);
+            base.device.free_memory(g_metallic_roughness_views[i].2, None);
             base.device.destroy_image(g_view_position_views[i].0, None);
             base.device.destroy_image_view(g_view_position_views[i].1, None);
             base.device.free_memory(g_view_position_views[i].2, None);
@@ -1024,8 +1321,12 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             base.device.destroy_framebuffer(present_framebuffers[i], None);
         }
 
-        base.device.destroy_descriptor_set_layout(ubo_descriptor_set_layout, None);
-        base.device.destroy_descriptor_pool(descriptor_pool, None);
+        base.device.destroy_descriptor_set_layout(geometry_ubo_descriptor_set_layout, None);
+        base.device.destroy_descriptor_pool(geometry_descriptor_pool, None);
+        base.device.destroy_descriptor_set_layout(lighting_descriptor_set_layout, None);
+        base.device.destroy_descriptor_pool(lighting_descriptor_pool, None);
+
+        base.device.destroy_sampler(sampler, None);
 
         base.device.destroy_image_view(null_tex.0.0, None);
         base.device.destroy_sampler(null_tex.0.1, None);

@@ -452,6 +452,7 @@ impl VkBase {
                 &device,
                 msaa_samples,
                 surface_format.format,
+                ImageUsageFlags::TRANSIENT_ATTACHMENT
             );
             let color_image = color_image_create_info.0;
             let color_image_view = color_image_create_info.1;
@@ -590,6 +591,7 @@ impl VkBase {
             &self.device,
             self.msaa_samples,
             surface_format.format,
+            ImageUsageFlags::TRANSIENT_ATTACHMENT
         );
         self.color_image = color_image_create_info.0;
         self.color_image_view = color_image_create_info.1;
@@ -758,6 +760,7 @@ impl VkBase {
         device: &Device,
         samples: vk::SampleCountFlags,
         format: vk::Format,
+        usage: ImageUsageFlags,
     ) -> (Image, ImageView, DeviceMemory) { unsafe {
         let color_image_create_info = vk::ImageCreateInfo {
             s_type: vk::StructureType::IMAGE_CREATE_INFO,
@@ -768,7 +771,7 @@ impl VkBase {
             format,
             tiling: vk::ImageTiling::OPTIMAL,
             initial_layout: vk::ImageLayout::UNDEFINED,
-            usage: ImageUsageFlags::TRANSIENT_ATTACHMENT | ImageUsageFlags::COLOR_ATTACHMENT,
+            usage: ImageUsageFlags::COLOR_ATTACHMENT | usage,
             sharing_mode: vk::SharingMode::EXCLUSIVE,
             samples,
             ..Default::default()
