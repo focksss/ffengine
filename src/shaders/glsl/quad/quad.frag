@@ -14,4 +14,5 @@ layout(set = 0, binding = 4) uniform sampler2D g_view_normal;
 
 void main() {
     uFragColor = texture(g_depth, uv);
+    // https://therealmjp.github.io/posts/reconstructing-position-from-depth/
 }
