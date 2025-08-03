@@ -13,11 +13,10 @@ layout (location = 6) in vec4 weights;
 layout (location = 7) in mat4 model;
 layout (location = 11) in ivec2 indices;
 
-layout (location = 0) out vec3 view_position;
-layout (location = 1) out vec3 o_view_normal;
-layout (location = 2) out vec2 o_uv;
-layout (location = 3) out uint o_material;
-layout (location = 4) out mat3 view_TBN;
+layout (location = 0) out vec3 o_view_normal;
+layout (location = 1) out vec2 o_uv;
+layout (location = 2) out uint o_material;
+layout (location = 3) out mat3 view_TBN;
 
 layout(binding = 0) uniform UniformBuffer {
     mat4 view;
@@ -42,7 +41,6 @@ void main() {
     }
 
     vec4 position = model_matrix * vec4(pos, 1.0);
-    view_position = vec3(ubo.view * model_matrix * vec4(pos, 1.0));
     gl_Position = ubo.projection * ubo.view * position;
 
     o_uv = vec2(uv.x, uv.y);

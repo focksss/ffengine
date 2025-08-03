@@ -382,7 +382,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
         let mut g_material_views = Vec::new();
         let mut g_albedo_views = Vec::new();
         let mut g_metallic_roughness_views = Vec::new();
-        let mut g_view_position_views = Vec::new();
+        let mut g_extra_material_properties_views = Vec::new();
         let mut g_view_normal_views = Vec::new();
         for _ in 0..MAX_FRAMES_IN_FLIGHT {
             g_material_views.push(VkBase::create_color_image(
@@ -412,7 +412,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                 vk::Format::R16G16B16A16_SFLOAT,
                 ImageUsageFlags::SAMPLED,
             ));
-            g_view_position_views.push(VkBase::create_color_image(
+            g_extra_material_properties_views.push(VkBase::create_color_image(
                 &base.instance,
                 &base.pdevice,
                 &base.surface_resolution,
@@ -627,7 +627,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                     g_material_views[i].1,
                     g_albedo_views[i].1,
                     g_metallic_roughness_views[i].1,
-                    g_view_position_views[i].1,
+                    g_extra_material_properties_views[i].1,
                     g_view_normal_views[i].1,
                     g_depth_view.1,
                 ];
@@ -1103,7 +1103,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                         },
                         vk::DescriptorImageInfo {
                             sampler,
-                            image_view: g_view_position_views[current_frame].1,
+                            image_view: g_extra_material_properties_views[current_frame].1,
                             image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                         },
                         vk::DescriptorImageInfo {
@@ -1200,7 +1200,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                                 &g_material_views[current_frame],
                                 &g_albedo_views[current_frame],
                                 &g_metallic_roughness_views[current_frame],
-                                &g_view_position_views[current_frame],
+                                &g_extra_material_properties_views[current_frame],
                                 &g_view_normal_views[current_frame],
                             ] {
                                 let image = image_view.0;
@@ -1310,9 +1310,9 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             base.device.destroy_image(g_metallic_roughness_views[i].0, None);
             base.device.destroy_image_view(g_metallic_roughness_views[i].1, None);
             base.device.free_memory(g_metallic_roughness_views[i].2, None);
-            base.device.destroy_image(g_view_position_views[i].0, None);
-            base.device.destroy_image_view(g_view_position_views[i].1, None);
-            base.device.free_memory(g_view_position_views[i].2, None);
+            base.device.destroy_image(g_extra_material_properties_views[i].0, None);
+            base.device.destroy_image_view(g_extra_material_properties_views[i].1, None);
+            base.device.free_memory(g_extra_material_properties_views[i].2, None);
             base.device.destroy_image(g_view_normal_views[i].0, None);
             base.device.destroy_image_view(g_view_normal_views[i].1, None);
             base.device.free_memory(g_view_normal_views[i].2, None);

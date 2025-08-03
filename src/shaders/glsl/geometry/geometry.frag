@@ -6,14 +6,13 @@
 layout (location = 0) out ivec4 frag_material;
 layout (location = 1) out vec4 frag_albedo;
 layout (location = 2) out vec4 frag_metallic_roughness;
-layout (location = 3) out vec4 frag_view_position;
+layout (location = 3) out vec4 frag_extra_material_properties;
 layout (location = 4) out vec4 frag_view_normal;
 
-layout (location = 0) in vec3 o_view_position;
-layout (location = 1) in vec3 o_view_normal;
-layout (location = 2) in vec2 o_uv;
-layout (location = 3) flat in uint material;
-layout (location = 4) in mat3 view_TBN;
+layout (location = 0) in vec3 o_view_normal;
+layout (location = 1) in vec2 o_uv;
+layout (location = 2) flat in uint material;
+layout (location = 3) in mat3 view_TBN;
 
 layout(set = 0, binding = 3) uniform sampler2D textures[];
 
@@ -60,6 +59,6 @@ void main() {
     frag_material = ivec4(material);
     frag_albedo = vec4(base_color);
     frag_metallic_roughness = vec4(mat.metallic, mat.roughness, 1.0, 1.0);
-    frag_view_position = vec4(o_view_position, 1.0);
-    frag_view_normal = vec4(view_normal, 1.0);
+    frag_extra_material_properties = vec4(1.0);
+    frag_view_normal = vec4(view_normal * 0.5 + 0.5, 1.0); // convert normal to 0-1 scale
 }
