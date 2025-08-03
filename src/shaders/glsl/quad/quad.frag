@@ -8,7 +8,10 @@ layout (location = 0) out vec4 uFragColor;
 layout (location = 0) in vec2 uv;
 layout(set = 0, binding = 0) uniform sampler2D g_material;
 layout(set = 0, binding = 1) uniform sampler2D g_albedo;
+layout(set = 0, binding = 2) uniform sampler2D g_metallic_roughness;
+layout(set = 0, binding = 3) uniform sampler2D g_view_position;
+layout(set = 0, binding = 4) uniform sampler2D g_view_normal;
 
 void main() {
-    uFragColor = texture(g_albedo, uv);
+    uFragColor = texture(g_view_normal, uv);
 }

@@ -13,12 +13,11 @@ layout (location = 6) in vec4 weights;
 layout (location = 7) in mat4 model;
 layout (location = 11) in ivec2 indices;
 
-layout (location = 0) out vec3 fragPos;
-layout (location = 1) out vec3 o_normal;
+layout (location = 0) out vec3 view_position;
+layout (location = 1) out vec3 o_view_normal;
 layout (location = 2) out vec2 o_uv;
 layout (location = 3) out uint o_material;
-layout (location = 4) out mat3 TBN;
-layout (location = 7) out mat3 viewTBN;
+layout (location = 4) out mat3 view_TBN;
 
 layout(binding = 0) uniform UniformBuffer {
     mat4 view;
@@ -27,36 +26,32 @@ layout(binding = 0) uniform UniformBuffer {
 
 layout(set = 0, binding = 2, std430) readonly buffer JointsSSBO {
     mat4 joint_matrices[];
-} jointsSSBO;
+} joints_SSBO;
 
 void main() {
     int material = indices.x;
     int skin = indices.y;
     mat4 model_matrix = model;
     if (skin > -1) {
-        uint joint_offset = uint((jointsSSBO.joint_matrices[uint(skin)])[0][0]);
+        uint joint_offset = uint((joints_SSBO.joint_matrices[uint(skin)])[0][0]);
         model_matrix =
-            weights.x * jointsSSBO.joint_matrices[joint_indices.x + joint_offset] +
-            weights.y * jointsSSBO.joint_matrices[joint_indices.y + joint_offset] +
-            weights.z * jointsSSBO.joint_matrices[joint_indices.z + joint_offset] +
-            weights.w * jointsSSBO.joint_matrices[joint_indices.w + joint_offset];
+            weights.x * joints_SSBO.joint_matrices[joint_indices.x + joint_offset] +
+            weights.y * joints_SSBO.joint_matrices[joint_indices.y + joint_offset] +
+            weights.z * joints_SSBO.joint_matrices[joint_indices.z + joint_offset] +
+            weights.w * joints_SSBO.joint_matrices[joint_indices.w + joint_offset];
     }
 
     vec4 position = model_matrix * vec4(pos, 1.0);
-    fragPos = position.xyz;
-    o_uv = vec2(uv.x, uv.y);
-    o_material = material;
+    view_position = vec3(ubo.view * model_matrix * vec4(pos, 1.0));
     gl_Position = ubo.projection * ubo.view * position;
 
-    mat3 normalMatrix = mat3(transpose(inverse(model_matrix)));
-    mat3 viewNormalMatrix = transpose(inverse(mat3(ubo.view * model_matrix)));
-    o_normal = normalize(normalMatrix * normal);
-    vec3 vertexViewNormal = normalize(viewNormalMatrix * normal);
+    o_uv = vec2(uv.x, uv.y);
+    o_material = material;
 
-    vec3 T = normalize(normalMatrix * tangent);
-    vec3 B = normalize(normalMatrix * bitangent);
-    TBN = mat3(T, B, o_normal);
-    vec3 viewT = normalize(viewNormalMatrix * tangent);
-    vec3 viewB = normalize(viewNormalMatrix * bitangent);
-    viewTBN = mat3(viewT, viewB, vertexViewNormal);
+    mat3 view_normal_matrix = transpose(inverse(mat3(ubo.view * model_matrix)));
+    o_view_normal = normalize(view_normal_matrix * normal);
+
+    vec3 view_T = normalize(view_normal_matrix * tangent);
+    vec3 view_B = normalize(view_normal_matrix * bitangent);
+    view_TBN = mat3(view_T, view_B, o_view_normal);
 }

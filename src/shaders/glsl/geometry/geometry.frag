@@ -13,8 +13,7 @@ layout (location = 0) in vec3 o_view_position;
 layout (location = 1) in vec3 o_view_normal;
 layout (location = 2) in vec2 o_uv;
 layout (location = 3) flat in uint material;
-layout (location = 4) in mat3 TBN;
-layout (location = 7) in mat3 viewTBN;
+layout (location = 4) in mat3 view_TBN;
 
 layout(set = 0, binding = 3) uniform sampler2D textures[];
 
@@ -45,7 +44,7 @@ void main() {
     if (mat.normal_tex > -1) {
         vec3 mapped_normal = texture(textures[mat.normal_tex], o_uv).rgb;
         mapped_normal = normalize(mapped_normal * 2 - 1);
-        normal = normalize(viewTBN * mapped_normal);
+        normal = normalize(view_TBN * mapped_normal);
     } else {
         view_normal = o_view_normal;
     }
