@@ -27,6 +27,7 @@ use winit::{
     raw_window_handle::{HasDisplayHandle, HasWindowHandle},
     window::WindowBuilder,
 };
+use crate::Renderpass::{Texture, TextureCreateInfo};
 
 // Simple offset_of macro akin to C++ offsetof
 #[macro_export]
@@ -166,13 +167,9 @@ pub struct VkBase {
     pub draw_command_buffers: Vec<CommandBuffer>,
     pub setup_command_buffer: CommandBuffer,
 
-    pub depth_image: Image,
-    pub depth_image_view: ImageView,
-    pub depth_image_memory: DeviceMemory,
+    pub depth_texture: Texture,
 
-    pub color_image: Image,
-    pub color_image_view: ImageView,
-    pub color_image_memory: DeviceMemory,
+    pub color_texture: Texture,
 
     pub present_complete_semaphores: Vec<vk::Semaphore>,
     pub rendering_complete_semaphores: Vec<vk::Semaphore>,
@@ -181,11 +178,11 @@ pub struct VkBase {
     pub setup_commands_reuse_fence: vk::Fence,
 }
 impl VkBase {
-    pub fn new(window_width: u32, window_height: u32, max_frames_in_flight: usize) -> Result<Self, Box<dyn Error>> {
+    pub fn new(window_title: String, window_width: u32, window_height: u32, max_frames_in_flight: usize) -> Result<Self, Box<dyn Error>> {
         unsafe {
             let event_loop = EventLoop::new()?;
             let window = WindowBuilder::new()
-                .with_title("AHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH")
+                .with_title(window_title)
                 .with_inner_size(winit::dpi::LogicalSize::new(
                     f64::from(window_width),
                     f64::from(window_height),
@@ -214,7 +211,7 @@ impl VkBase {
                 extension_names.push(ash::khr::get_physical_device_properties2::NAME.as_ptr());
             }
 
-            let appinfo = vk::ApplicationInfo::default()
+            let app_info = vk::ApplicationInfo::default()
                 .application_name(app_name)
                 .application_version(0)
                 .engine_name(app_name)
@@ -228,7 +225,7 @@ impl VkBase {
             };
 
             let create_info = vk::InstanceCreateInfo::default()
-                .application_info(&appinfo)
+                .application_info(&app_info)
                 .enabled_layer_names(&layers_names_raw)
                 .enabled_extension_names(&extension_names)
                 .flags(create_flags);
@@ -433,32 +430,18 @@ impl VkBase {
             let present_image_views = present_images_create_info.1;
             //</editor-fold>
             //<editor-fold desc = "depth">
-            let depth_image_create_info = VkBase::create_depth_image(
-                &instance,
-                &pdevice,
-                &surface_resolution,
-                &device,
-                msaa_samples,
-                Format::D16_UNORM,
-                ImageUsageFlags::empty(),
-            );
-            let depth_image = depth_image_create_info.0;
-            let depth_image_view = depth_image_create_info.1;
-            let depth_image_memory = depth_image_create_info.2;
+            let depth_texture_create_info = TextureCreateInfo::new_without_base(&device, &pdevice, &instance, &surface_resolution)
+                .samples(msaa_samples)
+                .format(Format::D16_UNORM)
+                .depth(true);
+            let depth_texture = Texture::new(&depth_texture_create_info);
             //</editor-fold>
             //<editor-fold desc = "color">
-            let color_image_create_info = VkBase::create_color_image(
-                &instance,
-                &pdevice,
-                &surface_resolution,
-                &device,
-                msaa_samples,
-                surface_format.format,
-                ImageUsageFlags::TRANSIENT_ATTACHMENT
-            );
-            let color_image = color_image_create_info.0;
-            let color_image_view = color_image_create_info.1;
-            let color_image_memory = color_image_create_info.2;
+            let color_image_create_info = TextureCreateInfo::new_without_base(&device, &pdevice, &instance, &surface_resolution)
+                .samples(msaa_samples)
+                .format(surface_format.format)
+                .usage_flags(ImageUsageFlags::TRANSIENT_ATTACHMENT);
+            let color_texture = Texture::new(&color_image_create_info);
             //</editor-fold>
 
             record_submit_commandbuffer(
@@ -471,7 +454,7 @@ impl VkBase {
                 &[],
                 |device, setup_command_buffer| {
                     let layout_transition_barriers = vk::ImageMemoryBarrier::default()
-                        .image(depth_image)
+                        .image(depth_texture.image)
                         .dst_access_mask(
                             vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_READ
                                 | vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE,
@@ -535,10 +518,8 @@ impl VkBase {
                 pool,
                 draw_command_buffers,
                 setup_command_buffer,
-                depth_image,
-                depth_image_view,
-                color_image,
-                color_image_view,
+                depth_texture,
+                color_texture,
                 present_complete_semaphores,
                 rendering_complete_semaphores,
                 draw_commands_reuse_fences,
@@ -546,61 +527,47 @@ impl VkBase {
                 surface,
                 debug_call_back,
                 debug_utils_loader,
-                depth_image_memory,
-                color_image_memory,
             })
         }
     }
     pub unsafe fn resize_swapchain(&mut self)  {
-        //<editor-fold desc = "swapchain"
-        let (surface_format, surface_resolution, swapchain) =
-            VkBase::create_swapchain(
-                &self.surface_loader,
-                &self.pdevice,
-                &self.surface,
-                &self.window,
+        unsafe {
+            //<editor-fold desc = "swapchain"
+            let (surface_format, surface_resolution, swapchain) =
+                VkBase::create_swapchain(
+                    &self.surface_loader,
+                    &self.pdevice,
+                    &self.surface,
+                    &self.window,
+                    &self.instance,
+                    &self.device
+                );
+            //</editor-fold>
+            //<editor-fold desc = "present images">
+            let present_images_create_info = VkBase::create_present_images(
+                &swapchain,
+                &surface_format,
+                &self.device,
                 &self.instance,
-                &self.device
             );
-        //</editor-fold>
-        //<editor-fold desc = "present images">
-        let present_images_create_info = VkBase::create_present_images(
-            &swapchain,
-            &surface_format,
-            &self.device,
-            &self.instance,
-        );
-        self.present_images = present_images_create_info.0;
-        self.present_image_views = present_images_create_info.1;
-        //</editor-fold>
-        //<editor-fold desc = "depth">
-        let depth_image_create_info = VkBase::create_depth_image(
-            &self.instance,
-            &self.pdevice,
-            &surface_resolution,
-            &self.device,
-            self.msaa_samples,
-            Format::D16_UNORM,
-            ImageUsageFlags::empty(),
-        );
-        self.depth_image = depth_image_create_info.0;
-        self.depth_image_view = depth_image_create_info.1;
-        self.depth_image_memory = depth_image_create_info.2;
-        //</editor-fold>
-        //<editor-fold desc = "color">
-        let color_image_create_info = VkBase::create_color_image(
-            &self.instance,
-            &self.pdevice,
-            &surface_resolution,
-            &self.device,
-            self.msaa_samples,
-            surface_format.format,
-            ImageUsageFlags::TRANSIENT_ATTACHMENT
-        );
-        self.color_image = color_image_create_info.0;
-        self.color_image_view = color_image_create_info.1;
-        self.color_image_memory = color_image_create_info.2;
-        //</editor-fold> {
+            self.present_images = present_images_create_info.0;
+            self.present_image_views = present_images_create_info.1;
+            //</editor-fold>
+            //<editor-fold desc = "depth">
+            let depth_texture_create_info = TextureCreateInfo::new(&self)
+                .samples(self.msaa_samples)
+                .format(Format::D16_UNORM)
+                .depth(true);
+            self.depth_texture = Texture::new(&depth_texture_create_info);
+            //</editor-fold>
+            //<editor-fold desc = "color">
+            let color_image_create_info = TextureCreateInfo::new(&self)
+                .samples(self.msaa_samples)
+                .format(surface_format.format)
+                .usage_flags(ImageUsageFlags::TRANSIENT_ATTACHMENT);
+            self.color_texture = Texture::new(&color_image_create_info);
+            //</editor-fold> {
+        }
     }
     pub fn create_swapchain(
         surface_loader: &surface::Instance,
@@ -701,120 +668,6 @@ impl VkBase {
             .collect();
         (present_images, present_image_views)
     }}
-    pub fn create_depth_image(
-        instance: &Instance,
-        pdevice: &vk::PhysicalDevice,
-        surface_resolution: &vk::Extent2D,
-        device: &Device,
-        samples: vk::SampleCountFlags,
-        format: Format,
-        usage: ImageUsageFlags,
-    ) -> (Image, ImageView, DeviceMemory) { unsafe {
-        let device_memory_properties = instance.get_physical_device_memory_properties(*pdevice);
-        let depth_image_create_info = vk::ImageCreateInfo::default()
-            .image_type(vk::ImageType::TYPE_2D)
-            .format(format)
-            .extent((*surface_resolution).into())
-            .mip_levels(1)
-            .array_layers(1)
-            .samples(samples)
-            .tiling(vk::ImageTiling::OPTIMAL)
-            .usage(ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT | usage)
-            .sharing_mode(vk::SharingMode::EXCLUSIVE);
-
-        let depth_image = device.create_image(&depth_image_create_info, None).unwrap();
-        let depth_image_memory_req = device.get_image_memory_requirements(depth_image);
-        let depth_image_memory_index = find_memorytype_index(
-            &depth_image_memory_req,
-            &device_memory_properties,
-            MemoryPropertyFlags::DEVICE_LOCAL,
-        )
-            .expect("Unable to find suitable memory index for depth image.");
-
-        let depth_image_allocate_info = vk::MemoryAllocateInfo::default()
-            .allocation_size(depth_image_memory_req.size)
-            .memory_type_index(depth_image_memory_index);
-
-        let depth_image_memory = device
-            .allocate_memory(&depth_image_allocate_info, None)
-            .unwrap();
-
-        device
-            .bind_image_memory(depth_image, depth_image_memory, 0)
-            .expect("Unable to bind depth image memory");
-
-        let depth_image_view_info = vk::ImageViewCreateInfo::default()
-            .subresource_range(
-                ImageSubresourceRange::default()
-                    .aspect_mask(ImageAspectFlags::DEPTH)
-                    .level_count(1)
-                    .layer_count(1),
-            )
-            .image(depth_image)
-            .format(depth_image_create_info.format)
-            .view_type(vk::ImageViewType::TYPE_2D);
-
-        let depth_image_view = device
-            .create_image_view(&depth_image_view_info, None)
-            .unwrap();
-        (depth_image, depth_image_view, depth_image_memory)
-    }}
-    pub fn create_color_image(
-        instance: &Instance,
-        pdevice: &vk::PhysicalDevice,
-        surface_resolution: &vk::Extent2D,
-        device: &Device,
-        samples: vk::SampleCountFlags,
-        format: vk::Format,
-        usage: ImageUsageFlags,
-    ) -> (Image, ImageView, DeviceMemory) { unsafe {
-        let color_image_create_info = vk::ImageCreateInfo {
-            s_type: vk::StructureType::IMAGE_CREATE_INFO,
-            image_type: vk::ImageType::TYPE_2D,
-            extent: Extent3D { width: surface_resolution.width, height: surface_resolution.height, depth: 1 },
-            mip_levels: 1,
-            array_layers: 1,
-            format,
-            tiling: vk::ImageTiling::OPTIMAL,
-            initial_layout: vk::ImageLayout::UNDEFINED,
-            usage: ImageUsageFlags::COLOR_ATTACHMENT | usage,
-            sharing_mode: vk::SharingMode::EXCLUSIVE,
-            samples,
-            ..Default::default()
-        };
-        let color_image = device.create_image(&color_image_create_info, None).expect("Failed to create image");
-        let color_image_memory_req = device.get_image_memory_requirements(color_image);
-        let color_image_alloc_info = vk::MemoryAllocateInfo {
-            s_type: vk::StructureType::MEMORY_ALLOCATE_INFO,
-            allocation_size: color_image_memory_req.size,
-            memory_type_index: find_memorytype_index(
-                &color_image_memory_req,
-                &instance.get_physical_device_memory_properties(*pdevice),
-                MemoryPropertyFlags::DEVICE_LOCAL,
-            ).expect("unable to get mem type index for texture image"),
-            ..Default::default()
-        };
-        let color_image_memory = device.allocate_memory(&color_image_alloc_info, None).expect("Failed to allocate image memory");
-        device.bind_image_memory(color_image, color_image_memory, 0).expect("Failed to bind image memory");
-        let color_image_view_info = vk::ImageViewCreateInfo {
-            s_type: vk::StructureType::IMAGE_VIEW_CREATE_INFO,
-            image: color_image,
-            view_type: vk::ImageViewType::TYPE_2D,
-            format,
-            subresource_range: ImageSubresourceRange {
-                aspect_mask: ImageAspectFlags::COLOR,
-                base_mip_level: 0,
-                level_count: 1,
-                base_array_layer: 0,
-                layer_count: 1,
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-        (color_image, device.create_image_view(&color_image_view_info, None).expect("failed to create image view"), color_image_memory)
-    }}
-
-
 
     pub unsafe fn create_buffer(
         &self,
@@ -1280,13 +1133,8 @@ impl Drop for VkBase {
             }
             self.device
                 .destroy_fence(self.setup_commands_reuse_fence, None);
-            self.device.free_memory(self.depth_image_memory, None);
-            self.device.destroy_image_view(self.depth_image_view, None);
-            self.device.destroy_image(self.depth_image, None);
-
-            self.device.free_memory(self.color_image_memory, None);
-            self.device.destroy_image_view(self.color_image_view, None);
-            self.device.destroy_image(self.color_image, None);
+            self.depth_texture.destroy(self);
+            self.color_texture.destroy(self);
 
             for &image_view in self.present_image_views.iter() {
                 self.device.destroy_image_view(image_view, None);

@@ -4,6 +4,7 @@ mod vector;
 mod vk_helper;
 mod camera;
 mod scene;
+mod Renderpass;
 
 use std::default::Default;
 use std::error::Error;
@@ -25,6 +26,7 @@ use winit::window::CursorGrabMode;
 use crate::{vk_helper::*, vector::*};
 use crate::scene::{Scene, Model, Instance};
 use crate::camera::Camera;
+use crate::Renderpass::{Texture, TextureCreateInfo};
 
 #[derive(Clone, Debug, Copy)]
 #[repr(C)]
@@ -44,7 +46,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         compile_shaders(shader_paths).expect("Failed to compile shaders");
 
-        let mut base = VkBase::new(1000, 800, MAX_FRAMES_IN_FLIGHT)?;
+        let mut base = VkBase::new("ffengine".to_string(), 1920, 1080, MAX_FRAMES_IN_FLIGHT)?;
         run(&mut base).expect("Application launch failed!");
     }
     Ok(())
@@ -378,61 +380,16 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
         let mut g_extra_material_properties_views = Vec::new();
         let mut g_view_normal_views = Vec::new();
         let mut g_depth_views = Vec::new();
+        let material_tex_create_info = TextureCreateInfo::new(base).format(Format::R8G8B8A8_SINT);
+        let color_tex_create_info = TextureCreateInfo::new(base).format(Format::R16G16B16A16_SFLOAT);
+        let depth_tex_create_info = TextureCreateInfo::new(base).format(Format::D16_UNORM).depth(true);
         for _ in 0..MAX_FRAMES_IN_FLIGHT {
-            g_material_views.push(VkBase::create_color_image(
-                &base.instance,
-                &base.pdevice,
-                &base.surface_resolution,
-                &base.device,
-                vk::SampleCountFlags::TYPE_1,
-                Format::R8G8B8A8_SINT,
-                ImageUsageFlags::SAMPLED,
-            ));
-            g_albedo_views.push(VkBase::create_color_image(
-                &base.instance,
-                &base.pdevice,
-                &base.surface_resolution,
-                &base.device,
-                vk::SampleCountFlags::TYPE_1,
-                Format::R16G16B16A16_SFLOAT,
-                ImageUsageFlags::SAMPLED,
-            ));
-            g_metallic_roughness_views.push(VkBase::create_color_image(
-                &base.instance,
-                &base.pdevice,
-                &base.surface_resolution,
-                &base.device,
-                vk::SampleCountFlags::TYPE_1,
-                Format::R16G16B16A16_SFLOAT,
-                ImageUsageFlags::SAMPLED,
-            ));
-            g_extra_material_properties_views.push(VkBase::create_color_image(
-                &base.instance,
-                &base.pdevice,
-                &base.surface_resolution,
-                &base.device,
-                vk::SampleCountFlags::TYPE_1,
-                Format::R16G16B16A16_SFLOAT,
-                ImageUsageFlags::SAMPLED,
-            ));
-            g_view_normal_views.push(VkBase::create_color_image(
-                &base.instance,
-                &base.pdevice,
-                &base.surface_resolution,
-                &base.device,
-                vk::SampleCountFlags::TYPE_1,
-                Format::R16G16B16A16_SFLOAT,
-                ImageUsageFlags::SAMPLED,
-            ));
-            g_depth_views.push(VkBase::create_depth_image(
-                &base.instance,
-                &base.pdevice,
-                &base.surface_resolution,
-                &base.device,
-                vk::SampleCountFlags::TYPE_1,
-                Format::D16_UNORM,
-                ImageUsageFlags::SAMPLED,
-            ));
+            g_material_views.push(Texture::new(&material_tex_create_info));
+            g_albedo_views.push(Texture::new(&color_tex_create_info));
+            g_metallic_roughness_views.push(Texture::new(&color_tex_create_info));
+            g_extra_material_properties_views.push(Texture::new(&color_tex_create_info));
+            g_view_normal_views.push(Texture::new(&color_tex_create_info));
+            g_depth_views.push(Texture::new(&depth_tex_create_info));
         }
         let renderpass_attachments = [
             //material
@@ -548,7 +505,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                 ..Default::default()
             },
             vk::AttachmentDescription {
-                format: vk::Format::D16_UNORM,
+                format: Format::D16_UNORM,
                 samples: base.msaa_samples,
                 load_op: vk::AttachmentLoadOp::CLEAR,
                 initial_layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
@@ -609,7 +566,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             .present_image_views
             .iter()
             .map(|&present_image_view| {
-                let framebuffer_attachments = [base.color_image_view, base.depth_image_view, present_image_view];
+                let framebuffer_attachments = [base.color_texture.image_view, base.depth_texture.image_view, present_image_view];
                 let framebuffer_create_info = vk::FramebufferCreateInfo::default()
                     .render_pass(present_pass)
                     .attachments(&framebuffer_attachments)
@@ -627,12 +584,12 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
         let geometry_framebuffers: Vec<vk::Framebuffer> = (0..MAX_FRAMES_IN_FLIGHT)
             .map(|i| {
                 let framebuffer_attachments = [
-                    g_material_views[i].1,
-                    g_albedo_views[i].1,
-                    g_metallic_roughness_views[i].1,
-                    g_extra_material_properties_views[i].1,
-                    g_view_normal_views[i].1,
-                    g_depth_views[i].1,
+                    g_material_views[i].image_view,
+                    g_albedo_views[i].image_view,
+                    g_metallic_roughness_views[i].image_view,
+                    g_extra_material_properties_views[i].image_view,
+                    g_view_normal_views[i].image_view,
+                    g_depth_views[i].image_view,
                 ];
                 let framebuffer_create_info = vk::FramebufferCreateInfo::default()
                     .render_pass(geometry_pass)
@@ -1091,27 +1048,27 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                     let image_infos = [
                         vk::DescriptorImageInfo {
                             sampler,
-                            image_view: g_material_views[current_frame].1,
+                            image_view: g_material_views[current_frame].image_view,
                             image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                         },
                         vk::DescriptorImageInfo {
                             sampler,
-                            image_view: g_albedo_views[current_frame].1,
+                            image_view: g_albedo_views[current_frame].image_view,
                             image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                         },
                         vk::DescriptorImageInfo {
                             sampler,
-                            image_view: g_metallic_roughness_views[current_frame].1,
+                            image_view: g_metallic_roughness_views[current_frame].image_view,
                             image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                         },
                         vk::DescriptorImageInfo {
                             sampler,
-                            image_view: g_depth_views[current_frame].1,
+                            image_view: g_depth_views[current_frame].image_view,
                             image_layout: vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
                         },
                         vk::DescriptorImageInfo {
                             sampler,
-                            image_view: g_view_normal_views[current_frame].1,
+                            image_view: g_view_normal_views[current_frame].image_view,
                             image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                         },
                     ];
@@ -1183,7 +1140,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                                 dst_access_mask: vk::AccessFlags::SHADER_READ,
                                 src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
                                 dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
-                                image: g_depth_views[current_frame].0,
+                                image: g_depth_views[current_frame].image,
                                 subresource_range: vk::ImageSubresourceRange {
                                     aspect_mask: vk::ImageAspectFlags::DEPTH,
                                     base_mip_level: 0,
@@ -1204,14 +1161,14 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                             );
                             //</editor-fold>
                             //<editor-fold desc = "transition g-buffer color attachments to be readable">
-                            for &image_view in [
+                            for image_view in [
                                 &g_material_views[current_frame],
                                 &g_albedo_views[current_frame],
                                 &g_metallic_roughness_views[current_frame],
                                 &g_extra_material_properties_views[current_frame],
                                 &g_view_normal_views[current_frame],
                             ] {
-                                let image = image_view.0;
+                                let image = image_view.image;
                                 let barrier = vk::ImageMemoryBarrier::default()
                                     .src_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
                                     .dst_access_mask(vk::AccessFlags::SHADER_READ)
@@ -1306,24 +1263,12 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
 
             base.device.destroy_framebuffer(geometry_framebuffers[i], None);
 
-            base.device.destroy_image(g_material_views[i].0, None);
-            base.device.destroy_image_view(g_material_views[i].1, None);
-            base.device.free_memory(g_material_views[i].2, None);
-            base.device.destroy_image(g_albedo_views[i].0, None);
-            base.device.destroy_image_view(g_albedo_views[i].1, None);
-            base.device.free_memory(g_albedo_views[i].2, None);
-            base.device.destroy_image(g_metallic_roughness_views[i].0, None);
-            base.device.destroy_image_view(g_metallic_roughness_views[i].1, None);
-            base.device.free_memory(g_metallic_roughness_views[i].2, None);
-            base.device.destroy_image(g_extra_material_properties_views[i].0, None);
-            base.device.destroy_image_view(g_extra_material_properties_views[i].1, None);
-            base.device.free_memory(g_extra_material_properties_views[i].2, None);
-            base.device.destroy_image(g_view_normal_views[i].0, None);
-            base.device.destroy_image_view(g_view_normal_views[i].1, None);
-            base.device.free_memory(g_view_normal_views[i].2, None);
-            base.device.destroy_image(g_depth_views[i].0, None);
-            base.device.destroy_image_view(g_depth_views[i].1, None);
-            base.device.free_memory(g_depth_views[i].2, None);
+            g_material_views[i].destroy(base);
+            g_albedo_views[i].destroy(base);
+            g_metallic_roughness_views[i].destroy(base);
+            g_extra_material_properties_views[i].destroy(base);
+            g_view_normal_views[i].destroy(base);
+            g_depth_views[i].destroy(base);
         }
         for i in 0..3 {
             base.device.destroy_framebuffer(present_framebuffers[i], None);
