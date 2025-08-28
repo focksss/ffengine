@@ -27,7 +27,7 @@ use winit::{
     raw_window_handle::{HasDisplayHandle, HasWindowHandle},
     window::WindowBuilder,
 };
-use crate::Renderpass::{Texture, TextureCreateInfo};
+use crate::Render::{Texture, TextureCreateInfo};
 
 // Simple offset_of macro akin to C++ offsetof
 #[macro_export]
@@ -433,7 +433,7 @@ impl VkBase {
             let depth_texture_create_info = TextureCreateInfo::new_without_base(&device, &pdevice, &instance, &surface_resolution)
                 .samples(msaa_samples)
                 .format(Format::D16_UNORM)
-                .depth(true);
+                .is_depth(true);
             let depth_texture = Texture::new(&depth_texture_create_info);
             //</editor-fold>
             //<editor-fold desc = "color">
@@ -557,7 +557,7 @@ impl VkBase {
             let depth_texture_create_info = TextureCreateInfo::new(&self)
                 .samples(self.msaa_samples)
                 .format(Format::D16_UNORM)
-                .depth(true);
+                .is_depth(true);
             self.depth_texture = Texture::new(&depth_texture_create_info);
             //</editor-fold>
             //<editor-fold desc = "color">
@@ -855,7 +855,7 @@ impl VkBase {
 
         self.device.destroy_buffer(image_staging_buffer, None);
         self.device.free_memory(image_staging_buffer_memory, None);
-        
+
         let view_info = vk::ImageViewCreateInfo {
             s_type: vk::StructureType::IMAGE_VIEW_CREATE_INFO,
             image: texture_image,
@@ -1071,7 +1071,7 @@ impl VkBase {
 
             source_stage = vk::PipelineStageFlags::TOP_OF_PIPE;
             destination_stage = vk::PipelineStageFlags::TRANSFER;
-        } 
+        }
         else if old_layout == vk::ImageLayout::TRANSFER_DST_OPTIMAL && new_layout == vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL {
             barrier.src_access_mask = vk::AccessFlags::TRANSFER_WRITE;
             barrier.dst_access_mask = vk::AccessFlags::SHADER_READ;
@@ -1081,7 +1081,7 @@ impl VkBase {
         } else {
             eprintln!("unsupported layout transition");
         }
-        
+
         self.device.cmd_pipeline_barrier(
             command_buffers[0],
             source_stage,
