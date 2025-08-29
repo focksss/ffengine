@@ -381,7 +381,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             .add_color_attachment_info(color_tex_create_info) // metallic roughness
             .add_color_attachment_info(color_tex_create_info) // extra properties
             .add_color_attachment_info(color_tex_create_info) // view normal
-            .depth_attachment_info(TextureCreateInfo::new(base).format(Format::D16_UNORM).is_depth(true)); // depth
+            .depth_attachment_info(TextureCreateInfo::new(base).format(Format::D16_UNORM).is_depth(true).clear_value([1.0, 0.0, 0.0, 0.0])); // depth
 
         let geometry_pass = Renderpass::new(base, geometry_pass_create_info);
         //</editor-fold>
@@ -859,39 +859,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                             vk::Fence::null(),
                         )
                         .unwrap();
-                    let geometry_clear_values = [
-                        vk::ClearValue {
-                            color: vk::ClearColorValue {
-                                int32: [0, 0, 0, 0],
-                            },
-                        },
-                        vk::ClearValue {
-                            color: vk::ClearColorValue {
-                                float32: [0.0, 0.0, 0.0, 0.0],
-                            },
-                        },
-                        vk::ClearValue {
-                            color: vk::ClearColorValue {
-                                float32: [0.0, 0.0, 0.0, 0.0],
-                            },
-                        },
-                        vk::ClearValue {
-                            color: vk::ClearColorValue {
-                                float32: [0.0, 0.0, 0.0, 0.0],
-                            },
-                        },
-                        vk::ClearValue {
-                            color: vk::ClearColorValue {
-                                float32: [0.0, 0.0, 0.0, 0.0],
-                            },
-                        },
-                        vk::ClearValue {
-                            depth_stencil: vk::ClearDepthStencilValue {
-                                depth: 1.0,
-                                stencil: 0,
-                            },
-                        },
-                    ];
+
                     let present_clear_values = [
                         vk::ClearValue {
                             color: vk::ClearColorValue {
@@ -954,7 +922,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                         .render_pass(geometry_pass.renderpass)
                         .framebuffer(geometry_pass.framebuffers[current_frame])
                         .render_area(base.surface_resolution.into())
-                        .clear_values(&geometry_clear_values);
+                        .clear_values(&geometry_pass.clear_values);
                     let present_pass_pass_begin_info = vk::RenderPassBeginInfo::default()
                         .render_pass(present_pass)
                         .framebuffer(present_framebuffers[present_index as usize])

@@ -1,7 +1,7 @@
 use std::io::Cursor;
 use ash::{vk, Device, Instance};
 use ash::util::read_spv;
-use ash::vk::{Extent3D, Format, Handle, ImageAspectFlags, ImageSubresourceRange, ImageUsageFlags, MemoryPropertyFlags, PhysicalDevice, PipelineShaderStageCreateInfo, SampleCountFlags, ShaderModule};
+use ash::vk::{ClearColorValue, ClearDepthStencilValue, ClearValue, Extent3D, Format, Handle, ImageAspectFlags, ImageSubresourceRange, ImageUsageFlags, MemoryPropertyFlags, PhysicalDevice, PipelineShaderStageCreateInfo, SampleCountFlags, ShaderModule};
 use crate::vk_helper::{find_memorytype_index, load_file, VkBase};
 
 
@@ -61,6 +61,7 @@ pub struct Renderpass {
     pub renderpass: vk::RenderPass,
     pub textures: Vec<Vec<Texture>>,
     pub framebuffers: Vec<vk::Framebuffer>,
+    pub clear_values: Vec<ClearValue>,
 }
 impl Renderpass {
     pub unsafe fn new(base: &VkBase, create_info: RenderpassCreateInfo) -> Self { unsafe {
@@ -148,10 +149,13 @@ impl Renderpass {
             })
             .collect();
 
+        let clear_values = textures[0].iter().map(|texture| {texture.clear_value}).collect();
+
         Self {
             renderpass,
             textures,
-            framebuffers
+            framebuffers,
+            clear_values
         }
     } }
     pub unsafe fn destroy(&self, base: &VkBase) { unsafe {
@@ -198,6 +202,7 @@ pub struct Texture {
     pub image_view: vk::ImageView,
     pub device_memory: vk::DeviceMemory,
 
+    pub clear_value: ClearValue,
     pub format: Format,
     pub resolution: Extent3D,
     pub samples: SampleCountFlags,
@@ -254,6 +259,7 @@ impl Texture {
             image_view: create_info.device.create_image_view(&image_view_info, None).expect("failed to create image view"),
             device_memory: image_memory,
 
+            clear_value: Self::clear_value_for_format(create_info.format, create_info.clear_value),
             format: create_info.format,
             resolution: Extent3D::default().width(create_info.width).height(create_info.height).depth(create_info.depth),
             samples: create_info.samples,
@@ -265,6 +271,78 @@ impl Texture {
         base.device.destroy_image_view(self.image_view, None);
         base.device.free_memory(self.device_memory, None);
     } }
+
+    fn clear_value_for_format(format: Format, clear: [f32; 4]) -> ClearValue {
+        match format {
+            // Depth/stencil formats
+            Format::D16_UNORM
+            | Format::D32_SFLOAT
+            | Format::D24_UNORM_S8_UINT
+            | Format::D32_SFLOAT_S8_UINT => {
+                ClearValue {
+                    depth_stencil: ClearDepthStencilValue {
+                        depth: clear[0],
+                        stencil: clear[1] as u32,
+                    },
+                }
+            }
+
+            // Float color formats
+            Format::R16_SFLOAT
+            | Format::R16G16_SFLOAT
+            | Format::R16G16B16A16_SFLOAT
+            | Format::R32_SFLOAT
+            | Format::R32G32_SFLOAT
+            | Format::R32G32B32A32_SFLOAT
+            | Format::R8_UNORM
+            | Format::R8G8B8A8_UNORM
+            | Format::B8G8R8A8_UNORM => {
+                ClearValue {
+                    color: ClearColorValue { float32: clear },
+                }
+            }
+
+            // Unsigned integer formats
+            Format::R8_UINT
+            | Format::R16_UINT
+            | Format::R32_UINT
+            | Format::R8G8B8A8_UINT
+            | Format::R16G16B16A16_UINT
+            | Format::R32G32B32A32_UINT => {
+                ClearValue {
+                    color: ClearColorValue {
+                        uint32: [
+                            clear[0] as u32,
+                            clear[1] as u32,
+                            clear[2] as u32,
+                            clear[3] as u32,
+                        ],
+                    },
+                }
+            }
+
+            // Signed integer formats
+            Format::R8_SINT
+            | Format::R16_SINT
+            | Format::R32_SINT
+            | Format::R8G8B8A8_SINT
+            | Format::R16G16B16A16_SINT
+            | Format::R32G32B32A32_SINT => {
+                ClearValue {
+                    color: ClearColorValue {
+                        int32: [
+                            clear[0] as i32,
+                            clear[1] as i32,
+                            clear[2] as i32,
+                            clear[3] as i32,
+                        ],
+                    },
+                }
+            }
+
+            _ => panic!("Unsupported format {:?} for clear value", format),
+        }
+    }
 }
 #[derive(Copy, Clone)]
 pub struct TextureCreateInfo<'a> {
@@ -278,6 +356,7 @@ pub struct TextureCreateInfo<'a> {
     pub format: Format,
     pub is_depth: bool,
     pub usage_flags: ImageUsageFlags,
+    pub clear_value: [f32; 4],
 }
 impl TextureCreateInfo<'_> {
     pub fn new(base: &VkBase) -> TextureCreateInfo {
@@ -292,6 +371,7 @@ impl TextureCreateInfo<'_> {
             format: Format::R16G16B16A16_SFLOAT,
             is_depth: false,
             usage_flags: ImageUsageFlags::SAMPLED,
+            clear_value: [0.0; 4],
         }
     }
     pub fn new_without_base<'a>(device: &'a Device, p_device: &'a PhysicalDevice, instance: &'a Instance, surface_resolution: &vk::Extent2D) -> TextureCreateInfo<'a> {
@@ -302,10 +382,11 @@ impl TextureCreateInfo<'_> {
             width: surface_resolution.width,
             height: surface_resolution.height,
             depth: 1,
-            samples: vk::SampleCountFlags::TYPE_1,
-            format: vk::Format::R16G16B16A16_SFLOAT,
+            samples: SampleCountFlags::TYPE_1,
+            format: Format::R16G16B16A16_SFLOAT,
             is_depth: false,
             usage_flags: ImageUsageFlags::SAMPLED,
+            clear_value: [0.0; 4],
         }
     }
     pub fn width(mut self, width: u32) -> Self {
@@ -334,6 +415,10 @@ impl TextureCreateInfo<'_> {
     }
     pub fn usage_flags(mut self, usage_flags: ImageUsageFlags) -> Self {
         self.usage_flags = usage_flags;
+        self
+    }
+    pub fn clear_value(mut self, clear_value: [f32; 4]) -> Self {
+        self.clear_value = clear_value;
         self
     }
 }
