@@ -26,7 +26,7 @@ use winit::window::CursorGrabMode;
 use crate::{vk_helper::*, vector::*};
 use crate::scene::{Scene, Model, Instance};
 use crate::camera::Camera;
-use crate::Render::{Renderpass, RenderpassCreateInfo, Texture, TextureCreateInfo};
+use crate::Render::{Renderpass, RenderpassCreateInfo, Shader, Texture, TextureCreateInfo};
 
 #[derive(Clone, Debug, Copy)]
 #[repr(C)]

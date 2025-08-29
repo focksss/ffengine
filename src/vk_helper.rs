@@ -1151,57 +1151,6 @@ impl Drop for VkBase {
     }
 }
 
-pub struct Shader {
-    pub modules: (ShaderModule, ShaderModule),
-}
-impl Shader {
-    pub unsafe fn new(base: &VkBase, vert_path: &str, frag_path: &str) -> Self { unsafe {
-        let mut vertex_spv_file = Cursor::new(load_file(vert_path).unwrap());
-        let mut frag_spv_file = Cursor::new(load_file(frag_path).unwrap());
-
-        let vertex_code = read_spv(&mut vertex_spv_file).expect("Failed to read vertex shader spv file");
-        let vertex_shader_info = vk::ShaderModuleCreateInfo::default().code(&vertex_code);
-
-        let frag_code = read_spv(&mut frag_spv_file).expect("Failed to read fragment shader spv file");
-        let frag_shader_info = vk::ShaderModuleCreateInfo::default().code(&frag_code);
-
-        let vertex_shader_module = base
-            .device
-            .create_shader_module(&vertex_shader_info, None)
-            .expect("Vertex shader module error");
-
-        let fragment_shader_module = base
-            .device
-            .create_shader_module(&frag_shader_info, None)
-            .expect("Fragment shader module error");
-        Shader { modules: (vertex_shader_module, fragment_shader_module)}
-    } }
-
-    pub fn generate_shader_stage_create_infos(&self) -> [PipelineShaderStageCreateInfo<'_>; 2] {
-        let shader_entry_name = c"main";
-        [
-            PipelineShaderStageCreateInfo {
-                module: self.modules.0,
-                p_name: shader_entry_name.as_ptr(),
-                stage: vk::ShaderStageFlags::VERTEX,
-                ..Default::default()
-            },
-            PipelineShaderStageCreateInfo {
-                s_type: vk::StructureType::PIPELINE_SHADER_STAGE_CREATE_INFO,
-                module: self.modules.1,
-                p_name: shader_entry_name.as_ptr(),
-                stage: vk::ShaderStageFlags::FRAGMENT,
-                ..Default::default()
-            },
-        ]
-    }
-
-    pub unsafe fn destroy(&self, base: &VkBase) { unsafe {
-        base.device.destroy_shader_module(self.modules.0, None);
-        base.device.destroy_shader_module(self.modules.1, None);
-    } }
-}
-
 pub unsafe fn copy_data_to_memory<T: Copy>(ptr: *mut c_void, data: &[T]) { unsafe {
     let mut aligned = Align::new(
         ptr,
