@@ -966,64 +966,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
 
                             device.cmd_end_render_pass(frame_command_buffer);
                             //</editor-fold>
-                            //<editor-fold desc = "transition g-buffer depth">
-                            let depth_barrier = vk::ImageMemoryBarrier {
-                                s_type: vk::StructureType::IMAGE_MEMORY_BARRIER,
-                                old_layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-                                new_layout: vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
-                                src_access_mask: vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE,
-                                dst_access_mask: vk::AccessFlags::SHADER_READ,
-                                src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
-                                dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
-                                image: geometry_pass.textures[current_frame][5].image,
-                                subresource_range: vk::ImageSubresourceRange {
-                                    aspect_mask: vk::ImageAspectFlags::DEPTH,
-                                    base_mip_level: 0,
-                                    level_count: 1,
-                                    base_array_layer: 0,
-                                    layer_count: 1,
-                                },
-                                ..Default::default()
-                            };
-                            device.cmd_pipeline_barrier(
-                                frame_command_buffer,
-                                vk::PipelineStageFlags::LATE_FRAGMENT_TESTS,
-                                vk::PipelineStageFlags::FRAGMENT_SHADER,
-                                vk::DependencyFlags::empty(),
-                                &[],
-                                &[],
-                                &[depth_barrier],
-                            );
-                            //</editor-fold>
-                            //<editor-fold desc = "transition g-buffer color attachments to be readable">
-                            for tex in &geometry_pass.textures[current_frame] {
-                                if tex.is_depth {
-                                    continue;
-                                }
-                                let barrier = vk::ImageMemoryBarrier::default()
-                                    .src_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
-                                    .dst_access_mask(vk::AccessFlags::SHADER_READ)
-                                    .old_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                                    .new_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-                                    .image(tex.image)
-                                    .subresource_range(vk::ImageSubresourceRange {
-                                        aspect_mask: vk::ImageAspectFlags::COLOR,
-                                        base_mip_level: 0,
-                                        level_count: 1,
-                                        base_array_layer: 0,
-                                        layer_count: 1,
-                                    });
-                                device.cmd_pipeline_barrier(
-                                    frame_command_buffer,
-                                    vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-                                    vk::PipelineStageFlags::FRAGMENT_SHADER,
-                                    vk::DependencyFlags::empty(),
-                                    &[],
-                                    &[],
-                                    &[barrier],
-                                );
-                            }
-                            //</editor-fold>
+                            geometry_pass.transition_to_readable(base, frame_command_buffer, current_frame);
                             //<editor-fold desc = "present pass">
                             device.cmd_begin_render_pass(
                                 frame_command_buffer,

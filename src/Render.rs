@@ -158,6 +158,58 @@ impl Renderpass {
             clear_values
         }
     } }
+
+    pub unsafe fn transition_to_readable(&self, base: &VkBase, command_buffer: vk::CommandBuffer, frame: usize) { unsafe {
+        for tex in &self.textures[frame] {
+            let (old_layout, new_layout, src_access_mask, aspect_mask, stage) = if tex.is_depth {
+                (
+                    vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                    vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
+                    vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE,
+                    ImageAspectFlags::DEPTH,
+                    vk::PipelineStageFlags::LATE_FRAGMENT_TESTS,
+                )
+            } else {
+                (
+                    vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                    vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                    vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
+                    ImageAspectFlags::COLOR,
+                    vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+                )
+            };
+
+            let barrier = vk::ImageMemoryBarrier {
+                s_type: vk::StructureType::IMAGE_MEMORY_BARRIER,
+                old_layout,
+                new_layout,
+                src_access_mask,
+                dst_access_mask: vk::AccessFlags::SHADER_READ,
+                src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+                dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+                image: tex.image,
+                subresource_range: ImageSubresourceRange {
+                    aspect_mask,
+                    base_mip_level: 0,
+                    level_count: 1,
+                    base_array_layer: 0,
+                    layer_count: 1,
+                },
+                ..Default::default()
+            };
+
+            base.device.cmd_pipeline_barrier(
+                command_buffer,
+                stage,
+                vk::PipelineStageFlags::FRAGMENT_SHADER,
+                vk::DependencyFlags::empty(),
+                &[],
+                &[],
+                &[barrier],
+            );
+        }
+    } }
+
     pub unsafe fn destroy(&self, base: &VkBase) { unsafe {
         for framebuffer in &self.framebuffers {
             base.device.destroy_framebuffer(*framebuffer, None);
