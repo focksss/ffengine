@@ -57,45 +57,86 @@ impl Shader {
     } }
 }
 
-pub struct Renderpass {
+pub struct Pass {
     pub renderpass: vk::RenderPass,
     pub textures: Vec<Vec<Texture>>,
     pub framebuffers: Vec<vk::Framebuffer>,
     pub clear_values: Vec<ClearValue>,
 }
-impl Renderpass {
-    pub unsafe fn new(base: &VkBase, create_info: RenderpassCreateInfo) -> Self { unsafe {
+impl Pass {
+    pub unsafe fn new(base: &VkBase, create_info: PassCreateInfo) -> Self { unsafe {
         let mut textures = Vec::new();
-        for frame in 0..create_info.frames_in_flight {
-            let mut frame_textures = Vec::new();
-            for texture in 0..create_info.color_attachment_create_infos.len() {
-                frame_textures.push(Texture::new(&create_info.color_attachment_create_infos[texture]));
+        if !create_info.is_present_pass {
+            for frame in 0..create_info.frames_in_flight {
+                let mut frame_textures = Vec::new();
+                for texture in 0..create_info.color_attachment_create_infos.len() {
+                    frame_textures.push(Texture::new(&create_info.color_attachment_create_infos[texture]));
+                }
+                frame_textures.push(Texture::new(&create_info.depth_attachment_create_info));
+                textures.push(frame_textures);
             }
-            frame_textures.push(Texture::new(&create_info.depth_attachment_create_info));
-            textures.push(frame_textures);
         }
 
         let mut attachments_vec = Vec::new();
         let mut color_attachment_refs_vec = Vec::new();
         let mut depth_attachment_index = 0;
-        for (i, texture) in textures[0].iter().enumerate() {
-            attachments_vec.push(
-                vk::AttachmentDescription {
-                    format: texture.format,
-                    samples: texture.samples,
-                    load_op: vk::AttachmentLoadOp::CLEAR,
-                    store_op: vk::AttachmentStoreOp::STORE,
-                    initial_layout: vk::ImageLayout::UNDEFINED,
-                    final_layout: if texture.is_depth { vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL } else { vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL },
-                    ..Default::default()
+        if !create_info.is_present_pass {
+            for (i, texture) in textures[0].iter().enumerate() {
+                attachments_vec.push(
+                    vk::AttachmentDescription {
+                        format: texture.format,
+                        samples: texture.samples,
+                        load_op: vk::AttachmentLoadOp::CLEAR,
+                        store_op: vk::AttachmentStoreOp::STORE,
+                        initial_layout: vk::ImageLayout::UNDEFINED,
+                        final_layout: if texture.is_depth { vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL } else { vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL },
+                        ..Default::default()
+                    }
+                );
+                if !texture.is_depth {
+                    color_attachment_refs_vec.push(vk::AttachmentReference {
+                        attachment: i as u32,
+                        layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                    })
+                } else {
+                    depth_attachment_index = i as u32;
                 }
-            );
-            if !texture.is_depth { color_attachment_refs_vec.push(vk::AttachmentReference {
-                attachment: i as u32,
-                layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-            })} else {
-                depth_attachment_index = i as u32;
             }
+        } else {
+            attachments_vec.push(vk::AttachmentDescription {
+                format: base.color_texture.format,
+                samples: base.msaa_samples,
+                load_op: vk::AttachmentLoadOp::CLEAR,
+                store_op: vk::AttachmentStoreOp::STORE,
+                initial_layout: vk::ImageLayout::UNDEFINED,
+                final_layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                ..Default::default()
+            });
+            attachments_vec.push(vk::AttachmentDescription {
+                format: base.depth_texture.format,
+                samples: base.msaa_samples,
+                load_op: vk::AttachmentLoadOp::CLEAR,
+                store_op: vk::AttachmentStoreOp::STORE,
+                initial_layout: vk::ImageLayout::UNDEFINED,
+                final_layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                ..Default::default()
+            });
+            attachments_vec.push(vk::AttachmentDescription {
+                format: base.surface_format.format,
+                samples: SampleCountFlags::TYPE_1,
+                load_op: vk::AttachmentLoadOp::DONT_CARE,
+                store_op: vk::AttachmentStoreOp::STORE,
+                stencil_load_op: vk::AttachmentLoadOp::DONT_CARE,
+                stencil_store_op: vk::AttachmentStoreOp::DONT_CARE,
+                initial_layout: vk::ImageLayout::UNDEFINED,
+                final_layout: vk::ImageLayout::PRESENT_SRC_KHR,
+                ..Default::default()
+            });
+            color_attachment_refs_vec.push(vk::AttachmentReference {
+                attachment: 0,
+                layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+            });
+            depth_attachment_index = 1;
         }
 
         let attachments = attachments_vec.as_slice();
@@ -113,10 +154,16 @@ impl Renderpass {
             ..Default::default()
         }];
 
-        let subpass = vk::SubpassDescription::default()
+        let mut subpass = vk::SubpassDescription::default()
             .color_attachments(&color_attachment_refs)
             .depth_stencil_attachment(&depth_attachment_ref)
             .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS);
+        if create_info.is_present_pass {
+            subpass = subpass.resolve_attachments(&[vk::AttachmentReference {
+                attachment: 2,
+                layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+            }]);
+        }
 
         let renderpass_create_info = vk::RenderPassCreateInfo::default()
             .attachments(&attachments)
@@ -128,28 +175,71 @@ impl Renderpass {
             .create_render_pass(&renderpass_create_info, None)
             .unwrap();
 
-        let framebuffers: Vec<vk::Framebuffer> = (0..create_info.frames_in_flight)
-            .map(|i| {
-                let framebuffer_attachments_vec: Vec<vk::ImageView> = textures[i].iter().map(|texture| {texture.image_view}).collect();
-                let framebuffer_attachments = framebuffer_attachments_vec.as_slice();
+        let mut clear_values = Vec::new();
+        let framebuffers: Vec<vk::Framebuffer> = if !create_info.is_present_pass {
+            clear_values = textures[0].iter().map(|texture| {texture.clear_value}).collect();
+            let framebuffers = (0..create_info.frames_in_flight)
+                .map(|i| {
+                    let framebuffer_attachments_vec: Vec<vk::ImageView> = textures[i].iter().map(|texture| { texture.image_view }).collect();
+                    let framebuffer_attachments = framebuffer_attachments_vec.as_slice();
 
-                let framebuffer_create_info = vk::FramebufferCreateInfo::default()
-                    .render_pass(renderpass)
-                    .attachments(&framebuffer_attachments)
-                    .width(base.surface_resolution.width)
-                    .height(base.surface_resolution.height)
-                    .layers(1);
+                    let framebuffer_create_info = vk::FramebufferCreateInfo::default()
+                        .render_pass(renderpass)
+                        .attachments(&framebuffer_attachments)
+                        .width(base.surface_resolution.width)
+                        .height(base.surface_resolution.height)
+                        .layers(1);
 
-                let fb = base
-                    .device
-                    .create_framebuffer(&framebuffer_create_info, None)
-                    .expect("Failed to create framebuffer");
-                println!("Created framebuffer[{}]: 0x{:x}", i, fb.as_raw());
-                fb
-            })
-            .collect();
+                    let fb = base
+                        .device
+                        .create_framebuffer(&framebuffer_create_info, None)
+                        .expect("Failed to create framebuffer");
+                    println!("Created framebuffer[{}]: 0x{:x}", i, fb.as_raw());
+                    fb
+                })
+                .collect();
+            framebuffers
+        } else {
+            clear_values = vec![
+                ClearValue {
+                    color: vk::ClearColorValue {
+                        float32: [0.0, 0.0, 0.0, 0.0],
+                    },
+                },
+                ClearValue {
+                    depth_stencil: vk::ClearDepthStencilValue {
+                        depth: 1.0,
+                        stencil: 0,
+                    },
+                },
+                ClearValue {
+                    color: vk::ClearColorValue {
+                        float32: [0.0, 0.0, 0.0, 0.0],
+                    },
+                },
+            ];
+            let present_framebuffers: Vec<vk::Framebuffer> = base
+                .present_image_views
+                .iter()
+                .map(|&present_image_view| {
+                    let framebuffer_attachments = [base.color_texture.image_view, base.depth_texture.image_view, present_image_view];
+                    let framebuffer_create_info = vk::FramebufferCreateInfo::default()
+                        .render_pass(renderpass)
+                        .attachments(&framebuffer_attachments)
+                        .width(base.surface_resolution.width)
+                        .height(base.surface_resolution.height)
+                        .layers(1);
+                    let fb = base
+                        .device
+                        .create_framebuffer(&framebuffer_create_info, None)
+                        .expect("Failed to create framebuffer");
+                    println!("Created present framebuffer: 0x{:x}", fb.as_raw());
+                    fb
+                })
+                .collect();
 
-        let clear_values = textures[0].iter().map(|texture| {texture.clear_value}).collect();
+            present_framebuffers
+        };
 
         Self {
             renderpass,
@@ -220,19 +310,21 @@ impl Renderpass {
         base.device.destroy_render_pass(self.renderpass, None);
     }}
 }
-pub struct RenderpassCreateInfo<'a> {
+pub struct PassCreateInfo<'a> {
     pub base: &'a VkBase,
     pub frames_in_flight: usize,
     pub color_attachment_create_infos: Vec<TextureCreateInfo<'a>>,
     pub depth_attachment_create_info: TextureCreateInfo<'a>,
+    pub is_present_pass: bool,
 }
-impl<'a> RenderpassCreateInfo<'a> {
-    pub fn new(base: &'a VkBase) -> RenderpassCreateInfo<'a> {
-        RenderpassCreateInfo {
+impl<'a> PassCreateInfo<'a> {
+    pub fn new(base: &'a VkBase) -> PassCreateInfo<'a> {
+        PassCreateInfo {
             base,
             frames_in_flight: 1,
             color_attachment_create_infos: Vec::new(),
             depth_attachment_create_info: TextureCreateInfo::new(base),
+            is_present_pass: false,
         }
     }
     pub fn frames_in_flight(mut self, frames_in_flight: usize) -> Self {
@@ -245,6 +337,10 @@ impl<'a> RenderpassCreateInfo<'a> {
     }
     pub fn depth_attachment_info(mut self, depth_attachment_create_info: TextureCreateInfo<'a>) -> Self {
         self.depth_attachment_create_info = depth_attachment_create_info;
+        self
+    }
+    pub fn set_is_present_pass(mut self, is_present_pass: bool) -> Self {
+        self.is_present_pass = is_present_pass;
         self
     }
 }
