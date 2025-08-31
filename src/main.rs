@@ -62,15 +62,15 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
 
         //world.add_model(Model::new("C:\\Graphics\\assets\\flower\\scene.gltf"));
         //world.add_model(Model::new("C:\\Graphics\\assets\\rivals\\luna\\gltf\\luna.gltf"));
-        //world.add_model(Model::new("C:\\Graphics\\assets\\bistro2\\untitled.gltf"));
+        world.add_model(Model::new("C:\\Graphics\\assets\\bistro2\\untitled.gltf"));
 
         world.initialize(base, MAX_FRAMES_IN_FLIGHT, true);
 
         //world.models[2].animations[0].repeat = true;
         //world.models[2].animations[0].start();
 
-        world.models[0].animations[0].repeat = true;
-        world.models[0].animations[0].start();
+        //world.models[0].animations[0].repeat = true;
+        //world.models[0].animations[0].start();
 
         let null_tex = base.create_2d_texture_image(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("local_assets\\null8x.png"), true);
 
@@ -377,8 +377,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             .allocate_descriptor_sets(&alloc_info)
             .expect("Failed to allocate lighting descriptor sets");
         //</editor-fold>
-
-        //<editor-fold desc = "geometry pass">
+        //<editor-fold desc = "passes">
         let color_tex_create_info = TextureCreateInfo::new(base).format(Format::R16G16B16A16_SFLOAT);
         let geometry_pass_create_info = PassCreateInfo::new(base)
             .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
@@ -387,21 +386,12 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             .add_color_attachment_info(color_tex_create_info) // metallic roughness
             .add_color_attachment_info(color_tex_create_info) // extra properties
             .add_color_attachment_info(color_tex_create_info) // view normal
-            .depth_attachment_info(TextureCreateInfo::new(base).format(Format::D16_UNORM).is_depth(true).clear_value([1.0, 0.0, 0.0, 0.0])); // depth
+            .depth_attachment_info(TextureCreateInfo::new(base).format(Format::D32_SFLOAT).is_depth(true).clear_value([0.0, 0.0, 0.0, 0.0])); // depth
 
         let geometry_pass = Pass::new(base, geometry_pass_create_info);
-        //</editor-fold>
-        //<editor-fold desc = "present pass">
+
         let present_pass_create_info = PassCreateInfo::new(base)
-            .set_is_present_pass(true)
-            .add_color_attachment_info(TextureCreateInfo::new(base)
-                .samples(base.msaa_samples)
-                .format(base.surface_format.format)
-                .usage_flags(ImageUsageFlags::TRANSIENT_ATTACHMENT))
-            .depth_attachment_info(TextureCreateInfo::new(base)
-                .samples(base.msaa_samples)
-                .format(Format::D16_UNORM)
-                .is_depth(true));
+            .set_is_present_pass(true);
 
         let present_pass = Pass::new(base, present_pass_create_info);
         //</editor-fold>
@@ -543,6 +533,13 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
 
         let rasterization_info = vk::PipelineRasterizationStateCreateInfo {
             front_face: vk::FrontFace::COUNTER_CLOCKWISE,
+            cull_mode: vk::CullModeFlags::BACK,
+            line_width: 1.0,
+            polygon_mode: vk::PolygonMode::FILL,
+            ..Default::default()
+        };
+        let fullscreen_quad_rasterization_info = vk::PipelineRasterizationStateCreateInfo {
+            front_face: vk::FrontFace::COUNTER_CLOCKWISE,
             cull_mode: vk::CullModeFlags::NONE,
             line_width: 1.0,
             polygon_mode: vk::PolygonMode::FILL,
@@ -563,7 +560,16 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             compare_op: vk::CompareOp::ALWAYS,
             ..Default::default()
         };
-        let depth_state_info = vk::PipelineDepthStencilStateCreateInfo {
+        let infinite_reverse_depth_state_info = vk::PipelineDepthStencilStateCreateInfo {
+            depth_test_enable: 1,
+            depth_write_enable: 1,
+            depth_compare_op: vk::CompareOp::GREATER,
+            front: noop_stencil_state,
+            back: noop_stencil_state,
+            max_depth_bounds: 1.0,
+            ..Default::default()
+        };
+        let default_depth_state_info = vk::PipelineDepthStencilStateCreateInfo {
             depth_test_enable: 1,
             depth_write_enable: 1,
             depth_compare_op: vk::CompareOp::LESS_OR_EQUAL,
@@ -609,7 +615,6 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             .input_assembly_state(&vertex_input_assembly_state_info)
             .viewport_state(&viewport_state_info)
             .rasterization_state(&rasterization_info)
-            .depth_stencil_state(&depth_state_info)
             .dynamic_state(&dynamic_state_info);
         let geometry_pipeline_info = base_pipeline_info
             .stages(&geom_shader_create_info)
@@ -617,14 +622,17 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             .multisample_state(&null_multisample_state_info)
             .render_pass(geometry_pass.renderpass)
             .color_blend_state(&null_blend_state)
-            .layout(geometry_pipeline_layout);
+            .layout(geometry_pipeline_layout)
+            .depth_stencil_state(&infinite_reverse_depth_state_info);
         let screen_pipeline_info = base_pipeline_info
             .stages(&screen_shader_create_info)
             .vertex_input_state(&null_vertex_input_state_info)
             .multisample_state(&multisample_state_info)
             .render_pass(present_pass.renderpass)
             .color_blend_state(&color_blend_state)
-            .layout(lighting_pipeline_layout);
+            .layout(lighting_pipeline_layout)
+            .rasterization_state(&fullscreen_quad_rasterization_info)
+            .depth_stencil_state(&default_depth_state_info);
 
         let graphics_pipelines = base
             .device
@@ -654,8 +662,9 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             0.001,
             100.0,
             base.window.inner_size().width as f32 / base.window.inner_size().height as f32,
-            0.15,
-            1000.0
+            0.01,
+            1000.0,
+            true,
         );
         let mut current_frame = 0usize;
         let mut pressed_keys = HashSet::new();
@@ -810,7 +819,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                         },
                         vk::DescriptorImageInfo {
                             sampler,
-                            image_view: geometry_pass.textures[current_frame][3].image_view,
+                            image_view: geometry_pass.textures[current_frame][5].image_view,
                             image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                         },
                         vk::DescriptorImageInfo {

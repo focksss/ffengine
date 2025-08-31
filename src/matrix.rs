@@ -251,6 +251,21 @@ impl Matrix {
 
         result
     }
+    pub fn new_infinite_reverse_projection(fov_y: f32, aspect: f32, near: f32) -> Matrix {
+        let mut result = Matrix::new();
+
+        let f = 1.0 / (fov_y / 2.0).tan();
+
+        result.data[0] = f / aspect;
+        result.data[5] = -f;
+        
+        result.data[10] = 0.0;
+        result.data[11] = -1.0;
+        result.data[14] = near;
+        result.data[15] = 0.0;
+
+        result
+    }
     pub fn new_ortho(left: f32, right: f32, bottom: f32, top: f32, near: f32, far: f32) -> Self {
         let mut result = Matrix::new();
 

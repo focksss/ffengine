@@ -15,9 +15,10 @@ pub struct Camera {
     pub near: f32,
     pub far: f32,
     pub frustum: Frustum,
+    pub infinite_reverse: bool,
 }
 impl Camera {
-    pub fn new_perspective_rotation(position: Vector, rotation: Vector, speed: f32, sensitivity: f32, fov_y: f32, aspect_ratio: f32, near: f32, far: f32) -> Self {
+    pub fn new_perspective_rotation(position: Vector, rotation: Vector, speed: f32, sensitivity: f32, fov_y: f32, aspect_ratio: f32, near: f32, far: f32, infinite_reverse: bool) -> Self {
         Self {
             view_matrix: Matrix::new(),
             projection_matrix: Matrix::new(),
@@ -30,18 +31,23 @@ impl Camera {
             aspect_ratio,
             near,
             far,
-            frustum: Frustum::null()
+            frustum: Frustum::null(),
+            infinite_reverse,
         }
     }
 
     pub fn update_matrices(&mut self) {
         self.view_matrix = Matrix::new_view(&self.position, &self.rotation);
-        self.projection_matrix = Matrix::new_projection(
+        self.projection_matrix = if self.infinite_reverse { Matrix::new_infinite_reverse_projection(
             self.fov_y.to_radians(), 
             self.aspect_ratio,
             self.near,
+        ) } else { Matrix::new_projection(
+            self.fov_y.to_radians(),
+            self.aspect_ratio,
+            self.near,
             self.far,
-        )
+        ) }
     }
 
     pub fn update_frustum(&mut self) {
