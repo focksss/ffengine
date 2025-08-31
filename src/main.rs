@@ -62,15 +62,15 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
 
         //world.add_model(Model::new("C:\\Graphics\\assets\\flower\\scene.gltf"));
         //world.add_model(Model::new("C:\\Graphics\\assets\\rivals\\luna\\gltf\\luna.gltf"));
-        world.add_model(Model::new("C:\\Graphics\\assets\\bistro2\\untitled.gltf"));
+        //world.add_model(Model::new("C:\\Graphics\\assets\\bistro2\\untitled.gltf"));
 
         world.initialize(base, MAX_FRAMES_IN_FLIGHT, true);
 
         //world.models[2].animations[0].repeat = true;
         //world.models[2].animations[0].start();
 
-        //world.models[0].animations[0].repeat = true;
-        //world.models[0].animations[0].start();
+        world.models[0].animations[0].repeat = true;
+        world.models[0].animations[0].start();
 
         let null_tex = base.create_2d_texture_image(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("local_assets\\null8x.png"), true);
 
@@ -820,7 +820,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                         vk::DescriptorImageInfo {
                             sampler,
                             image_view: geometry_pass.textures[current_frame][5].image_view,
-                            image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                            image_layout: vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
                         },
                         vk::DescriptorImageInfo {
                             sampler,
