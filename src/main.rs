@@ -1056,6 +1056,6 @@ fn do_mouse(player_camera: &mut Camera, mouse_delta: (f32, f32), cursor_locked: 
     if *cursor_locked {
         player_camera.rotation.y += player_camera.sensitivity * mouse_delta.0;
         player_camera.rotation.x += player_camera.sensitivity * mouse_delta.1;
-        player_camera.rotation.x = player_camera.rotation.x.clamp(-89.99_f32, 89.99_f32);
+        player_camera.rotation.x = player_camera.rotation.x.clamp(-PI * 0.5, PI * 0.5);
     }
 }
