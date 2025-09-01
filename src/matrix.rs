@@ -274,7 +274,7 @@ impl Matrix {
         let f_n = far - near;
 
         result.data[0] = 2.0 / rl;
-        result.data[5] = 2.0 / tb;
+        result.data[5] = -2.0 / tb;
         result.data[10] = 1.0 / f_n;
         result.data[12] = -(right + left) / rl;
         result.data[13] = -(top + bottom) / tb;
@@ -317,7 +317,7 @@ impl Matrix {
 
         result.data[12] = -s.dot(position);
         result.data[13] = -u.dot(position);
-        result.data[14] = f.dot(position);
+        result.data[14] = -f.dot(position);
         result.data[15] = 1.0;
 
         result

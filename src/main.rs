@@ -26,6 +26,7 @@ use winit::window::CursorGrabMode;
 use crate::{vk_helper::*, vector::*};
 use crate::scene::{Scene, Model, Instance};
 use crate::camera::Camera;
+use crate::matrix::Matrix;
 use crate::render::{Pass, PassCreateInfo, Shader, TextureCreateInfo};
 
 #[derive(Clone, Debug, Copy)]
@@ -42,6 +43,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     unsafe {
         let mut shader_paths = Vec::new();
         shader_paths.push("src\\shaders\\glsl\\geometry");
+        shader_paths.push("src\\shaders\\glsl\\shadow");
+        shader_paths.push("src\\shaders\\glsl\\lighting");
         shader_paths.push("src\\shaders\\glsl\\quad");
 
         compile_shaders(shader_paths).expect("Failed to compile shaders");
@@ -55,8 +58,11 @@ fn main() -> Result<(), Box<dyn Error>> {
 unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
     unsafe {
         let mut world = Scene::new();
+
         world.add_model(Model::new(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("local_assets\\ffocks\\untitled.gltf").to_str().unwrap()));
         world.models[0].transform_roots(&Vector::new_vec(0.0), &Vector::new_vec(0.0), &Vector::new_vec(0.01));
+        world.models[0].animations[0].repeat = true;
+        world.models[0].animations[0].start();
 
         //world.add_model(Model::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf"));
 
@@ -69,73 +75,23 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
         //world.models[2].animations[0].repeat = true;
         //world.models[2].animations[0].start();
 
-        world.models[0].animations[0].repeat = true;
-        world.models[0].animations[0].start();
+
 
         let null_tex = base.create_2d_texture_image(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("local_assets\\null8x.png"), true);
 
-        //<editor-fold desc = "uniform buffers">
-        let geometry_ubo_layout_bindings = [
-            vk::DescriptorSetLayoutBinding {
-                binding: 0,
-                descriptor_type: vk::DescriptorType::UNIFORM_BUFFER,
-                descriptor_count: 1,
-                stage_flags: vk::ShaderStageFlags::VERTEX,
-                ..Default::default()
-            },
-            vk::DescriptorSetLayoutBinding {
-                binding: 1,
-                descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
-                descriptor_count: 1,
-                stage_flags: vk::ShaderStageFlags::FRAGMENT,
-                ..Default::default()
-            },
-            vk::DescriptorSetLayoutBinding {
-                binding: 2,
-                descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
-                descriptor_count: 1,
-                stage_flags: vk::ShaderStageFlags::VERTEX,
-                ..Default::default()
-            },
-            vk::DescriptorSetLayoutBinding {
-                binding: 3,
-                descriptor_type: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
-                descriptor_count: 1024u32,
-                stage_flags: vk::ShaderStageFlags::FRAGMENT,
-                ..Default::default()
-            },
-        ];
-        let geometry_ubo_binding_flags = [
-            vk::DescriptorBindingFlags::empty(),
-            vk::DescriptorBindingFlags::empty(),
-            vk::DescriptorBindingFlags::empty(),
-            vk::DescriptorBindingFlags::PARTIALLY_BOUND |
-                vk::DescriptorBindingFlags::VARIABLE_DESCRIPTOR_COUNT |
-                vk::DescriptorBindingFlags::UPDATE_AFTER_BIND,
-        ];
-        let geometry_ubo_binding_flags_info = vk::DescriptorSetLayoutBindingFlagsCreateInfo {
-            s_type: vk::StructureType::DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO,
-            binding_count: geometry_ubo_binding_flags.len() as u32,
-            p_binding_flags: geometry_ubo_binding_flags.as_ptr(),
-            ..Default::default()
-        };
-        let geometry_ubo_layout_info = vk::DescriptorSetLayoutCreateInfo {
-            s_type: vk::StructureType::DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-            p_next: &geometry_ubo_binding_flags_info as *const _ as *const c_void,
-            binding_count: geometry_ubo_layout_bindings.len() as u32,
-            p_bindings: geometry_ubo_layout_bindings.as_ptr(),
-            flags: vk::DescriptorSetLayoutCreateFlags::UPDATE_AFTER_BIND_POOL,
-            ..Default::default()
-        };
-        let geometry_ubo_descriptor_set_layout = base.device.create_descriptor_set_layout(&geometry_ubo_layout_info, None)?;
-
+        //<editor-fold desc = "geometry/shadow uniform buffers">
         let geometry_ubo_buffer_size = size_of::<UniformData>() as u64;
         let mut geometry_uniform_buffers = Vec::new();
+        let mut shadow_uniform_buffers = Vec::new();
         let mut geometry_uniform_buffers_memory = Vec::new();
+        let mut shadow_uniform_buffers_memory = Vec::new();
         let mut geometry_uniform_buffers_mapped = Vec::new();
+        let mut shadow_uniform_buffers_mapped = Vec::new();
         for i in 0..MAX_FRAMES_IN_FLIGHT {
             geometry_uniform_buffers.push(Buffer::null());
             geometry_uniform_buffers_memory.push(DeviceMemory::null());
+            shadow_uniform_buffers.push(Buffer::null());
+            shadow_uniform_buffers_memory.push(DeviceMemory::null());
             base.create_buffer(
                 geometry_ubo_buffer_size,
                 vk::BufferUsageFlags::UNIFORM_BUFFER,
@@ -143,15 +99,28 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                 &mut geometry_uniform_buffers[i],
                 &mut geometry_uniform_buffers_memory[i],
             );
+            base.create_buffer(
+                geometry_ubo_buffer_size,
+                vk::BufferUsageFlags::UNIFORM_BUFFER,
+                vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
+                &mut shadow_uniform_buffers[i],
+                &mut shadow_uniform_buffers_memory[i],
+            );
             geometry_uniform_buffers_mapped.push(base.device.map_memory(
                 geometry_uniform_buffers_memory[i],
                 0,
                 geometry_ubo_buffer_size,
                 vk::MemoryMapFlags::empty()
             ).expect("failed to map uniform buffer"));
+            shadow_uniform_buffers_mapped.push(base.device.map_memory(
+                shadow_uniform_buffers_memory[i],
+                0,
+                geometry_ubo_buffer_size,
+                vk::MemoryMapFlags::empty()
+            ).expect("failed to map uniform buffer"));
         }
         //</editor-fold>
-        //<editor-fold desc = "geometry descriptor pools">
+        //<editor-fold desc = "geometry/shadow descriptor pools">
         let geometry_descriptor_pool_sizes = [
             vk::DescriptorPoolSize {
                 ty: vk::DescriptorType::UNIFORM_BUFFER,
@@ -183,9 +152,64 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             ..Default::default()
         };
         let geometry_descriptor_pool = base.device.create_descriptor_pool(&geometry_descriptor_pool_create_info, None).expect("failed to create descriptor pool");
+        let shadow_descriptor_pool = base.device.create_descriptor_pool(&geometry_descriptor_pool_create_info, None).expect("failed to create descriptor pool");
         //</editor-fold>
-        //<editor-fold desc = "geometry descriptor sets">
-        let geometry_ubo_layouts = vec![geometry_ubo_descriptor_set_layout; MAX_FRAMES_IN_FLIGHT];
+        //<editor-fold desc = "geometry/shadow descriptor sets">
+        let geometry_descriptor_set_layout_bindings = [
+            vk::DescriptorSetLayoutBinding {
+                binding: 0,
+                descriptor_type: vk::DescriptorType::UNIFORM_BUFFER,
+                descriptor_count: 1,
+                stage_flags: vk::ShaderStageFlags::VERTEX,
+                ..Default::default()
+            },
+            vk::DescriptorSetLayoutBinding {
+                binding: 1,
+                descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
+                descriptor_count: 1,
+                stage_flags: vk::ShaderStageFlags::FRAGMENT,
+                ..Default::default()
+            },
+            vk::DescriptorSetLayoutBinding {
+                binding: 2,
+                descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
+                descriptor_count: 1,
+                stage_flags: vk::ShaderStageFlags::VERTEX,
+                ..Default::default()
+            },
+            vk::DescriptorSetLayoutBinding {
+                binding: 3,
+                descriptor_type: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+                descriptor_count: 1024u32,
+                stage_flags: vk::ShaderStageFlags::FRAGMENT,
+                ..Default::default()
+            },
+        ];
+        let geometry_descriptor_binding_flags = [
+            vk::DescriptorBindingFlags::empty(),
+            vk::DescriptorBindingFlags::empty(),
+            vk::DescriptorBindingFlags::empty(),
+            vk::DescriptorBindingFlags::PARTIALLY_BOUND |
+                vk::DescriptorBindingFlags::VARIABLE_DESCRIPTOR_COUNT |
+                vk::DescriptorBindingFlags::UPDATE_AFTER_BIND,
+        ];
+        let geometry_set_binding_flags_info = vk::DescriptorSetLayoutBindingFlagsCreateInfo {
+            s_type: vk::StructureType::DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO,
+            binding_count: geometry_descriptor_binding_flags.len() as u32,
+            p_binding_flags: geometry_descriptor_binding_flags.as_ptr(),
+            ..Default::default()
+        };
+        let geometry_descriptor_layout_info = vk::DescriptorSetLayoutCreateInfo {
+            s_type: vk::StructureType::DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+            p_next: &geometry_set_binding_flags_info as *const _ as *const c_void,
+            binding_count: geometry_descriptor_set_layout_bindings.len() as u32,
+            p_bindings: geometry_descriptor_set_layout_bindings.as_ptr(),
+            flags: vk::DescriptorSetLayoutCreateFlags::UPDATE_AFTER_BIND_POOL,
+            ..Default::default()
+        };
+        let geometry_descriptor_set_layout = base.device.create_descriptor_set_layout(&geometry_descriptor_layout_info, None)?;
+        let geometry_ubo_layouts = vec![geometry_descriptor_set_layout; MAX_FRAMES_IN_FLIGHT];
+
         let variable_counts = vec![1024u32; MAX_FRAMES_IN_FLIGHT];
         let variable_count_info = vk::DescriptorSetVariableDescriptorCountAllocateInfo {
             s_type: vk::StructureType::DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_ALLOCATE_INFO,
@@ -193,7 +217,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             p_descriptor_counts: variable_counts.as_ptr(),
             ..Default::default()
         };
-        let alloc_info = vk::DescriptorSetAllocateInfo {
+        let geometry_alloc_info = vk::DescriptorSetAllocateInfo {
             s_type: vk::StructureType::DESCRIPTOR_SET_ALLOCATE_INFO,
             p_next: &variable_count_info as *const _ as *const c_void,
             descriptor_pool: geometry_descriptor_pool,
@@ -201,8 +225,18 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             p_set_layouts: geometry_ubo_layouts.as_ptr(),
             ..Default::default()
         };
-        let geometry_descriptor_sets = base.device.allocate_descriptor_sets(&alloc_info)
+        let shadow_alloc_info = vk::DescriptorSetAllocateInfo {
+            s_type: vk::StructureType::DESCRIPTOR_SET_ALLOCATE_INFO,
+            p_next: &variable_count_info as *const _ as *const c_void,
+            descriptor_pool: shadow_descriptor_pool,
+            descriptor_set_count: MAX_FRAMES_IN_FLIGHT as u32,
+            p_set_layouts: geometry_ubo_layouts.as_ptr(),
+            ..Default::default()
+        };
+        let geometry_descriptor_sets = base.device.allocate_descriptor_sets(&geometry_alloc_info)
             .expect("Failed to allocate geometry descriptor sets");
+        let shadow_descriptor_sets = base.device.allocate_descriptor_sets(&shadow_alloc_info)
+            .expect("Failed to allocate shadow descriptor sets");
 
         let mut image_infos: Vec<vk::DescriptorImageInfo> = Vec::with_capacity(1024);
         for model in &world.models {
@@ -234,8 +268,13 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             });
         }
         for i in 0..MAX_FRAMES_IN_FLIGHT {
-            let uniform_buffer_info = vk::DescriptorBufferInfo {
+            let geometry_uniform_buffer_info = vk::DescriptorBufferInfo {
                 buffer: geometry_uniform_buffers[i],
+                offset: 0,
+                range: size_of::<UniformData>() as vk::DeviceSize,
+            };
+            let shadow_uniform_buffer_info = vk::DescriptorBufferInfo {
+                buffer: shadow_uniform_buffers[i],
                 offset: 0,
                 range: size_of::<UniformData>() as vk::DeviceSize,
             };
@@ -250,6 +289,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                 range: vk::WHOLE_SIZE,
             };
             let descriptor_writes = [
+                // geometry
                 vk::WriteDescriptorSet {
                     s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
                     dst_set: geometry_descriptor_sets[i],
@@ -257,7 +297,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                     dst_array_element: 0,
                     descriptor_type: vk::DescriptorType::UNIFORM_BUFFER,
                     descriptor_count: 1,
-                    p_buffer_info: &uniform_buffer_info,
+                    p_buffer_info: &geometry_uniform_buffer_info,
                     ..Default::default()
                 },
                 vk::WriteDescriptorSet {
@@ -290,10 +330,53 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                     p_image_info: image_infos.as_ptr(),
                     ..Default::default()
                 },
+
+                // shadow
+                vk::WriteDescriptorSet {
+                    s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
+                    dst_set: shadow_descriptor_sets[i],
+                    dst_binding: 0,
+                    dst_array_element: 0,
+                    descriptor_type: vk::DescriptorType::UNIFORM_BUFFER,
+                    descriptor_count: 1,
+                    p_buffer_info: &shadow_uniform_buffer_info,
+                    ..Default::default()
+                },
+                vk::WriteDescriptorSet {
+                    s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
+                    dst_set: shadow_descriptor_sets[i],
+                    dst_binding: 1,
+                    dst_array_element: 0,
+                    descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
+                    descriptor_count: 1,
+                    p_buffer_info: &material_ssbo_info,
+                    ..Default::default()
+                },
+                vk::WriteDescriptorSet {
+                    s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
+                    dst_set: shadow_descriptor_sets[i],
+                    dst_binding: 2,
+                    dst_array_element: 0,
+                    descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
+                    descriptor_count: 1,
+                    p_buffer_info: &joints_ssbo_info,
+                    ..Default::default()
+                },
+                vk::WriteDescriptorSet {
+                    s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
+                    dst_set: shadow_descriptor_sets[i],
+                    dst_binding: 3,
+                    dst_array_element: 0,
+                    descriptor_type: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+                    descriptor_count: 1024,
+                    p_image_info: image_infos.as_ptr(),
+                    ..Default::default()
+                },
             ];
             base.device.update_descriptor_sets(&descriptor_writes, &[]);
         }
         //</editor-fold>
+
         //<editor-fold desc = "lighting descriptor pools">
         let lighting_descriptor_pool_sizes = [
             vk::DescriptorPoolSize {
@@ -377,6 +460,59 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             .allocate_descriptor_sets(&alloc_info)
             .expect("Failed to allocate lighting descriptor sets");
         //</editor-fold>
+
+        // <editor-fold desc = "present descriptor pools">
+        let present_descriptor_pool_sizes = [
+            vk::DescriptorPoolSize {
+                ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+                descriptor_count: MAX_FRAMES_IN_FLIGHT as u32,
+                ..Default::default()
+            },
+        ];
+        let present_descriptor_pool_create_info = vk::DescriptorPoolCreateInfo {
+            s_type: vk::StructureType::DESCRIPTOR_POOL_CREATE_INFO,
+            pool_size_count: present_descriptor_pool_sizes.len() as u32,
+            p_pool_sizes: present_descriptor_pool_sizes.as_ptr(),
+            max_sets: MAX_FRAMES_IN_FLIGHT as u32,
+            ..Default::default()
+        };
+        let bindings = [
+            vk::DescriptorSetLayoutBinding {
+                binding: 0,
+                descriptor_type: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+                descriptor_count: 1,
+                stage_flags: vk::ShaderStageFlags::FRAGMENT,
+                p_immutable_samplers: std::ptr::null(),
+                _marker: Default::default(),
+            },
+        ];
+        let descriptor_layout_create_info = vk::DescriptorSetLayoutCreateInfo {
+            s_type: vk::StructureType::DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+            binding_count: bindings.len() as u32,
+            p_bindings: bindings.as_ptr(),
+            ..Default::default()
+        };
+        let present_descriptor_set_layout = base.device
+            .create_descriptor_set_layout(&descriptor_layout_create_info, None)
+            .expect("Failed to create lighting descriptor set layout");
+        let present_descriptor_pool = base.device
+            .create_descriptor_pool(&present_descriptor_pool_create_info, None)
+            .expect("Failed to create lighting descriptor pool");
+        //</editor-fold>
+        //<editor-fold desc = "present descriptor sets">
+        let present_descriptor_set_layouts = vec![present_descriptor_set_layout; MAX_FRAMES_IN_FLIGHT];
+        let alloc_info = vk::DescriptorSetAllocateInfo {
+            s_type: vk::StructureType::DESCRIPTOR_SET_ALLOCATE_INFO,
+            descriptor_pool: present_descriptor_pool,
+            descriptor_set_count: MAX_FRAMES_IN_FLIGHT as u32,
+            p_set_layouts: present_descriptor_set_layouts.as_ptr(),
+            ..Default::default()
+        };
+        let present_descriptor_sets = base.device
+            .allocate_descriptor_sets(&alloc_info)
+            .expect("Failed to allocate lighting descriptor sets");
+        //</editor-fold>
+
         //<editor-fold desc = "passes">
         let color_tex_create_info = TextureCreateInfo::new(base).format(Format::R16G16B16A16_SFLOAT);
         let geometry_pass_create_info = PassCreateInfo::new(base)
@@ -387,26 +523,41 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             .add_color_attachment_info(color_tex_create_info) // extra properties
             .add_color_attachment_info(color_tex_create_info) // view normal
             .depth_attachment_info(TextureCreateInfo::new(base).format(Format::D32_SFLOAT).is_depth(true).clear_value([0.0, 0.0, 0.0, 0.0])); // depth
-
         let geometry_pass = Pass::new(base, geometry_pass_create_info);
+
+        let shadow_pass_create_info = PassCreateInfo::new(base)
+            .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
+            .depth_attachment_info(TextureCreateInfo::new(base).format(Format::D16_UNORM).is_depth(true).clear_value([1.0, 0.0, 0.0, 0.0])); // depth
+        let shadow_pass = Pass::new(base, shadow_pass_create_info);
+
+        let lighting_pass_create_info = PassCreateInfo::new(base)
+            .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
+            .add_color_attachment_info(color_tex_create_info)
+            .depth_attachment_info(TextureCreateInfo::new(base).format(Format::D16_UNORM).is_depth(true).clear_value([1.0, 0.0, 0.0, 0.0])); // depth
+        let lighting_pass = Pass::new(base, lighting_pass_create_info);
 
         let present_pass_create_info = PassCreateInfo::new(base)
             .set_is_present_pass(true);
-
         let present_pass = Pass::new(base, present_pass_create_info);
         //</editor-fold>
+
         //<editor-fold desc = "shaders">
         let geom_shader = Shader::new(base, "geometry\\geometry.vert.spv", "geometry\\geometry.frag.spv");
-        let screen_shader = Shader::new(base, "quad\\quad.vert.spv", "quad\\quad.frag.spv");
+        let shadow_shader = Shader::new(base, "shadow\\shadow.vert.spv", "shadow\\shadow.frag.spv");
+        let lighting_shader = Shader::new(base, "quad\\quad.vert.spv", "lighting\\lighting.frag.spv");
+        let present_shader = Shader::new(base, "quad\\quad.vert.spv", "quad\\quad.frag.spv");
         //</editor-fold>
+
         //<editor-fold desc = "full graphics pipeline initiation">
+
+        // reused for shadow pass
         let geometry_pipeline_layout = base
             .device
             .create_pipeline_layout(
                 &vk::PipelineLayoutCreateInfo {
                     s_type: vk::StructureType::PIPELINE_LAYOUT_CREATE_INFO,
                     set_layout_count: 1,
-                    p_set_layouts: &geometry_ubo_descriptor_set_layout,
+                    p_set_layouts: &geometry_descriptor_set_layout,
                     ..Default::default()
                 }, None
             ).unwrap();
@@ -417,6 +568,16 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                     s_type: vk::StructureType::PIPELINE_LAYOUT_CREATE_INFO,
                     set_layout_count: 1,
                     p_set_layouts: lighting_descriptor_set_layouts.as_ptr(),
+                    ..Default::default()
+                }, None
+            ).unwrap();
+        let present_pipeline_layout = base
+            .device
+            .create_pipeline_layout(
+                &vk::PipelineLayoutCreateInfo {
+                    s_type: vk::StructureType::PIPELINE_LAYOUT_CREATE_INFO,
+                    set_layout_count: 1,
+                    p_set_layouts: present_descriptor_set_layouts.as_ptr(),
                     ..Default::default()
                 }, None
             ).unwrap();
@@ -433,91 +594,157 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                 input_rate: vk::VertexInputRate::INSTANCE,
             }
         ];
-        let vertex_input_attribute_descriptions = [
+        let geometry_vertex_input_attribute_descriptions = [
+            // vertex
             vk::VertexInputAttributeDescription {
                 location: 0,
                 binding: 0,
                 format: vk::Format::R32G32B32_SFLOAT,
                 offset: offset_of!(scene::Vertex, position) as u32,
-            },
+            }, // position
             vk::VertexInputAttributeDescription {
                 location: 1,
                 binding: 0,
                 format: vk::Format::R32G32B32_SFLOAT,
                 offset: offset_of!(scene::Vertex, normal) as u32,
-            },
+            }, // normal
             vk::VertexInputAttributeDescription {
                 location: 2,
                 binding: 0,
                 format: vk::Format::R32G32_SFLOAT,
                 offset: offset_of!(scene::Vertex, uv) as u32,
-            },
+            }, // uv
             vk::VertexInputAttributeDescription {
                 location: 3,
                 binding: 0,
                 format: vk::Format::R32G32B32_SFLOAT,
                 offset: offset_of!(scene::Vertex, tangent) as u32,
-            },
+            }, // tangent
             vk::VertexInputAttributeDescription {
                 location: 4,
                 binding: 0,
                 format: vk::Format::R32G32B32_SFLOAT,
                 offset: offset_of!(scene::Vertex, bitangent) as u32,
-            },
+            }, // bitangent
             vk::VertexInputAttributeDescription {
                 location: 5,
                 binding: 0,
                 format: vk::Format::R32G32B32A32_UINT,
                 offset: offset_of!(scene::Vertex, joint_indices) as u32,
-            },
+            }, // joint indices
             vk::VertexInputAttributeDescription {
                 location: 6,
                 binding: 0,
                 format: vk::Format::R32G32B32A32_SFLOAT,
                 offset: offset_of!(scene::Vertex, joint_weights) as u32,
-            },
+            }, // join weights
 
+            // instance
             vk::VertexInputAttributeDescription {
                 location: 7,
                 binding: 1,
                 format: vk::Format::R32G32B32A32_SFLOAT,
                 offset: 0,
-            },
+            }, // model matrix
             vk::VertexInputAttributeDescription {
                 location: 8,
                 binding: 1,
                 format: vk::Format::R32G32B32A32_SFLOAT,
                 offset: 16,
-            },
+            }, // |
             vk::VertexInputAttributeDescription {
                 location: 9,
                 binding: 1,
                 format: vk::Format::R32G32B32A32_SFLOAT,
                 offset: 32,
-            },
+            }, // |
             vk::VertexInputAttributeDescription {
                 location: 10,
                 binding: 1,
                 format: vk::Format::R32G32B32A32_SFLOAT,
                 offset: 48,
-            },
+            }, // |
             vk::VertexInputAttributeDescription {
                 location: 11,
                 binding: 1,
                 format: vk::Format::R32G32_SINT,
                 offset: offset_of!(Instance, indices) as u32,
-            },
+            }, // indices (material + skin)
+        ];
+        let shadow_vertex_input_attribute_descriptions = [
+            // vertex
+            vk::VertexInputAttributeDescription {
+                location: 0,
+                binding: 0,
+                format: vk::Format::R32G32B32_SFLOAT,
+                offset: offset_of!(scene::Vertex, position) as u32,
+            }, // position
+            vk::VertexInputAttributeDescription {
+                location: 2,
+                binding: 0,
+                format: vk::Format::R32G32_SFLOAT,
+                offset: offset_of!(scene::Vertex, uv) as u32,
+            }, // uv
+            vk::VertexInputAttributeDescription {
+                location: 5,
+                binding: 0,
+                format: vk::Format::R32G32B32A32_UINT,
+                offset: offset_of!(scene::Vertex, joint_indices) as u32,
+            }, // joint indices
+            vk::VertexInputAttributeDescription {
+                location: 6,
+                binding: 0,
+                format: vk::Format::R32G32B32A32_SFLOAT,
+                offset: offset_of!(scene::Vertex, joint_weights) as u32,
+            }, // joint weights
+
+            // instance
+            vk::VertexInputAttributeDescription {
+                location: 7,
+                binding: 1,
+                format: vk::Format::R32G32B32A32_SFLOAT,
+                offset: 0,
+            }, // model matrix
+            vk::VertexInputAttributeDescription {
+                location: 8,
+                binding: 1,
+                format: vk::Format::R32G32B32A32_SFLOAT,
+                offset: 16,
+            }, // |
+            vk::VertexInputAttributeDescription {
+                location: 9,
+                binding: 1,
+                format: vk::Format::R32G32B32A32_SFLOAT,
+                offset: 32,
+            }, // |
+            vk::VertexInputAttributeDescription {
+                location: 10,
+                binding: 1,
+                format: vk::Format::R32G32B32A32_SFLOAT,
+                offset: 48,
+            }, // |
+            vk::VertexInputAttributeDescription {
+                location: 11,
+                binding: 1,
+                format: vk::Format::R32G32_SINT,
+                offset: offset_of!(Instance, indices) as u32,
+            }, // indices (material + skin)
         ];
 
-        let vertex_input_state_info = vk::PipelineVertexInputStateCreateInfo::default()
-            .vertex_attribute_descriptions(&vertex_input_attribute_descriptions)
+        let geometry_vertex_input_state_info = vk::PipelineVertexInputStateCreateInfo::default()
+            .vertex_attribute_descriptions(&geometry_vertex_input_attribute_descriptions)
+            .vertex_binding_descriptions(&vertex_input_binding_descriptions);
+        let shadow_vertex_input_state_info = vk::PipelineVertexInputStateCreateInfo::default()
+            .vertex_attribute_descriptions(&shadow_vertex_input_attribute_descriptions)
             .vertex_binding_descriptions(&vertex_input_binding_descriptions);
         let null_vertex_input_state_info = vk::PipelineVertexInputStateCreateInfo::default();
+
         let vertex_input_assembly_state_info = vk::PipelineInputAssemblyStateCreateInfo {
             topology: vk::PrimitiveTopology::TRIANGLE_LIST,
             primitive_restart_enable: vk::FALSE,
             ..Default::default()
         };
+
         let viewports = [vk::Viewport {
             x: 0.0,
             y: 0.0,
@@ -526,7 +753,9 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             min_depth: 0.0,
             max_depth: 1.0,
         }];
+
         let scissors = [base.surface_resolution.into()];
+
         let viewport_state_info = vk::PipelineViewportStateCreateInfo::default()
             .scissors(&scissors)
             .viewports(&viewports);
@@ -538,6 +767,13 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             polygon_mode: vk::PolygonMode::FILL,
             ..Default::default()
         };
+        let shadow_rasterization_info = vk::PipelineRasterizationStateCreateInfo {
+            front_face: vk::FrontFace::COUNTER_CLOCKWISE,
+            cull_mode: vk::CullModeFlags::FRONT,
+            line_width: 1.0,
+            polygon_mode: vk::PolygonMode::FILL,
+            ..Default::default()
+        };
         let fullscreen_quad_rasterization_info = vk::PipelineRasterizationStateCreateInfo {
             front_face: vk::FrontFace::COUNTER_CLOCKWISE,
             cull_mode: vk::CullModeFlags::NONE,
@@ -545,6 +781,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             polygon_mode: vk::PolygonMode::FILL,
             ..Default::default()
         };
+
         let multisample_state_info = vk::PipelineMultisampleStateCreateInfo {
             rasterization_samples: base.msaa_samples,
             ..Default::default()
@@ -553,6 +790,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             rasterization_samples: vk::SampleCountFlags::TYPE_1,
             ..Default::default()
         };
+
         let noop_stencil_state = vk::StencilOpState {
             fail_op: vk::StencilOp::KEEP,
             pass_op: vk::StencilOp::KEEP,
@@ -560,6 +798,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             compare_op: vk::CompareOp::ALWAYS,
             ..Default::default()
         };
+
         let infinite_reverse_depth_state_info = vk::PipelineDepthStencilStateCreateInfo {
             depth_test_enable: 1,
             depth_write_enable: 1,
@@ -578,6 +817,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             max_depth_bounds: 1.0,
             ..Default::default()
         };
+
         let color_blend_attachment_states = [vk::PipelineColorBlendAttachmentState {
             blend_enable: 0,
             src_color_blend_factor: vk::BlendFactor::SRC_COLOR,
@@ -598,9 +838,14 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             alpha_blend_op: vk::BlendOp::ADD,
             color_write_mask: vk::ColorComponentFlags::RGBA,
         };
+
         let null_blend_states = [null_blend_attachment; 5];
+        let null_blend_states_singular = [null_blend_attachment];
         let null_blend_state = vk::PipelineColorBlendStateCreateInfo::default()
             .attachments(&null_blend_states);
+        let null_blend_state_singular = vk::PipelineColorBlendStateCreateInfo::default()
+            .attachments(&null_blend_states_singular);
+
         let color_blend_state = vk::PipelineColorBlendStateCreateInfo::default()
             .logic_op(vk::LogicOp::CLEAR)
             .attachments(&color_blend_attachment_states);
@@ -609,8 +854,11 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
         let dynamic_state_info =
             vk::PipelineDynamicStateCreateInfo::default().dynamic_states(&dynamic_state);
 
-        let screen_shader_create_info = screen_shader.generate_shader_stage_create_infos();
         let geom_shader_create_info = geom_shader.generate_shader_stage_create_infos();
+        let shadow_shader_create_info = shadow_shader.generate_shader_stage_create_infos();
+        let lighting_shader_create_info = lighting_shader.generate_shader_stage_create_infos();
+        let present_shader_create_info = present_shader.generate_shader_stage_create_infos();
+
         let base_pipeline_info = vk::GraphicsPipelineCreateInfo::default()
             .input_assembly_state(&vertex_input_assembly_state_info)
             .viewport_state(&viewport_state_info)
@@ -618,31 +866,49 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             .dynamic_state(&dynamic_state_info);
         let geometry_pipeline_info = base_pipeline_info
             .stages(&geom_shader_create_info)
-            .vertex_input_state(&vertex_input_state_info)
+            .vertex_input_state(&geometry_vertex_input_state_info)
             .multisample_state(&null_multisample_state_info)
             .render_pass(geometry_pass.renderpass)
             .color_blend_state(&null_blend_state)
             .layout(geometry_pipeline_layout)
             .depth_stencil_state(&infinite_reverse_depth_state_info);
-        let screen_pipeline_info = base_pipeline_info
-            .stages(&screen_shader_create_info)
+        let shadow_pipeline_info = base_pipeline_info
+            .stages(&shadow_shader_create_info)
+            .vertex_input_state(&shadow_vertex_input_state_info)
+            .multisample_state(&null_multisample_state_info)
+            .render_pass(shadow_pass.renderpass)
+            .color_blend_state(&null_blend_state)
+            .rasterization_state(&shadow_rasterization_info)
+            .depth_stencil_state(&default_depth_state_info)
+            .layout(geometry_pipeline_layout);
+        let lighting_pipeline_info = base_pipeline_info
+            .stages(&lighting_shader_create_info)
+            .vertex_input_state(&null_vertex_input_state_info)
+            .multisample_state(&null_multisample_state_info)
+            .render_pass(lighting_pass.renderpass)
+            .color_blend_state(&null_blend_state_singular)
+            .layout(lighting_pipeline_layout)
+            .rasterization_state(&fullscreen_quad_rasterization_info)
+            .depth_stencil_state(&default_depth_state_info);
+        let present_pipeline_info = base_pipeline_info
+            .stages(&present_shader_create_info)
             .vertex_input_state(&null_vertex_input_state_info)
             .multisample_state(&multisample_state_info)
             .render_pass(present_pass.renderpass)
             .color_blend_state(&color_blend_state)
-            .layout(lighting_pipeline_layout)
+            .layout(present_pipeline_layout)
             .rasterization_state(&fullscreen_quad_rasterization_info)
             .depth_stencil_state(&default_depth_state_info);
 
         let graphics_pipelines = base
             .device
-            .create_graphics_pipelines(vk::PipelineCache::null(), &[geometry_pipeline_info, screen_pipeline_info], None)
+            .create_graphics_pipelines(vk::PipelineCache::null(), &[geometry_pipeline_info, shadow_pipeline_info, lighting_pipeline_info, present_pipeline_info], None)
             .expect("Unable to create graphics pipeline");
 
         let geometry_pipeline = graphics_pipelines[0];
-        println!("geometry_pipeline is {:?}", geometry_pipeline);
-        let present_pipeline = graphics_pipelines[1];
-        println!("present_pipeline is {:?}", present_pipeline);
+        let shadow_pipeline = graphics_pipelines[1];
+        let lighting_pipeline = graphics_pipelines[2];
+        let present_pipeline = graphics_pipelines[3];
         //</editor-fold>
 
         let sampler = base.device.create_sampler(&vk::SamplerCreateInfo {
@@ -795,40 +1061,33 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                         )
                         .unwrap();
 
-                    let geometry_ubo = UniformData {
-                        view: player_camera.view_matrix.data,
-                        projection: player_camera.projection_matrix.data,
-                    };
-                    copy_data_to_memory(geometry_uniform_buffers_mapped[current_frame], &[geometry_ubo]);
-
                     let image_infos = [
                         vk::DescriptorImageInfo {
                             sampler,
                             image_view: geometry_pass.textures[current_frame][0].image_view,
                             image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                        },
+                        }, // material
                         vk::DescriptorImageInfo {
                             sampler,
                             image_view: geometry_pass.textures[current_frame][1].image_view,
                             image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                        },
+                        }, // albedo
                         vk::DescriptorImageInfo {
                             sampler,
                             image_view: geometry_pass.textures[current_frame][2].image_view,
                             image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                        },
+                        }, // metallic roughness
                         vk::DescriptorImageInfo {
                             sampler,
-                            image_view: geometry_pass.textures[current_frame][5].image_view,
+                            image_view: shadow_pass.textures[current_frame][0].image_view,
                             image_layout: vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
-                        },
+                        }, // depth
                         vk::DescriptorImageInfo {
                             sampler,
                             image_view: geometry_pass.textures[current_frame][4].image_view,
                             image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                        },
+                        }, // view normal
                     ];
-
                     let lighting_descriptor_writes: Vec<vk::WriteDescriptorSet> = image_infos.iter().enumerate().map(|(i, info)| {
                         vk::WriteDescriptorSet::default()
                             .dst_set(lighting_descriptor_sets[current_frame])
@@ -837,13 +1096,51 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                             .image_info(std::slice::from_ref(info))
                     }).collect();
 
+                    let info = [vk::DescriptorImageInfo {
+                        sampler,
+                        image_view: lighting_pass.textures[current_frame][0].image_view,
+                        image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                    }];
+                    let present_descriptor_writes: Vec<vk::WriteDescriptorSet> = vec![
+                        vk::WriteDescriptorSet::default()
+                            .dst_set(present_descriptor_sets[current_frame])
+                            .dst_binding(0)
+                            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                            .image_info(&info)];
+
                     base.device.update_descriptor_sets(&lighting_descriptor_writes, &[]);
+                    base.device.update_descriptor_sets(&present_descriptor_writes, &[]);
+
+                    let ubo = UniformData {
+                        view: player_camera.view_matrix.data,
+                        projection: player_camera.projection_matrix.data,
+                    };
+                    copy_data_to_memory(geometry_uniform_buffers_mapped[current_frame], &[ubo]);
+                    let ubo = UniformData {
+                        view: Matrix::new_look_at(
+                            &Vector::new_vec3(-50.0, 50.0, -50.0),
+                            &Vector::new_vec3(0.0, 0.0, 0.0),
+                            &Vector::new_vec3(0.0, 1.0, 0.0),
+                        ).data,
+                        projection: Matrix::new_ortho(-50.0, 50.0, -50.0, 50.0, 0.01, 1000.0).data,
+                    };
+                    copy_data_to_memory(shadow_uniform_buffers_mapped[current_frame], &[ubo]);
 
                     let geometry_pass_pass_begin_info = vk::RenderPassBeginInfo::default()
                         .render_pass(geometry_pass.renderpass)
                         .framebuffer(geometry_pass.framebuffers[current_frame])
                         .render_area(base.surface_resolution.into())
                         .clear_values(&geometry_pass.clear_values);
+                    let shadow_pass_pass_begin_info = vk::RenderPassBeginInfo::default()
+                        .render_pass(shadow_pass.renderpass)
+                        .framebuffer(shadow_pass.framebuffers[current_frame])
+                        .render_area(base.surface_resolution.into())
+                        .clear_values(&shadow_pass.clear_values);
+                    let lighting_pass_pass_begin_info = vk::RenderPassBeginInfo::default()
+                        .render_pass(lighting_pass.renderpass)
+                        .framebuffer(lighting_pass.framebuffers[current_frame])
+                        .render_area(base.surface_resolution.into())
+                        .clear_values(&lighting_pass.clear_values);
                     let present_pass_pass_begin_info = vk::RenderPassBeginInfo::default()
                         .render_pass(present_pass.renderpass)
                         .framebuffer(present_pass.framebuffers[present_index as usize])
@@ -888,7 +1185,62 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                             device.cmd_end_render_pass(frame_command_buffer);
                             //</editor-fold>
                             geometry_pass.transition_to_readable(base, frame_command_buffer, current_frame);
-                            //<editor-fold desc = "present pass">
+                            //<editor-fold desc = "shadow pass">
+                            device.cmd_begin_render_pass(
+                                frame_command_buffer,
+                                &shadow_pass_pass_begin_info,
+                                vk::SubpassContents::INLINE,
+                            );
+                            device.cmd_bind_pipeline(
+                                frame_command_buffer,
+                                vk::PipelineBindPoint::GRAPHICS,
+                                shadow_pipeline,
+                            );
+
+                            // draw scene
+                            device.cmd_set_viewport(frame_command_buffer, 0, &viewports);
+                            device.cmd_set_scissor(frame_command_buffer, 0, &scissors);
+                            device.cmd_bind_descriptor_sets(
+                                frame_command_buffer,
+                                vk::PipelineBindPoint::GRAPHICS,
+                                geometry_pipeline_layout,
+                                0,
+                                &[shadow_descriptor_sets[current_frame]],
+                                &[],
+                            );
+                            world.draw(base, &frame_command_buffer, current_frame, &player_camera.frustum);
+
+                            device.cmd_end_render_pass(frame_command_buffer);
+                            //</editor-fold>
+                            shadow_pass.transition_to_readable(base, frame_command_buffer, current_frame);
+                            //<editor-fold desc = "lighting pass">
+                            device.cmd_begin_render_pass(
+                                frame_command_buffer,
+                                &lighting_pass_pass_begin_info,
+                                vk::SubpassContents::INLINE,
+                            );
+                            device.cmd_bind_pipeline(
+                                frame_command_buffer,
+                                vk::PipelineBindPoint::GRAPHICS,
+                                lighting_pipeline,
+                            );
+
+                            // draw quad
+                            device.cmd_set_viewport(frame_command_buffer, 0, &viewports);
+                            device.cmd_set_scissor(frame_command_buffer, 0, &scissors);
+                            device.cmd_bind_descriptor_sets(
+                                frame_command_buffer,
+                                vk::PipelineBindPoint::GRAPHICS,
+                                lighting_pipeline_layout,
+                                0,
+                                &[lighting_descriptor_sets[current_frame]],
+                                &[],
+                            );
+                            device.cmd_draw(current_draw_command_buffer, 6, 1, 0, 0);
+
+                            device.cmd_end_render_pass(frame_command_buffer);
+                            //</editor-fold>
+                            // <editor-fold desc = "present pass">
                             device.cmd_begin_render_pass(
                                 frame_command_buffer,
                                 &present_pass_pass_begin_info,
@@ -906,9 +1258,9 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                             device.cmd_bind_descriptor_sets(
                                 frame_command_buffer,
                                 vk::PipelineBindPoint::GRAPHICS,
-                                lighting_pipeline_layout,
+                                present_pipeline_layout,
                                 0,
-                                &[lighting_descriptor_sets[current_frame]],
+                                &[present_descriptor_sets[current_frame]],
                                 &[],
                             );
                             device.cmd_draw(current_draw_command_buffer, 6, 1, 0, 0);
@@ -944,23 +1296,33 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
         }
         base.device.destroy_pipeline_layout(geometry_pipeline_layout, None);
         base.device.destroy_pipeline_layout(lighting_pipeline_layout, None);
+        base.device.destroy_pipeline_layout(present_pipeline_layout, None);
 
         geom_shader.destroy(base);
-        screen_shader.destroy(base);
+        shadow_shader.destroy(base);
+        lighting_shader.destroy(base);
+        present_shader.destroy(base);
         world.destroy(base);
 
         geometry_pass.destroy(base);
+        shadow_pass.destroy(base);
+        lighting_pass.destroy(base);
         present_pass.destroy(base);
 
         for i in 0..MAX_FRAMES_IN_FLIGHT {
             base.device.destroy_buffer(geometry_uniform_buffers[i], None);
+            base.device.destroy_buffer(shadow_uniform_buffers[i], None);
             base.device.free_memory(geometry_uniform_buffers_memory[i], None);
+            base.device.free_memory(shadow_uniform_buffers_memory[i], None);
         }
 
-        base.device.destroy_descriptor_set_layout(geometry_ubo_descriptor_set_layout, None);
+        base.device.destroy_descriptor_set_layout(geometry_descriptor_set_layout, None);
         base.device.destroy_descriptor_pool(geometry_descriptor_pool, None);
+        base.device.destroy_descriptor_pool(shadow_descriptor_pool, None);
         base.device.destroy_descriptor_set_layout(lighting_descriptor_set_layout, None);
         base.device.destroy_descriptor_pool(lighting_descriptor_pool, None);
+        base.device.destroy_descriptor_set_layout(present_descriptor_set_layout, None);
+        base.device.destroy_descriptor_pool(present_descriptor_pool, None);
 
         base.device.destroy_sampler(sampler, None);
 
