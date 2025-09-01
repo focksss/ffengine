@@ -67,7 +67,7 @@ impl Pass {
     pub unsafe fn new(base: &VkBase, create_info: PassCreateInfo) -> Self { unsafe {
         let mut textures = Vec::new();
         if !create_info.is_present_pass {
-            for frame in 0..create_info.frames_in_flight {
+            for _ in 0..create_info.frames_in_flight {
                 let mut frame_textures = Vec::new();
                 for texture in 0..create_info.color_attachment_create_infos.len() {
                     frame_textures.push(Texture::new(&create_info.color_attachment_create_infos[texture]));

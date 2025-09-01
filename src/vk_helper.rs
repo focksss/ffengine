@@ -27,7 +27,7 @@ use winit::{
     raw_window_handle::{HasDisplayHandle, HasWindowHandle},
     window::WindowBuilder,
 };
-use crate::Render::{Texture, TextureCreateInfo};
+use crate::render::{Texture, TextureCreateInfo};
 
 // Simple offset_of macro akin to C++ offsetof
 #[macro_export]
@@ -533,7 +533,7 @@ impl VkBase {
     pub unsafe fn resize_swapchain(&mut self)  {
         unsafe {
             //<editor-fold desc = "swapchain"
-            let (surface_format, surface_resolution, swapchain) =
+            let (surface_format, _, swapchain) = // _ = surface_resolution
                 VkBase::create_swapchain(
                     &self.surface_loader,
                     &self.pdevice,

@@ -1,7 +1,5 @@
 #![allow(dead_code)]
 
-use crate::matrix::Matrix;
-
 #[derive(Clone, Debug, Copy)]
 pub struct Vector {
     pub x: f32,

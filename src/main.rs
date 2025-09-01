@@ -4,7 +4,7 @@ mod vector;
 mod vk_helper;
 mod camera;
 mod scene;
-mod Render;
+mod render;
 
 use std::default::Default;
 use std::error::Error;
@@ -16,7 +16,7 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use ash::vk;
-use ash::vk::{Buffer, DeviceMemory, Format, Handle, ImageUsageFlags};
+use ash::vk::{Buffer, DeviceMemory, Format};
 use winit::dpi::PhysicalPosition;
 use winit::event::{ElementState, Event, KeyEvent, WindowEvent};
 use winit::event_loop::ControlFlow;
@@ -26,7 +26,7 @@ use winit::window::CursorGrabMode;
 use crate::{vk_helper::*, vector::*};
 use crate::scene::{Scene, Model, Instance};
 use crate::camera::Camera;
-use crate::Render::{Pass, PassCreateInfo, Shader, Texture, TextureCreateInfo};
+use crate::render::{Pass, PassCreateInfo, Shader, TextureCreateInfo};
 
 #[derive(Clone, Debug, Copy)]
 #[repr(C)]
@@ -692,7 +692,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                     elwp.exit();
                 }
                 Event::WindowEvent {
-                    event: WindowEvent::Resized( new_size ),
+                    event: WindowEvent::Resized( _ ), // _ = new_size
                     ..
                 } => {
                     println!("bruh");
@@ -733,7 +733,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                         base.window.set_cursor_position(PhysicalPosition::new(
                             base.window.inner_size().width as f32 * 0.5,
                             base.window.inner_size().height as f32 * 0.5))
-                        .expect("failed to reset mouse position");
+                            .expect("failed to reset mouse position");
                         do_mouse(&mut player_camera, mouse_delta, &mut cursor_locked);
                     } else {
                         saved_cursor_pos = position;
