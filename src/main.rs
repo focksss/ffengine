@@ -24,7 +24,7 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
 use winit::window::CursorGrabMode;
 use crate::{vk_helper::*, vector::*};
-use crate::scene::{Scene, Model, Instance};
+use crate::scene::{Scene, Model, Instance, Light};
 use crate::camera::Camera;
 use crate::matrix::Matrix;
 use crate::render::{Pass, PassCreateInfo, Shader, TextureCreateInfo};
@@ -70,6 +70,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
         //world.add_model(Model::new("C:\\Graphics\\assets\\rivals\\luna\\gltf\\luna.gltf"));
         //world.add_model(Model::new("C:\\Graphics\\assets\\bistro2\\untitled.gltf"));
 
+        world.add_light(Light::new(Vector::new_vec3(-1.0, -5.0, -1.0)));
         world.initialize(base, MAX_FRAMES_IN_FLIGHT, true);
 
         //world.models[2].animations[0].repeat = true;
@@ -155,7 +156,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
         let shadow_descriptor_pool = base.device.create_descriptor_pool(&geometry_descriptor_pool_create_info, None).expect("failed to create descriptor pool");
         //</editor-fold>
         //<editor-fold desc = "geometry/shadow descriptor sets">
-        let geometry_descriptor_set_layout_bindings = [
+        let bindings = [
             vk::DescriptorSetLayoutBinding {
                 binding: 0,
                 descriptor_type: vk::DescriptorType::UNIFORM_BUFFER,
@@ -185,7 +186,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                 ..Default::default()
             },
         ];
-        let geometry_descriptor_binding_flags = [
+        let binding_flags = [
             vk::DescriptorBindingFlags::empty(),
             vk::DescriptorBindingFlags::empty(),
             vk::DescriptorBindingFlags::empty(),
@@ -195,20 +196,20 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
         ];
         let geometry_set_binding_flags_info = vk::DescriptorSetLayoutBindingFlagsCreateInfo {
             s_type: vk::StructureType::DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO,
-            binding_count: geometry_descriptor_binding_flags.len() as u32,
-            p_binding_flags: geometry_descriptor_binding_flags.as_ptr(),
+            binding_count: binding_flags.len() as u32,
+            p_binding_flags: binding_flags.as_ptr(),
             ..Default::default()
         };
-        let geometry_descriptor_layout_info = vk::DescriptorSetLayoutCreateInfo {
+        let descriptor_layout_create_info = vk::DescriptorSetLayoutCreateInfo {
             s_type: vk::StructureType::DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
             p_next: &geometry_set_binding_flags_info as *const _ as *const c_void,
-            binding_count: geometry_descriptor_set_layout_bindings.len() as u32,
-            p_bindings: geometry_descriptor_set_layout_bindings.as_ptr(),
+            binding_count: bindings.len() as u32,
+            p_bindings: bindings.as_ptr(),
             flags: vk::DescriptorSetLayoutCreateFlags::UPDATE_AFTER_BIND_POOL,
             ..Default::default()
         };
-        let geometry_descriptor_set_layout = base.device.create_descriptor_set_layout(&geometry_descriptor_layout_info, None)?;
-        let geometry_ubo_layouts = vec![geometry_descriptor_set_layout; MAX_FRAMES_IN_FLIGHT];
+        let geometry_descriptor_set_layout = base.device.create_descriptor_set_layout(&descriptor_layout_create_info, None)?;
+        let geometry_descriptor_set_layouts = vec![geometry_descriptor_set_layout; MAX_FRAMES_IN_FLIGHT];
 
         let variable_counts = vec![1024u32; MAX_FRAMES_IN_FLIGHT];
         let variable_count_info = vk::DescriptorSetVariableDescriptorCountAllocateInfo {
@@ -222,7 +223,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             p_next: &variable_count_info as *const _ as *const c_void,
             descriptor_pool: geometry_descriptor_pool,
             descriptor_set_count: MAX_FRAMES_IN_FLIGHT as u32,
-            p_set_layouts: geometry_ubo_layouts.as_ptr(),
+            p_set_layouts: geometry_descriptor_set_layouts.as_ptr(),
             ..Default::default()
         };
         let shadow_alloc_info = vk::DescriptorSetAllocateInfo {
@@ -230,7 +231,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             p_next: &variable_count_info as *const _ as *const c_void,
             descriptor_pool: shadow_descriptor_pool,
             descriptor_set_count: MAX_FRAMES_IN_FLIGHT as u32,
-            p_set_layouts: geometry_ubo_layouts.as_ptr(),
+            p_set_layouts: geometry_descriptor_set_layouts.as_ptr(),
             ..Default::default()
         };
         let geometry_descriptor_sets = base.device.allocate_descriptor_sets(&geometry_alloc_info)
@@ -377,13 +378,46 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
         }
         //</editor-fold>
 
+        //<editor-fold desc = "lighting uniform buffers">
+        let lighting_ubo_buffer_size = size_of::<UniformData>() as u64;
+        let mut lighting_uniform_buffers = Vec::new();
+        let mut lighting_uniform_buffers_memory = Vec::new();
+        let mut lighting_uniform_buffers_mapped = Vec::new();
+        for i in 0..MAX_FRAMES_IN_FLIGHT {
+            lighting_uniform_buffers.push(Buffer::null());
+            lighting_uniform_buffers_memory.push(DeviceMemory::null());
+            base.create_buffer(
+                lighting_ubo_buffer_size,
+                vk::BufferUsageFlags::UNIFORM_BUFFER,
+                vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
+                &mut lighting_uniform_buffers[i],
+                &mut lighting_uniform_buffers_memory[i],
+            );
+            lighting_uniform_buffers_mapped.push(base.device.map_memory(
+                lighting_uniform_buffers_memory[i],
+                0,
+                lighting_ubo_buffer_size,
+                vk::MemoryMapFlags::empty()
+            ).expect("failed to map uniform buffer"));
+        }
+        //</editor-fold>
         //<editor-fold desc = "lighting descriptor pools">
         let lighting_descriptor_pool_sizes = [
             vk::DescriptorPoolSize {
                 ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
-                descriptor_count: (MAX_FRAMES_IN_FLIGHT * 5) as u32, // position, normal, albedo, etc.
+                descriptor_count: (MAX_FRAMES_IN_FLIGHT * 6) as u32, // position, normal, albedo, etc.
                 ..Default::default()
-            },
+            }, // images
+            vk::DescriptorPoolSize {
+                ty: vk::DescriptorType::UNIFORM_BUFFER,
+                descriptor_count: MAX_FRAMES_IN_FLIGHT as u32,
+                ..Default::default()
+            }, // uniform buffer
+            vk::DescriptorPoolSize {
+                ty: vk::DescriptorType::STORAGE_BUFFER,
+                descriptor_count: MAX_FRAMES_IN_FLIGHT as u32,
+                ..Default::default()
+            }, // light space matrix ssbo
         ];
         let lighting_descriptor_pool_create_info = vk::DescriptorPoolCreateInfo {
             s_type: vk::StructureType::DESCRIPTOR_POOL_CREATE_INFO,
@@ -392,6 +426,11 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             max_sets: MAX_FRAMES_IN_FLIGHT as u32,
             ..Default::default()
         };
+        let lighting_descriptor_pool = base.device
+            .create_descriptor_pool(&lighting_descriptor_pool_create_info, None)
+            .expect("Failed to create lighting descriptor pool");
+        //</editor-fold>
+        //<editor-fold desc = "lighting descriptor sets">
         let bindings = [
             vk::DescriptorSetLayoutBinding {
                 binding: 0,
@@ -433,6 +472,28 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                 p_immutable_samplers: std::ptr::null(),
                 _marker: Default::default(),
             },
+            vk::DescriptorSetLayoutBinding {
+                binding: 5,
+                descriptor_type: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+                descriptor_count: 1,
+                stage_flags: vk::ShaderStageFlags::FRAGMENT,
+                p_immutable_samplers: std::ptr::null(),
+                _marker: Default::default(),
+            },
+            vk::DescriptorSetLayoutBinding {
+                binding: 6,
+                descriptor_type: vk::DescriptorType::UNIFORM_BUFFER,
+                descriptor_count: 1,
+                stage_flags: vk::ShaderStageFlags::FRAGMENT,
+                ..Default::default()
+            },
+            vk::DescriptorSetLayoutBinding {
+                binding: 7,
+                descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
+                descriptor_count: 1,
+                stage_flags: vk::ShaderStageFlags::FRAGMENT,
+                ..Default::default()
+            },
         ];
         let descriptor_layout_create_info = vk::DescriptorSetLayoutCreateInfo {
             s_type: vk::StructureType::DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
@@ -443,11 +504,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
         let lighting_descriptor_set_layout = base.device
             .create_descriptor_set_layout(&descriptor_layout_create_info, None)
             .expect("Failed to create lighting descriptor set layout");
-        let lighting_descriptor_pool = base.device
-            .create_descriptor_pool(&lighting_descriptor_pool_create_info, None)
-            .expect("Failed to create lighting descriptor pool");
-        //</editor-fold>
-        //<editor-fold desc = "lighting descriptor sets">
+
         let lighting_descriptor_set_layouts = vec![lighting_descriptor_set_layout; MAX_FRAMES_IN_FLIGHT];
         let alloc_info = vk::DescriptorSetAllocateInfo {
             s_type: vk::StructureType::DESCRIPTOR_SET_ALLOCATE_INFO,
@@ -459,6 +516,41 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
         let lighting_descriptor_sets = base.device
             .allocate_descriptor_sets(&alloc_info)
             .expect("Failed to allocate lighting descriptor sets");
+        for i in 0..MAX_FRAMES_IN_FLIGHT {
+            let lighting_uniform_buffer_info = vk::DescriptorBufferInfo {
+                buffer: lighting_uniform_buffers[i],
+                offset: 0,
+                range: size_of::<UniformData>() as vk::DeviceSize,
+            };
+            let light_matrices_ssbo_info = vk::DescriptorBufferInfo {
+                buffer: world.lights_buffers[i].0,
+                offset: 0,
+                range: vk::WHOLE_SIZE,
+            };
+            let descriptor_writes = [
+                vk::WriteDescriptorSet {
+                    s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
+                    dst_set: lighting_descriptor_sets[i],
+                    dst_binding: 6,
+                    dst_array_element: 0,
+                    descriptor_type: vk::DescriptorType::UNIFORM_BUFFER,
+                    descriptor_count: 1,
+                    p_buffer_info: &lighting_uniform_buffer_info,
+                    ..Default::default()
+                },
+                vk::WriteDescriptorSet {
+                    s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
+                    dst_set: lighting_descriptor_sets[i],
+                    dst_binding: 7,
+                    dst_array_element: 0,
+                    descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
+                    descriptor_count: 1,
+                    p_buffer_info: &light_matrices_ssbo_info,
+                    ..Default::default()
+                },
+            ];
+            base.device.update_descriptor_sets(&descriptor_writes, &[]);
+        }
         //</editor-fold>
 
         // <editor-fold desc = "present descriptor pools">
@@ -1079,7 +1171,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                         }, // metallic roughness
                         vk::DescriptorImageInfo {
                             sampler,
-                            image_view: shadow_pass.textures[current_frame][0].image_view,
+                            image_view: geometry_pass.textures[current_frame][5].image_view,
                             image_layout: vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
                         }, // depth
                         vk::DescriptorImageInfo {
@@ -1087,14 +1179,20 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                             image_view: geometry_pass.textures[current_frame][4].image_view,
                             image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                         }, // view normal
+                        vk::DescriptorImageInfo {
+                            sampler,
+                            image_view: shadow_pass.textures[current_frame][0].image_view,
+                            image_layout: vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
+                        }, // shadow map
                     ];
                     let lighting_descriptor_writes: Vec<vk::WriteDescriptorSet> = image_infos.iter().enumerate().map(|(i, info)| {
                         vk::WriteDescriptorSet::default()
                             .dst_set(lighting_descriptor_sets[current_frame])
-                            .dst_binding(i as u32)
+                            .dst_binding((i) as u32)
                             .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
                             .image_info(std::slice::from_ref(info))
                     }).collect();
+                    base.device.update_descriptor_sets(&lighting_descriptor_writes, &[]);
 
                     let info = [vk::DescriptorImageInfo {
                         sampler,
@@ -1107,8 +1205,6 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                             .dst_binding(0)
                             .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
                             .image_info(&info)];
-
-                    base.device.update_descriptor_sets(&lighting_descriptor_writes, &[]);
                     base.device.update_descriptor_sets(&present_descriptor_writes, &[]);
 
                     let ubo = UniformData {
@@ -1116,13 +1212,14 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                         projection: player_camera.projection_matrix.data,
                     };
                     copy_data_to_memory(geometry_uniform_buffers_mapped[current_frame], &[ubo]);
+                    copy_data_to_memory(lighting_uniform_buffers_mapped[current_frame], &[ubo]);
                     let ubo = UniformData {
                         view: Matrix::new_look_at(
-                            &Vector::new_vec3(-50.0, 50.0, -50.0),
+                            &Vector::new_vec3(100.0, 500.0, 100.0),
                             &Vector::new_vec3(0.0, 0.0, 0.0),
                             &Vector::new_vec3(0.0, 1.0, 0.0),
                         ).data,
-                        projection: Matrix::new_ortho(-50.0, 50.0, -50.0, 50.0, 0.01, 1000.0).data,
+                        projection: world.lights[0].projection.data,
                     };
                     copy_data_to_memory(shadow_uniform_buffers_mapped[current_frame], &[ubo]);
 
@@ -1240,6 +1337,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
 
                             device.cmd_end_render_pass(frame_command_buffer);
                             //</editor-fold>
+                            lighting_pass.transition_to_readable(base, frame_command_buffer, current_frame);
                             // <editor-fold desc = "present pass">
                             device.cmd_begin_render_pass(
                                 frame_command_buffer,
@@ -1312,8 +1410,10 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
         for i in 0..MAX_FRAMES_IN_FLIGHT {
             base.device.destroy_buffer(geometry_uniform_buffers[i], None);
             base.device.destroy_buffer(shadow_uniform_buffers[i], None);
+            base.device.destroy_buffer(lighting_uniform_buffers[i], None);
             base.device.free_memory(geometry_uniform_buffers_memory[i], None);
             base.device.free_memory(shadow_uniform_buffers_memory[i], None);
+            base.device.free_memory(lighting_uniform_buffers_memory[i], None);
         }
 
         base.device.destroy_descriptor_set_layout(geometry_descriptor_set_layout, None);
@@ -1411,6 +1511,8 @@ fn do_controls(
     if new_pressed_keys.contains(&PhysicalKey::Code(KeyCode::KeyP)) {
         *paused = !*paused
     }
+
+    //player_camera.position.println();
 
     new_pressed_keys.clear();
 }
