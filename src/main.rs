@@ -71,6 +71,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
         //world.add_model(Model::new("C:\\Graphics\\assets\\bistro2\\untitled.gltf"));
 
         world.add_light(Light::new(Vector::new_vec3(-1.0, -5.0, -1.0)));
+
         world.initialize(base, MAX_FRAMES_IN_FLIGHT, true);
 
         //world.models[2].animations[0].repeat = true;
@@ -1214,11 +1215,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                     copy_data_to_memory(geometry_uniform_buffers_mapped[current_frame], &[ubo]);
                     copy_data_to_memory(lighting_uniform_buffers_mapped[current_frame], &[ubo]);
                     let ubo = UniformData {
-                        view: Matrix::new_look_at(
-                            &Vector::new_vec3(100.0, 500.0, 100.0),
-                            &Vector::new_vec3(0.0, 0.0, 0.0),
-                            &Vector::new_vec3(0.0, 1.0, 0.0),
-                        ).data,
+                        view: world.lights[0].view.data,
                         projection: world.lights[0].projection.data,
                     };
                     copy_data_to_memory(shadow_uniform_buffers_mapped[current_frame], &[ubo]);
