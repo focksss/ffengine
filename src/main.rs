@@ -71,6 +71,8 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
         //world.add_model(Model::new("C:\\Graphics\\assets\\bistro2\\untitled.gltf"));
 
         world.add_light(Light::new(Vector::new_vec3(-1.0, -5.0, -1.0)));
+        world.lights[0].projection.println();
+        world.lights[0].view.println();
 
         world.initialize(base, MAX_FRAMES_IN_FLIGHT, true);
 

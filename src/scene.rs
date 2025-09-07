@@ -334,7 +334,7 @@ impl Light {
     pub fn new(vector: Vector) -> Light {
         Light {
             vector,
-            projection: Matrix::new_ortho(-50.0, 50.0, -50.0, 50.0, 0.01, 1000.0),
+            projection: Matrix::new_ortho(-20.0, 20.0, -20.0, 20.0, 0.01, 1000.0),
             view: Matrix::new_look_at(
                 &Vector::new_vec3(vector.x * -100.0, vector.y * -100.0, vector.z * -100.0),
                 &Vector::new_vec3(0.0, 0.0, 0.0),

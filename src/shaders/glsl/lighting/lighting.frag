@@ -91,7 +91,8 @@ void main() {
     projected_lightspace_position.z = position_lightspace.z / position_lightspace.w;
     projected_lightspace_position.y = 1.0 - projected_lightspace_position.y;
 
-    uFragColor = vec4((uv.x < 0.5 ? projected_lightspace_position.xy : vec2(0.5)), 0.0, 1.0);
+    uFragColor = vec4(projected_lightspace_position.xy, 0.0, 1.0);
+    //uFragColor = vec4(texture(shadowmap, projected_lightspace_position.xy).r, 0.0, 0.0, 1.0);
 
     //uFragColor = vec4(vec3(get_shadow(lights_SSBO.lights[0], world_position, world_normal)), 1.0);
 }
