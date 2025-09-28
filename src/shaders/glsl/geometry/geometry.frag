@@ -43,7 +43,7 @@ void main() {
     if (mat.normal_tex > -1) {
         vec3 mapped_normal = texture(textures[mat.normal_tex], o_uv).rgb;
         mapped_normal = normalize(mapped_normal * 2 - 1);
-        normal = normalize(view_TBN * mapped_normal);
+        view_normal = normalize(view_TBN * mapped_normal);
     } else {
         view_normal = o_view_normal;
     }

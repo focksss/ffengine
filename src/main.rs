@@ -65,13 +65,15 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
         // world.models[0].animations[0].start();
 
         //world.add_model(Model::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf"));
-        world.add_model(Model::new("C:\\Graphics\\assets\\shadowTest\\shadowTest.gltf"));
+        //world.add_model(Model::new("C:\\Graphics\\assets\\catTest\\catTest.gltf"));
+        //world.add_model(Model::new("C:\\Graphics\\assets\\helmet\\DamagedHelmet.gltf"));
+        world.add_model(Model::new("C:\\Graphics\\assets\\hydrant\\untitled.gltf"));
 
         //world.add_model(Model::new("C:\\Graphics\\assets\\flower\\scene.gltf"));
         //world.add_model(Model::new("C:\\Graphics\\assets\\rivals\\luna\\gltf\\luna.gltf"));
         //world.add_model(Model::new("C:\\Graphics\\assets\\bistro2\\untitled.gltf"));
 
-        world.add_light(Light::new(Vector::new_vec3(-1.0, -0.5, -1.0)));
+        world.add_light(Light::new(Vector::new_vec3(-1.0, -5.0, -1.0)));
 
         world.initialize(base, MAX_FRAMES_IN_FLIGHT, true);
 
@@ -407,7 +409,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
         let lighting_descriptor_pool_sizes = [
             vk::DescriptorPoolSize {
                 ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
-                descriptor_count: (MAX_FRAMES_IN_FLIGHT * 6) as u32, // position, normal, albedo, etc.
+                descriptor_count: (MAX_FRAMES_IN_FLIGHT * 7) as u32, // position, normal, albedo, etc.
                 ..Default::default()
             }, // images
             vk::DescriptorPoolSize {
@@ -484,13 +486,21 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             },
             vk::DescriptorSetLayoutBinding {
                 binding: 6,
+                descriptor_type: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+                descriptor_count: 1,
+                stage_flags: vk::ShaderStageFlags::FRAGMENT,
+                p_immutable_samplers: std::ptr::null(),
+                _marker: Default::default(),
+            },
+            vk::DescriptorSetLayoutBinding {
+                binding: 7,
                 descriptor_type: vk::DescriptorType::UNIFORM_BUFFER,
                 descriptor_count: 1,
                 stage_flags: vk::ShaderStageFlags::FRAGMENT,
                 ..Default::default()
             },
             vk::DescriptorSetLayoutBinding {
-                binding: 7,
+                binding: 8,
                 descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
                 descriptor_count: 1,
                 stage_flags: vk::ShaderStageFlags::FRAGMENT,
@@ -533,7 +543,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                 vk::WriteDescriptorSet {
                     s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
                     dst_set: lighting_descriptor_sets[i],
-                    dst_binding: 6,
+                    dst_binding: 7,
                     dst_array_element: 0,
                     descriptor_type: vk::DescriptorType::UNIFORM_BUFFER,
                     descriptor_count: 1,
@@ -543,7 +553,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                 vk::WriteDescriptorSet {
                     s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
                     dst_set: lighting_descriptor_sets[i],
-                    dst_binding: 7,
+                    dst_binding: 8,
                     dst_array_element: 0,
                     descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
                     descriptor_count: 1,
@@ -1181,6 +1191,11 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                             image_view: geometry_pass.textures[current_frame][2].image_view,
                             image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                         }, // metallic roughness
+                        vk::DescriptorImageInfo {
+                            sampler,
+                            image_view: geometry_pass.textures[current_frame][3].image_view,
+                            image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                        }, // extra properties
                         vk::DescriptorImageInfo {
                             sampler,
                             image_view: geometry_pass.textures[current_frame][5].image_view,

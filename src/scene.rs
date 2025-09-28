@@ -334,7 +334,7 @@ impl Light {
     pub fn new(vector: Vector) -> Light {
         Light {
             vector,
-            projection: Matrix::new_ortho(-10.0, 10.0, -10.0, 10.0, 0.01, 1000.0),
+            projection: Matrix::new_ortho(-50.0, 50.0, -50.0, 50.0, 0.01, 1000.0),
             view: Matrix::new_look_at(
                 &Vector::new_vec3(vector.x * -100.0, vector.y * -100.0, vector.z * -100.0),
                 &Vector::new_vec3(0.0, 0.0, 0.0),
@@ -1324,13 +1324,13 @@ impl Primitive {
             let f = 1.0 / (delta_uv1.0 * delta_uv2.1 - delta_uv2.0 * delta_uv1.1);
             let mut tangent = Vector::new_vec3(
                 f * (delta_uv2.1 * e1.0 - delta_uv1.1 * e2.0),
-                f * (delta_uv2.1 * e1.1 + delta_uv1.1 * e2.1),
-                f * (delta_uv2.1 * e2.2 - delta_uv1.1 * e2.2),
+                f * (delta_uv2.1 * e1.1 - delta_uv1.1 * e2.1),
+                f * (delta_uv2.1 * e1.2 - delta_uv1.1 * e2.2),
             );
             let mut bitangent = Vector::new_vec3(
-                f * (-delta_uv2.0 * e1.0 - delta_uv1.0 * e2.0),
+                f * (-delta_uv2.0 * e1.0 + delta_uv1.0 * e2.0),
                 f * (-delta_uv2.0 * e1.1 + delta_uv1.0 * e2.1),
-                f * (-delta_uv2.0 * e2.2 - delta_uv1.0 * e2.2),
+                f * (-delta_uv2.0 * e1.2 + delta_uv1.0 * e2.2),
             );
             tangent.normalize_self_3d();
             bitangent.normalize_self_3d();

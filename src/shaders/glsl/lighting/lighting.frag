@@ -9,12 +9,13 @@ layout (location = 0) in vec2 uv;
 layout(set = 0, binding = 0) uniform sampler2D g_material;
 layout(set = 0, binding = 1) uniform sampler2D g_albedo;
 layout(set = 0, binding = 2) uniform sampler2D g_metallic_roughness;
-layout(set = 0, binding = 3) uniform sampler2D g_depth;
-layout(set = 0, binding = 4) uniform sampler2D g_view_normal;
+layout(set = 0, binding = 3) uniform sampler2D g_extra_properties;
+layout(set = 0, binding = 4) uniform sampler2D g_depth;
+layout(set = 0, binding = 5) uniform sampler2D g_view_normal;
 
-layout(set = 0, binding = 5) uniform sampler2D shadowmap;
+layout(set = 0, binding = 6) uniform sampler2D shadowmap;
 
-layout(binding = 6) uniform UniformBuffer {
+layout(binding = 7) uniform UniformBuffer {
     mat4 view;
     mat4 projection;
 } ubo;
@@ -25,7 +26,7 @@ struct Light {
     vec3 vector;
 };
 
-layout(set = 0, binding = 7, std430) readonly buffer LightsSSBO {
+layout(set = 0, binding = 8, std430) readonly buffer LightsSSBO {
     Light lights[];
 } lights_SSBO;
 
@@ -78,8 +79,8 @@ void main() {
     vec3 view_position = get_position_from_depth();
     vec3 world_position = (inverse_view * vec4(view_position, 1.0)).xyz * vec3(1.0, 1.0, 1.0);
 
-    vec3 view_normal = (texture(g_view_normal, uv).xyz - 0.5) * 2.0;
+    vec3 view_normal = (texture(g_view_normal, uv).xyz * 2.0) - 1.0;
     vec3 world_normal = mat3(inverse_view) * view_normal;
 
-    uFragColor = vec4(albedo * get_shadow(lights_SSBO.lights[0], world_position, world_normal), 1.0);
+    uFragColor = vec4(albedo * get_shadow(lights_SSBO.lights[0], world_position, world_normal) * max(0.0, dot(world_normal, -normalize(lights_SSBO.lights[0].vector))), 1.0);
 }
