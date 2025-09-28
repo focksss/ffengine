@@ -257,7 +257,7 @@ impl Scene {
         base.copy_buffer(&self.joints_staging_buffer.0, &self.joints_buffers[frame].0, &self.joints_buffers_size);
     }}
 
-    pub unsafe fn draw(&self, base: &VkBase, draw_command_buffer: &CommandBuffer, frame: usize, frustum: &Frustum) { unsafe {
+    pub unsafe fn draw(&self, base: &VkBase, draw_command_buffer: &CommandBuffer, frame: usize, frustum: Option<&Frustum>) { unsafe {
         base.device.cmd_bind_vertex_buffers(
             *draw_command_buffer,
             1,
@@ -334,7 +334,7 @@ impl Light {
     pub fn new(vector: Vector) -> Light {
         Light {
             vector,
-            projection: Matrix::new_ortho(-50.0, 50.0, -50.0, 50.0, 0.01, 1000.0),
+            projection: Matrix::new_ortho(-10.0, 10.0, -10.0, 10.0, 0.01, 1000.0),
             view: Matrix::new_look_at(
                 &Vector::new_vec3(vector.x * -100.0, vector.y * -100.0, vector.z * -100.0),
                 &Vector::new_vec3(0.0, 0.0, 0.0),
@@ -935,7 +935,7 @@ impl Model {
         }
     }
 
-    pub unsafe fn draw(&self, base: &VkBase, draw_command_buffer: &CommandBuffer, frustum: &Frustum) { unsafe {
+    pub unsafe fn draw(&self, base: &VkBase, draw_command_buffer: &CommandBuffer, frustum: Option<&Frustum>) { unsafe {
         for node_index in self.scene.nodes.iter() {
             let node = &self.nodes[*node_index];
             node.draw(base, &self, &draw_command_buffer, frustum)
@@ -1439,25 +1439,27 @@ pub struct Node {
     pub children_indices: Vec<usize>,
 }
 impl Node {
-    pub unsafe fn draw(&self, base: &VkBase, owner: &Model, draw_command_buffer: &CommandBuffer, frustum: &Frustum) { unsafe {
+    pub unsafe fn draw(&self, base: &VkBase, owner: &Model, draw_command_buffer: &CommandBuffer, frustum: Option<&Frustum>) { unsafe {
         if self.mesh.is_some() {
             for primitive in self.mesh.as_ref().unwrap().borrow().primitives.iter() {
                 let mut all_points_outside_of_same_plane = false;
 
-                for plane_idx in 0..6 {
-                    let mut all_outside_this_plane = true;
+                if frustum.is_some() {
+                    for plane_idx in 0..6 {
+                        let mut all_outside_this_plane = true;
 
-                    for corner in primitive.corners.iter() {
-                        let world_pos = self.world_transform.mul_vector4(&Vector::new_vec4(corner.x, corner.y, corner.z, 1.0));
+                        for corner in primitive.corners.iter() {
+                            let world_pos = self.world_transform.mul_vector4(&Vector::new_vec4(corner.x, corner.y, corner.z, 1.0));
 
-                        if frustum.planes[plane_idx].test_point_within(&world_pos) {
-                            all_outside_this_plane = false;
+                            if frustum.unwrap().planes[plane_idx].test_point_within(&world_pos) {
+                                all_outside_this_plane = false;
+                                break;
+                            }
+                        }
+                        if all_outside_this_plane {
+                            all_points_outside_of_same_plane = true;
                             break;
                         }
-                    }
-                    if all_outside_this_plane {
-                        all_points_outside_of_same_plane = true;
-                        break;
                     }
                 }
                 if !all_points_outside_of_same_plane {

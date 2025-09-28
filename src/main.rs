@@ -59,18 +59,19 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
     unsafe {
         let mut world = Scene::new();
 
-        world.add_model(Model::new(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("local_assets\\ffocks\\untitled.gltf").to_str().unwrap()));
-        world.models[0].transform_roots(&Vector::new_vec(0.0), &Vector::new_vec(0.0), &Vector::new_vec(0.01));
-        world.models[0].animations[0].repeat = true;
-        world.models[0].animations[0].start();
+        // world.add_model(Model::new(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("local_assets\\ffocks\\untitled.gltf").to_str().unwrap()));
+        // world.models[0].transform_roots(&Vector::new_vec(0.0), &Vector::new_vec(0.0), &Vector::new_vec(0.01));
+        // world.models[0].animations[0].repeat = true;
+        // world.models[0].animations[0].start();
 
         //world.add_model(Model::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf"));
+        world.add_model(Model::new("C:\\Graphics\\assets\\shadowTest\\shadowTest.gltf"));
 
         //world.add_model(Model::new("C:\\Graphics\\assets\\flower\\scene.gltf"));
         //world.add_model(Model::new("C:\\Graphics\\assets\\rivals\\luna\\gltf\\luna.gltf"));
         //world.add_model(Model::new("C:\\Graphics\\assets\\bistro2\\untitled.gltf"));
 
-        world.add_light(Light::new(Vector::new_vec3(-1.0, -5.0, -1.0)));
+        world.add_light(Light::new(Vector::new_vec3(-1.0, -0.5, -1.0)));
 
         world.initialize(base, MAX_FRAMES_IN_FLIGHT, true);
 
@@ -620,7 +621,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
 
         let shadow_pass_create_info = PassCreateInfo::new(base)
             .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
-            .depth_attachment_info(TextureCreateInfo::new(base).format(Format::D16_UNORM).is_depth(true).clear_value([1.0, 0.0, 0.0, 0.0])); // depth
+            .depth_attachment_info(TextureCreateInfo::new(base).format(Format::D16_UNORM).is_depth(true).clear_value([0.0, 0.0, 0.0, 0.0])); // depth
         let shadow_pass = Pass::new(base, shadow_pass_create_info);
 
         let lighting_pass_create_info = PassCreateInfo::new(base)
@@ -862,7 +863,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
         };
         let shadow_rasterization_info = vk::PipelineRasterizationStateCreateInfo {
             front_face: vk::FrontFace::COUNTER_CLOCKWISE,
-            cull_mode: vk::CullModeFlags::FRONT,
+            cull_mode: vk::CullModeFlags::NONE,
             line_width: 1.0,
             polygon_mode: vk::PolygonMode::FILL,
             ..Default::default()
@@ -905,6 +906,15 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             depth_test_enable: 1,
             depth_write_enable: 1,
             depth_compare_op: vk::CompareOp::LESS_OR_EQUAL,
+            front: noop_stencil_state,
+            back: noop_stencil_state,
+            max_depth_bounds: 1.0,
+            ..Default::default()
+        };
+        let shadow_depth_state_info = vk::PipelineDepthStencilStateCreateInfo {
+            depth_test_enable: 1,
+            depth_write_enable: 1,
+            depth_compare_op: vk::CompareOp::GREATER,
             front: noop_stencil_state,
             back: noop_stencil_state,
             max_depth_bounds: 1.0,
@@ -972,7 +982,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             .render_pass(shadow_pass.renderpass)
             .color_blend_state(&null_blend_state)
             .rasterization_state(&shadow_rasterization_info)
-            .depth_stencil_state(&default_depth_state_info)
+            .depth_stencil_state(&shadow_depth_state_info)
             .layout(geometry_pipeline_layout);
         let lighting_pipeline_info = base_pipeline_info
             .stages(&lighting_shader_create_info)
@@ -1025,6 +1035,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             1000.0,
             true,
         );
+
         let mut current_frame = 0usize;
         let mut pressed_keys = HashSet::new();
         let mut new_pressed_keys = HashSet::new();
@@ -1274,7 +1285,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                                 &[geometry_descriptor_sets[current_frame]],
                                 &[],
                             );
-                            world.draw(base, &frame_command_buffer, current_frame, &player_camera.frustum);
+                            world.draw(base, &frame_command_buffer, current_frame, Some(&player_camera.frustum));
 
                             device.cmd_end_render_pass(frame_command_buffer);
                             //</editor-fold>
@@ -1302,7 +1313,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                                 &[shadow_descriptor_sets[current_frame]],
                                 &[],
                             );
-                            world.draw(base, &frame_command_buffer, current_frame, &player_camera.frustum);
+                            world.draw(base, &frame_command_buffer, current_frame, None);
 
                             device.cmd_end_render_pass(frame_command_buffer);
                             //</editor-fold>

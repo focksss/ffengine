@@ -42,35 +42,31 @@ vec3 get_position_from_depth() {
 }
 
 float get_shadow(Light light, vec3 world_position, vec3 world_normal) {
-    vec4 position_lightspace = lights_SSBO.lights[0].projection * lights_SSBO.lights[0].view * vec4(world_position, 1.0);
+    vec4 position_lightspace = light.projection * light.view * vec4(world_position, 1.0);
     vec3 projected_lightspace_position;
     projected_lightspace_position.xy = (position_lightspace.xy / position_lightspace.w) * 0.5 + 0.5;
     projected_lightspace_position.z = position_lightspace.z / position_lightspace.w;
-    projected_lightspace_position.y = 1.0 - projected_lightspace_position.y;
+    projected_lightspace_position.y = projected_lightspace_position.y;
     float current_depth = projected_lightspace_position.z;
 
     float closest_depth = texture(shadowmap, projected_lightspace_position.xy).r;
 
-    return closest_depth;
-    //return (current_depth - closest_depth > 0.0 ? 0.0 : 1.0);
-//
-//    vec3 light_direction = normalize(light.vector);
-//    float bias = max(0.0001 * (1.0 - dot(world_normal, -light_direction)), 0.0001);
-//
-//    float shadow = 0.0;
-//    vec2 texel_size = 1.0 / textureSize(shadowmap, 0);
-//    for (int x = -1; x <= 1; ++x) {
-//
-//        for (int y = -1; y <= 1; ++y) {
-//            float pcf_depth = texture(shadowmap, projected_lightspace_position.xy + vec2(x, y) * texel_size).r;
-//            shadow += current_depth - 0.0 > pcf_depth  ? 1.0 : 0.0;
-//        }
-//    }
-//    shadow /= 9.0;
-//
-//    //if (projected_lightspace_position.z > 1.0) shadow = 0.0;
-//
-//    return 1.0 - shadow;
+    vec3 light_direction = normalize(light.vector);
+    float bias = max(0.0001 * (1.0 - dot(world_normal, -light_direction)), 0.0001);
+
+    float shadow = 0.0;
+    vec2 texel_size = 1.0 / textureSize(shadowmap, 0);
+    for (int x = -1; x <= 1; ++x) {
+        for (int y = -1; y <= 1; ++y) {
+            float pcf_depth = texture(shadowmap, projected_lightspace_position.xy + vec2(x, y) * texel_size).r;
+            shadow += current_depth + bias < pcf_depth  ? 1.0 : 0.0;
+        }
+    }
+    shadow /= 9.0;
+
+    //if (projected_lightspace_position.z > 1.0) shadow = 0.0;
+
+    return 1.0 - shadow;
 }
 
 void main() {
@@ -85,13 +81,5 @@ void main() {
     vec3 view_normal = (texture(g_view_normal, uv).xyz - 0.5) * 2.0;
     vec3 world_normal = mat3(inverse_view) * view_normal;
 
-    vec4 position_lightspace = lights_SSBO.lights[0].projection * lights_SSBO.lights[0].view * vec4(world_position, 1.0);
-    vec3 projected_lightspace_position;
-    projected_lightspace_position.xy = (position_lightspace.xy / position_lightspace.w) * 0.5 + 0.5;
-    projected_lightspace_position.z = position_lightspace.z / position_lightspace.w;
-    projected_lightspace_position.y = 1.0 - projected_lightspace_position.y;
-
-    uFragColor = vec4((uv.x < 0.5 ? projected_lightspace_position.xy : vec2(0.5)), 0.0, 1.0);
-
-    //uFragColor = vec4(vec3(get_shadow(lights_SSBO.lights[0], world_position, world_normal)), 1.0);
+    uFragColor = vec4(albedo * get_shadow(lights_SSBO.lights[0], world_position, world_normal), 1.0);
 }
