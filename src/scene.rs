@@ -902,10 +902,17 @@ impl Model {
     }
 
     pub unsafe fn construct_textures(&mut self, base: &VkBase) { unsafe {
+        let uris: Vec<PathBuf> = self.images.iter().map(|img| {img.borrow().uri.clone()}).collect();
+        let textures = base.load_textures_batched(uris.as_slice(), true);
         for i in 0..self.images.len() {
-            let mut image = self.images[i].borrow_mut();
-            print!("\rloading image {}/{}, {:?}",i,self.images.len(), image.name);
-            image.construct_image_view(base);
+            let mut img = self.images[i].borrow_mut();
+            print!("\rconstructing image {}/{}, {:?}",i,self.images.len(), img.name);
+            let (image_view, image, mips) = textures[i];
+            img.image = image;
+            img.image_view = image_view.0;
+            img.mip_levels = mips;
+            img.generated = true;
+            base.device.destroy_sampler(image_view.1, None);
         }
         for texture in &mut self.textures {
             texture.borrow_mut().construct_sampler(base);

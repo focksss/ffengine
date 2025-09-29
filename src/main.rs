@@ -64,10 +64,10 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
         // world.models[0].animations[0].repeat = true;
         // world.models[0].animations[0].start();
 
-        //world.add_model(Model::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf"));
+        world.add_model(Model::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf"));
         //world.add_model(Model::new("C:\\Graphics\\assets\\catTest\\catTest.gltf"));
         //world.add_model(Model::new("C:\\Graphics\\assets\\helmet\\DamagedHelmet.gltf"));
-        world.add_model(Model::new("C:\\Graphics\\assets\\hydrant\\untitled.gltf"));
+        //world.add_model(Model::new("C:\\Graphics\\assets\\hydrant\\untitled.gltf"));
 
         //world.add_model(Model::new("C:\\Graphics\\assets\\flower\\scene.gltf"));
         //world.add_model(Model::new("C:\\Graphics\\assets\\rivals\\luna\\gltf\\luna.gltf"));

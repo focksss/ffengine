@@ -10,3 +10,6 @@ ash = { version = "0.38", features = ["linked", "debug", "std"] }
 ash-window = { version = "0.13.0" }
 json = "0.12.4"
 bytemuck = "1.22.0"
+rayon = "1.11.0"
+png = "0.17"
+jpeg-decoder = "0.3"
