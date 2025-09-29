@@ -771,8 +771,7 @@ impl VkBase {
     } }
     pub fn load_image_fast(uri: &PathBuf) -> (Vec<u8>, u32, u32) {
         let bytes = fs::read(uri).expect(uri.to_string_lossy().as_ref());
-
-        // Try PNG first (most common for game assets)
+        
         if uri.extension().and_then(|s| s.to_str()) == Some("png") {
             let decoder = png::Decoder::new(Cursor::new(&bytes));
             let mut reader = decoder.read_info().expect("Failed to read PNG info");
@@ -780,8 +779,7 @@ impl VkBase {
             let info = reader.next_frame(&mut buf).expect("Failed to decode PNG");
 
             let (width, height) = (info.width, info.height);
-
-            // Convert to RGBA if needed
+            
             let rgba_data = match info.color_type {
                 png::ColorType::Rgba => buf[..info.buffer_size()].to_vec(),
                 png::ColorType::Rgb => {
@@ -809,7 +807,6 @@ impl VkBase {
                     rgba
                 }
                 _ => {
-                    // Fallback for indexed colors
                     let img = image::load_from_memory(&bytes)
                         .expect("Failed to load image")
                         .to_rgba8();
@@ -821,8 +818,7 @@ impl VkBase {
 
             return (rgba_data, width, height);
         }
-
-        // Try JPEG
+        
         if let Some(ext) = uri.extension().and_then(|s| s.to_str()) {
             if ext == "jpg" || ext == "jpeg" {
                 let mut decoder = jpeg_decoder::Decoder::new(Cursor::new(&bytes));
@@ -830,8 +826,7 @@ impl VkBase {
                 let info = decoder.info().expect("Failed to get JPEG info");
 
                 let (width, height) = (info.width as u32, info.height as u32);
-
-                // Convert to RGBA
+                
                 let mut rgba = Vec::with_capacity((width * height * 4) as usize);
                 match info.pixel_format {
                     jpeg_decoder::PixelFormat::RGB24 => {
@@ -846,7 +841,6 @@ impl VkBase {
                         }
                     }
                     _ => {
-                        // Fallback
                         let img = image::load_from_memory(&bytes)
                             .expect("Failed to load image")
                             .to_rgba8();
@@ -859,8 +853,7 @@ impl VkBase {
                 return (rgba, width, height);
             }
         }
-
-        // Fallback to image crate for other formats
+        
         let img = image::load_from_memory(&bytes)
             .expect("Failed to load image")
             .to_rgba8();
@@ -1088,22 +1081,19 @@ impl VkBase {
 
             println!("starting parallel image decode...");
             let decode_start = Instant::now();
-
-            // Load all images in parallel (HUGE speedup for multiple textures)
+            
             let decoded_images = VkBase::load_images_parallel(uris);
 
             println!("all images decoded in {:?}", decode_start.elapsed());
             println!("starting gpu upload...");
             let upload_start = Instant::now();
-
-            // Start single command buffer for ALL textures
+            
             let command_buffers = self.begin_single_time_commands(1);
             let command_buffer = command_buffers[0];
 
             let mut results = Vec::with_capacity(uris.len());
             let mut staging_buffers = Vec::with_capacity(uris.len());
-
-            // Upload each texture to GPU
+            
             for (image_data, img_width, img_height) in decoded_images {
                 let image_extent = vk::Extent2D { width: img_width, height: img_height };
                 let image_size = (img_width * img_height * 4) as u64;
@@ -1116,8 +1106,7 @@ impl VkBase {
                     image_mip_levels = 1;
                     usage = ImageUsageFlags::TRANSFER_DST | ImageUsageFlags::SAMPLED;
                 }
-
-                // Create staging buffer
+                
                 let mut image_staging_buffer = Buffer::null();
                 let mut image_staging_buffer_memory = DeviceMemory::null();
                 VkBase::create_buffer(
@@ -1139,8 +1128,7 @@ impl VkBase {
                     .expect("Failed to map image buffer memory");
                 copy_data_to_memory(image_ptr, &image_data);
                 self.device.unmap_memory(image_staging_buffer_memory);
-
-                // Create image
+                
                 let texture_image_create_info = vk::ImageCreateInfo {
                     s_type: vk::StructureType::IMAGE_CREATE_INFO,
                     image_type: vk::ImageType::TYPE_2D,

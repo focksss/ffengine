@@ -194,7 +194,7 @@ impl Pass {
                         .device
                         .create_framebuffer(&framebuffer_create_info, None)
                         .expect("Failed to create framebuffer");
-                    println!("Created framebuffer[{}]: 0x{:x}", i, fb.as_raw());
+                    //println!("Created framebuffer[{}]: 0x{:x}", i, fb.as_raw());
                     fb
                 })
                 .collect();
@@ -233,7 +233,7 @@ impl Pass {
                         .device
                         .create_framebuffer(&framebuffer_create_info, None)
                         .expect("Failed to create framebuffer");
-                    println!("Created present framebuffer: 0x{:x}", fb.as_raw());
+                    //println!("Created present framebuffer: 0x{:x}", fb.as_raw());
                     fb
                 })
                 .collect();
