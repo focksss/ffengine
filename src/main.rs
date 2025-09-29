@@ -16,7 +16,7 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use ash::vk;
-use ash::vk::{Buffer, DeviceMemory, Format};
+use ash::vk::{Buffer, DeviceMemory, Format, ShaderStageFlags};
 use winit::dpi::PhysicalPosition;
 use winit::event::{ElementState, Event, KeyEvent, WindowEvent};
 use winit::event_loop::ControlFlow;
@@ -64,66 +64,29 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
         // world.models[0].animations[0].repeat = true;
         // world.models[0].animations[0].start();
 
+        //world.add_model(Model::new("C:\\Graphics\\assets\\flower\\scene.gltf"));
+        //world.add_model(Model::new("C:\\Graphics\\assets\\rivals\\luna\\gltf\\luna.gltf"));
+
+        //world.add_model(Model::new("C:\\Graphics\\assets\\bistro2\\untitled.gltf"));
         world.add_model(Model::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf"));
         //world.add_model(Model::new("C:\\Graphics\\assets\\catTest\\catTest.gltf"));
         //world.add_model(Model::new("C:\\Graphics\\assets\\helmet\\DamagedHelmet.gltf"));
         //world.add_model(Model::new("C:\\Graphics\\assets\\hydrant\\untitled.gltf"));
 
-        //world.add_model(Model::new("C:\\Graphics\\assets\\flower\\scene.gltf"));
-        //world.add_model(Model::new("C:\\Graphics\\assets\\rivals\\luna\\gltf\\luna.gltf"));
-        //world.add_model(Model::new("C:\\Graphics\\assets\\bistro2\\untitled.gltf"));
-
         world.add_light(Light::new(Vector::new_vec3(-1.0, -5.0, -1.0)));
 
         world.initialize(base, MAX_FRAMES_IN_FLIGHT, true);
 
-        //world.models[2].animations[0].repeat = true;
-        //world.models[2].animations[0].start();
+        // world.models[0].animations[0].repeat = true;
+        // world.models[0].animations[0].start();
 
 
 
         let null_tex = base.create_2d_texture_image(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("local_assets\\null8x.png"), true);
 
         //<editor-fold desc = "geometry/shadow uniform buffers">
-        let geometry_ubo_buffer_size = size_of::<UniformData>() as u64;
-        let mut geometry_uniform_buffers = Vec::new();
-        let mut shadow_uniform_buffers = Vec::new();
-        let mut geometry_uniform_buffers_memory = Vec::new();
-        let mut shadow_uniform_buffers_memory = Vec::new();
-        let mut geometry_uniform_buffers_mapped = Vec::new();
-        let mut shadow_uniform_buffers_mapped = Vec::new();
-        for i in 0..MAX_FRAMES_IN_FLIGHT {
-            geometry_uniform_buffers.push(Buffer::null());
-            geometry_uniform_buffers_memory.push(DeviceMemory::null());
-            shadow_uniform_buffers.push(Buffer::null());
-            shadow_uniform_buffers_memory.push(DeviceMemory::null());
-            base.create_buffer(
-                geometry_ubo_buffer_size,
-                vk::BufferUsageFlags::UNIFORM_BUFFER,
-                vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
-                &mut geometry_uniform_buffers[i],
-                &mut geometry_uniform_buffers_memory[i],
-            );
-            base.create_buffer(
-                geometry_ubo_buffer_size,
-                vk::BufferUsageFlags::UNIFORM_BUFFER,
-                vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
-                &mut shadow_uniform_buffers[i],
-                &mut shadow_uniform_buffers_memory[i],
-            );
-            geometry_uniform_buffers_mapped.push(base.device.map_memory(
-                geometry_uniform_buffers_memory[i],
-                0,
-                geometry_ubo_buffer_size,
-                vk::MemoryMapFlags::empty()
-            ).expect("failed to map uniform buffer"));
-            shadow_uniform_buffers_mapped.push(base.device.map_memory(
-                shadow_uniform_buffers_memory[i],
-                0,
-                geometry_ubo_buffer_size,
-                vk::MemoryMapFlags::empty()
-            ).expect("failed to map uniform buffer"));
-        }
+        let geometry_ubo = render::Descriptor::new_ubo(base, MAX_FRAMES_IN_FLIGHT, size_of::<UniformData>() as u64, 0u32, ShaderStageFlags::VERTEX);
+        let shadow_ubo = render::Descriptor::new_ubo(base, MAX_FRAMES_IN_FLIGHT, size_of::<UniformData>() as u64, 0u32, ShaderStageFlags::VERTEX);
         //</editor-fold>
         //<editor-fold desc = "geometry/shadow descriptor pools">
         let geometry_descriptor_pool_sizes = [
@@ -272,14 +235,15 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                 ..Default::default()
             });
         }
+
         for i in 0..MAX_FRAMES_IN_FLIGHT {
             let geometry_uniform_buffer_info = vk::DescriptorBufferInfo {
-                buffer: geometry_uniform_buffers[i],
+                buffer: geometry_ubo.buffers.0[i],
                 offset: 0,
                 range: size_of::<UniformData>() as vk::DeviceSize,
             };
             let shadow_uniform_buffer_info = vk::DescriptorBufferInfo {
-                buffer: shadow_uniform_buffers[i],
+                buffer: shadow_ubo.buffers.0[i],
                 offset: 0,
                 range: size_of::<UniformData>() as vk::DeviceSize,
             };
@@ -383,27 +347,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
         //</editor-fold>
 
         //<editor-fold desc = "lighting uniform buffers">
-        let lighting_ubo_buffer_size = size_of::<UniformData>() as u64;
-        let mut lighting_uniform_buffers = Vec::new();
-        let mut lighting_uniform_buffers_memory = Vec::new();
-        let mut lighting_uniform_buffers_mapped = Vec::new();
-        for i in 0..MAX_FRAMES_IN_FLIGHT {
-            lighting_uniform_buffers.push(Buffer::null());
-            lighting_uniform_buffers_memory.push(DeviceMemory::null());
-            base.create_buffer(
-                lighting_ubo_buffer_size,
-                vk::BufferUsageFlags::UNIFORM_BUFFER,
-                vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
-                &mut lighting_uniform_buffers[i],
-                &mut lighting_uniform_buffers_memory[i],
-            );
-            lighting_uniform_buffers_mapped.push(base.device.map_memory(
-                lighting_uniform_buffers_memory[i],
-                0,
-                lighting_ubo_buffer_size,
-                vk::MemoryMapFlags::empty()
-            ).expect("failed to map uniform buffer"));
-        }
+        let lighting_ubo = render::Descriptor::new_ubo(base, MAX_FRAMES_IN_FLIGHT, size_of::<UniformData>() as u64, 7u32, ShaderStageFlags::VERTEX);
         //</editor-fold>
         //<editor-fold desc = "lighting descriptor pools">
         let lighting_descriptor_pool_sizes = [
@@ -529,11 +473,6 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
             .allocate_descriptor_sets(&alloc_info)
             .expect("Failed to allocate lighting descriptor sets");
         for i in 0..MAX_FRAMES_IN_FLIGHT {
-            let lighting_uniform_buffer_info = vk::DescriptorBufferInfo {
-                buffer: lighting_uniform_buffers[i],
-                offset: 0,
-                range: size_of::<UniformData>() as vk::DeviceSize,
-            };
             let light_matrices_ssbo_info = vk::DescriptorBufferInfo {
                 buffer: world.lights_buffers[i].0,
                 offset: 0,
@@ -547,7 +486,11 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                     dst_array_element: 0,
                     descriptor_type: vk::DescriptorType::UNIFORM_BUFFER,
                     descriptor_count: 1,
-                    p_buffer_info: &lighting_uniform_buffer_info,
+                    p_buffer_info: &vk::DescriptorBufferInfo {
+                        buffer: lighting_ubo.buffers.0[i],
+                        offset: 0,
+                        range: vk::WHOLE_SIZE
+                    },
                     ..Default::default()
                 },
                 vk::WriteDescriptorSet {
@@ -1238,13 +1181,13 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
                         view: player_camera.view_matrix.data,
                         projection: player_camera.projection_matrix.data,
                     };
-                    copy_data_to_memory(geometry_uniform_buffers_mapped[current_frame], &[ubo]);
-                    copy_data_to_memory(lighting_uniform_buffers_mapped[current_frame], &[ubo]);
+                    copy_data_to_memory(geometry_ubo.buffers.2[current_frame], &[ubo]);
+                    copy_data_to_memory(lighting_ubo.buffers.2[current_frame], &[ubo]);
                     let ubo = UniformData {
                         view: world.lights[0].view.data,
                         projection: world.lights[0].projection.data,
                     };
-                    copy_data_to_memory(shadow_uniform_buffers_mapped[current_frame], &[ubo]);
+                    copy_data_to_memory(shadow_ubo.buffers.2[current_frame], &[ubo]);
 
                     let geometry_pass_pass_begin_info = vk::RenderPassBeginInfo::default()
                         .render_pass(geometry_pass.renderpass)
@@ -1430,14 +1373,9 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> {
         lighting_pass.destroy(base);
         present_pass.destroy(base);
 
-        for i in 0..MAX_FRAMES_IN_FLIGHT {
-            base.device.destroy_buffer(geometry_uniform_buffers[i], None);
-            base.device.destroy_buffer(shadow_uniform_buffers[i], None);
-            base.device.destroy_buffer(lighting_uniform_buffers[i], None);
-            base.device.free_memory(geometry_uniform_buffers_memory[i], None);
-            base.device.free_memory(shadow_uniform_buffers_memory[i], None);
-            base.device.free_memory(lighting_uniform_buffers_memory[i], None);
-        }
+        lighting_ubo.destroy(base);
+        geometry_ubo.destroy(base);
+        shadow_ubo.destroy(base);
 
         base.device.destroy_descriptor_set_layout(geometry_descriptor_set_layout, None);
         base.device.destroy_descriptor_pool(geometry_descriptor_pool, None);

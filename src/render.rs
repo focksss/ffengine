@@ -1,7 +1,9 @@
+use std::ffi::c_void;
 use std::io::Cursor;
 use ash::{vk, Device, Instance};
 use ash::util::read_spv;
-use ash::vk::{ClearColorValue, ClearDepthStencilValue, ClearValue, Extent3D, Format, Handle, ImageAspectFlags, ImageSubresourceRange, ImageUsageFlags, MemoryPropertyFlags, PhysicalDevice, PipelineShaderStageCreateInfo, SampleCountFlags, ShaderModule};
+use ash::vk::{Buffer, ClearColorValue, ClearDepthStencilValue, ClearValue, DescriptorType, DeviceMemory, Extent3D, Format, Handle, ImageAspectFlags, ImageSubresourceRange, ImageUsageFlags, MemoryPropertyFlags, PhysicalDevice, PipelineShaderStageCreateInfo, SampleCountFlags, ShaderModule};
+use crate::{UniformData, MAX_FRAMES_IN_FLIGHT};
 use crate::vk_helper::{find_memorytype_index, load_file, VkBase};
 
 
@@ -570,3 +572,54 @@ impl TextureCreateInfo<'_> {
         self
     }
 }
+
+pub struct Descriptor {
+    pub descriptor_type: DescriptorType,
+    pub binding: u32,
+    pub shader_stages: vk::ShaderStageFlags,
+    pub is_dynamic: bool,
+    pub buffers: (Vec<Buffer>, Vec<DeviceMemory>, Vec<*mut c_void>),
+
+}
+impl Descriptor {
+    pub unsafe fn new_ubo(base: &VkBase, frames_in_flight: usize, size: u64, binding: u32, shader_stages: vk::ShaderStageFlags) -> Self { unsafe {
+        let mut uniform_buffers = Vec::new();
+        let mut uniform_buffers_memory = Vec::new();
+        let mut uniform_buffers_mapped = Vec::new();
+        for i in 0..frames_in_flight {
+            uniform_buffers.push(Buffer::null());
+            uniform_buffers_memory.push(DeviceMemory::null());
+            base.create_buffer(
+                size,
+                vk::BufferUsageFlags::UNIFORM_BUFFER,
+                MemoryPropertyFlags::HOST_VISIBLE | MemoryPropertyFlags::HOST_COHERENT,
+                &mut uniform_buffers[i],
+                &mut uniform_buffers_memory[i],
+            );
+            uniform_buffers_mapped.push(base.device.map_memory(
+                uniform_buffers_memory[i],
+                0,
+                size,
+                vk::MemoryMapFlags::empty()
+            ).expect("failed to map uniform buffer"));
+        }
+        Descriptor {
+            descriptor_type: DescriptorType::UNIFORM_BUFFER,
+            binding,
+            shader_stages,
+            is_dynamic: false,
+            buffers: ((uniform_buffers, uniform_buffers_memory, uniform_buffers_mapped)),
+        }
+    } }
+
+    pub unsafe fn destroy(&self, base: &VkBase) {
+         if self.descriptor_type == DescriptorType::UNIFORM_BUFFER || self.descriptor_type == DescriptorType::STORAGE_BUFFER {
+             for i in 0..self.buffers.0.len() {
+                 base.device.destroy_buffer(self.buffers.0[i], None);
+                 base.device.free_memory(self.buffers.1[i], None);
+             }
+         }
+    }
+}
+
+// CAN INLINE DESCRIPTOR POOLS INTO DESCRIPTOR SET CREATION
