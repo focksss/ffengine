@@ -776,7 +776,7 @@ impl VkBase {
         if uri.extension().and_then(|s| s.to_str()) == Some("png") {
             let decoder = png::Decoder::new(Cursor::new(&bytes));
             let mut reader = decoder.read_info().expect("Failed to read PNG info");
-            let mut buf = vec![0; reader.output_buffer_size()];
+            let mut buf = vec![0; reader.output_buffer_size().expect("Failed to read buffer size")];
             let info = reader.next_frame(&mut buf).expect("Failed to decode PNG");
 
             let (width, height) = (info.width, info.height);

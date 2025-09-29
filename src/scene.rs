@@ -906,7 +906,6 @@ impl Model {
         let textures = base.load_textures_batched(uris.as_slice(), true);
         for i in 0..self.images.len() {
             let mut img = self.images[i].borrow_mut();
-            print!("\rconstructing image {}/{}, {:?}",i,self.images.len(), img.name);
             let (image_view, image, mips) = textures[i];
             img.image = image;
             img.image_view = image_view.0;

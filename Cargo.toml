@@ -11,5 +11,5 @@ ash-window = { version = "0.13.0" }
 json = "0.12.4"
 bytemuck = "1.22.0"
 rayon = "1.11.0"
-png = "0.17"
+png = "0.18.0"
 jpeg-decoder = "0.3"
