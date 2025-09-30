@@ -2,7 +2,7 @@ use std::ffi::c_void;
 use std::io::Cursor;
 use ash::{vk, Device, Instance};
 use ash::util::read_spv;
-use ash::vk::{Buffer, ClearColorValue, ClearDepthStencilValue, ClearValue, DescriptorType, DeviceMemory, Extent3D, Format, Handle, ImageAspectFlags, ImageSubresourceRange, ImageUsageFlags, MemoryPropertyFlags, PhysicalDevice, PipelineShaderStageCreateInfo, SampleCountFlags, ShaderModule};
+use ash::vk::{Buffer, ClearColorValue, ClearDepthStencilValue, ClearValue, DescriptorType, DeviceMemory, Extent3D, Format, Handle, ImageAspectFlags, ImageSubresourceRange, ImageUsageFlags, MemoryAllocateFlags, MemoryPropertyFlags, PhysicalDevice, PipelineShaderStageCreateInfo, SampleCountFlags, ShaderModule, ShaderStageFlags};
 use crate::{UniformData, MAX_FRAMES_IN_FLIGHT};
 use crate::vk_helper::{find_memorytype_index, load_file, VkBase};
 
@@ -66,8 +66,9 @@ pub struct Pass {
     pub clear_values: Vec<ClearValue>,
 }
 impl Pass {
-    pub unsafe fn new(base: &VkBase, create_info: PassCreateInfo) -> Self { unsafe {
+    pub unsafe fn new(create_info: PassCreateInfo) -> Self { unsafe {
         let mut textures = Vec::new();
+        let base = create_info.base;
         if !create_info.is_present_pass {
             for _ in 0..create_info.frames_in_flight {
                 let mut frame_textures = Vec::new();
@@ -573,42 +574,55 @@ impl TextureCreateInfo<'_> {
     }
 }
 
+//  TODO
+//      MAKE A DESCRIPTOR CREATE INFO, SAME FORMAT AS OTHERS    
 pub struct Descriptor {
     pub descriptor_type: DescriptorType,
-    pub binding: u32,
     pub shader_stages: vk::ShaderStageFlags,
     pub is_dynamic: bool,
     pub buffers: (Vec<Buffer>, Vec<DeviceMemory>, Vec<*mut c_void>),
 
 }
 impl Descriptor {
-    pub unsafe fn new_ubo(base: &VkBase, frames_in_flight: usize, size: u64, binding: u32, shader_stages: vk::ShaderStageFlags) -> Self { unsafe {
-        let mut uniform_buffers = Vec::new();
-        let mut uniform_buffers_memory = Vec::new();
-        let mut uniform_buffers_mapped = Vec::new();
-        for i in 0..frames_in_flight {
-            uniform_buffers.push(Buffer::null());
-            uniform_buffers_memory.push(DeviceMemory::null());
-            base.create_buffer(
-                size,
-                vk::BufferUsageFlags::UNIFORM_BUFFER,
-                MemoryPropertyFlags::HOST_VISIBLE | MemoryPropertyFlags::HOST_COHERENT,
-                &mut uniform_buffers[i],
-                &mut uniform_buffers_memory[i],
-            );
-            uniform_buffers_mapped.push(base.device.map_memory(
-                uniform_buffers_memory[i],
-                0,
-                size,
-                vk::MemoryMapFlags::empty()
-            ).expect("failed to map uniform buffer"));
-        }
-        Descriptor {
-            descriptor_type: DescriptorType::UNIFORM_BUFFER,
-            binding,
-            shader_stages,
-            is_dynamic: false,
-            buffers: ((uniform_buffers, uniform_buffers_memory, uniform_buffers_mapped)),
+    pub unsafe fn new(create_info: &DescriptorCreateInfo) -> Self { unsafe {
+        let base = create_info.base;
+        match create_info.descriptor_type {
+            DescriptorType::UNIFORM_BUFFER => {
+                let mut uniform_buffers = Vec::new();
+                let mut uniform_buffers_memory = Vec::new();
+                let mut uniform_buffers_mapped = Vec::new();
+                for i in 0..create_info.frames_in_flight {
+                    uniform_buffers.push(Buffer::null());
+                    uniform_buffers_memory.push(DeviceMemory::null());
+                    base.create_buffer(
+                        create_info.size.expect("DescriptorCreateInfo of type UNIFORM_BUFFER does not contain buffer size"),
+                        vk::BufferUsageFlags::UNIFORM_BUFFER,
+                        create_info.memory_property_flags,
+                        &mut uniform_buffers[i],
+                        &mut uniform_buffers_memory[i],
+                    );
+                    uniform_buffers_mapped.push(base.device.map_memory(
+                        uniform_buffers_memory[i],
+                        0,
+                        create_info.size.expect("DescriptorCreateInfo of type UNIFORM_BUFFER does not contain buffer size"),
+                        vk::MemoryMapFlags::empty()
+                    ).expect("failed to map uniform buffer"));
+                }
+                Descriptor {
+                    descriptor_type: DescriptorType::UNIFORM_BUFFER,
+                    shader_stages: create_info.shader_stages,
+                    is_dynamic: false,
+                    buffers: (uniform_buffers, uniform_buffers_memory, uniform_buffers_mapped),
+                }
+            }
+            _ => {
+                Descriptor {
+                    descriptor_type: DescriptorType::COMBINED_IMAGE_SAMPLER,
+                    shader_stages: ShaderStageFlags::FRAGMENT,
+                    is_dynamic: false,
+                    buffers: (Vec::new(), Vec::new(), Vec::new()),
+                }
+            }
         }
     } }
 
@@ -621,5 +635,44 @@ impl Descriptor {
          }
     }
 }
-
+pub struct DescriptorCreateInfo<'a> {
+    pub base: &'a VkBase,
+    pub frames_in_flight: usize,
+    pub descriptor_type: DescriptorType,
+    pub size: Option<u64>,
+    pub shader_stages: vk::ShaderStageFlags,
+    pub memory_property_flags: MemoryPropertyFlags
+}
+impl DescriptorCreateInfo<'_> {
+    pub fn new(base: &VkBase) -> DescriptorCreateInfo {
+        DescriptorCreateInfo {
+            base,
+            frames_in_flight: 1,
+            descriptor_type: DescriptorType::COMBINED_IMAGE_SAMPLER,
+            size: None,
+            shader_stages: vk::ShaderStageFlags::FRAGMENT,
+            memory_property_flags: MemoryPropertyFlags::HOST_VISIBLE | MemoryPropertyFlags::HOST_COHERENT,
+        }
+    }
+    pub fn frames_in_flight(mut self, frames_in_flight: usize) -> Self {
+        self.frames_in_flight = frames_in_flight;
+        self
+    }
+    pub fn descriptor_type(mut self, descriptor_type: DescriptorType) -> Self {
+        self.descriptor_type = descriptor_type;
+        self
+    }
+    pub fn size(mut self, size: u64) -> Self {
+        self.size = Some(size);
+        self
+    }
+    pub fn shader_stages(mut self, shader_stages: vk::ShaderStageFlags) -> Self {
+        self.shader_stages = shader_stages;
+        self
+    }
+    pub fn memory_property_flags(mut self, memory_property_flags: MemoryPropertyFlags) -> Self {
+        self.memory_property_flags = memory_property_flags;
+        self
+    }
+}
 // CAN INLINE DESCRIPTOR POOLS INTO DESCRIPTOR SET CREATION
