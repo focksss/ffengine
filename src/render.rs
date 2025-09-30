@@ -2,7 +2,7 @@ use std::ffi::c_void;
 use std::io::Cursor;
 use ash::{vk, Device, Instance};
 use ash::util::read_spv;
-use ash::vk::{Buffer, ClearColorValue, ClearDepthStencilValue, ClearValue, DescriptorType, DeviceMemory, Extent3D, Format, Handle, ImageAspectFlags, ImageSubresourceRange, ImageUsageFlags, MemoryAllocateFlags, MemoryPropertyFlags, PhysicalDevice, PipelineShaderStageCreateInfo, SampleCountFlags, ShaderModule, ShaderStageFlags};
+use ash::vk::{Buffer, ClearColorValue, ClearDepthStencilValue, ClearValue, DescriptorImageInfo, DescriptorPool, DescriptorPoolCreateFlags, DescriptorPoolSize, DescriptorSetLayout, DescriptorSetLayoutCreateFlags, DescriptorType, DeviceMemory, DeviceSize, Extent3D, Format, Handle, ImageAspectFlags, ImageSubresourceRange, ImageUsageFlags, MemoryAllocateFlags, MemoryPropertyFlags, PhysicalDevice, PipelineShaderStageCreateInfo, SampleCountFlags, ShaderModule, ShaderStageFlags};
 use crate::{UniformData, MAX_FRAMES_IN_FLIGHT};
 use crate::vk_helper::{find_memorytype_index, load_file, VkBase};
 
@@ -574,14 +574,16 @@ impl TextureCreateInfo<'_> {
     }
 }
 
-//  TODO
-//      MAKE A DESCRIPTOR CREATE INFO, SAME FORMAT AS OTHERS    
 pub struct Descriptor {
     pub descriptor_type: DescriptorType,
-    pub shader_stages: vk::ShaderStageFlags,
+    pub shader_stages: ShaderStageFlags,
     pub is_dynamic: bool,
-    pub buffers: (Vec<Buffer>, Vec<DeviceMemory>, Vec<*mut c_void>),
-
+    pub offset: Option<DeviceSize>,
+    pub range: Option<DeviceSize>,
+    pub owned_buffers: (Vec<Buffer>, Vec<DeviceMemory>, Vec<*mut c_void>),
+    pub buffer_refs: Vec<Buffer>,
+    pub image_infos: Option<*const DescriptorImageInfo>,
+    pub descriptor_count: u32,
 }
 impl Descriptor {
     pub unsafe fn new(create_info: &DescriptorCreateInfo) -> Self { unsafe {
@@ -612,7 +614,25 @@ impl Descriptor {
                     descriptor_type: DescriptorType::UNIFORM_BUFFER,
                     shader_stages: create_info.shader_stages,
                     is_dynamic: false,
-                    buffers: (uniform_buffers, uniform_buffers_memory, uniform_buffers_mapped),
+                    offset: Some(create_info.offset),
+                    range: Some(create_info.range),
+                    descriptor_count: 1,
+                    owned_buffers: (uniform_buffers, uniform_buffers_memory, uniform_buffers_mapped),
+                    buffer_refs: Vec::new(),
+                    image_infos: None
+                }
+            }
+            DescriptorType::STORAGE_BUFFER => {
+                Descriptor {
+                    descriptor_type: DescriptorType::UNIFORM_BUFFER,
+                    shader_stages: create_info.shader_stages,
+                    is_dynamic: false,
+                    offset: Some(create_info.offset),
+                    range: Some(create_info.range),
+                    descriptor_count: 1,
+                    owned_buffers: (Vec::new(), Vec::new(), Vec::new()),
+                    buffer_refs: create_info.buffers.clone().unwrap(),
+                    image_infos: None
                 }
             }
             _ => {
@@ -620,27 +640,36 @@ impl Descriptor {
                     descriptor_type: DescriptorType::COMBINED_IMAGE_SAMPLER,
                     shader_stages: ShaderStageFlags::FRAGMENT,
                     is_dynamic: false,
-                    buffers: (Vec::new(), Vec::new(), Vec::new()),
+                    offset: None,
+                    range: None,
+                    owned_buffers: (Vec::new(), Vec::new(), Vec::new()),
+                    buffer_refs: Vec::new(),
+                    image_infos: None,
+                    descriptor_count: 0,
                 }
             }
         }
     } }
 
-    pub unsafe fn destroy(&self, base: &VkBase) {
+    pub unsafe fn destroy(&self, base: &VkBase) { unsafe {
          if self.descriptor_type == DescriptorType::UNIFORM_BUFFER || self.descriptor_type == DescriptorType::STORAGE_BUFFER {
-             for i in 0..self.buffers.0.len() {
-                 base.device.destroy_buffer(self.buffers.0[i], None);
-                 base.device.free_memory(self.buffers.1[i], None);
+             for i in 0..self.owned_buffers.0.len() {
+                 base.device.destroy_buffer(self.owned_buffers.0[i], None);
+                 base.device.free_memory(self.owned_buffers.1[i], None);
              }
          }
-    }
+    } }
 }
 pub struct DescriptorCreateInfo<'a> {
     pub base: &'a VkBase,
     pub frames_in_flight: usize,
     pub descriptor_type: DescriptorType,
     pub size: Option<u64>,
-    pub shader_stages: vk::ShaderStageFlags,
+    pub shader_stages: ShaderStageFlags,
+    pub offset: DeviceSize,
+    pub range: DeviceSize,
+    pub buffers: Option<Vec<Buffer>>,
+    pub image_infos: Option<Vec<vk::DescriptorImageInfo>>,
     pub memory_property_flags: MemoryPropertyFlags
 }
 impl DescriptorCreateInfo<'_> {
@@ -650,7 +679,11 @@ impl DescriptorCreateInfo<'_> {
             frames_in_flight: 1,
             descriptor_type: DescriptorType::COMBINED_IMAGE_SAMPLER,
             size: None,
-            shader_stages: vk::ShaderStageFlags::FRAGMENT,
+            shader_stages: ShaderStageFlags::FRAGMENT,
+            offset: 0,
+            range: vk::WHOLE_SIZE,
+            buffers: None,
+            image_infos: None,
             memory_property_flags: MemoryPropertyFlags::HOST_VISIBLE | MemoryPropertyFlags::HOST_COHERENT,
         }
     }
@@ -672,6 +705,187 @@ impl DescriptorCreateInfo<'_> {
     }
     pub fn memory_property_flags(mut self, memory_property_flags: MemoryPropertyFlags) -> Self {
         self.memory_property_flags = memory_property_flags;
+        self
+    }
+    pub fn offset(mut self, offset: u64) -> Self {
+        self.offset = offset;
+        self
+    }
+    pub fn range(mut self, range: DeviceSize) -> Self {
+        self.range = range;
+        self
+    }
+    pub fn buffers(mut self, buffers: Vec<Buffer>) -> Self {
+        self.buffers = Some(buffers);
+        self
+    }
+    pub fn image_infos(mut self, image_infos: Vec<vk::DescriptorImageInfo>) -> Self {
+        self.image_infos = Some(image_infos);
+        self
+    }
+}
+
+pub struct DescriptorSet {
+    pub descriptor_sets: Vec<vk::DescriptorSet>,
+    pub descriptor_set_layout: DescriptorSetLayout,
+    pub descriptor_pool: DescriptorPool,
+}
+impl DescriptorSet {
+    pub unsafe fn new(create_info: &DescriptorSetCreateInfo) -> DescriptorSet { unsafe {
+        let base = create_info.base;
+        let mut has_dynamic = false;
+        let mut variable_descriptor_count = 0;
+        let descriptor_pool_sizes = create_info.descriptors.iter().map(|d| {
+            if d.is_dynamic {has_dynamic = true; variable_descriptor_count = d.descriptor_count;}
+            DescriptorPoolSize {
+                ty: d.descriptor_type,
+                descriptor_count: create_info.frames_in_flight as u32 * d.descriptor_count,
+            }
+        }).collect::<Vec<DescriptorPoolSize>>();
+        let descriptor_pool_create_info = vk::DescriptorPoolCreateInfo {
+            s_type: vk::StructureType::DESCRIPTOR_POOL_CREATE_INFO,
+            pool_size_count: descriptor_pool_sizes.len() as u32,
+            p_pool_sizes: descriptor_pool_sizes.as_ptr(),
+            max_sets: MAX_FRAMES_IN_FLIGHT as u32,
+            flags: if has_dynamic {DescriptorPoolCreateFlags::UPDATE_AFTER_BIND} else {DescriptorPoolCreateFlags::empty()},
+            ..Default::default()
+        };
+        let descriptor_pool = base.device.create_descriptor_pool(&descriptor_pool_create_info, None).expect("failed to create descriptor pool");
+
+        let mut i = 0;
+        let bindings = create_info.descriptors.iter().map(|d| {
+            let ret = vk::DescriptorSetLayoutBinding {
+                binding: i as u32,
+                descriptor_type: d.descriptor_type,
+                descriptor_count: d.descriptor_count,
+                stage_flags: d.shader_stages,
+                ..Default::default()
+            };
+            i = i + 1;
+            ret
+        }).collect::<Vec<vk::DescriptorSetLayoutBinding>>();
+        let binding_flags = create_info.descriptors.iter().map(|d| {
+            if d.is_dynamic {
+                vk::DescriptorBindingFlags::PARTIALLY_BOUND |
+                vk::DescriptorBindingFlags::VARIABLE_DESCRIPTOR_COUNT |
+                vk::DescriptorBindingFlags::UPDATE_AFTER_BIND
+            } else {
+                vk::DescriptorBindingFlags::empty()
+            }
+        }).collect::<Vec<vk::DescriptorBindingFlags>>();
+        let binding_flags_info = vk::DescriptorSetLayoutBindingFlagsCreateInfo {
+            s_type: vk::StructureType::DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO,
+            binding_count: binding_flags.len() as u32,
+            p_binding_flags: binding_flags.as_ptr(),
+            ..Default::default()
+        };
+        let descriptor_layout_create_info = vk::DescriptorSetLayoutCreateInfo {
+            s_type: vk::StructureType::DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+            p_next: &binding_flags_info as *const _ as *const c_void,
+            binding_count: bindings.len() as u32,
+            p_bindings: bindings.as_ptr(),
+            flags: if has_dynamic {DescriptorSetLayoutCreateFlags::UPDATE_AFTER_BIND_POOL} else {DescriptorSetLayoutCreateFlags::empty()},
+            ..Default::default()
+        };
+        let descriptor_set_layout = base.device.create_descriptor_set_layout(&descriptor_layout_create_info, None).expect("failed to create descriptor set layout");
+        let descriptor_set_layouts = vec![descriptor_set_layout; create_info.frames_in_flight];
+
+        let variable_counts = vec![variable_descriptor_count; create_info.frames_in_flight];
+        let variable_count_info = vk::DescriptorSetVariableDescriptorCountAllocateInfo {
+            s_type: vk::StructureType::DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_ALLOCATE_INFO,
+            descriptor_set_count: create_info.frames_in_flight as u32,
+            p_descriptor_counts: variable_counts.as_ptr(),
+            ..Default::default()
+        };
+        let geometry_alloc_info = vk::DescriptorSetAllocateInfo {
+            s_type: vk::StructureType::DESCRIPTOR_SET_ALLOCATE_INFO,
+            p_next: if has_dynamic {&variable_count_info as *const _ as *const c_void} else {std::ptr::null()},
+            descriptor_pool: descriptor_pool,
+            descriptor_set_count: MAX_FRAMES_IN_FLIGHT as u32,
+            p_set_layouts: descriptor_set_layouts.as_ptr(),
+            ..Default::default()
+        };
+        let descriptor_sets = base.device.allocate_descriptor_sets(&geometry_alloc_info)
+            .expect("failed to allocate descriptor sets");
+
+        let mut binding = 0;
+        let infos = create_info.descriptors.iter().map(|d| {
+            binding = binding + 1;
+            match d.descriptor_type {
+                DescriptorType::UNIFORM_BUFFER => {
+                    Some((DescriptorType::UNIFORM_BUFFER, binding - 1, d))
+                }
+                DescriptorType::STORAGE_BUFFER => {
+                    Some((DescriptorType::STORAGE_BUFFER, binding - 1, d))
+                }
+                DescriptorType::COMBINED_IMAGE_SAMPLER => {
+                    Some((DescriptorType::COMBINED_IMAGE_SAMPLER, binding - 1, d))
+                }
+                _ => { 
+                    None
+                }
+            }
+        }).collect::<Vec<Option<(DescriptorType, u32, &Descriptor)>>>();
+        for i in 0..create_info.frames_in_flight {
+            let descriptor_writes = infos.iter().filter_map(|maybe_info| {
+                let info = maybe_info.as_ref()?;
+                let buffer_info = match info.0 {
+                    DescriptorType::UNIFORM_BUFFER => Some(vk::DescriptorBufferInfo {
+                        buffer: info.2.owned_buffers.0[i],
+                        offset: info.2.offset.unwrap(),
+                        range: info.2.range.unwrap(),
+                    }),
+                    DescriptorType::STORAGE_BUFFER => Some(vk::DescriptorBufferInfo {
+                        buffer: info.2.buffer_refs[i],
+                        offset: info.2.offset.unwrap(),
+                        range: info.2.range.unwrap(),
+                    }),
+                    _ => None,
+                };
+                let image_infos = info.2.image_infos;
+                Some(vk::WriteDescriptorSet {
+                    s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
+                    dst_set: descriptor_sets[i],
+                    dst_binding: info.1,
+                    dst_array_element: 0,
+                    descriptor_type: info.0,
+                    descriptor_count: info.2.descriptor_count,
+                    p_buffer_info: buffer_info
+                        .as_ref()
+                        .map_or(std::ptr::null(), |b| b),
+                    p_image_info: image_infos
+                        .map_or(std::ptr::null(), |imgs| imgs),
+                    ..Default::default()
+                })
+            }).collect::<Vec<_>>();
+            base.device.update_descriptor_sets(&descriptor_writes, &[]);
+        }
+        DescriptorSet {
+            descriptor_sets,
+            descriptor_set_layout,
+            descriptor_pool,
+        }
+    } }
+}
+pub struct DescriptorSetCreateInfo<'a> {
+    pub base: &'a VkBase,
+    pub descriptors: Vec<Descriptor>,
+    pub frames_in_flight: usize,
+}
+impl DescriptorSetCreateInfo<'_> {
+    pub fn new(base: &VkBase) -> DescriptorSetCreateInfo {
+        DescriptorSetCreateInfo {
+            base,
+            descriptors: Vec::new(),
+            frames_in_flight: 1,
+        }
+    }
+    pub fn add_descriptor(mut self, descriptor: Descriptor) -> Self {
+        self.descriptors.push(descriptor);
+        self
+    }
+    pub fn frames_in_flight(mut self, frames_in_flight: usize) -> Self {
+        self.frames_in_flight = frames_in_flight;
         self
     }
 }

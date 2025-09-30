@@ -84,7 +84,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
     let null_tex = base.create_2d_texture_image(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("local_assets\\null8x.png"), true);
 
     //<editor-fold desc = "geometry/shadow uniform buffers">
-    let mut camera_ubo_create_info = render::DescriptorCreateInfo::new(base)
+    let camera_ubo_create_info = render::DescriptorCreateInfo::new(base)
         .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
         .descriptor_type(DescriptorType::UNIFORM_BUFFER)
         .size(size_of::<UniformData>() as u64)
@@ -242,12 +242,12 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
 
     for i in 0..MAX_FRAMES_IN_FLIGHT {
         let geometry_uniform_buffer_info = vk::DescriptorBufferInfo {
-            buffer: geometry_ubo.buffers.0[i],
+            buffer: geometry_ubo.owned_buffers.0[i],
             offset: 0,
             range: size_of::<UniformData>() as vk::DeviceSize,
         };
         let shadow_uniform_buffer_info = vk::DescriptorBufferInfo {
-            buffer: shadow_ubo.buffers.0[i],
+            buffer: shadow_ubo.owned_buffers.0[i],
             offset: 0,
             range: size_of::<UniformData>() as vk::DeviceSize,
         };
@@ -491,7 +491,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                 descriptor_type: vk::DescriptorType::UNIFORM_BUFFER,
                 descriptor_count: 1,
                 p_buffer_info: &vk::DescriptorBufferInfo {
-                    buffer: lighting_ubo.buffers.0[i],
+                    buffer: lighting_ubo.owned_buffers.0[i],
                     offset: 0,
                     range: vk::WHOLE_SIZE
                 },
@@ -1185,13 +1185,13 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                     view: player_camera.view_matrix.data,
                     projection: player_camera.projection_matrix.data,
                 };
-                copy_data_to_memory(geometry_ubo.buffers.2[current_frame], &[ubo]);
-                copy_data_to_memory(lighting_ubo.buffers.2[current_frame], &[ubo]);
+                copy_data_to_memory(geometry_ubo.owned_buffers.2[current_frame], &[ubo]);
+                copy_data_to_memory(lighting_ubo.owned_buffers.2[current_frame], &[ubo]);
                 let ubo = UniformData {
                     view: world.lights[0].view.data,
                     projection: world.lights[0].projection.data,
                 };
-                copy_data_to_memory(shadow_ubo.buffers.2[current_frame], &[ubo]);
+                copy_data_to_memory(shadow_ubo.owned_buffers.2[current_frame], &[ubo]);
 
                 let geometry_pass_pass_begin_info = vk::RenderPassBeginInfo::default()
                     .render_pass(geometry_pass.renderpass)
