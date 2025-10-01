@@ -635,6 +635,19 @@ impl Descriptor {
                     image_infos: None
                 }
             }
+            DescriptorType::COMBINED_IMAGE_SAMPLER => {
+                Descriptor {
+                    descriptor_type: DescriptorType::COMBINED_IMAGE_SAMPLER,
+                    shader_stages: create_info.shader_stages,
+                    is_dynamic: false,
+                    offset: None,
+                    range: None,
+                    descriptor_count: create_info.image_infos.as_ref().map_or(1, |v| v.len()) as u32,
+                    owned_buffers: (Vec::new(), Vec::new(), Vec::new()),
+                    buffer_refs: create_info.buffers.clone().unwrap(),
+                    image_infos: create_info.image_infos.as_ref().map_or(None, |i| Some(i.as_ptr())),
+                }
+            }
             _ => {
                 Descriptor {
                     descriptor_type: DescriptorType::COMBINED_IMAGE_SAMPLER,
@@ -865,6 +878,9 @@ impl DescriptorSet {
             descriptor_set_layout,
             descriptor_pool,
         }
+    } }
+    pub unsafe fn destroy(self, base: &VkBase) { unsafe {
+        base.device.destroy_descriptor_set_layout(self.descriptor_set_layout, None);
     } }
 }
 pub struct DescriptorSetCreateInfo<'a> {

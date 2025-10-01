@@ -82,13 +82,14 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
 
 
     let null_tex = base.create_2d_texture_image(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("local_assets\\null8x.png"), true);
-
-    //<editor-fold desc = "geometry/shadow uniform buffers">
+    
+    
     let camera_ubo_create_info = render::DescriptorCreateInfo::new(base)
         .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
         .descriptor_type(DescriptorType::UNIFORM_BUFFER)
         .size(size_of::<UniformData>() as u64)
         .shader_stages(ShaderStageFlags::VERTEX);
+    //<editor-fold desc = "geometry/shadow uniform buffers">
     let geometry_ubo = render::Descriptor::new(&camera_ubo_create_info);
     let shadow_ubo = render::Descriptor::new(&camera_ubo_create_info);
     //</editor-fold>
