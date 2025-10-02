@@ -112,12 +112,12 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
         });
     }
 
-
     let camera_ubo_create_info = render::DescriptorCreateInfo::new(base)
         .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
         .descriptor_type(DescriptorType::UNIFORM_BUFFER)
         .size(size_of::<UniformData>() as u64)
         .shader_stages(ShaderStageFlags::VERTEX);
+    //<editor-fold desc = "geometry + shadow descriptor sets"
     let material_ssbo_create_info = render::DescriptorCreateInfo::new(base)
         .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
         .descriptor_type(DescriptorType::STORAGE_BUFFER)
@@ -150,167 +150,36 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
 
     let geometry_descriptor_set = render::DescriptorSet::new(geometry_descriptor_set_create_info);
     let shadow_descriptor_set = render::DescriptorSet::new(shadow_descriptor_set_create_info);
-
-    //<editor-fold desc = "lighting uniform buffers">
-    let lighting_ubo = render::Descriptor::new(&camera_ubo_create_info);
     //</editor-fold>
-    //<editor-fold desc = "lighting descriptor pools">
-    let lighting_descriptor_pool_sizes = [
-        vk::DescriptorPoolSize {
-            ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
-            descriptor_count: (MAX_FRAMES_IN_FLIGHT * 7) as u32, // position, normal, albedo, etc.
-            ..Default::default()
-        }, // images
-        vk::DescriptorPoolSize {
-            ty: vk::DescriptorType::UNIFORM_BUFFER,
-            descriptor_count: MAX_FRAMES_IN_FLIGHT as u32,
-            ..Default::default()
-        }, // uniform buffer
-        vk::DescriptorPoolSize {
-            ty: vk::DescriptorType::STORAGE_BUFFER,
-            descriptor_count: MAX_FRAMES_IN_FLIGHT as u32,
-            ..Default::default()
-        }, // light space matrix ssbo
-    ];
-    let lighting_descriptor_pool_create_info = vk::DescriptorPoolCreateInfo {
-        s_type: vk::StructureType::DESCRIPTOR_POOL_CREATE_INFO,
-        pool_size_count: lighting_descriptor_pool_sizes.len() as u32,
-        p_pool_sizes: lighting_descriptor_pool_sizes.as_ptr(),
-        max_sets: MAX_FRAMES_IN_FLIGHT as u32,
-        ..Default::default()
-    };
-    let lighting_descriptor_pool = base.device
-        .create_descriptor_pool(&lighting_descriptor_pool_create_info, None)
-        .expect("Failed to create lighting descriptor pool");
-    //</editor-fold>
-    //<editor-fold desc = "lighting descriptor sets">
-    let bindings = [
-        vk::DescriptorSetLayoutBinding {
-            binding: 0,
-            descriptor_type: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
-            descriptor_count: 1,
-            stage_flags: vk::ShaderStageFlags::FRAGMENT,
-            p_immutable_samplers: std::ptr::null(),
-            _marker: Default::default(),
-        },
-        vk::DescriptorSetLayoutBinding {
-            binding: 1,
-            descriptor_type: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
-            descriptor_count: 1,
-            stage_flags: vk::ShaderStageFlags::FRAGMENT,
-            p_immutable_samplers: std::ptr::null(),
-            _marker: Default::default(),
-        },
-        vk::DescriptorSetLayoutBinding {
-            binding: 2,
-            descriptor_type: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
-            descriptor_count: 1,
-            stage_flags: vk::ShaderStageFlags::FRAGMENT,
-            p_immutable_samplers: std::ptr::null(),
-            _marker: Default::default(),
-        },
-        vk::DescriptorSetLayoutBinding {
-            binding: 3,
-            descriptor_type: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
-            descriptor_count: 1,
-            stage_flags: vk::ShaderStageFlags::FRAGMENT,
-            p_immutable_samplers: std::ptr::null(),
-            _marker: Default::default(),
-        },
-        vk::DescriptorSetLayoutBinding {
-            binding: 4,
-            descriptor_type: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
-            descriptor_count: 1,
-            stage_flags: vk::ShaderStageFlags::FRAGMENT,
-            p_immutable_samplers: std::ptr::null(),
-            _marker: Default::default(),
-        },
-        vk::DescriptorSetLayoutBinding {
-            binding: 5,
-            descriptor_type: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
-            descriptor_count: 1,
-            stage_flags: vk::ShaderStageFlags::FRAGMENT,
-            p_immutable_samplers: std::ptr::null(),
-            _marker: Default::default(),
-        },
-        vk::DescriptorSetLayoutBinding {
-            binding: 6,
-            descriptor_type: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
-            descriptor_count: 1,
-            stage_flags: vk::ShaderStageFlags::FRAGMENT,
-            p_immutable_samplers: std::ptr::null(),
-            _marker: Default::default(),
-        },
-        vk::DescriptorSetLayoutBinding {
-            binding: 7,
-            descriptor_type: vk::DescriptorType::UNIFORM_BUFFER,
-            descriptor_count: 1,
-            stage_flags: vk::ShaderStageFlags::FRAGMENT,
-            ..Default::default()
-        },
-        vk::DescriptorSetLayoutBinding {
-            binding: 8,
-            descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
-            descriptor_count: 1,
-            stage_flags: vk::ShaderStageFlags::FRAGMENT,
-            ..Default::default()
-        },
-    ];
-    let descriptor_layout_create_info = vk::DescriptorSetLayoutCreateInfo {
-        s_type: vk::StructureType::DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-        binding_count: bindings.len() as u32,
-        p_bindings: bindings.as_ptr(),
-        ..Default::default()
-    };
-    let lighting_descriptor_set_layout = base.device
-        .create_descriptor_set_layout(&descriptor_layout_create_info, None)
-        .expect("Failed to create lighting descriptor set layout");
+    //<editor-fold desc = "lighting descriptor set">
+    let texture_sampler_create_info = render::DescriptorCreateInfo::new(base)
+        .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
+        .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
+        .shader_stages(ShaderStageFlags::FRAGMENT);
+    let camera_ubo_create_info = render::DescriptorCreateInfo::new(base)
+        .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
+        .descriptor_type(DescriptorType::UNIFORM_BUFFER)
+        .size(size_of::<UniformData>() as u64)
+        .shader_stages(ShaderStageFlags::FRAGMENT);
+    let lights_ssbo_create_info = render::DescriptorCreateInfo::new(base)
+        .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
+        .descriptor_type(DescriptorType::STORAGE_BUFFER)
+        .shader_stages(ShaderStageFlags::FRAGMENT)
+        .buffers(world.lights_buffers.iter().map(|b| {b.0.clone()}).collect());
 
-    let lighting_descriptor_set_layouts = vec![lighting_descriptor_set_layout; MAX_FRAMES_IN_FLIGHT];
-    let alloc_info = vk::DescriptorSetAllocateInfo {
-        s_type: vk::StructureType::DESCRIPTOR_SET_ALLOCATE_INFO,
-        descriptor_pool: lighting_descriptor_pool,
-        descriptor_set_count: MAX_FRAMES_IN_FLIGHT as u32,
-        p_set_layouts: lighting_descriptor_set_layouts.as_ptr(),
-        ..Default::default()
-    };
-    let lighting_descriptor_sets = base.device
-        .allocate_descriptor_sets(&alloc_info)
-        .expect("Failed to allocate lighting descriptor sets");
-    for i in 0..MAX_FRAMES_IN_FLIGHT {
-        let light_matrices_ssbo_info = vk::DescriptorBufferInfo {
-            buffer: world.lights_buffers[i].0,
-            offset: 0,
-            range: vk::WHOLE_SIZE,
-        };
-        let descriptor_writes = [
-            vk::WriteDescriptorSet {
-                s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
-                dst_set: lighting_descriptor_sets[i],
-                dst_binding: 7,
-                dst_array_element: 0,
-                descriptor_type: vk::DescriptorType::UNIFORM_BUFFER,
-                descriptor_count: 1,
-                p_buffer_info: &vk::DescriptorBufferInfo {
-                    buffer: lighting_ubo.owned_buffers.0[i],
-                    offset: 0,
-                    range: vk::WHOLE_SIZE
-                },
-                ..Default::default()
-            },
-            vk::WriteDescriptorSet {
-                s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
-                dst_set: lighting_descriptor_sets[i],
-                dst_binding: 8,
-                dst_array_element: 0,
-                descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
-                descriptor_count: 1,
-                p_buffer_info: &light_matrices_ssbo_info,
-                ..Default::default()
-            },
-        ];
-        base.device.update_descriptor_sets(&descriptor_writes, &[]);
-    }
+    let lighting_descriptor_set_create_info = render::DescriptorSetCreateInfo::new(base)
+        .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
+        .add_descriptor(render::Descriptor::new(&texture_sampler_create_info))
+        .add_descriptor(render::Descriptor::new(&texture_sampler_create_info))
+        .add_descriptor(render::Descriptor::new(&texture_sampler_create_info))
+        .add_descriptor(render::Descriptor::new(&texture_sampler_create_info))
+        .add_descriptor(render::Descriptor::new(&texture_sampler_create_info))
+        .add_descriptor(render::Descriptor::new(&texture_sampler_create_info))
+        .add_descriptor(render::Descriptor::new(&texture_sampler_create_info))
+        .add_descriptor(render::Descriptor::new(&camera_ubo_create_info))
+        .add_descriptor(render::Descriptor::new(&lights_ssbo_create_info));
+
+    let lighting_descriptor_set = render::DescriptorSet::new(lighting_descriptor_set_create_info);
     //</editor-fold>
 
     // <editor-fold desc = "present descriptor pools">
@@ -419,7 +288,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
             &vk::PipelineLayoutCreateInfo {
                 s_type: vk::StructureType::PIPELINE_LAYOUT_CREATE_INFO,
                 set_layout_count: 1,
-                p_set_layouts: lighting_descriptor_set_layouts.as_ptr(),
+                p_set_layouts: &lighting_descriptor_set.descriptor_set_layout,
                 ..Default::default()
             }, None
         ).unwrap();
@@ -962,9 +831,9 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                 ];
                 let lighting_descriptor_writes: Vec<vk::WriteDescriptorSet> = image_infos.iter().enumerate().map(|(i, info)| {
                     vk::WriteDescriptorSet::default()
-                        .dst_set(lighting_descriptor_sets[current_frame])
-                        .dst_binding((i) as u32)
-                        .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                        .dst_set(lighting_descriptor_set.descriptor_sets[current_frame])
+                        .dst_binding(i as u32)
+                        .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
                         .image_info(std::slice::from_ref(info))
                 }).collect();
                 base.device.update_descriptor_sets(&lighting_descriptor_writes, &[]);
@@ -987,7 +856,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                     projection: player_camera.projection_matrix.data,
                 };
                 copy_data_to_memory(geometry_descriptor_set.descriptors[0].owned_buffers.2[current_frame], &[ubo]);
-                copy_data_to_memory(lighting_ubo.owned_buffers.2[current_frame], &[ubo]);
+                copy_data_to_memory(lighting_descriptor_set.descriptors[7].owned_buffers.2[current_frame], &[ubo]);
                 let ubo = UniformData {
                     view: world.lights[0].view.data,
                     projection: world.lights[0].projection.data,
@@ -1101,7 +970,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                             vk::PipelineBindPoint::GRAPHICS,
                             lighting_pipeline_layout,
                             0,
-                            &[lighting_descriptor_sets[current_frame]],
+                            &[lighting_descriptor_set.descriptor_sets[current_frame]],
                             &[],
                         );
                         device.cmd_draw(current_draw_command_buffer, 6, 1, 0, 0);
@@ -1169,6 +1038,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
 
     geometry_descriptor_set.destroy(base);
     shadow_descriptor_set.destroy(base);
+    lighting_descriptor_set.destroy(base);
 
     geom_shader.destroy(base);
     shadow_shader.destroy(base);
@@ -1181,10 +1051,6 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
     lighting_pass.destroy(base);
     present_pass.destroy(base);
 
-    lighting_ubo.destroy(base);
-
-    base.device.destroy_descriptor_set_layout(lighting_descriptor_set_layout, None);
-    base.device.destroy_descriptor_pool(lighting_descriptor_pool, None);
     base.device.destroy_descriptor_set_layout(present_descriptor_set_layout, None);
     base.device.destroy_descriptor_pool(present_descriptor_pool, None);
 

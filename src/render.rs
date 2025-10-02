@@ -840,7 +840,7 @@ impl DescriptorSet {
                     Some((DescriptorType::STORAGE_BUFFER, binding - 1, d))
                 }
                 DescriptorType::COMBINED_IMAGE_SAMPLER => {
-                    Some((DescriptorType::COMBINED_IMAGE_SAMPLER, binding - 1, d))
+                    if d.is_dynamic { Some((DescriptorType::COMBINED_IMAGE_SAMPLER, binding - 1, d)) } else { None }
                 }
                 _ => { 
                     None
