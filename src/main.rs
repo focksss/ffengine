@@ -66,8 +66,8 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
     //world.add_model(Model::new("C:\\Graphics\\assets\\flower\\scene.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\rivals\\luna\\gltf\\luna.gltf"));
 
-    world.add_model(Model::new("C:\\Graphics\\assets\\bistro2\\untitled.gltf"));
-    //world.add_model(Model::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf"));
+    //world.add_model(Model::new("C:\\Graphics\\assets\\bistro2\\untitled.gltf"));
+    world.add_model(Model::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\catTest\\catTest.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\helmet\\DamagedHelmet.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\hydrant\\untitled.gltf"));
@@ -82,135 +82,6 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
 
 
     let null_tex = base.create_2d_texture_image(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("local_assets\\null8x.png"), true);
-    
-    
-    let camera_ubo_create_info = render::DescriptorCreateInfo::new(base)
-        .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
-        .descriptor_type(DescriptorType::UNIFORM_BUFFER)
-        .size(size_of::<UniformData>() as u64)
-        .shader_stages(ShaderStageFlags::VERTEX);
-    //<editor-fold desc = "geometry/shadow uniform buffers">
-    let geometry_ubo = render::Descriptor::new(&camera_ubo_create_info);
-    let shadow_ubo = render::Descriptor::new(&camera_ubo_create_info);
-    //</editor-fold>
-    //<editor-fold desc = "geometry/shadow descriptor pools">
-    let geometry_descriptor_pool_sizes = [
-        vk::DescriptorPoolSize {
-            ty: vk::DescriptorType::UNIFORM_BUFFER,
-            descriptor_count: MAX_FRAMES_IN_FLIGHT as u32,
-            ..Default::default()
-        }, // uniform buffer
-        vk::DescriptorPoolSize {
-            ty: vk::DescriptorType::STORAGE_BUFFER,
-            descriptor_count: MAX_FRAMES_IN_FLIGHT as u32,
-            ..Default::default()
-        }, // material SSBO
-        vk::DescriptorPoolSize {
-            ty: vk::DescriptorType::STORAGE_BUFFER,
-            descriptor_count: MAX_FRAMES_IN_FLIGHT as u32,
-            ..Default::default()
-        }, // joint SSBO
-        vk::DescriptorPoolSize {
-            ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
-            descriptor_count: (MAX_FRAMES_IN_FLIGHT * 1024) as u32,
-            ..Default::default()
-        }, // array of textures
-    ];
-    let geometry_descriptor_pool_create_info = vk::DescriptorPoolCreateInfo {
-        s_type: vk::StructureType::DESCRIPTOR_POOL_CREATE_INFO,
-        pool_size_count: geometry_descriptor_pool_sizes.len() as u32,
-        p_pool_sizes: geometry_descriptor_pool_sizes.as_ptr(),
-        max_sets: MAX_FRAMES_IN_FLIGHT as u32,
-        flags: vk::DescriptorPoolCreateFlags::UPDATE_AFTER_BIND,
-        ..Default::default()
-    };
-    let geometry_descriptor_pool = base.device.create_descriptor_pool(&geometry_descriptor_pool_create_info, None).expect("failed to create descriptor pool");
-    let shadow_descriptor_pool = base.device.create_descriptor_pool(&geometry_descriptor_pool_create_info, None).expect("failed to create descriptor pool");
-    //</editor-fold>
-    //<editor-fold desc = "geometry/shadow descriptor sets">
-    let bindings = [
-        vk::DescriptorSetLayoutBinding {
-            binding: 0,
-            descriptor_type: vk::DescriptorType::UNIFORM_BUFFER,
-            descriptor_count: 1,
-            stage_flags: vk::ShaderStageFlags::VERTEX,
-            ..Default::default()
-        },
-        vk::DescriptorSetLayoutBinding {
-            binding: 1,
-            descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
-            descriptor_count: 1,
-            stage_flags: vk::ShaderStageFlags::FRAGMENT,
-            ..Default::default()
-        },
-        vk::DescriptorSetLayoutBinding {
-            binding: 2,
-            descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
-            descriptor_count: 1,
-            stage_flags: vk::ShaderStageFlags::VERTEX,
-            ..Default::default()
-        },
-        vk::DescriptorSetLayoutBinding {
-            binding: 3,
-            descriptor_type: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
-            descriptor_count: 1024u32,
-            stage_flags: vk::ShaderStageFlags::FRAGMENT,
-            ..Default::default()
-        },
-    ];
-    let binding_flags = [
-        vk::DescriptorBindingFlags::empty(),
-        vk::DescriptorBindingFlags::empty(),
-        vk::DescriptorBindingFlags::empty(),
-        vk::DescriptorBindingFlags::PARTIALLY_BOUND |
-            vk::DescriptorBindingFlags::VARIABLE_DESCRIPTOR_COUNT |
-            vk::DescriptorBindingFlags::UPDATE_AFTER_BIND,
-    ];
-    let geometry_set_binding_flags_info = vk::DescriptorSetLayoutBindingFlagsCreateInfo {
-        s_type: vk::StructureType::DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO,
-        binding_count: binding_flags.len() as u32,
-        p_binding_flags: binding_flags.as_ptr(),
-        ..Default::default()
-    };
-    let descriptor_layout_create_info = vk::DescriptorSetLayoutCreateInfo {
-        s_type: vk::StructureType::DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-        p_next: &geometry_set_binding_flags_info as *const _ as *const c_void,
-        binding_count: bindings.len() as u32,
-        p_bindings: bindings.as_ptr(),
-        flags: vk::DescriptorSetLayoutCreateFlags::UPDATE_AFTER_BIND_POOL,
-        ..Default::default()
-    };
-    let geometry_descriptor_set_layout = base.device.create_descriptor_set_layout(&descriptor_layout_create_info, None)?;
-    let geometry_descriptor_set_layouts = vec![geometry_descriptor_set_layout; MAX_FRAMES_IN_FLIGHT];
-
-    let variable_counts = vec![1024u32; MAX_FRAMES_IN_FLIGHT];
-    let variable_count_info = vk::DescriptorSetVariableDescriptorCountAllocateInfo {
-        s_type: vk::StructureType::DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_ALLOCATE_INFO,
-        descriptor_set_count: MAX_FRAMES_IN_FLIGHT as u32,
-        p_descriptor_counts: variable_counts.as_ptr(),
-        ..Default::default()
-    };
-    let geometry_alloc_info = vk::DescriptorSetAllocateInfo {
-        s_type: vk::StructureType::DESCRIPTOR_SET_ALLOCATE_INFO,
-        p_next: &variable_count_info as *const _ as *const c_void,
-        descriptor_pool: geometry_descriptor_pool,
-        descriptor_set_count: MAX_FRAMES_IN_FLIGHT as u32,
-        p_set_layouts: geometry_descriptor_set_layouts.as_ptr(),
-        ..Default::default()
-    };
-    let shadow_alloc_info = vk::DescriptorSetAllocateInfo {
-        s_type: vk::StructureType::DESCRIPTOR_SET_ALLOCATE_INFO,
-        p_next: &variable_count_info as *const _ as *const c_void,
-        descriptor_pool: shadow_descriptor_pool,
-        descriptor_set_count: MAX_FRAMES_IN_FLIGHT as u32,
-        p_set_layouts: geometry_descriptor_set_layouts.as_ptr(),
-        ..Default::default()
-    };
-    let geometry_descriptor_sets = base.device.allocate_descriptor_sets(&geometry_alloc_info)
-        .expect("Failed to allocate geometry descriptor sets");
-    let shadow_descriptor_sets = base.device.allocate_descriptor_sets(&shadow_alloc_info)
-        .expect("Failed to allocate shadow descriptor sets");
-
     let mut image_infos: Vec<vk::DescriptorImageInfo> = Vec::with_capacity(1024);
     for model in &world.models {
         for texture in &model.textures {
@@ -241,115 +112,44 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
         });
     }
 
-    for i in 0..MAX_FRAMES_IN_FLIGHT {
-        let geometry_uniform_buffer_info = vk::DescriptorBufferInfo {
-            buffer: geometry_ubo.owned_buffers.0[i],
-            offset: 0,
-            range: size_of::<UniformData>() as vk::DeviceSize,
-        };
-        let shadow_uniform_buffer_info = vk::DescriptorBufferInfo {
-            buffer: shadow_ubo.owned_buffers.0[i],
-            offset: 0,
-            range: size_of::<UniformData>() as vk::DeviceSize,
-        };
-        let material_ssbo_info = vk::DescriptorBufferInfo {
-            buffer: world.material_buffers[i].0,
-            offset: 0,
-            range: vk::WHOLE_SIZE,
-        };
-        let joints_ssbo_info = vk::DescriptorBufferInfo {
-            buffer: world.joints_buffers[i].0,
-            offset: 0,
-            range: vk::WHOLE_SIZE,
-        };
-        let descriptor_writes = [
-            // geometry
-            vk::WriteDescriptorSet {
-                s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
-                dst_set: geometry_descriptor_sets[i],
-                dst_binding: 0,
-                dst_array_element: 0,
-                descriptor_type: vk::DescriptorType::UNIFORM_BUFFER,
-                descriptor_count: 1,
-                p_buffer_info: &geometry_uniform_buffer_info,
-                ..Default::default()
-            },
-            vk::WriteDescriptorSet {
-                s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
-                dst_set: geometry_descriptor_sets[i],
-                dst_binding: 1,
-                dst_array_element: 0,
-                descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
-                descriptor_count: 1,
-                p_buffer_info: &material_ssbo_info,
-                ..Default::default()
-            },
-            vk::WriteDescriptorSet {
-                s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
-                dst_set: geometry_descriptor_sets[i],
-                dst_binding: 2,
-                dst_array_element: 0,
-                descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
-                descriptor_count: 1,
-                p_buffer_info: &joints_ssbo_info,
-                ..Default::default()
-            },
-            vk::WriteDescriptorSet {
-                s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
-                dst_set: geometry_descriptor_sets[i],
-                dst_binding: 3,
-                dst_array_element: 0,
-                descriptor_type: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
-                descriptor_count: 1024,
-                p_image_info: image_infos.as_ptr(),
-                ..Default::default()
-            },
 
-            // shadow
-            vk::WriteDescriptorSet {
-                s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
-                dst_set: shadow_descriptor_sets[i],
-                dst_binding: 0,
-                dst_array_element: 0,
-                descriptor_type: vk::DescriptorType::UNIFORM_BUFFER,
-                descriptor_count: 1,
-                p_buffer_info: &shadow_uniform_buffer_info,
-                ..Default::default()
-            },
-            vk::WriteDescriptorSet {
-                s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
-                dst_set: shadow_descriptor_sets[i],
-                dst_binding: 1,
-                dst_array_element: 0,
-                descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
-                descriptor_count: 1,
-                p_buffer_info: &material_ssbo_info,
-                ..Default::default()
-            },
-            vk::WriteDescriptorSet {
-                s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
-                dst_set: shadow_descriptor_sets[i],
-                dst_binding: 2,
-                dst_array_element: 0,
-                descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
-                descriptor_count: 1,
-                p_buffer_info: &joints_ssbo_info,
-                ..Default::default()
-            },
-            vk::WriteDescriptorSet {
-                s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
-                dst_set: shadow_descriptor_sets[i],
-                dst_binding: 3,
-                dst_array_element: 0,
-                descriptor_type: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
-                descriptor_count: 1024,
-                p_image_info: image_infos.as_ptr(),
-                ..Default::default()
-            },
-        ];
-        base.device.update_descriptor_sets(&descriptor_writes, &[]);
-    }
-    //</editor-fold>
+    let camera_ubo_create_info = render::DescriptorCreateInfo::new(base)
+        .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
+        .descriptor_type(DescriptorType::UNIFORM_BUFFER)
+        .size(size_of::<UniformData>() as u64)
+        .shader_stages(ShaderStageFlags::VERTEX);
+    let material_ssbo_create_info = render::DescriptorCreateInfo::new(base)
+        .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
+        .descriptor_type(DescriptorType::STORAGE_BUFFER)
+        .shader_stages(ShaderStageFlags::FRAGMENT)
+        .buffers(world.material_buffers.iter().map(|b| {b.0.clone()}).collect());
+    let joints_ssbo_create_info = render::DescriptorCreateInfo::new(base)
+        .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
+        .descriptor_type(DescriptorType::STORAGE_BUFFER)
+        .shader_stages(ShaderStageFlags::VERTEX)
+        .buffers(world.joints_buffers.iter().map(|b| {b.0.clone()}).collect());
+    let world_texture_samplers_create_info = render::DescriptorCreateInfo::new(base)
+        .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
+        .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
+        .shader_stages(ShaderStageFlags::FRAGMENT)
+        .dynamic(true)
+        .image_infos(image_infos.clone());
+
+    let geometry_descriptor_set_create_info = render::DescriptorSetCreateInfo::new(base)
+        .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
+        .add_descriptor(render::Descriptor::new(&camera_ubo_create_info))
+        .add_descriptor(render::Descriptor::new(&material_ssbo_create_info))
+        .add_descriptor(render::Descriptor::new(&joints_ssbo_create_info))
+        .add_descriptor(render::Descriptor::new(&world_texture_samplers_create_info));
+    let shadow_descriptor_set_create_info = render::DescriptorSetCreateInfo::new(base)
+        .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
+        .add_descriptor(render::Descriptor::new(&camera_ubo_create_info))
+        .add_descriptor(render::Descriptor::new(&material_ssbo_create_info))
+        .add_descriptor(render::Descriptor::new(&joints_ssbo_create_info))
+        .add_descriptor(render::Descriptor::new(&world_texture_samplers_create_info));
+
+    let geometry_descriptor_set = render::DescriptorSet::new(geometry_descriptor_set_create_info);
+    let shadow_descriptor_set = render::DescriptorSet::new(shadow_descriptor_set_create_info);
 
     //<editor-fold desc = "lighting uniform buffers">
     let lighting_ubo = render::Descriptor::new(&camera_ubo_create_info);
@@ -609,7 +409,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
             &vk::PipelineLayoutCreateInfo {
                 s_type: vk::StructureType::PIPELINE_LAYOUT_CREATE_INFO,
                 set_layout_count: 1,
-                p_set_layouts: &geometry_descriptor_set_layout,
+                p_set_layouts: &geometry_descriptor_set.descriptor_set_layout,
                 ..Default::default()
             }, None
         ).unwrap();
@@ -1186,13 +986,13 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                     view: player_camera.view_matrix.data,
                     projection: player_camera.projection_matrix.data,
                 };
-                copy_data_to_memory(geometry_ubo.owned_buffers.2[current_frame], &[ubo]);
+                copy_data_to_memory(geometry_descriptor_set.descriptors[0].owned_buffers.2[current_frame], &[ubo]);
                 copy_data_to_memory(lighting_ubo.owned_buffers.2[current_frame], &[ubo]);
                 let ubo = UniformData {
                     view: world.lights[0].view.data,
                     projection: world.lights[0].projection.data,
                 };
-                copy_data_to_memory(shadow_ubo.owned_buffers.2[current_frame], &[ubo]);
+                copy_data_to_memory(shadow_descriptor_set.descriptors[0].owned_buffers.2[current_frame], &[ubo]);
 
                 let geometry_pass_pass_begin_info = vk::RenderPassBeginInfo::default()
                     .render_pass(geometry_pass.renderpass)
@@ -1245,7 +1045,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                             vk::PipelineBindPoint::GRAPHICS,
                             geometry_pipeline_layout,
                             0,
-                            &[geometry_descriptor_sets[current_frame]],
+                            &[geometry_descriptor_set.descriptor_sets[current_frame]],
                             &[],
                         );
                         world.draw(base, &frame_command_buffer, current_frame, Some(&player_camera.frustum));
@@ -1273,7 +1073,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                             vk::PipelineBindPoint::GRAPHICS,
                             geometry_pipeline_layout,
                             0,
-                            &[shadow_descriptor_sets[current_frame]],
+                            &[shadow_descriptor_set.descriptor_sets[current_frame]],
                             &[],
                         );
                         world.draw(base, &frame_command_buffer, current_frame, None);
@@ -1367,6 +1167,9 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
     base.device.destroy_pipeline_layout(lighting_pipeline_layout, None);
     base.device.destroy_pipeline_layout(present_pipeline_layout, None);
 
+    geometry_descriptor_set.destroy(base);
+    shadow_descriptor_set.destroy(base);
+
     geom_shader.destroy(base);
     shadow_shader.destroy(base);
     lighting_shader.destroy(base);
@@ -1379,12 +1182,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
     present_pass.destroy(base);
 
     lighting_ubo.destroy(base);
-    geometry_ubo.destroy(base);
-    shadow_ubo.destroy(base);
 
-    base.device.destroy_descriptor_set_layout(geometry_descriptor_set_layout, None);
-    base.device.destroy_descriptor_pool(geometry_descriptor_pool, None);
-    base.device.destroy_descriptor_pool(shadow_descriptor_pool, None);
     base.device.destroy_descriptor_set_layout(lighting_descriptor_set_layout, None);
     base.device.destroy_descriptor_pool(lighting_descriptor_pool, None);
     base.device.destroy_descriptor_set_layout(present_descriptor_set_layout, None);

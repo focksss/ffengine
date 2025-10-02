@@ -574,6 +574,7 @@ impl TextureCreateInfo<'_> {
     }
 }
 
+#[derive(Debug)]
 pub struct Descriptor {
     pub descriptor_type: DescriptorType,
     pub shader_stages: ShaderStageFlags,
@@ -613,7 +614,7 @@ impl Descriptor {
                 Descriptor {
                     descriptor_type: DescriptorType::UNIFORM_BUFFER,
                     shader_stages: create_info.shader_stages,
-                    is_dynamic: false,
+                    is_dynamic: create_info.dynamic,
                     offset: Some(create_info.offset),
                     range: Some(create_info.range),
                     descriptor_count: 1,
@@ -624,9 +625,9 @@ impl Descriptor {
             }
             DescriptorType::STORAGE_BUFFER => {
                 Descriptor {
-                    descriptor_type: DescriptorType::UNIFORM_BUFFER,
+                    descriptor_type: DescriptorType::STORAGE_BUFFER,
                     shader_stages: create_info.shader_stages,
-                    is_dynamic: false,
+                    is_dynamic: create_info.dynamic,
                     offset: Some(create_info.offset),
                     range: Some(create_info.range),
                     descriptor_count: 1,
@@ -639,12 +640,12 @@ impl Descriptor {
                 Descriptor {
                     descriptor_type: DescriptorType::COMBINED_IMAGE_SAMPLER,
                     shader_stages: create_info.shader_stages,
-                    is_dynamic: false,
+                    is_dynamic: create_info.dynamic,
                     offset: None,
                     range: None,
                     descriptor_count: create_info.image_infos.as_ref().map_or(1, |v| v.len()) as u32,
                     owned_buffers: (Vec::new(), Vec::new(), Vec::new()),
-                    buffer_refs: create_info.buffers.clone().unwrap(),
+                    buffer_refs: create_info.buffers.clone().as_ref().map_or(Vec::new(), |v| v.to_vec()),
                     image_infos: create_info.image_infos.as_ref().map_or(None, |i| Some(i.as_ptr())),
                 }
             }
@@ -683,7 +684,8 @@ pub struct DescriptorCreateInfo<'a> {
     pub range: DeviceSize,
     pub buffers: Option<Vec<Buffer>>,
     pub image_infos: Option<Vec<vk::DescriptorImageInfo>>,
-    pub memory_property_flags: MemoryPropertyFlags
+    pub memory_property_flags: MemoryPropertyFlags,
+    pub dynamic: bool,
 }
 impl DescriptorCreateInfo<'_> {
     pub fn new(base: &VkBase) -> DescriptorCreateInfo {
@@ -698,6 +700,7 @@ impl DescriptorCreateInfo<'_> {
             buffers: None,
             image_infos: None,
             memory_property_flags: MemoryPropertyFlags::HOST_VISIBLE | MemoryPropertyFlags::HOST_COHERENT,
+            dynamic: false,
         }
     }
     pub fn frames_in_flight(mut self, frames_in_flight: usize) -> Self {
@@ -712,7 +715,7 @@ impl DescriptorCreateInfo<'_> {
         self.size = Some(size);
         self
     }
-    pub fn shader_stages(mut self, shader_stages: vk::ShaderStageFlags) -> Self {
+    pub fn shader_stages(mut self, shader_stages: ShaderStageFlags) -> Self {
         self.shader_stages = shader_stages;
         self
     }
@@ -732,8 +735,12 @@ impl DescriptorCreateInfo<'_> {
         self.buffers = Some(buffers);
         self
     }
-    pub fn image_infos(mut self, image_infos: Vec<vk::DescriptorImageInfo>) -> Self {
+    pub fn image_infos(mut self, image_infos: Vec<DescriptorImageInfo>) -> Self {
         self.image_infos = Some(image_infos);
+        self
+    }
+    pub fn dynamic(mut self, dynamic: bool) -> Self {
+        self.dynamic = dynamic;
         self
     }
 }
@@ -742,9 +749,10 @@ pub struct DescriptorSet {
     pub descriptor_sets: Vec<vk::DescriptorSet>,
     pub descriptor_set_layout: DescriptorSetLayout,
     pub descriptor_pool: DescriptorPool,
+    pub descriptors: Vec<Descriptor>,
 }
 impl DescriptorSet {
-    pub unsafe fn new(create_info: &DescriptorSetCreateInfo) -> DescriptorSet { unsafe {
+    pub unsafe fn new(create_info: DescriptorSetCreateInfo) -> DescriptorSet { unsafe {
         let base = create_info.base;
         let mut has_dynamic = false;
         let mut variable_descriptor_count = 0;
@@ -840,19 +848,26 @@ impl DescriptorSet {
             }
         }).collect::<Vec<Option<(DescriptorType, u32, &Descriptor)>>>();
         for i in 0..create_info.frames_in_flight {
+            let mut buffer_infos = Vec::new();
             let descriptor_writes = infos.iter().filter_map(|maybe_info| {
                 let info = maybe_info.as_ref()?;
-                let buffer_info = match info.0 {
-                    DescriptorType::UNIFORM_BUFFER => Some(vk::DescriptorBufferInfo {
-                        buffer: info.2.owned_buffers.0[i],
-                        offset: info.2.offset.unwrap(),
-                        range: info.2.range.unwrap(),
-                    }),
-                    DescriptorType::STORAGE_BUFFER => Some(vk::DescriptorBufferInfo {
-                        buffer: info.2.buffer_refs[i],
-                        offset: info.2.offset.unwrap(),
-                        range: info.2.range.unwrap(),
-                    }),
+                let buffer_info_idx = match info.0 {
+                    DescriptorType::UNIFORM_BUFFER => {
+                        buffer_infos.push(vk::DescriptorBufferInfo {
+                            buffer: info.2.owned_buffers.0[i],
+                            offset: info.2.offset.unwrap(),
+                            range: info.2.range.unwrap(),
+                        });
+                        Some(buffer_infos.len() - 1)
+                    }
+                    DescriptorType::STORAGE_BUFFER => {
+                        buffer_infos.push(vk::DescriptorBufferInfo {
+                            buffer: info.2.buffer_refs[i],
+                            offset: info.2.offset.unwrap(),
+                            range: info.2.range.unwrap(),
+                        });
+                        Some(buffer_infos.len() - 1)
+                    }
                     _ => None,
                 };
                 let image_infos = info.2.image_infos;
@@ -863,9 +878,8 @@ impl DescriptorSet {
                     dst_array_element: 0,
                     descriptor_type: info.0,
                     descriptor_count: info.2.descriptor_count,
-                    p_buffer_info: buffer_info
-                        .as_ref()
-                        .map_or(std::ptr::null(), |b| b),
+                    p_buffer_info: buffer_info_idx
+                        .map_or(std::ptr::null(), |idx| &buffer_infos[idx]),
                     p_image_info: image_infos
                         .map_or(std::ptr::null(), |imgs| imgs),
                     ..Default::default()
@@ -877,10 +891,15 @@ impl DescriptorSet {
             descriptor_sets,
             descriptor_set_layout,
             descriptor_pool,
+            descriptors: create_info.descriptors,
         }
     } }
     pub unsafe fn destroy(self, base: &VkBase) { unsafe {
         base.device.destroy_descriptor_set_layout(self.descriptor_set_layout, None);
+        base.device.destroy_descriptor_pool(self.descriptor_pool, None);
+        for descriptor in self.descriptors {
+            descriptor.destroy(base);
+        }
     } }
 }
 pub struct DescriptorSetCreateInfo<'a> {
@@ -905,4 +924,3 @@ impl DescriptorSetCreateInfo<'_> {
         self
     }
 }
-// CAN INLINE DESCRIPTOR POOLS INTO DESCRIPTOR SET CREATION
