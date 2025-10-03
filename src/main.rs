@@ -183,55 +183,11 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
     //</editor-fold>
 
     // <editor-fold desc = "present descriptor pools">
-    let present_descriptor_pool_sizes = [
-        vk::DescriptorPoolSize {
-            ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
-            descriptor_count: MAX_FRAMES_IN_FLIGHT as u32,
-            ..Default::default()
-        },
-    ];
-    let present_descriptor_pool_create_info = vk::DescriptorPoolCreateInfo {
-        s_type: vk::StructureType::DESCRIPTOR_POOL_CREATE_INFO,
-        pool_size_count: present_descriptor_pool_sizes.len() as u32,
-        p_pool_sizes: present_descriptor_pool_sizes.as_ptr(),
-        max_sets: MAX_FRAMES_IN_FLIGHT as u32,
-        ..Default::default()
-    };
-    let bindings = [
-        vk::DescriptorSetLayoutBinding {
-            binding: 0,
-            descriptor_type: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
-            descriptor_count: 1,
-            stage_flags: vk::ShaderStageFlags::FRAGMENT,
-            p_immutable_samplers: std::ptr::null(),
-            _marker: Default::default(),
-        },
-    ];
-    let descriptor_layout_create_info = vk::DescriptorSetLayoutCreateInfo {
-        s_type: vk::StructureType::DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-        binding_count: bindings.len() as u32,
-        p_bindings: bindings.as_ptr(),
-        ..Default::default()
-    };
-    let present_descriptor_set_layout = base.device
-        .create_descriptor_set_layout(&descriptor_layout_create_info, None)
-        .expect("Failed to create lighting descriptor set layout");
-    let present_descriptor_pool = base.device
-        .create_descriptor_pool(&present_descriptor_pool_create_info, None)
-        .expect("Failed to create lighting descriptor pool");
-    //</editor-fold>
-    //<editor-fold desc = "present descriptor sets">
-    let present_descriptor_set_layouts = vec![present_descriptor_set_layout; MAX_FRAMES_IN_FLIGHT];
-    let alloc_info = vk::DescriptorSetAllocateInfo {
-        s_type: vk::StructureType::DESCRIPTOR_SET_ALLOCATE_INFO,
-        descriptor_pool: present_descriptor_pool,
-        descriptor_set_count: MAX_FRAMES_IN_FLIGHT as u32,
-        p_set_layouts: present_descriptor_set_layouts.as_ptr(),
-        ..Default::default()
-    };
-    let present_descriptor_sets = base.device
-        .allocate_descriptor_sets(&alloc_info)
-        .expect("Failed to allocate lighting descriptor sets");
+    let present_descriptor_set_create_info = render::DescriptorSetCreateInfo::new(base)
+        .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
+        .add_descriptor(render::Descriptor::new(&texture_sampler_create_info));
+
+    let present_descriptor_set = render::DescriptorSet::new(present_descriptor_set_create_info);
     //</editor-fold>
 
     //<editor-fold desc = "passes">
@@ -298,7 +254,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
             &vk::PipelineLayoutCreateInfo {
                 s_type: vk::StructureType::PIPELINE_LAYOUT_CREATE_INFO,
                 set_layout_count: 1,
-                p_set_layouts: present_descriptor_set_layouts.as_ptr(),
+                p_set_layouts: &present_descriptor_set.descriptor_set_layout,
                 ..Default::default()
             }, None
         ).unwrap();
@@ -845,7 +801,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                 }];
                 let present_descriptor_writes: Vec<vk::WriteDescriptorSet> = vec![
                     vk::WriteDescriptorSet::default()
-                        .dst_set(present_descriptor_sets[current_frame])
+                        .dst_set(present_descriptor_set.descriptor_sets[current_frame])
                         .dst_binding(0)
                         .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
                         .image_info(&info)];
@@ -998,7 +954,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                             vk::PipelineBindPoint::GRAPHICS,
                             present_pipeline_layout,
                             0,
-                            &[present_descriptor_sets[current_frame]],
+                            &[present_descriptor_set.descriptor_sets[current_frame]],
                             &[],
                         );
                         device.cmd_draw(current_draw_command_buffer, 6, 1, 0, 0);
@@ -1039,6 +995,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
     geometry_descriptor_set.destroy(base);
     shadow_descriptor_set.destroy(base);
     lighting_descriptor_set.destroy(base);
+    present_descriptor_set.destroy(base);
 
     geom_shader.destroy(base);
     shadow_shader.destroy(base);
@@ -1050,9 +1007,6 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
     shadow_pass.destroy(base);
     lighting_pass.destroy(base);
     present_pass.destroy(base);
-
-    base.device.destroy_descriptor_set_layout(present_descriptor_set_layout, None);
-    base.device.destroy_descriptor_pool(present_descriptor_pool, None);
 
     base.device.destroy_sampler(sampler, None);
 
