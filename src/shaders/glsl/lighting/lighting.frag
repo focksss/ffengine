@@ -82,5 +82,6 @@ void main() {
     vec3 view_normal = (texture(g_view_normal, uv).xyz * 2.0) - 1.0;
     vec3 world_normal = mat3(inverse_view) * view_normal;
 
+    //uFragColor = vec4(world_normal, 1.0);
     uFragColor = vec4(albedo * max(0.2, get_shadow(lights_SSBO.lights[0], world_position, world_normal) * max(0.0, dot(world_normal, -normalize(lights_SSBO.lights[0].vector)))), 1.0);
 }

@@ -46,6 +46,7 @@ void main() {
     o_uv = vec2(uv.x, uv.y);
     o_material = material;
 
+
     mat3 view_normal_matrix = transpose(inverse(mat3(ubo.view * model_matrix)));
     o_view_normal = normalize(view_normal_matrix * normal);
 

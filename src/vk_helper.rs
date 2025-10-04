@@ -1139,7 +1139,7 @@ impl VkBase {
                     },
                     mip_levels: image_mip_levels,
                     array_layers: 1,
-                    format: vk::Format::R8G8B8A8_SRGB,
+                    format: vk::Format::R8G8B8A8_UNORM,
                     tiling: vk::ImageTiling::OPTIMAL,
                     initial_layout: vk::ImageLayout::UNDEFINED,
                     usage,
@@ -1207,7 +1207,7 @@ impl VkBase {
                     s_type: vk::StructureType::IMAGE_VIEW_CREATE_INFO,
                     image: texture_image,
                     view_type: vk::ImageViewType::TYPE_2D,
-                    format: vk::Format::R8G8B8A8_SRGB,
+                    format: vk::Format::R8G8B8A8_UNORM,
                     subresource_range: ImageSubresourceRange {
                         aspect_mask: ImageAspectFlags::COLOR,
                         base_mip_level: 0,
