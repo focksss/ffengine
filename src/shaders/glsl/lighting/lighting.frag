@@ -14,8 +14,9 @@ layout(set = 0, binding = 4) uniform sampler2D g_depth;
 layout(set = 0, binding = 5) uniform sampler2D g_view_normal;
 
 layout(set = 0, binding = 6) uniform sampler2D shadowmap;
+layout(set = 0, binding = 7) uniform sampler2D ssao_tex;
 
-layout(binding = 7) uniform UniformBuffer {
+layout(binding = 8) uniform UniformBuffer {
     mat4 view;
     mat4 projection;
 } ubo;
@@ -26,7 +27,7 @@ struct Light {
     vec3 vector;
 };
 
-layout(set = 0, binding = 8, std430) readonly buffer LightsSSBO {
+layout(set = 0, binding = 9, std430) readonly buffer LightsSSBO {
     Light lights[];
 } lights_SSBO;
 
@@ -82,6 +83,6 @@ void main() {
     vec3 view_normal = (texture(g_view_normal, uv).xyz * 2.0) - 1.0;
     vec3 world_normal = mat3(inverse_view) * view_normal;
 
-    //uFragColor = vec4(world_normal, 1.0);
-    uFragColor = vec4(albedo * max(0.2, get_shadow(lights_SSBO.lights[0], world_position, world_normal) * max(0.0, dot(world_normal, -normalize(lights_SSBO.lights[0].vector)))), 1.0);
+    //uFragColor = vec4(texture(ssao_tex, uv).rgb, 1.0);
+    uFragColor = vec4(albedo * texture(ssao_tex, uv).r * max(0.2, get_shadow(lights_SSBO.lights[0], world_position, world_normal) * max(0.0, dot(world_normal, -normalize(lights_SSBO.lights[0].vector)))), 1.0);
 }

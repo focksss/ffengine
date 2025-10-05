@@ -16,7 +16,7 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use ash::vk;
-use ash::vk::{Buffer, DescriptorType, DeviceMemory, Format, ShaderStageFlags};
+use ash::vk::{Buffer, DescriptorType, DeviceMemory, Format, ImageAspectFlags, ImageSubresourceRange, ShaderStageFlags};
 use winit::dpi::{PhysicalPosition, Pixel};
 use winit::event::{ElementState, Event, KeyEvent, WindowEvent};
 use winit::event_loop::ControlFlow;
@@ -36,9 +36,12 @@ struct CameraMatrixUniformData {
     view: [f32; 16],
     projection: [f32; 16],
 }
+#[derive(Clone, Debug, Copy)]
+#[repr(C)]
 struct SSAOPassUniformData {
-    samples: [[f32; 3]; 64],
+    samples: [[f32; 4]; 16],
     projection: [f32; 16],
+    inverse_projection: [f32; 16],
     radius: f32,
     width: i32,
     height: i32,
@@ -76,10 +79,10 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
     //world.add_model(Model::new("C:\\Graphics\\assets\\flower\\scene.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\rivals\\luna\\gltf\\luna.gltf"));
 
-    //world.add_model(Model::new("C:\\Graphics\\assets\\bistroGLTF\\untitled.gltf"));
+    world.add_model(Model::new("C:\\Graphics\\assets\\bistroGLTF\\untitled.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\catTest\\catTest.gltf"));
-    world.add_model(Model::new("C:\\Graphics\\assets\\helmet\\DamagedHelmet.gltf"));
+    //world.add_model(Model::new("C:\\Graphics\\assets\\helmet\\DamagedHelmet.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\hydrant\\untitled.gltf"));
 
     world.add_light(Light::new(Vector::new_vec3(-1.0, -5.0, -1.0)));
@@ -201,6 +204,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
         .add_descriptor(render::Descriptor::new(&texture_sampler_create_info))
         .add_descriptor(render::Descriptor::new(&texture_sampler_create_info))
         .add_descriptor(render::Descriptor::new(&texture_sampler_create_info))
+        .add_descriptor(render::Descriptor::new(&texture_sampler_create_info))
         .add_descriptor(render::Descriptor::new(&camera_fragment_ubo_create_info))
         .add_descriptor(render::Descriptor::new(&lights_ssbo_create_info));
 
@@ -248,18 +252,79 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
     let present_pass = Pass::new(present_pass_create_info);
     //</editor-fold>
     //<editor-fold desc = "ssao sampling setup">
-    let mut ssao_kernal= [[0.0; 3]; 64];
     let mut rng = rng();
-    for i in 0..64 {
-        let mut scale = i as f32 / 64.0;
+    let mut ssao_kernal= [[0.0; 4]; 16];
+    for i in 0..16 {
+        let mut scale = i as f32 / 16.0;
         scale = 0.1 + ((scale * scale) * (1.0 - 0.1));
         ssao_kernal[i] = Vector::new_from_array(&[rng.random::<f32>() * 2.0 - 1.0, rng.random::<f32>() * 2.0 - 1.0, rng.random::<f32>()])
             .normalize_3d()
             .mul_float(rng.random::<f32>())
-            .mul_float(scale).to_array3();
+            .mul_float(scale).to_array4();
     }
 
+    let mut noise_data = Vec::<[f32; 4]>::with_capacity(16);
+    for _ in 0..16 {
+        noise_data.push([
+            rng.random_range(-1.0..1.0),
+            rng.random_range(-1.0..1.0),
+            0.0,
+            1.0,
+        ]);
+    }
+    let ssao_noise_tex_info = TextureCreateInfo::new(base)
+        .width(4)
+        .height(4)
+        .depth(1)
+        .format(Format::R32G32B32A32_SFLOAT)
+        .usage_flags(
+            vk::ImageUsageFlags::SAMPLED |
+            vk::ImageUsageFlags::TRANSFER_DST
+        )
+        .clear_value([0.0; 4]);
+    let ssao_noise_texture = render::Texture::new(&ssao_noise_tex_info);
 
+    let ((staging_buffer, staging_buffer_memory), _) = base.create_device_and_staging_buffer(
+        0,
+        &noise_data,
+        vk::BufferUsageFlags::TRANSFER_SRC,
+        true,
+        false,
+        true,
+    );
+    base.transition_image_layout(
+        ssao_noise_texture.image,
+        ImageSubresourceRange {
+            aspect_mask: ImageAspectFlags::COLOR,
+            base_mip_level: 0,
+            level_count: 1,
+            base_array_layer: 0,
+            layer_count: 1,
+            ..Default::default()
+        },
+        vk::ImageLayout::UNDEFINED,
+        vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+    );
+    base.copy_buffer_to_image(
+        staging_buffer,
+        ssao_noise_texture.image,
+        vk::Extent3D { width: 4, height: 4, depth: 1 },
+    );
+    base.transition_image_layout(
+        ssao_noise_texture.image,
+        ImageSubresourceRange {
+            aspect_mask: ImageAspectFlags::COLOR,
+            base_mip_level: 0,
+            level_count: 1,
+            base_array_layer: 0,
+            layer_count: 1,
+            ..Default::default()
+        },
+        vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+        vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+    );
+    base.device.destroy_buffer(staging_buffer, None);
+    base.device.free_memory(staging_buffer_memory, None);
     //</editor-fold>
 
     //<editor-fold desc = "shaders">
@@ -485,8 +550,17 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
         min_depth: 0.0,
         max_depth: 1.0,
     }];
+    let half_res_viewports = [vk::Viewport {
+        x: 0.0,
+        y: 0.0,
+        width: (base.surface_resolution.width / 2) as f32,
+        height: (base.surface_resolution.height / 2) as f32,
+        min_depth: 0.0,
+        max_depth: 1.0,
+    }];
 
     let scissors = [base.surface_resolution.into()];
+
 
     let viewport_state_info = vk::PipelineViewportStateCreateInfo::default()
         .scissors(&scissors)
@@ -672,6 +746,15 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
         border_color: vk::BorderColor::FLOAT_OPAQUE_WHITE,
         ..Default::default()
     }, None)?;
+    let nearest_sampler = base.device.create_sampler(&vk::SamplerCreateInfo {
+        mag_filter: vk::Filter::NEAREST,
+        min_filter: vk::Filter::NEAREST,
+        address_mode_u: vk::SamplerAddressMode::REPEAT,
+        address_mode_v: vk::SamplerAddressMode::REPEAT,
+        address_mode_w: vk::SamplerAddressMode::REPEAT,
+        border_color: vk::BorderColor::FLOAT_OPAQUE_WHITE,
+        ..Default::default()
+    }, None)?;
 
     let mut player_camera = Camera::new_perspective_rotation(
         Vector::new_vec3(0.0, 0.0, 0.0),
@@ -794,7 +877,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                 do_controls(&mut player_camera, &pressed_keys, &mut new_pressed_keys, delta_time, &mut cursor_locked, base, &mut saved_cursor_pos, &mut pause_frustum);
                 player_camera.update_matrices();
 
-                world.update_nodes(base, current_frame);
+                //world.update_nodes(base, current_frame);
 
                 if !pause_frustum {
                     player_camera.update_frustum()
@@ -851,6 +934,11 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                         image_view: shadow_pass.textures[current_frame][0].image_view,
                         image_layout: vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
                     }, // shadow map
+                    vk::DescriptorImageInfo {
+                        sampler,
+                        image_view: ssao_pass.textures[current_frame][0].image_view,
+                        image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                    }, // ssao tex
                 ];
                 let lighting_descriptor_writes: Vec<vk::WriteDescriptorSet> = image_infos.iter().enumerate().map(|(i, info)| {
                     vk::WriteDescriptorSet::default()
@@ -879,14 +967,49 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                     projection: player_camera.projection_matrix.data,
                 };
                 copy_data_to_memory(geometry_descriptor_set.descriptors[0].owned_buffers.2[current_frame], &[ubo]);
-                copy_data_to_memory(lighting_descriptor_set.descriptors[7].owned_buffers.2[current_frame], &[ubo]);
+                copy_data_to_memory(lighting_descriptor_set.descriptors[8].owned_buffers.2[current_frame], &[ubo]);
                 let ubo = CameraMatrixUniformData {
                     view: world.lights[0].view.data,
                     projection: world.lights[0].projection.data,
                 };
                 copy_data_to_memory(shadow_descriptor_set.descriptors[0].owned_buffers.2[current_frame], &[ubo]);
 
+                let image_infos = [
+                    vk::DescriptorImageInfo {
+                        sampler,
+                        image_view: geometry_pass.textures[current_frame][5].image_view,
+                        image_layout: vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
+                    }, // geometry depth
+                    vk::DescriptorImageInfo {
+                        sampler,
+                        image_view: geometry_pass.textures[current_frame][4].image_view,
+                        image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                    }, // view normal
+                    vk::DescriptorImageInfo {
+                        sampler: nearest_sampler,
+                        image_view: ssao_noise_texture.image_view,
+                        image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                    }, // noise tex
+                ];
+                let ssao_descriptor_writes: Vec<vk::WriteDescriptorSet> = image_infos.iter().enumerate().map(|(i, info)| {
+                    vk::WriteDescriptorSet::default()
+                        .dst_set(ssao_descriptor_set.descriptor_sets[current_frame])
+                        .dst_binding(i as u32)
+                        .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
+                        .image_info(std::slice::from_ref(info))
+                }).collect();
+                base.device.update_descriptor_sets(&ssao_descriptor_writes, &[]);
 
+                let ubo = SSAOPassUniformData {
+                    samples: ssao_kernal,
+                    projection: player_camera.projection_matrix.data,
+                    inverse_projection: player_camera.projection_matrix.inverse().data,
+                    radius: 1.5,
+                    width: base.surface_resolution.width as i32,
+                    height: base.surface_resolution.height as i32,
+                    _pad0: 0.0,
+                };
+                copy_data_to_memory(ssao_descriptor_set.descriptors[3].owned_buffers.2[current_frame], &[ubo]);
                 //</editor-fold>
 
                 //<editor-fold desc = "passes begin info">
@@ -900,6 +1023,11 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                     .framebuffer(shadow_pass.framebuffers[current_frame])
                     .render_area(base.surface_resolution.into())
                     .clear_values(&shadow_pass.clear_values);
+                let ssao_pass_begin_info = vk::RenderPassBeginInfo::default()
+                    .render_pass(ssao_pass.renderpass)
+                    .framebuffer(ssao_pass.framebuffers[current_frame])
+                    .render_area(base.surface_resolution.into())
+                    .clear_values(&ssao_pass.clear_values);
                 let lighting_pass_pass_begin_info = vk::RenderPassBeginInfo::default()
                     .render_pass(lighting_pass.renderpass)
                     .framebuffer(lighting_pass.framebuffers[current_frame])
@@ -979,6 +1107,34 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                         device.cmd_end_render_pass(frame_command_buffer);
                         //</editor-fold>
                         shadow_pass.transition_to_readable(base, frame_command_buffer, current_frame);
+                        //<editor-fold desc = "ssao pass">
+                        device.cmd_begin_render_pass(
+                            frame_command_buffer,
+                            &ssao_pass_begin_info,
+                            vk::SubpassContents::INLINE,
+                        );
+                        device.cmd_bind_pipeline(
+                            frame_command_buffer,
+                            vk::PipelineBindPoint::GRAPHICS,
+                            ssao_pipeline,
+                        );
+
+                        // draw quad
+                        device.cmd_set_viewport(frame_command_buffer, 0, &viewports);
+                        device.cmd_set_scissor(frame_command_buffer, 0, &scissors);
+                        device.cmd_bind_descriptor_sets(
+                            frame_command_buffer,
+                            vk::PipelineBindPoint::GRAPHICS,
+                            ssao_pipeline_layout,
+                            0,
+                            &[ssao_descriptor_set.descriptor_sets[current_frame]],
+                            &[],
+                        );
+                        device.cmd_draw(current_draw_command_buffer, 6, 1, 0, 0);
+
+                        device.cmd_end_render_pass(frame_command_buffer);
+                        //</editor-fold>
+                        ssao_pass.transition_to_readable(base, frame_command_buffer, current_frame);
                         //<editor-fold desc = "lighting pass">
                         device.cmd_begin_render_pass(
                             frame_command_buffer,
@@ -1085,7 +1241,10 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
     lighting_pass.destroy(base);
     present_pass.destroy(base);
 
+    ssao_noise_texture.destroy(base);
+
     base.device.destroy_sampler(sampler, None);
+    base.device.destroy_sampler(nearest_sampler, None);
 
     base.device.destroy_image_view(null_tex.0.0, None);
     base.device.destroy_sampler(null_tex.0.1, None);

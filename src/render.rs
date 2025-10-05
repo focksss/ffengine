@@ -189,8 +189,8 @@ impl Pass {
                     let framebuffer_create_info = vk::FramebufferCreateInfo::default()
                         .render_pass(renderpass)
                         .attachments(&framebuffer_attachments)
-                        .width(base.surface_resolution.width)
-                        .height(base.surface_resolution.height)
+                        .width(create_info.depth_attachment_create_info.width)
+                        .height(create_info.depth_attachment_create_info.height)
                         .layers(1);
 
                     let fb = base
@@ -363,7 +363,7 @@ impl Texture {
     pub unsafe fn new(create_info: &TextureCreateInfo) -> Self { unsafe {
         let color_image_create_info = vk::ImageCreateInfo {
             s_type: vk::StructureType::IMAGE_CREATE_INFO,
-            image_type: vk::ImageType::TYPE_2D,
+            image_type: if create_info.height > 1 { vk::ImageType::TYPE_2D } else { vk::ImageType::TYPE_1D },
             extent: Extent3D { width: create_info.width, height: create_info.height, depth: 1 },
             mip_levels: 1,
             array_layers: 1,
@@ -392,7 +392,7 @@ impl Texture {
         let image_view_info = vk::ImageViewCreateInfo {
             s_type: vk::StructureType::IMAGE_VIEW_CREATE_INFO,
             image,
-            view_type: vk::ImageViewType::TYPE_2D,
+            view_type: if create_info.height > 1 { vk::ImageViewType::TYPE_2D } else { vk::ImageViewType::TYPE_1D },
             format: create_info.format,
             subresource_range: ImageSubresourceRange {
                 aspect_mask: if create_info.is_depth { ImageAspectFlags::DEPTH } else { ImageAspectFlags::COLOR },
@@ -570,6 +570,12 @@ impl TextureCreateInfo<'_> {
     }
     pub fn clear_value(mut self, clear_value: [f32; 4]) -> Self {
         self.clear_value = clear_value;
+        self
+    }
+    pub fn resolution_denominator(mut self, denominator: u32) -> Self {
+        self.width = self.width / denominator;
+        self.height = self.height / denominator;
+        self.depth = self.depth / denominator;
         self
     }
 }
