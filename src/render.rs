@@ -3,7 +3,7 @@ use std::io::Cursor;
 use ash::{vk, Device, Instance};
 use ash::util::read_spv;
 use ash::vk::{Buffer, ClearColorValue, ClearDepthStencilValue, ClearValue, DescriptorImageInfo, DescriptorPool, DescriptorPoolCreateFlags, DescriptorPoolSize, DescriptorSetLayout, DescriptorSetLayoutCreateFlags, DescriptorType, DeviceMemory, DeviceSize, Extent3D, Format, Handle, ImageAspectFlags, ImageSubresourceRange, ImageUsageFlags, MemoryAllocateFlags, MemoryPropertyFlags, PhysicalDevice, PipelineShaderStageCreateInfo, SampleCountFlags, ShaderModule, ShaderStageFlags};
-use crate::{UniformData, MAX_FRAMES_IN_FLIGHT};
+use crate::{CameraMatrixUniformData, MAX_FRAMES_IN_FLIGHT};
 use crate::vk_helper::{find_memorytype_index, load_file, VkBase};
 
 
@@ -818,7 +818,7 @@ impl DescriptorSet {
             p_descriptor_counts: variable_counts.as_ptr(),
             ..Default::default()
         };
-        let geometry_alloc_info = vk::DescriptorSetAllocateInfo {
+        let alloc_info = vk::DescriptorSetAllocateInfo {
             s_type: vk::StructureType::DESCRIPTOR_SET_ALLOCATE_INFO,
             p_next: if has_dynamic {&variable_count_info as *const _ as *const c_void} else {std::ptr::null()},
             descriptor_pool: descriptor_pool,
@@ -826,7 +826,7 @@ impl DescriptorSet {
             p_set_layouts: descriptor_set_layouts.as_ptr(),
             ..Default::default()
         };
-        let descriptor_sets = base.device.allocate_descriptor_sets(&geometry_alloc_info)
+        let descriptor_sets = base.device.allocate_descriptor_sets(&alloc_info)
             .expect("failed to allocate descriptor sets");
 
         let mut binding = 0;

@@ -13,6 +13,8 @@ use crate::camera::Frustum;
 use crate::vector::Vector;
 use crate::vk_helper::{copy_data_to_memory, VkBase};
 
+// SHOULD DETECT MATH VS COLOR DATA TEXTURES, LOAD COLOR AS SRGB, MATH AS UNORM
+
 pub struct Scene {
     pub models: Vec<Model>,
     pub lights: Vec<Light>,

@@ -1073,190 +1073,188 @@ impl VkBase {
         &self,
         uris: &[PathBuf],
         generate_mipmaps: bool,
-    ) -> Vec<((ImageView, Sampler), (Image, DeviceMemory), u32)> {
-        unsafe {
-            if uris.is_empty() {
-                return Vec::new();
+    ) -> Vec<((ImageView, Sampler), (Image, DeviceMemory), u32)> { unsafe {
+        if uris.is_empty() {
+            return Vec::new();
+        }
+
+        println!("starting parallel image decode...");
+        let decode_start = Instant::now();
+
+        let decoded_images = VkBase::load_images_parallel(uris);
+
+        println!("all images decoded in {:?}", decode_start.elapsed());
+        println!("starting gpu upload...");
+        let upload_start = Instant::now();
+
+        let command_buffers = self.begin_single_time_commands(1);
+        let command_buffer = command_buffers[0];
+
+        let mut results = Vec::with_capacity(uris.len());
+        let mut staging_buffers = Vec::with_capacity(uris.len());
+
+        for (image_data, img_width, img_height) in decoded_images {
+            let image_extent = vk::Extent2D { width: img_width, height: img_height };
+            let image_size = (img_width * img_height * 4) as u64;
+
+            let mut image_mip_levels = 1 + image_extent.height.max(image_extent.width).ilog2();
+            let usage: ImageUsageFlags;
+            if generate_mipmaps {
+                usage = ImageUsageFlags::TRANSFER_SRC | ImageUsageFlags::TRANSFER_DST | ImageUsageFlags::SAMPLED;
+            } else {
+                image_mip_levels = 1;
+                usage = ImageUsageFlags::TRANSFER_DST | ImageUsageFlags::SAMPLED;
             }
 
-            println!("starting parallel image decode...");
-            let decode_start = Instant::now();
-            
-            let decoded_images = VkBase::load_images_parallel(uris);
+            let mut image_staging_buffer = Buffer::null();
+            let mut image_staging_buffer_memory = DeviceMemory::null();
+            VkBase::create_buffer(
+                self,
+                image_size,
+                vk::BufferUsageFlags::TRANSFER_SRC,
+                MemoryPropertyFlags::HOST_VISIBLE | MemoryPropertyFlags::HOST_COHERENT,
+                &mut image_staging_buffer,
+                &mut image_staging_buffer_memory,
+            );
 
-            println!("all images decoded in {:?}", decode_start.elapsed());
-            println!("starting gpu upload...");
-            let upload_start = Instant::now();
-            
-            let command_buffers = self.begin_single_time_commands(1);
-            let command_buffer = command_buffers[0];
-
-            let mut results = Vec::with_capacity(uris.len());
-            let mut staging_buffers = Vec::with_capacity(uris.len());
-            
-            for (image_data, img_width, img_height) in decoded_images {
-                let image_extent = vk::Extent2D { width: img_width, height: img_height };
-                let image_size = (img_width * img_height * 4) as u64;
-
-                let mut image_mip_levels = 1 + image_extent.height.max(image_extent.width).ilog2();
-                let usage: ImageUsageFlags;
-                if generate_mipmaps {
-                    usage = ImageUsageFlags::TRANSFER_SRC | ImageUsageFlags::TRANSFER_DST | ImageUsageFlags::SAMPLED;
-                } else {
-                    image_mip_levels = 1;
-                    usage = ImageUsageFlags::TRANSFER_DST | ImageUsageFlags::SAMPLED;
-                }
-                
-                let mut image_staging_buffer = Buffer::null();
-                let mut image_staging_buffer_memory = DeviceMemory::null();
-                VkBase::create_buffer(
-                    self,
+            let image_ptr = self.device
+                .map_memory(
+                    image_staging_buffer_memory,
+                    0,
                     image_size,
-                    vk::BufferUsageFlags::TRANSFER_SRC,
-                    MemoryPropertyFlags::HOST_VISIBLE | MemoryPropertyFlags::HOST_COHERENT,
-                    &mut image_staging_buffer,
-                    &mut image_staging_buffer_memory,
-                );
+                    vk::MemoryMapFlags::empty(),
+                )
+                .expect("Failed to map image buffer memory");
+            copy_data_to_memory(image_ptr, &image_data);
+            self.device.unmap_memory(image_staging_buffer_memory);
 
-                let image_ptr = self.device
-                    .map_memory(
-                        image_staging_buffer_memory,
-                        0,
-                        image_size,
-                        vk::MemoryMapFlags::empty(),
-                    )
-                    .expect("Failed to map image buffer memory");
-                copy_data_to_memory(image_ptr, &image_data);
-                self.device.unmap_memory(image_staging_buffer_memory);
-                
-                let texture_image_create_info = vk::ImageCreateInfo {
-                    s_type: vk::StructureType::IMAGE_CREATE_INFO,
-                    image_type: vk::ImageType::TYPE_2D,
-                    extent: Extent3D {
-                        width: image_extent.width,
-                        height: image_extent.height,
-                        depth: 1
-                    },
-                    mip_levels: image_mip_levels,
-                    array_layers: 1,
-                    format: vk::Format::R8G8B8A8_UNORM,
-                    tiling: vk::ImageTiling::OPTIMAL,
-                    initial_layout: vk::ImageLayout::UNDEFINED,
-                    usage,
-                    sharing_mode: vk::SharingMode::EXCLUSIVE,
-                    samples: vk::SampleCountFlags::TYPE_1,
+            let texture_image_create_info = vk::ImageCreateInfo {
+                s_type: vk::StructureType::IMAGE_CREATE_INFO,
+                image_type: vk::ImageType::TYPE_2D,
+                extent: Extent3D {
+                    width: image_extent.width,
+                    height: image_extent.height,
+                    depth: 1
+                },
+                mip_levels: image_mip_levels,
+                array_layers: 1,
+                format: vk::Format::R8G8B8A8_UNORM,
+                tiling: vk::ImageTiling::OPTIMAL,
+                initial_layout: vk::ImageLayout::UNDEFINED,
+                usage,
+                sharing_mode: vk::SharingMode::EXCLUSIVE,
+                samples: vk::SampleCountFlags::TYPE_1,
+                ..Default::default()
+            };
+
+            let mut texture_image = Image::null();
+            let mut texture_image_memory = DeviceMemory::null();
+            self.create_image(
+                &texture_image_create_info,
+                MemoryPropertyFlags::DEVICE_LOCAL,
+                &mut texture_image,
+                &mut texture_image_memory,
+            );
+
+            self.transition_image_layout_batched(
+                command_buffer,
+                texture_image,
+                ImageSubresourceRange {
+                    aspect_mask: ImageAspectFlags::COLOR,
+                    base_mip_level: 0,
+                    level_count: image_mip_levels,
+                    base_array_layer: 0,
+                    layer_count: 1,
                     ..Default::default()
-                };
+                },
+                vk::ImageLayout::UNDEFINED,
+                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+            );
 
-                let mut texture_image = Image::null();
-                let mut texture_image_memory = DeviceMemory::null();
-                self.create_image(
-                    &texture_image_create_info,
-                    MemoryPropertyFlags::DEVICE_LOCAL,
-                    &mut texture_image,
-                    &mut texture_image_memory,
+            self.copy_buffer_to_image_batched(
+                command_buffer,
+                image_staging_buffer,
+                texture_image,
+                image_extent.into(),
+            );
+
+            if generate_mipmaps {
+                self.generate_mipmaps_batched(
+                    command_buffer,
+                    texture_image,
+                    image_mip_levels,
+                    image_extent.into(),
                 );
-
+            } else {
                 self.transition_image_layout_batched(
                     command_buffer,
                     texture_image,
                     ImageSubresourceRange {
                         aspect_mask: ImageAspectFlags::COLOR,
                         base_mip_level: 0,
-                        level_count: image_mip_levels,
+                        level_count: 1,
                         base_array_layer: 0,
                         layer_count: 1,
                         ..Default::default()
                     },
-                    vk::ImageLayout::UNDEFINED,
                     vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                    vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                 );
-
-                self.copy_buffer_to_image_batched(
-                    command_buffer,
-                    image_staging_buffer,
-                    texture_image,
-                    image_extent.into(),
-                );
-
-                if generate_mipmaps {
-                    self.generate_mipmaps_batched(
-                        command_buffer,
-                        texture_image,
-                        image_mip_levels,
-                        image_extent.into(),
-                    );
-                } else {
-                    self.transition_image_layout_batched(
-                        command_buffer,
-                        texture_image,
-                        ImageSubresourceRange {
-                            aspect_mask: ImageAspectFlags::COLOR,
-                            base_mip_level: 0,
-                            level_count: 1,
-                            base_array_layer: 0,
-                            layer_count: 1,
-                            ..Default::default()
-                        },
-                        vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                        vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                    );
-                }
-
-                let view_info = vk::ImageViewCreateInfo {
-                    s_type: vk::StructureType::IMAGE_VIEW_CREATE_INFO,
-                    image: texture_image,
-                    view_type: vk::ImageViewType::TYPE_2D,
-                    format: vk::Format::R8G8B8A8_UNORM,
-                    subresource_range: ImageSubresourceRange {
-                        aspect_mask: ImageAspectFlags::COLOR,
-                        base_mip_level: 0,
-                        level_count: image_mip_levels,
-                        base_array_layer: 0,
-                        layer_count: 1,
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                };
-
-                let sampler_info = vk::SamplerCreateInfo {
-                    s_type: vk::StructureType::SAMPLER_CREATE_INFO,
-                    mag_filter: vk::Filter::LINEAR,
-                    min_filter: vk::Filter::LINEAR,
-                    address_mode_u: vk::SamplerAddressMode::REPEAT,
-                    address_mode_v: vk::SamplerAddressMode::REPEAT,
-                    address_mode_w: vk::SamplerAddressMode::REPEAT,
-                    anisotropy_enable: vk::TRUE,
-                    max_anisotropy: self.pdevice_properties.limits.max_sampler_anisotropy,
-                    border_color: vk::BorderColor::INT_OPAQUE_BLACK,
-                    unnormalized_coordinates: vk::FALSE,
-                    mipmap_mode: vk::SamplerMipmapMode::LINEAR,
-                    mip_lod_bias: 0.0,
-                    min_lod: 0.0,
-                    max_lod: image_mip_levels as f32,
-                    ..Default::default()
-                };
-
-                let texture = (
-                    self.device.create_image_view(&view_info, None).expect("failed to create image view"),
-                    self.device.create_sampler(&sampler_info, None).expect("failed to create sampler")
-                );
-
-                results.push((texture, (texture_image, texture_image_memory), image_mip_levels));
-                staging_buffers.push((image_staging_buffer, image_staging_buffer_memory));
             }
 
-            self.end_single_time_commands(command_buffers);
-            println!("gpu upload complete in {:?}", upload_start.elapsed());
+            let view_info = vk::ImageViewCreateInfo {
+                s_type: vk::StructureType::IMAGE_VIEW_CREATE_INFO,
+                image: texture_image,
+                view_type: vk::ImageViewType::TYPE_2D,
+                format: vk::Format::R8G8B8A8_UNORM,
+                subresource_range: ImageSubresourceRange {
+                    aspect_mask: ImageAspectFlags::COLOR,
+                    base_mip_level: 0,
+                    level_count: image_mip_levels,
+                    base_array_layer: 0,
+                    layer_count: 1,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
 
-            for (buffer, memory) in staging_buffers {
-                self.device.destroy_buffer(buffer, None);
-                self.device.free_memory(memory, None);
-            }
+            let sampler_info = vk::SamplerCreateInfo {
+                s_type: vk::StructureType::SAMPLER_CREATE_INFO,
+                mag_filter: vk::Filter::LINEAR,
+                min_filter: vk::Filter::LINEAR,
+                address_mode_u: vk::SamplerAddressMode::REPEAT,
+                address_mode_v: vk::SamplerAddressMode::REPEAT,
+                address_mode_w: vk::SamplerAddressMode::REPEAT,
+                anisotropy_enable: vk::TRUE,
+                max_anisotropy: self.pdevice_properties.limits.max_sampler_anisotropy,
+                border_color: vk::BorderColor::INT_OPAQUE_BLACK,
+                unnormalized_coordinates: vk::FALSE,
+                mipmap_mode: vk::SamplerMipmapMode::LINEAR,
+                mip_lod_bias: 0.0,
+                min_lod: 0.0,
+                max_lod: image_mip_levels as f32,
+                ..Default::default()
+            };
 
-            results
+            let texture = (
+                self.device.create_image_view(&view_info, None).expect("failed to create image view"),
+                self.device.create_sampler(&sampler_info, None).expect("failed to create sampler")
+            );
+
+            results.push((texture, (texture_image, texture_image_memory), image_mip_levels));
+            staging_buffers.push((image_staging_buffer, image_staging_buffer_memory));
         }
-    }
+
+        self.end_single_time_commands(command_buffers);
+        println!("gpu upload complete in {:?}", upload_start.elapsed());
+
+        for (buffer, memory) in staging_buffers {
+            self.device.destroy_buffer(buffer, None);
+            self.device.free_memory(memory, None);
+        }
+
+        results
+    } }
     pub unsafe fn create_2d_texture_image(
         &self,
         uri: &PathBuf,

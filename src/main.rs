@@ -17,12 +17,13 @@ use std::time::Instant;
 
 use ash::vk;
 use ash::vk::{Buffer, DescriptorType, DeviceMemory, Format, ShaderStageFlags};
-use winit::dpi::PhysicalPosition;
+use winit::dpi::{PhysicalPosition, Pixel};
 use winit::event::{ElementState, Event, KeyEvent, WindowEvent};
 use winit::event_loop::ControlFlow;
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
 use winit::window::CursorGrabMode;
+use rand::*;
 use crate::{vk_helper::*, vector::*};
 use crate::scene::{Scene, Model, Instance, Light};
 use crate::camera::Camera;
@@ -31,9 +32,17 @@ use crate::render::{Pass, PassCreateInfo, Shader, TextureCreateInfo};
 
 #[derive(Clone, Debug, Copy)]
 #[repr(C)]
-struct UniformData {
+struct CameraMatrixUniformData {
     view: [f32; 16],
     projection: [f32; 16],
+}
+struct SSAOPassUniformData {
+    samples: [[f32; 3]; 64],
+    projection: [f32; 16],
+    radius: f32,
+    width: i32,
+    height: i32,
+    _pad0: f32,
 }
 
 const MAX_FRAMES_IN_FLIGHT: usize = 2;
@@ -44,6 +53,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let mut shader_paths = Vec::new();
         shader_paths.push("src\\shaders\\glsl\\geometry");
         shader_paths.push("src\\shaders\\glsl\\shadow");
+        shader_paths.push("src\\shaders\\glsl\\ssao");
         shader_paths.push("src\\shaders\\glsl\\lighting");
         shader_paths.push("src\\shaders\\glsl\\quad");
 
@@ -66,10 +76,10 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
     //world.add_model(Model::new("C:\\Graphics\\assets\\flower\\scene.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\rivals\\luna\\gltf\\luna.gltf"));
 
-    world.add_model(Model::new("C:\\Graphics\\assets\\bistroGLTF\\untitled.gltf"));
+    //world.add_model(Model::new("C:\\Graphics\\assets\\bistroGLTF\\untitled.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\catTest\\catTest.gltf"));
-    //world.add_model(Model::new("C:\\Graphics\\assets\\helmet\\DamagedHelmet.gltf"));
+    world.add_model(Model::new("C:\\Graphics\\assets\\helmet\\DamagedHelmet.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\hydrant\\untitled.gltf"));
 
     world.add_light(Light::new(Vector::new_vec3(-1.0, -5.0, -1.0)));
@@ -112,11 +122,15 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
         });
     }
 
-    let camera_ubo_create_info = render::DescriptorCreateInfo::new(base)
+    let camera_vertex_ubo_create_info = render::DescriptorCreateInfo::new(base)
         .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
         .descriptor_type(DescriptorType::UNIFORM_BUFFER)
-        .size(size_of::<UniformData>() as u64)
+        .size(size_of::<CameraMatrixUniformData>() as u64)
         .shader_stages(ShaderStageFlags::VERTEX);
+    let texture_sampler_create_info = render::DescriptorCreateInfo::new(base)
+        .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
+        .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
+        .shader_stages(ShaderStageFlags::FRAGMENT);
     //<editor-fold desc = "geometry + shadow descriptor sets"
     let material_ssbo_create_info = render::DescriptorCreateInfo::new(base)
         .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
@@ -137,29 +151,40 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
 
     let geometry_descriptor_set_create_info = render::DescriptorSetCreateInfo::new(base)
         .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
-        .add_descriptor(render::Descriptor::new(&camera_ubo_create_info))
+        .add_descriptor(render::Descriptor::new(&camera_vertex_ubo_create_info))
         .add_descriptor(render::Descriptor::new(&material_ssbo_create_info))
         .add_descriptor(render::Descriptor::new(&joints_ssbo_create_info))
         .add_descriptor(render::Descriptor::new(&world_texture_samplers_create_info));
     let shadow_descriptor_set_create_info = render::DescriptorSetCreateInfo::new(base)
         .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
-        .add_descriptor(render::Descriptor::new(&camera_ubo_create_info))
+        .add_descriptor(render::Descriptor::new(&camera_vertex_ubo_create_info))
         .add_descriptor(render::Descriptor::new(&material_ssbo_create_info))
         .add_descriptor(render::Descriptor::new(&joints_ssbo_create_info))
         .add_descriptor(render::Descriptor::new(&world_texture_samplers_create_info));
 
     let geometry_descriptor_set = render::DescriptorSet::new(geometry_descriptor_set_create_info);
     let shadow_descriptor_set = render::DescriptorSet::new(shadow_descriptor_set_create_info);
-    //</editor-fold>
-    //<editor-fold desc = "lighting descriptor set">
-    let texture_sampler_create_info = render::DescriptorCreateInfo::new(base)
-        .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
-        .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
-        .shader_stages(ShaderStageFlags::FRAGMENT);
-    let camera_ubo_create_info = render::DescriptorCreateInfo::new(base)
+    //</editor-fold>]
+    // <editor-fold desc = "SSAO descriptor set">
+    let ssbo_ubo_create_info = render::DescriptorCreateInfo::new(base)
         .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
         .descriptor_type(DescriptorType::UNIFORM_BUFFER)
-        .size(size_of::<UniformData>() as u64)
+        .size(size_of::<SSAOPassUniformData>() as u64)
+        .shader_stages(ShaderStageFlags::FRAGMENT);
+    let ssao_descriptor_set_create_info = render::DescriptorSetCreateInfo::new(base)
+        .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
+        .add_descriptor(render::Descriptor::new(&texture_sampler_create_info))
+        .add_descriptor(render::Descriptor::new(&texture_sampler_create_info))
+        .add_descriptor(render::Descriptor::new(&texture_sampler_create_info))
+        .add_descriptor(render::Descriptor::new(&ssbo_ubo_create_info));
+
+    let ssao_descriptor_set = render::DescriptorSet::new(ssao_descriptor_set_create_info);
+    //</editor-fold>
+    //<editor-fold desc = "lighting descriptor set">
+    let camera_fragment_ubo_create_info = render::DescriptorCreateInfo::new(base)
+        .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
+        .descriptor_type(DescriptorType::UNIFORM_BUFFER)
+        .size(size_of::<CameraMatrixUniformData>() as u64)
         .shader_stages(ShaderStageFlags::FRAGMENT);
     let lights_ssbo_create_info = render::DescriptorCreateInfo::new(base)
         .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
@@ -176,13 +201,12 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
         .add_descriptor(render::Descriptor::new(&texture_sampler_create_info))
         .add_descriptor(render::Descriptor::new(&texture_sampler_create_info))
         .add_descriptor(render::Descriptor::new(&texture_sampler_create_info))
-        .add_descriptor(render::Descriptor::new(&camera_ubo_create_info))
+        .add_descriptor(render::Descriptor::new(&camera_fragment_ubo_create_info))
         .add_descriptor(render::Descriptor::new(&lights_ssbo_create_info));
 
     let lighting_descriptor_set = render::DescriptorSet::new(lighting_descriptor_set_create_info);
     //</editor-fold>
-
-    // <editor-fold desc = "present descriptor pools">
+    // <editor-fold desc = "present descriptor set">
     let present_descriptor_set_create_info = render::DescriptorSetCreateInfo::new(base)
         .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
         .add_descriptor(render::Descriptor::new(&texture_sampler_create_info));
@@ -207,6 +231,12 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
         .depth_attachment_info(TextureCreateInfo::new(base).format(Format::D16_UNORM).is_depth(true).clear_value([0.0, 0.0, 0.0, 0.0])); // depth
     let shadow_pass = Pass::new(shadow_pass_create_info);
 
+    let ssao_pass_create_info = PassCreateInfo::new(base)
+        .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
+        .add_color_attachment_info(color_tex_create_info)
+        .depth_attachment_info(TextureCreateInfo::new(base).format(Format::D16_UNORM).is_depth(true).clear_value([1.0, 0.0, 0.0, 0.0])); // depth
+    let ssao_pass = Pass::new(ssao_pass_create_info);
+
     let lighting_pass_create_info = PassCreateInfo::new(base)
         .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
         .add_color_attachment_info(color_tex_create_info)
@@ -217,10 +247,25 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
         .set_is_present_pass(true);
     let present_pass = Pass::new(present_pass_create_info);
     //</editor-fold>
+    //<editor-fold desc = "ssao sampling setup">
+    let mut ssao_kernal= [[0.0; 3]; 64];
+    let mut rng = rng();
+    for i in 0..64 {
+        let mut scale = i as f32 / 64.0;
+        scale = 0.1 + ((scale * scale) * (1.0 - 0.1));
+        ssao_kernal[i] = Vector::new_from_array(&[rng.random::<f32>() * 2.0 - 1.0, rng.random::<f32>() * 2.0 - 1.0, rng.random::<f32>()])
+            .normalize_3d()
+            .mul_float(rng.random::<f32>())
+            .mul_float(scale).to_array3();
+    }
+
+
+    //</editor-fold>
 
     //<editor-fold desc = "shaders">
     let geom_shader = Shader::new(base, "geometry\\geometry.vert.spv", "geometry\\geometry.frag.spv");
     let shadow_shader = Shader::new(base, "shadow\\shadow.vert.spv", "shadow\\shadow.frag.spv");
+    let ssao_shader = Shader::new(base, "quad\\quad.vert.spv", "ssao\\ssao.frag.spv");
     let lighting_shader = Shader::new(base, "quad\\quad.vert.spv", "lighting\\lighting.frag.spv");
     let present_shader = Shader::new(base, "quad\\quad.vert.spv", "quad\\quad.frag.spv");
     //</editor-fold>
@@ -235,6 +280,16 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                 s_type: vk::StructureType::PIPELINE_LAYOUT_CREATE_INFO,
                 set_layout_count: 1,
                 p_set_layouts: &geometry_descriptor_set.descriptor_set_layout,
+                ..Default::default()
+            }, None
+        ).unwrap();
+    let ssao_pipeline_layout = base
+        .device
+        .create_pipeline_layout(
+            &vk::PipelineLayoutCreateInfo {
+                s_type: vk::StructureType::PIPELINE_LAYOUT_CREATE_INFO,
+                set_layout_count: 1,
+                p_set_layouts: &ssao_descriptor_set.descriptor_set_layout,
                 ..Default::default()
             }, None
         ).unwrap();
@@ -542,6 +597,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
 
     let geom_shader_create_info = geom_shader.generate_shader_stage_create_infos();
     let shadow_shader_create_info = shadow_shader.generate_shader_stage_create_infos();
+    let ssao_shader_create_info = ssao_shader.generate_shader_stage_create_infos();
     let lighting_shader_create_info = lighting_shader.generate_shader_stage_create_infos();
     let present_shader_create_info = present_shader.generate_shader_stage_create_infos();
 
@@ -567,6 +623,15 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
         .rasterization_state(&shadow_rasterization_info)
         .depth_stencil_state(&shadow_depth_state_info)
         .layout(geometry_pipeline_layout);
+    let ssao_pipeline_info = base_pipeline_info
+        .stages(&ssao_shader_create_info)
+        .vertex_input_state(&null_vertex_input_state_info)
+        .multisample_state(&null_multisample_state_info)
+        .render_pass(ssao_pass.renderpass)
+        .color_blend_state(&null_blend_state_singular)
+        .layout(ssao_pipeline_layout)
+        .rasterization_state(&fullscreen_quad_rasterization_info)
+        .depth_stencil_state(&default_depth_state_info);
     let lighting_pipeline_info = base_pipeline_info
         .stages(&lighting_shader_create_info)
         .vertex_input_state(&null_vertex_input_state_info)
@@ -588,13 +653,14 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
 
     let graphics_pipelines = base
         .device
-        .create_graphics_pipelines(vk::PipelineCache::null(), &[geometry_pipeline_info, shadow_pipeline_info, lighting_pipeline_info, present_pipeline_info], None)
+        .create_graphics_pipelines(vk::PipelineCache::null(), &[geometry_pipeline_info, shadow_pipeline_info, ssao_pipeline_info, lighting_pipeline_info, present_pipeline_info], None)
         .expect("Unable to create graphics pipeline");
 
     let geometry_pipeline = graphics_pipelines[0];
     let shadow_pipeline = graphics_pipelines[1];
-    let lighting_pipeline = graphics_pipelines[2];
-    let present_pipeline = graphics_pipelines[3];
+    let ssao_pipeline = graphics_pipelines[2];
+    let lighting_pipeline = graphics_pipelines[3];
+    let present_pipeline = graphics_pipelines[4];
     //</editor-fold>
 
     let sampler = base.device.create_sampler(&vk::SamplerCreateInfo {
@@ -748,6 +814,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                     )
                     .unwrap();
 
+                //<editor-fold desc = "uniform descriptor updates">
                 let image_infos = [
                     vk::DescriptorImageInfo {
                         sampler,
@@ -807,18 +874,22 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                         .image_info(&info)];
                 base.device.update_descriptor_sets(&present_descriptor_writes, &[]);
 
-                let ubo = UniformData {
+                let ubo = CameraMatrixUniformData {
                     view: player_camera.view_matrix.data,
                     projection: player_camera.projection_matrix.data,
                 };
                 copy_data_to_memory(geometry_descriptor_set.descriptors[0].owned_buffers.2[current_frame], &[ubo]);
                 copy_data_to_memory(lighting_descriptor_set.descriptors[7].owned_buffers.2[current_frame], &[ubo]);
-                let ubo = UniformData {
+                let ubo = CameraMatrixUniformData {
                     view: world.lights[0].view.data,
                     projection: world.lights[0].projection.data,
                 };
                 copy_data_to_memory(shadow_descriptor_set.descriptors[0].owned_buffers.2[current_frame], &[ubo]);
 
+
+                //</editor-fold>
+
+                //<editor-fold desc = "passes begin info">
                 let geometry_pass_pass_begin_info = vk::RenderPassBeginInfo::default()
                     .render_pass(geometry_pass.renderpass)
                     .framebuffer(geometry_pass.framebuffers[current_frame])
@@ -839,6 +910,8 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                     .framebuffer(present_pass.framebuffers[present_index as usize])
                     .render_area(base.surface_resolution.into())
                     .clear_values(&present_pass.clear_values);
+                //</editor-fold>
+
                 let current_rendering_complete_semaphore = base.rendering_complete_semaphores[current_frame];
                 let current_draw_command_buffer = base.draw_command_buffers[current_frame];
                 record_submit_commandbuffer(
@@ -989,22 +1062,26 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
         base.device.destroy_pipeline(pipeline, None);
     }
     base.device.destroy_pipeline_layout(geometry_pipeline_layout, None);
+    base.device.destroy_pipeline_layout(ssao_pipeline_layout, None);
     base.device.destroy_pipeline_layout(lighting_pipeline_layout, None);
     base.device.destroy_pipeline_layout(present_pipeline_layout, None);
 
     geometry_descriptor_set.destroy(base);
     shadow_descriptor_set.destroy(base);
+    ssao_descriptor_set.destroy(base);
     lighting_descriptor_set.destroy(base);
     present_descriptor_set.destroy(base);
 
     geom_shader.destroy(base);
     shadow_shader.destroy(base);
+    ssao_shader.destroy(base);
     lighting_shader.destroy(base);
     present_shader.destroy(base);
     world.destroy(base);
 
     geometry_pass.destroy(base);
     shadow_pass.destroy(base);
+    ssao_pass.destroy(base);
     lighting_pass.destroy(base);
     present_pass.destroy(base);
 
