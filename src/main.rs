@@ -49,6 +49,17 @@ struct SSAOPassUniformData {
     height: i32,
     _pad0: f32,
 }
+#[derive(Clone, Debug, Copy)]
+#[repr(C)]
+struct SeparableBlurPassData {
+    horizontal: i32,
+    radius: i32,
+    near: f32,
+    sigma_spatial: f32, // texel-space sigma
+    sigma_depth: f32, // view-space sigma
+    sigma_normal: f32, // normal dot sigma
+    inv_resolution: [f32; 2] // 1.0 / framebuffer size
+}
 
 const MAX_FRAMES_IN_FLIGHT: usize = 2;
 const PI: f32 = std::f32::consts::PI;
@@ -59,6 +70,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         shader_paths.push("src\\shaders\\glsl\\geometry");
         shader_paths.push("src\\shaders\\glsl\\shadow");
         shader_paths.push("src\\shaders\\glsl\\ssao");
+        shader_paths.push("src\\shaders\\glsl\\bilateral_blur");
         shader_paths.push("src\\shaders\\glsl\\lighting");
         shader_paths.push("src\\shaders\\glsl\\quad");
 
@@ -81,8 +93,8 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
     //world.add_model(Model::new("C:\\Graphics\\assets\\flower\\scene.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\rivals\\luna\\gltf\\luna.gltf"));
 
-    world.add_model(Model::new("C:\\Graphics\\assets\\bistroGLTF\\untitled.gltf"));
-    //world.add_model(Model::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf"));
+    //world.add_model(Model::new("C:\\Graphics\\assets\\bistroGLTF\\untitled.gltf"));
+    world.add_model(Model::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\catTest\\catTest.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\helmet\\DamagedHelmet.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\hydrant\\untitled.gltf"));
@@ -126,11 +138,55 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
             ..Default::default()
         });
     }
-    
+
     let texture_sampler_create_info = render::DescriptorCreateInfo::new(base)
         .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
         .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
         .shader_stages(ShaderStageFlags::FRAGMENT);
+    //<editor-fold desc = "passes">
+    let color_tex_create_info = TextureCreateInfo::new(base).format(Format::R16G16B16A16_SFLOAT);
+    let geometry_pass_create_info = PassCreateInfo::new(base)
+        .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
+        .add_color_attachment_info(TextureCreateInfo::new(base).format(Format::R8G8B8A8_SINT)) // material
+        .add_color_attachment_info(color_tex_create_info) // albedo
+        .add_color_attachment_info(color_tex_create_info) // metallic roughness
+        .add_color_attachment_info(color_tex_create_info) // extra properties
+        .add_color_attachment_info(color_tex_create_info) // view normal
+        .depth_attachment_info(TextureCreateInfo::new(base).format(Format::D32_SFLOAT).is_depth(true).clear_value([0.0, 0.0, 0.0, 0.0])); // depth
+    let geometry_pass = Pass::new(geometry_pass_create_info);
+
+    let shadow_pass_create_info = PassCreateInfo::new(base)
+        .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
+        .depth_attachment_info(TextureCreateInfo::new(base).format(Format::D16_UNORM).is_depth(true).clear_value([0.0, 0.0, 0.0, 0.0])); // depth
+    let shadow_pass = Pass::new(shadow_pass_create_info);
+
+    let ssao_pass_create_info = PassCreateInfo::new(base)
+        .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
+        .add_color_attachment_info(color_tex_create_info)
+        .depth_attachment_info(TextureCreateInfo::new(base).format(Format::D16_UNORM).is_depth(true).clear_value([1.0, 0.0, 0.0, 0.0])); // depth
+    let ssao_pass = Pass::new(ssao_pass_create_info);
+
+    let ssao_blur_pass_create_info = PassCreateInfo::new(base)
+        .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
+        .add_color_attachment_info(color_tex_create_info)
+        .depth_attachment_info(TextureCreateInfo::new(base).format(Format::D16_UNORM).is_depth(true).clear_value([1.0, 0.0, 0.0, 0.0])); // depth
+    let ssao_blur_pass_horizontal = Pass::new(ssao_blur_pass_create_info);
+    let ssao_blur_pass_create_info = PassCreateInfo::new(base)
+        .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
+        .add_color_attachment_info(color_tex_create_info)
+        .depth_attachment_info(TextureCreateInfo::new(base).format(Format::D16_UNORM).is_depth(true).clear_value([1.0, 0.0, 0.0, 0.0])); // depth
+    let ssao_blur_pass_vertical = Pass::new(ssao_blur_pass_create_info);
+
+    let lighting_pass_create_info = PassCreateInfo::new(base)
+        .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
+        .add_color_attachment_info(color_tex_create_info)
+        .depth_attachment_info(TextureCreateInfo::new(base).format(Format::D16_UNORM).is_depth(true).clear_value([1.0, 0.0, 0.0, 0.0])); // depth
+    let lighting_pass = Pass::new(lighting_pass_create_info);
+
+    let present_pass_create_info = PassCreateInfo::new(base)
+        .set_is_present_pass(true);
+    let present_pass = Pass::new(present_pass_create_info);
+    //</editor-fold>
     //<editor-fold desc = "geometry + shadow descriptor sets"
     let material_ssbo_create_info = render::DescriptorCreateInfo::new(base)
         .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
@@ -178,6 +234,21 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
 
     let ssao_descriptor_set = render::DescriptorSet::new(ssao_descriptor_set_create_info);
     //</editor-fold>
+    // <editor-fold desc = "SSAO blur descriptor set">
+    let ssao_blur_descriptor_set_create_info = render::DescriptorSetCreateInfo::new(base)
+        .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
+        .add_descriptor(render::Descriptor::new(&texture_sampler_create_info))
+        .add_descriptor(render::Descriptor::new(&texture_sampler_create_info))
+        .add_descriptor(render::Descriptor::new(&texture_sampler_create_info));
+    let ssao_blur_descriptor_set_horizontal = render::DescriptorSet::new(ssao_blur_descriptor_set_create_info);
+
+    let ssao_blur_descriptor_set_create_info = render::DescriptorSetCreateInfo::new(base)
+        .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
+        .add_descriptor(render::Descriptor::new(&texture_sampler_create_info))
+        .add_descriptor(render::Descriptor::new(&texture_sampler_create_info))
+        .add_descriptor(render::Descriptor::new(&texture_sampler_create_info));
+    let ssao_blur_descriptor_set_vertical = render::DescriptorSet::new(ssao_blur_descriptor_set_create_info);
+    //</editor-fold>
     //<editor-fold desc = "lighting descriptor set">
     let lights_ssbo_create_info = render::DescriptorCreateInfo::new(base)
         .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
@@ -207,39 +278,6 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
     let present_descriptor_set = render::DescriptorSet::new(present_descriptor_set_create_info);
     //</editor-fold>
 
-    //<editor-fold desc = "passes">
-    let color_tex_create_info = TextureCreateInfo::new(base).format(Format::R16G16B16A16_SFLOAT);
-    let geometry_pass_create_info = PassCreateInfo::new(base)
-        .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
-        .add_color_attachment_info(TextureCreateInfo::new(base).format(Format::R8G8B8A8_SINT)) // material
-        .add_color_attachment_info(color_tex_create_info) // albedo
-        .add_color_attachment_info(color_tex_create_info) // metallic roughness
-        .add_color_attachment_info(color_tex_create_info) // extra properties
-        .add_color_attachment_info(color_tex_create_info) // view normal
-        .depth_attachment_info(TextureCreateInfo::new(base).format(Format::D32_SFLOAT).is_depth(true).clear_value([0.0, 0.0, 0.0, 0.0])); // depth
-    let geometry_pass = Pass::new(geometry_pass_create_info);
-
-    let shadow_pass_create_info = PassCreateInfo::new(base)
-        .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
-        .depth_attachment_info(TextureCreateInfo::new(base).format(Format::D16_UNORM).is_depth(true).clear_value([0.0, 0.0, 0.0, 0.0])); // depth
-    let shadow_pass = Pass::new(shadow_pass_create_info);
-
-    let ssao_pass_create_info = PassCreateInfo::new(base)
-        .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
-        .add_color_attachment_info(color_tex_create_info)
-        .depth_attachment_info(TextureCreateInfo::new(base).format(Format::D16_UNORM).is_depth(true).clear_value([1.0, 0.0, 0.0, 0.0])); // depth
-    let ssao_pass = Pass::new(ssao_pass_create_info);
-
-    let lighting_pass_create_info = PassCreateInfo::new(base)
-        .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
-        .add_color_attachment_info(color_tex_create_info)
-        .depth_attachment_info(TextureCreateInfo::new(base).format(Format::D16_UNORM).is_depth(true).clear_value([1.0, 0.0, 0.0, 0.0])); // depth
-    let lighting_pass = Pass::new(lighting_pass_create_info);
-
-    let present_pass_create_info = PassCreateInfo::new(base)
-        .set_is_present_pass(true);
-    let present_pass = Pass::new(present_pass_create_info);
-    //</editor-fold>
     //<editor-fold desc = "ssao sampling setup">
     let mut rng = rng();
     let mut ssao_kernal= [[0.0; 4]; 16];
@@ -268,7 +306,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
         .format(Format::R32G32B32A32_SFLOAT)
         .usage_flags(
             vk::ImageUsageFlags::SAMPLED |
-            vk::ImageUsageFlags::TRANSFER_DST
+                vk::ImageUsageFlags::TRANSFER_DST
         )
         .clear_value([0.0; 4]);
     let ssao_noise_texture = render::Texture::new(&ssao_noise_tex_info);
@@ -316,12 +354,177 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
     base.device.free_memory(staging_buffer_memory, None);
     //</editor-fold>
 
+    //<editor-fold desc = "descriptor updates">
+    let sampler = base.device.create_sampler(&vk::SamplerCreateInfo {
+        mag_filter: vk::Filter::LINEAR,
+        min_filter: vk::Filter::LINEAR,
+        address_mode_u: vk::SamplerAddressMode::CLAMP_TO_EDGE,
+        address_mode_v: vk::SamplerAddressMode::CLAMP_TO_EDGE,
+        address_mode_w: vk::SamplerAddressMode::CLAMP_TO_EDGE,
+        border_color: vk::BorderColor::FLOAT_OPAQUE_WHITE,
+        ..Default::default()
+    }, None)?;
+    let nearest_sampler = base.device.create_sampler(&vk::SamplerCreateInfo {
+        mag_filter: vk::Filter::NEAREST,
+        min_filter: vk::Filter::NEAREST,
+        address_mode_u: vk::SamplerAddressMode::REPEAT,
+        address_mode_v: vk::SamplerAddressMode::REPEAT,
+        address_mode_w: vk::SamplerAddressMode::REPEAT,
+        border_color: vk::BorderColor::FLOAT_OPAQUE_WHITE,
+        ..Default::default()
+    }, None)?;
+
+    for current_frame in 0..MAX_FRAMES_IN_FLIGHT {
+        let image_infos = [
+            vk::DescriptorImageInfo {
+                sampler,
+                image_view: geometry_pass.textures[current_frame][0].image_view,
+                image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            }, // material
+            vk::DescriptorImageInfo {
+                sampler,
+                image_view: geometry_pass.textures[current_frame][1].image_view,
+                image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            }, // albedo
+            vk::DescriptorImageInfo {
+                sampler,
+                image_view: geometry_pass.textures[current_frame][2].image_view,
+                image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            }, // metallic roughness
+            vk::DescriptorImageInfo {
+                sampler,
+                image_view: geometry_pass.textures[current_frame][3].image_view,
+                image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            }, // extra properties
+            vk::DescriptorImageInfo {
+                sampler,
+                image_view: geometry_pass.textures[current_frame][5].image_view,
+                image_layout: vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
+            }, // depth
+            vk::DescriptorImageInfo {
+                sampler,
+                image_view: geometry_pass.textures[current_frame][4].image_view,
+                image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            }, // view normal
+            vk::DescriptorImageInfo {
+                sampler,
+                image_view: shadow_pass.textures[current_frame][0].image_view,
+                image_layout: vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
+            }, // shadow map
+            vk::DescriptorImageInfo {
+                sampler,
+                image_view: ssao_blur_pass_vertical.textures[current_frame][0].image_view,
+                image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            }, // ssao tex
+        ];
+        let lighting_descriptor_writes: Vec<vk::WriteDescriptorSet> = image_infos.iter().enumerate().map(|(i, info)| {
+            vk::WriteDescriptorSet::default()
+                .dst_set(lighting_descriptor_set.descriptor_sets[current_frame])
+                .dst_binding(i as u32)
+                .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
+                .image_info(std::slice::from_ref(info))
+        }).collect();
+        base.device.update_descriptor_sets(&lighting_descriptor_writes, &[]);
+
+        let info = [vk::DescriptorImageInfo {
+            sampler,
+            image_view: lighting_pass.textures[current_frame][0].image_view,
+            image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+        }];
+        let present_descriptor_writes: Vec<vk::WriteDescriptorSet> = vec![
+            vk::WriteDescriptorSet::default()
+                .dst_set(present_descriptor_set.descriptor_sets[current_frame])
+                .dst_binding(0)
+                .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
+                .image_info(&info)];
+        base.device.update_descriptor_sets(&present_descriptor_writes, &[]);
+
+        let image_infos = [
+            vk::DescriptorImageInfo {
+                sampler,
+                image_view: geometry_pass.textures[current_frame][5].image_view,
+                image_layout: vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
+            }, // geometry depth
+            vk::DescriptorImageInfo {
+                sampler,
+                image_view: geometry_pass.textures[current_frame][4].image_view,
+                image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            }, // view normal
+            vk::DescriptorImageInfo {
+                sampler: nearest_sampler,
+                image_view: ssao_noise_texture.image_view,
+                image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            }, // noise tex
+        ];
+        let ssao_descriptor_writes: Vec<vk::WriteDescriptorSet> = image_infos.iter().enumerate().map(|(i, info)| {
+            vk::WriteDescriptorSet::default()
+                .dst_set(ssao_descriptor_set.descriptor_sets[current_frame])
+                .dst_binding(i as u32)
+                .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
+                .image_info(std::slice::from_ref(info))
+        }).collect();
+        base.device.update_descriptor_sets(&ssao_descriptor_writes, &[]);
+
+        let image_infos = [
+            vk::DescriptorImageInfo {
+                sampler,
+                image_view: ssao_pass.textures[current_frame][0].image_view,
+                image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            }, // ssao raw
+            vk::DescriptorImageInfo {
+                sampler,
+                image_view: geometry_pass.textures[current_frame][5].image_view,
+                image_layout: vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
+            }, // depth
+            vk::DescriptorImageInfo {
+                sampler,
+                image_view: geometry_pass.textures[current_frame][4].image_view,
+                image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            }, // view normal
+        ];
+        let descriptor_writes: Vec<vk::WriteDescriptorSet> = image_infos.iter().enumerate().map(|(i, info)| {
+            vk::WriteDescriptorSet::default()
+                .dst_set(ssao_blur_descriptor_set_horizontal.descriptor_sets[current_frame])
+                .dst_binding(i as u32)
+                .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
+                .image_info(slice::from_ref(info))
+        }).collect();
+        base.device.update_descriptor_sets(&descriptor_writes, &[]);
+        let image_infos = [
+            vk::DescriptorImageInfo {
+                sampler,
+                image_view: ssao_blur_pass_horizontal.textures[current_frame][0].image_view,
+                image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            }, // ssao horizontally blurred
+            vk::DescriptorImageInfo {
+                sampler,
+                image_view: geometry_pass.textures[current_frame][5].image_view,
+                image_layout: vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
+            }, // depth
+            vk::DescriptorImageInfo {
+                sampler,
+                image_view: geometry_pass.textures[current_frame][4].image_view,
+                image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            }, // view normal
+        ];
+        let descriptor_writes: Vec<vk::WriteDescriptorSet> = image_infos.iter().enumerate().map(|(i, info)| {
+            vk::WriteDescriptorSet::default()
+                .dst_set(ssao_blur_descriptor_set_vertical.descriptor_sets[current_frame])
+                .dst_binding(i as u32)
+                .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
+                .image_info(slice::from_ref(info))
+        }).collect();
+        base.device.update_descriptor_sets(&descriptor_writes, &[]);
+    }
+    //</editor-fold>
+
     //<editor-fold desc = "shaders">
     let geom_shader = Shader::new(base, "geometry\\geometry.vert.spv", "geometry\\geometry.frag.spv");
     let shadow_shader = Shader::new(base, "shadow\\shadow.vert.spv", "shadow\\shadow.frag.spv");
     let ssao_shader = Shader::new(base, "quad\\quad.vert.spv", "ssao\\ssao.frag.spv");
     let lighting_shader = Shader::new(base, "quad\\quad.vert.spv", "lighting\\lighting.frag.spv");
     let present_shader = Shader::new(base, "quad\\quad.vert.spv", "quad\\quad.frag.spv");
+    let bilateral_blur_shader = Shader::new(base, "quad\\quad.vert.spv", "bilateral_blur\\bilateral_blur.frag.spv");
     //</editor-fold>
 
     //<editor-fold desc = "full graphics pipeline initiation">
@@ -357,6 +560,22 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                 s_type: vk::StructureType::PIPELINE_LAYOUT_CREATE_INFO,
                 set_layout_count: 1,
                 p_set_layouts: &ssao_descriptor_set.descriptor_set_layout,
+                ..Default::default()
+            }, None
+        ).unwrap();
+    let ssao_blur_pipeline_layout = base
+        .device
+        .create_pipeline_layout(
+            &vk::PipelineLayoutCreateInfo {
+                s_type: vk::StructureType::PIPELINE_LAYOUT_CREATE_INFO,
+                set_layout_count: 1,
+                p_set_layouts: &ssao_blur_descriptor_set_horizontal.descriptor_set_layout,
+                p_push_constant_ranges: &vk::PushConstantRange {
+                    stage_flags: ShaderStageFlags::FRAGMENT,
+                    offset: 0,
+                    size: size_of::<SeparableBlurPassData>() as _,
+                },
+                push_constant_range_count: 1,
                 ..Default::default()
             }, None
         ).unwrap();
@@ -678,6 +897,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
     let ssao_shader_create_info = ssao_shader.generate_shader_stage_create_infos();
     let lighting_shader_create_info = lighting_shader.generate_shader_stage_create_infos();
     let present_shader_create_info = present_shader.generate_shader_stage_create_infos();
+    let bilateral_blur_shader_create_info = bilateral_blur_shader.generate_shader_stage_create_infos();
 
     let base_pipeline_info = vk::GraphicsPipelineCreateInfo::default()
         .input_assembly_state(&vertex_input_assembly_state_info)
@@ -719,6 +939,10 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
         .layout(lighting_pipeline_layout)
         .rasterization_state(&fullscreen_quad_rasterization_info)
         .depth_stencil_state(&default_depth_state_info);
+    let ssao_blur_pipeline_info = lighting_pipeline_info.clone()
+        .stages(&bilateral_blur_shader_create_info)
+        .render_pass(ssao_pass.renderpass)
+        .layout(ssao_blur_pipeline_layout);
     let present_pipeline_info = base_pipeline_info
         .stages(&present_shader_create_info)
         .vertex_input_state(&null_vertex_input_state_info)
@@ -731,7 +955,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
 
     let graphics_pipelines = base
         .device
-        .create_graphics_pipelines(vk::PipelineCache::null(), &[geometry_pipeline_info, shadow_pipeline_info, ssao_pipeline_info, lighting_pipeline_info, present_pipeline_info], None)
+        .create_graphics_pipelines(vk::PipelineCache::null(), &[geometry_pipeline_info, shadow_pipeline_info, ssao_pipeline_info, lighting_pipeline_info, present_pipeline_info, ssao_blur_pipeline_info], None)
         .expect("Unable to create graphics pipeline");
 
     let geometry_pipeline = graphics_pipelines[0];
@@ -739,26 +963,8 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
     let ssao_pipeline = graphics_pipelines[2];
     let lighting_pipeline = graphics_pipelines[3];
     let present_pipeline = graphics_pipelines[4];
+    let ssao_blur_pipeline = graphics_pipelines[5];
     //</editor-fold>
-
-    let sampler = base.device.create_sampler(&vk::SamplerCreateInfo {
-        mag_filter: vk::Filter::LINEAR,
-        min_filter: vk::Filter::LINEAR,
-        address_mode_u: vk::SamplerAddressMode::CLAMP_TO_EDGE,
-        address_mode_v: vk::SamplerAddressMode::CLAMP_TO_EDGE,
-        address_mode_w: vk::SamplerAddressMode::CLAMP_TO_EDGE,
-        border_color: vk::BorderColor::FLOAT_OPAQUE_WHITE,
-        ..Default::default()
-    }, None)?;
-    let nearest_sampler = base.device.create_sampler(&vk::SamplerCreateInfo {
-        mag_filter: vk::Filter::NEAREST,
-        min_filter: vk::Filter::NEAREST,
-        address_mode_u: vk::SamplerAddressMode::REPEAT,
-        address_mode_v: vk::SamplerAddressMode::REPEAT,
-        address_mode_w: vk::SamplerAddressMode::REPEAT,
-        border_color: vk::BorderColor::FLOAT_OPAQUE_WHITE,
-        ..Default::default()
-    }, None)?;
 
     let mut player_camera = Camera::new_perspective_rotation(
         Vector::new_vec3(0.0, 0.0, 0.0),
@@ -903,97 +1109,6 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                     .unwrap();
                 //</editor-fold>
 
-                //<editor-fold desc = "uniform descriptor updates">
-                let image_infos = [
-                    vk::DescriptorImageInfo {
-                        sampler,
-                        image_view: geometry_pass.textures[current_frame][0].image_view,
-                        image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                    }, // material
-                    vk::DescriptorImageInfo {
-                        sampler,
-                        image_view: geometry_pass.textures[current_frame][1].image_view,
-                        image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                    }, // albedo
-                    vk::DescriptorImageInfo {
-                        sampler,
-                        image_view: geometry_pass.textures[current_frame][2].image_view,
-                        image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                    }, // metallic roughness
-                    vk::DescriptorImageInfo {
-                        sampler,
-                        image_view: geometry_pass.textures[current_frame][3].image_view,
-                        image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                    }, // extra properties
-                    vk::DescriptorImageInfo {
-                        sampler,
-                        image_view: geometry_pass.textures[current_frame][5].image_view,
-                        image_layout: vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
-                    }, // depth
-                    vk::DescriptorImageInfo {
-                        sampler,
-                        image_view: geometry_pass.textures[current_frame][4].image_view,
-                        image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                    }, // view normal
-                    vk::DescriptorImageInfo {
-                        sampler,
-                        image_view: shadow_pass.textures[current_frame][0].image_view,
-                        image_layout: vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
-                    }, // shadow map
-                    vk::DescriptorImageInfo {
-                        sampler,
-                        image_view: ssao_pass.textures[current_frame][0].image_view,
-                        image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                    }, // ssao tex
-                ];
-                let lighting_descriptor_writes: Vec<vk::WriteDescriptorSet> = image_infos.iter().enumerate().map(|(i, info)| {
-                    vk::WriteDescriptorSet::default()
-                        .dst_set(lighting_descriptor_set.descriptor_sets[current_frame])
-                        .dst_binding(i as u32)
-                        .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
-                        .image_info(std::slice::from_ref(info))
-                }).collect();
-                base.device.update_descriptor_sets(&lighting_descriptor_writes, &[]);
-
-                let info = [vk::DescriptorImageInfo {
-                    sampler,
-                    image_view: lighting_pass.textures[current_frame][0].image_view,
-                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                }];
-                let present_descriptor_writes: Vec<vk::WriteDescriptorSet> = vec![
-                    vk::WriteDescriptorSet::default()
-                        .dst_set(present_descriptor_set.descriptor_sets[current_frame])
-                        .dst_binding(0)
-                        .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
-                        .image_info(&info)];
-                base.device.update_descriptor_sets(&present_descriptor_writes, &[]);
-
-                let image_infos = [
-                    vk::DescriptorImageInfo {
-                        sampler,
-                        image_view: geometry_pass.textures[current_frame][5].image_view,
-                        image_layout: vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
-                    }, // geometry depth
-                    vk::DescriptorImageInfo {
-                        sampler,
-                        image_view: geometry_pass.textures[current_frame][4].image_view,
-                        image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                    }, // view normal
-                    vk::DescriptorImageInfo {
-                        sampler: nearest_sampler,
-                        image_view: ssao_noise_texture.image_view,
-                        image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                    }, // noise tex
-                ];
-                let ssao_descriptor_writes: Vec<vk::WriteDescriptorSet> = image_infos.iter().enumerate().map(|(i, info)| {
-                    vk::WriteDescriptorSet::default()
-                        .dst_set(ssao_descriptor_set.descriptor_sets[current_frame])
-                        .dst_binding(i as u32)
-                        .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
-                        .image_info(std::slice::from_ref(info))
-                }).collect();
-                base.device.update_descriptor_sets(&ssao_descriptor_writes, &[]);
-
                 let ubo = SSAOPassUniformData {
                     samples: ssao_kernal,
                     projection: player_camera.projection_matrix.data,
@@ -1004,14 +1119,31 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                     _pad0: 0.0,
                 };
                 copy_data_to_memory(ssao_descriptor_set.descriptors[3].owned_buffers.2[current_frame], &[ubo]);
-                //</editor-fold>
-                let camera_ubo = CameraMatrixUniformData {
+                let camera_constants = CameraMatrixUniformData {
                     view: player_camera.view_matrix.data,
                     projection: player_camera.projection_matrix.data,
                 };
-                let shadow_ubo = CameraMatrixUniformData {
+                let shadow_constants = CameraMatrixUniformData {
                     view: world.lights[0].view.data,
                     projection: world.lights[0].projection.data,
+                };
+                let ssao_blur_constants_horizontal = SeparableBlurPassData {
+                    horizontal: 1,
+                    radius: 5,
+                    near: player_camera.near,
+                    sigma_spatial: 2.5,
+                    sigma_depth: 0.1,
+                    sigma_normal: 0.2,
+                    inv_resolution: [1.0 / (base.surface_resolution.width as f32), 1.0 / (base.surface_resolution.height as f32)]
+                };
+                let ssao_blur_constants_vertical = SeparableBlurPassData {
+                    horizontal: 0,
+                    radius: 5,
+                    near: player_camera.near,
+                    sigma_spatial: 2.5,
+                    sigma_depth: 0.1,
+                    sigma_normal: 0.2,
+                    inv_resolution: [1.0 / (base.surface_resolution.width as f32), 1.0 / (base.surface_resolution.height as f32)]
                 };
 
                 //<editor-fold desc = "passes begin info">
@@ -1030,6 +1162,16 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                     .framebuffer(ssao_pass.framebuffers[current_frame])
                     .render_area(base.surface_resolution.into())
                     .clear_values(&ssao_pass.clear_values);
+                let ssao_blur_pass_begin_info_horizontal = vk::RenderPassBeginInfo::default()
+                    .render_pass(ssao_blur_pass_horizontal.renderpass)
+                    .framebuffer(ssao_blur_pass_horizontal.framebuffers[current_frame])
+                    .render_area(base.surface_resolution.into())
+                    .clear_values(&ssao_blur_pass_horizontal.clear_values);
+                let ssao_blur_pass_begin_info_vertical = vk::RenderPassBeginInfo::default()
+                    .render_pass(ssao_blur_pass_vertical.renderpass)
+                    .framebuffer(ssao_blur_pass_vertical.framebuffers[current_frame])
+                    .render_area(base.surface_resolution.into())
+                    .clear_values(&ssao_blur_pass_vertical.clear_values);
                 let lighting_pass_pass_begin_info = vk::RenderPassBeginInfo::default()
                     .render_pass(lighting_pass.renderpass)
                     .framebuffer(lighting_pass.framebuffers[current_frame])
@@ -1065,7 +1207,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                             geometry_pipeline,
                         );
                         device.cmd_push_constants(frame_command_buffer, geometry_pipeline_layout, ShaderStageFlags::VERTEX, 0, slice::from_raw_parts(
-                            &camera_ubo as *const CameraMatrixUniformData as *const u8,
+                            &camera_constants as *const CameraMatrixUniformData as *const u8,
                             size_of::<CameraMatrixUniformData>(),
                         ));
 
@@ -1097,7 +1239,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                             shadow_pipeline,
                         );
                         device.cmd_push_constants(frame_command_buffer, geometry_pipeline_layout, ShaderStageFlags::VERTEX, 0, slice::from_raw_parts(
-                            &shadow_ubo as *const CameraMatrixUniformData as *const u8,
+                            &shadow_constants as *const CameraMatrixUniformData as *const u8,
                             size_of::<CameraMatrixUniformData>(),
                         ));
 
@@ -1145,6 +1287,57 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                         device.cmd_end_render_pass(frame_command_buffer);
                         //</editor-fold>
                         ssao_pass.transition_to_readable(base, frame_command_buffer, current_frame);
+                        //<editor-fold desc = "ssao blur pass">
+                        device.cmd_bind_pipeline(
+                            frame_command_buffer,
+                            vk::PipelineBindPoint::GRAPHICS,
+                            ssao_blur_pipeline,
+                        );
+                        device.cmd_set_viewport(frame_command_buffer, 0, &viewports);
+                        device.cmd_set_scissor(frame_command_buffer, 0, &scissors);
+
+                        device.cmd_begin_render_pass(
+                            frame_command_buffer,
+                            &ssao_blur_pass_begin_info_horizontal,
+                            vk::SubpassContents::INLINE,
+                        );
+                        device.cmd_bind_descriptor_sets(
+                            frame_command_buffer,
+                            vk::PipelineBindPoint::GRAPHICS,
+                            ssao_blur_pipeline_layout,
+                            0,
+                            &[ssao_blur_descriptor_set_horizontal.descriptor_sets[current_frame]],
+                            &[],
+                        );
+                        device.cmd_push_constants(frame_command_buffer, ssao_blur_pipeline_layout, ShaderStageFlags::FRAGMENT, 0, slice::from_raw_parts(
+                            &ssao_blur_constants_horizontal as *const SeparableBlurPassData as *const u8,
+                            size_of::<SeparableBlurPassData>(),
+                        ));
+                        device.cmd_draw(current_draw_command_buffer, 6, 1, 0, 0);
+                        device.cmd_end_render_pass(frame_command_buffer);
+                        ssao_blur_pass_horizontal.transition_to_readable(base, frame_command_buffer, current_frame);
+
+                        device.cmd_begin_render_pass(
+                            frame_command_buffer,
+                            &ssao_blur_pass_begin_info_vertical,
+                            vk::SubpassContents::INLINE,
+                        );
+                        device.cmd_bind_descriptor_sets(
+                            frame_command_buffer,
+                            vk::PipelineBindPoint::GRAPHICS,
+                            ssao_blur_pipeline_layout,
+                            0,
+                            &[ssao_blur_descriptor_set_vertical.descriptor_sets[current_frame]],
+                            &[],
+                        );
+                        device.cmd_push_constants(frame_command_buffer, ssao_blur_pipeline_layout, ShaderStageFlags::FRAGMENT, 0, slice::from_raw_parts(
+                            &ssao_blur_constants_vertical as *const SeparableBlurPassData as *const u8,
+                            size_of::<SeparableBlurPassData>(),
+                        ));
+                        device.cmd_draw(current_draw_command_buffer, 6, 1, 0, 0);
+                        device.cmd_end_render_pass(frame_command_buffer);
+                        ssao_blur_pass_vertical.transition_to_readable(base, frame_command_buffer, current_frame);
+                        //</editor-fold>
                         //<editor-fold desc = "lighting pass">
                         device.cmd_begin_render_pass(
                             frame_command_buffer,
@@ -1157,7 +1350,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                             lighting_pipeline,
                         );
                         device.cmd_push_constants(frame_command_buffer, lighting_pipeline_layout, ShaderStageFlags::FRAGMENT, 0, slice::from_raw_parts(
-                            &camera_ubo as *const CameraMatrixUniformData as *const u8,
+                            &camera_constants as *const CameraMatrixUniformData as *const u8,
                             size_of::<CameraMatrixUniformData>(),
                         ));
 
@@ -1235,18 +1428,23 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
     base.device.destroy_pipeline_layout(ssao_pipeline_layout, None);
     base.device.destroy_pipeline_layout(lighting_pipeline_layout, None);
     base.device.destroy_pipeline_layout(present_pipeline_layout, None);
+    base.device.destroy_pipeline_layout(ssao_blur_pipeline_layout, None);
 
     geometry_descriptor_set.destroy(base);
     shadow_descriptor_set.destroy(base);
     ssao_descriptor_set.destroy(base);
     lighting_descriptor_set.destroy(base);
     present_descriptor_set.destroy(base);
+    ssao_blur_descriptor_set_horizontal.destroy(base);
+    ssao_blur_descriptor_set_vertical.destroy(base);
 
     geom_shader.destroy(base);
     shadow_shader.destroy(base);
     ssao_shader.destroy(base);
     lighting_shader.destroy(base);
     present_shader.destroy(base);
+    bilateral_blur_shader.destroy(base);
+
     world.destroy(base);
 
     geometry_pass.destroy(base);
@@ -1254,6 +1452,8 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
     ssao_pass.destroy(base);
     lighting_pass.destroy(base);
     present_pass.destroy(base);
+    ssao_blur_pass_horizontal.destroy(base);
+    ssao_blur_pass_vertical.destroy(base);
 
     ssao_noise_texture.destroy(base);
 
