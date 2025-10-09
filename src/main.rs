@@ -8,15 +8,17 @@ mod render;
 
 use std::default::Default;
 use std::error::Error;
-use std::mem;
+use std::{mem, slice};
 use std::collections::HashSet;
 use std::ffi::c_void;
 use std::mem::size_of;
 use std::path::PathBuf;
+use std::ptr::slice_from_raw_parts;
 use std::time::Instant;
 
 use ash::vk;
 use ash::vk::{Buffer, DescriptorType, DeviceMemory, Format, ImageAspectFlags, ImageSubresourceRange, ShaderStageFlags};
+use bytemuck::bytes_of;
 use winit::dpi::{PhysicalPosition, Pixel};
 use winit::event::{ElementState, Event, KeyEvent, WindowEvent};
 use winit::event_loop::ControlFlow;
@@ -124,12 +126,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
             ..Default::default()
         });
     }
-
-    let camera_vertex_ubo_create_info = render::DescriptorCreateInfo::new(base)
-        .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
-        .descriptor_type(DescriptorType::UNIFORM_BUFFER)
-        .size(size_of::<CameraMatrixUniformData>() as u64)
-        .shader_stages(ShaderStageFlags::VERTEX);
+    
     let texture_sampler_create_info = render::DescriptorCreateInfo::new(base)
         .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
         .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
@@ -154,13 +151,11 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
 
     let geometry_descriptor_set_create_info = render::DescriptorSetCreateInfo::new(base)
         .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
-        .add_descriptor(render::Descriptor::new(&camera_vertex_ubo_create_info))
         .add_descriptor(render::Descriptor::new(&material_ssbo_create_info))
         .add_descriptor(render::Descriptor::new(&joints_ssbo_create_info))
         .add_descriptor(render::Descriptor::new(&world_texture_samplers_create_info));
     let shadow_descriptor_set_create_info = render::DescriptorSetCreateInfo::new(base)
         .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
-        .add_descriptor(render::Descriptor::new(&camera_vertex_ubo_create_info))
         .add_descriptor(render::Descriptor::new(&material_ssbo_create_info))
         .add_descriptor(render::Descriptor::new(&joints_ssbo_create_info))
         .add_descriptor(render::Descriptor::new(&world_texture_samplers_create_info));
@@ -184,11 +179,6 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
     let ssao_descriptor_set = render::DescriptorSet::new(ssao_descriptor_set_create_info);
     //</editor-fold>
     //<editor-fold desc = "lighting descriptor set">
-    let camera_fragment_ubo_create_info = render::DescriptorCreateInfo::new(base)
-        .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
-        .descriptor_type(DescriptorType::UNIFORM_BUFFER)
-        .size(size_of::<CameraMatrixUniformData>() as u64)
-        .shader_stages(ShaderStageFlags::FRAGMENT);
     let lights_ssbo_create_info = render::DescriptorCreateInfo::new(base)
         .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
         .descriptor_type(DescriptorType::STORAGE_BUFFER)
@@ -205,7 +195,6 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
         .add_descriptor(render::Descriptor::new(&texture_sampler_create_info))
         .add_descriptor(render::Descriptor::new(&texture_sampler_create_info))
         .add_descriptor(render::Descriptor::new(&texture_sampler_create_info))
-        .add_descriptor(render::Descriptor::new(&camera_fragment_ubo_create_info))
         .add_descriptor(render::Descriptor::new(&lights_ssbo_create_info));
 
     let lighting_descriptor_set = render::DescriptorSet::new(lighting_descriptor_set_create_info);
@@ -337,6 +326,17 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
 
     //<editor-fold desc = "full graphics pipeline initiation">
 
+    let camera_push_constant_range_vertex = vk::PushConstantRange {
+        stage_flags: ShaderStageFlags::VERTEX,
+        offset: 0,
+        size: size_of::<CameraMatrixUniformData>() as _,
+    };
+    let camera_push_constant_range_fragment = vk::PushConstantRange {
+        stage_flags: ShaderStageFlags::FRAGMENT,
+        offset: 0,
+        size: size_of::<CameraMatrixUniformData>() as _,
+    };
+
     // reused for shadow pass
     let geometry_pipeline_layout = base
         .device
@@ -345,6 +345,8 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                 s_type: vk::StructureType::PIPELINE_LAYOUT_CREATE_INFO,
                 set_layout_count: 1,
                 p_set_layouts: &geometry_descriptor_set.descriptor_set_layout,
+                p_push_constant_ranges: &camera_push_constant_range_vertex,
+                push_constant_range_count: 1,
                 ..Default::default()
             }, None
         ).unwrap();
@@ -365,6 +367,8 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                 s_type: vk::StructureType::PIPELINE_LAYOUT_CREATE_INFO,
                 set_layout_count: 1,
                 p_set_layouts: &lighting_descriptor_set.descriptor_set_layout,
+                p_push_constant_ranges: &camera_push_constant_range_fragment,
+                push_constant_range_count: 1,
                 ..Default::default()
             }, None
         ).unwrap();
@@ -868,6 +872,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
             }
             //</editor-fold>
             Event::AboutToWait => {
+                //<editor-fold desc = "frame setup">
                 let now = Instant::now();
                 let delta_time = now.duration_since(last_frame_time).as_secs_f32();
                 last_frame_time = now;
@@ -896,6 +901,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                         vk::Fence::null(),
                     )
                     .unwrap();
+                //</editor-fold>
 
                 //<editor-fold desc = "uniform descriptor updates">
                 let image_infos = [
@@ -958,21 +964,9 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                     vk::WriteDescriptorSet::default()
                         .dst_set(present_descriptor_set.descriptor_sets[current_frame])
                         .dst_binding(0)
-                        .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                        .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
                         .image_info(&info)];
                 base.device.update_descriptor_sets(&present_descriptor_writes, &[]);
-
-                let ubo = CameraMatrixUniformData {
-                    view: player_camera.view_matrix.data,
-                    projection: player_camera.projection_matrix.data,
-                };
-                copy_data_to_memory(geometry_descriptor_set.descriptors[0].owned_buffers.2[current_frame], &[ubo]);
-                copy_data_to_memory(lighting_descriptor_set.descriptors[8].owned_buffers.2[current_frame], &[ubo]);
-                let ubo = CameraMatrixUniformData {
-                    view: world.lights[0].view.data,
-                    projection: world.lights[0].projection.data,
-                };
-                copy_data_to_memory(shadow_descriptor_set.descriptors[0].owned_buffers.2[current_frame], &[ubo]);
 
                 let image_infos = [
                     vk::DescriptorImageInfo {
@@ -1011,6 +1005,14 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                 };
                 copy_data_to_memory(ssao_descriptor_set.descriptors[3].owned_buffers.2[current_frame], &[ubo]);
                 //</editor-fold>
+                let camera_ubo = CameraMatrixUniformData {
+                    view: player_camera.view_matrix.data,
+                    projection: player_camera.projection_matrix.data,
+                };
+                let shadow_ubo = CameraMatrixUniformData {
+                    view: world.lights[0].view.data,
+                    projection: world.lights[0].projection.data,
+                };
 
                 //<editor-fold desc = "passes begin info">
                 let geometry_pass_pass_begin_info = vk::RenderPassBeginInfo::default()
@@ -1062,6 +1064,10 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                             vk::PipelineBindPoint::GRAPHICS,
                             geometry_pipeline,
                         );
+                        device.cmd_push_constants(frame_command_buffer, geometry_pipeline_layout, ShaderStageFlags::VERTEX, 0, slice::from_raw_parts(
+                            &camera_ubo as *const CameraMatrixUniformData as *const u8,
+                            size_of::<CameraMatrixUniformData>(),
+                        ));
 
                         // draw scene
                         device.cmd_set_viewport(frame_command_buffer, 0, &viewports);
@@ -1090,6 +1096,10 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                             vk::PipelineBindPoint::GRAPHICS,
                             shadow_pipeline,
                         );
+                        device.cmd_push_constants(frame_command_buffer, geometry_pipeline_layout, ShaderStageFlags::VERTEX, 0, slice::from_raw_parts(
+                            &shadow_ubo as *const CameraMatrixUniformData as *const u8,
+                            size_of::<CameraMatrixUniformData>(),
+                        ));
 
                         // draw scene
                         device.cmd_set_viewport(frame_command_buffer, 0, &viewports);
@@ -1146,6 +1156,10 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                             vk::PipelineBindPoint::GRAPHICS,
                             lighting_pipeline,
                         );
+                        device.cmd_push_constants(frame_command_buffer, lighting_pipeline_layout, ShaderStageFlags::FRAGMENT, 0, slice::from_raw_parts(
+                            &camera_ubo as *const CameraMatrixUniformData as *const u8,
+                            size_of::<CameraMatrixUniformData>(),
+                        ));
 
                         // draw quad
                         device.cmd_set_viewport(frame_command_buffer, 0, &viewports);

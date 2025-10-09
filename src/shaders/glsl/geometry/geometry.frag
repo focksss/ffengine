@@ -14,7 +14,7 @@ layout (location = 1) in vec2 o_uv;
 layout (location = 2) flat in uint material;
 layout (location = 3) in mat3 view_TBN;
 
-layout(set = 0, binding = 3) uniform sampler2D textures[];
+layout(set = 0, binding = 2) uniform sampler2D textures[];
 
 struct Material {
     int normal_tex;      // 0
@@ -32,7 +32,7 @@ struct Material {
     int roughness_tex;   // 80
 };
 
-layout(set = 0, binding = 1, std430) readonly buffer MaterialSSBO {
+layout(set = 0, binding = 0, std430) readonly buffer MaterialSSBO {
     Material materials[];
 } materialSSBO;
 

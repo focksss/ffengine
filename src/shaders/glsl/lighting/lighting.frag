@@ -16,7 +16,7 @@ layout(set = 0, binding = 5) uniform sampler2D g_view_normal;
 layout(set = 0, binding = 6) uniform sampler2D shadowmap;
 layout(set = 0, binding = 7) uniform sampler2D ssao_tex;
 
-layout(binding = 8) uniform UniformBuffer {
+layout(push_constant) uniform constants {
     mat4 view;
     mat4 projection;
 } ubo;
@@ -27,7 +27,7 @@ struct Light {
     vec3 vector;
 };
 
-layout(set = 0, binding = 9, std430) readonly buffer LightsSSBO {
+layout(set = 0, binding = 8, std430) readonly buffer LightsSSBO {
     Light lights[];
 } lights_SSBO;
 

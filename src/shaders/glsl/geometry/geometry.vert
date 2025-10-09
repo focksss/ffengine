@@ -18,12 +18,12 @@ layout (location = 1) out vec2 o_uv;
 layout (location = 2) out uint o_material;
 layout (location = 3) out mat3 view_TBN;
 
-layout(binding = 0) uniform UniformBuffer {
+layout(push_constant) uniform constants {
     mat4 view;
     mat4 projection;
 } ubo;
 
-layout(set = 0, binding = 2, std430) readonly buffer JointsSSBO {
+layout(set = 0, binding = 1, std430) readonly buffer JointsSSBO {
     mat4 joint_matrices[];
 } joints_SSBO;
 
