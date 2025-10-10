@@ -72,6 +72,11 @@ float get_shadow(Light light, vec3 world_position, vec3 world_normal) {
 }
 
 void main() {
+    if (uv.x < 0.2 && uv.y < 0.2) {
+        uFragColor = vec4(vec3(texture(shadowmap, uv * 5.0).r), 1.0);
+        return;
+    }
+    //uFragColor = vec4(vec3(texture(ssao_tex, uv).r), 1.0); return;
     //uFragColor = vec4(0.01 / texture(g_depth, uv).r, 0.0, 0.0, 1.0);
     mat4 inverse_view = inverse(ubo.view);
 

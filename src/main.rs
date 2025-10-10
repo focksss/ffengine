@@ -61,7 +61,7 @@ struct SeparableBlurPassData {
     inv_resolution: [f32; 2] // 1.0 / framebuffer size
 }
 
-const MAX_FRAMES_IN_FLIGHT: usize = 2;
+const MAX_FRAMES_IN_FLIGHT: usize = 3;
 const PI: f32 = std::f32::consts::PI;
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -93,13 +93,13 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
     //world.add_model(Model::new("C:\\Graphics\\assets\\flower\\scene.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\rivals\\luna\\gltf\\luna.gltf"));
 
-    //world.add_model(Model::new("C:\\Graphics\\assets\\bistroGLTF\\untitled.gltf"));
-    world.add_model(Model::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf"));
+    world.add_model(Model::new("C:\\Graphics\\assets\\bistroGLTF\\untitled.gltf"));
+    //world.add_model(Model::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\catTest\\catTest.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\helmet\\DamagedHelmet.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\hydrant\\untitled.gltf"));
 
-    world.add_light(Light::new(Vector::new_vec3(-1.0, -5.0, -1.0)));
+    world.add_light(Light::new_sun(Vector::new_vec3(-1.0, -5.0, -1.0).normalize_3d()));
 
     world.initialize(base, MAX_FRAMES_IN_FLIGHT, true);
 
@@ -187,6 +187,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
         .set_is_present_pass(true);
     let present_pass = Pass::new(present_pass_create_info);
     //</editor-fold>
+
     //<editor-fold desc = "geometry + shadow descriptor sets"
     let material_ssbo_create_info = render::DescriptorCreateInfo::new(base)
         .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
@@ -1109,6 +1110,8 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                     .unwrap();
                 //</editor-fold>
 
+                world.update_lights(base, &player_camera, current_frame);
+
                 let ubo = SSAOPassUniformData {
                     samples: ssao_kernal,
                     projection: player_camera.projection_matrix.data,
@@ -1132,7 +1135,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                     radius: 5,
                     near: player_camera.near,
                     sigma_spatial: 2.5,
-                    sigma_depth: 0.1,
+                    sigma_depth: 0.05,
                     sigma_normal: 0.2,
                     inv_resolution: [1.0 / (base.surface_resolution.width as f32), 1.0 / (base.surface_resolution.height as f32)]
                 };
@@ -1141,7 +1144,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                     radius: 5,
                     near: player_camera.near,
                     sigma_spatial: 2.5,
-                    sigma_depth: 0.1,
+                    sigma_depth: 0.05,
                     sigma_normal: 0.2,
                     inv_resolution: [1.0 / (base.surface_resolution.width as f32), 1.0 / (base.surface_resolution.height as f32)]
                 };

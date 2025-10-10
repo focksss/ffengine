@@ -1427,6 +1427,12 @@ pub unsafe fn copy_data_to_memory<T: Copy>(ptr: *mut c_void, data: &[T]) { unsaf
         align_of::<T>() as u64,
         (data.len() * size_of::<T>()) as u64,
     );
+    assert!(!ptr.is_null(), "copy_data_to_memory: ptr is null!");
+    assert!(data.len() * std::mem::size_of::<T>() <= isize::MAX as usize, "data size too big");
+
+    let ptr = ptr as *mut T;
+    assert_eq!(ptr.align_offset(std::mem::align_of::<T>()), 0, "pointer is not aligned");
+    
     aligned.copy_from_slice(&data);
 } }
 pub fn compile_shaders(shader_directories: Vec<&str>) -> io::Result<()> {

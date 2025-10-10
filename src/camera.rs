@@ -68,32 +68,55 @@ impl Camera {
 
         let position = self.position.mul_by_vec(&Vector::new_vec3(1.0,1.0,-1.0));
 
-        self.frustum = Frustum { planes: [
-            Plane {
-                normal: cam_front,
-                point: position.add_vec(&cam_front.mul_float(self.near)),
-            },
-            Plane {
-                normal: cam_front.mul_float(-1.0),
-                point: position.add_vec(&front_by_far),
-            },
-            Plane {
-                normal: cam_up.cross( &front_by_far.sub_vec(&cam_right.mul_float(half_h)) ),
-                point: position,
-            },
-            Plane {
-                normal: ( &front_by_far.add_vec(&cam_right.mul_float(half_h)) ).cross(&cam_up),
-                point: position,
-            },
-            Plane {
-                normal: cam_right.cross( &front_by_far.add_vec(&cam_up.mul_float(half_v)) ),
-                point: position,
-            },
-            Plane {
-                normal: ( &front_by_far.sub_vec(&cam_up.mul_float(half_v)) ).cross(&cam_right),
-                point: position,
+        self.frustum = Frustum {
+            planes: [
+                Plane {
+                    normal: cam_front,
+                    point: position.add_vec(&cam_front.mul_float(self.near)),
+                },
+                Plane {
+                    normal: cam_front.mul_float(-1.0),
+                    point: position.add_vec(&front_by_far),
+                },
+                Plane {
+                    normal: cam_up.cross( &front_by_far.sub_vec(&cam_right.mul_float(half_h)) ),
+                    point: position,
+                },
+                Plane {
+                    normal: ( &front_by_far.add_vec(&cam_right.mul_float(half_h)) ).cross(&cam_up),
+                    point: position,
+                },
+                Plane {
+                    normal: cam_right.cross( &front_by_far.add_vec(&cam_up.mul_float(half_v)) ),
+                    point: position,
+                },
+                Plane {
+                    normal: ( &front_by_far.sub_vec(&cam_up.mul_float(half_v)) ).cross(&cam_right),
+                    point: position,
+                }
+            ],
+        }
+    }
+
+    pub fn get_frustum_corners_with_near_far(&self, near: f32, far: f32) -> [Vector; 8] {
+        let inverse_view_projection = Matrix::new_projection(self.fov_y, self.aspect_ratio, near, far).mul_mat4(&self.view_matrix).inverse();
+        let mut corners = [Vector::new_empty(); 8];
+        let mut i = 0;
+        for x in 0..2 {
+            for y in 0..2 {
+                for z in 0..2 {
+                    let corner_clip_space = inverse_view_projection.mul_vector4(&Vector::new_vec4(
+                        2.0 * x as f32 - 1.0,
+                        2.0 * y as f32 - 1.0,
+                        z as f32,
+                        1.0,
+                    ));
+                    corners[i] = corner_clip_space.div_float(corner_clip_space.w);
+                    i = i + 1;
+                }
             }
-        ]}
+        }
+        corners
     }
 }
 
@@ -125,7 +148,7 @@ pub struct Frustum {
 impl Frustum {
     pub fn null() -> Self {
         Self {
-            planes: [Plane::null(); 6]
+            planes: [Plane::null(); 6],
         }
     }
 

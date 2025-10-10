@@ -1,4 +1,6 @@
+use std::any::Any;
 use std::cell::RefCell;
+use std::cmp::min;
 use std::ffi::c_void;
 use std::fs;
 use std::rc::Rc;
@@ -7,9 +9,10 @@ use std::ptr::null_mut;
 use std::time::SystemTime;
 use ash::vk;
 use ash::vk::{CommandBuffer, DeviceMemory, ImageView, Sampler};
+use bytemuck::Contiguous;
 use json::JsonValue;
 use crate::matrix::Matrix;
-use crate::camera::Frustum;
+use crate::camera::{Camera, Frustum};
 use crate::vector::Vector;
 use crate::vk_helper::{copy_data_to_memory, VkBase};
 
@@ -138,7 +141,7 @@ impl Scene {
                 (self.material_buffers[i], self.material_staging_buffer) =
                     base.create_device_and_staging_buffer(0, &materials_send, vk::BufferUsageFlags::STORAGE_BUFFER, false, false, true);
                 (self.lights_buffers[i], self.lights_staging_buffer) =
-                    base.create_device_and_staging_buffer(0, &lights_send, vk::BufferUsageFlags::STORAGE_BUFFER, false, false, true);
+                    base.create_device_and_staging_buffer(size_of::<LightSendable>() as u64 * 100, &lights_send, vk::BufferUsageFlags::STORAGE_BUFFER, false, true, true);
             } else {
                 self.instance_buffers[i] = base.create_device_and_staging_buffer(self.instance_buffer_size, &[0], vk::BufferUsageFlags::VERTEX_BUFFER, true, false, false).0;
                 self.material_buffers[i] = base.create_device_and_staging_buffer(0, &materials_send, vk::BufferUsageFlags::STORAGE_BUFFER, true, false, true).0;
@@ -208,6 +211,16 @@ impl Scene {
             );
             base.end_single_time_commands(command_buffers);
         }
+    } }
+
+    pub unsafe fn update_lights(&mut self, base: &VkBase, primary_camera: &Camera, frame: usize) { unsafe {
+        for light in &mut self.lights {
+            light.update(primary_camera);
+        }
+
+        let lights_send = self.lights.iter().map(|light| light.to_sendable()).collect::<Vec<_>>();
+        copy_data_to_memory(self.lights_staging_buffer.2, &lights_send);
+        base.copy_buffer(&self.lights_staging_buffer.0, &self.lights_buffers[frame].0, &self.lights_buffers_size);
     } }
 
     pub unsafe fn update_instances_all_frames(&mut self, base: &VkBase) { unsafe {
@@ -331,9 +344,10 @@ pub struct Light {
     pub vector: Vector,
     pub projection: Matrix,
     pub view: Matrix,
+    pub light_type: u32,
 }
 impl Light {
-    pub fn new(vector: Vector) -> Light {
+    pub fn new_sun(vector: Vector) -> Light {
         Light {
             vector,
             projection: Matrix::new_ortho(-10.0, 10.0, -10.0, 10.0, 0.01, 1000.0),
@@ -341,7 +355,8 @@ impl Light {
                 &Vector::new_vec3(vector.x * -100.0, vector.y * -100.0, vector.z * -100.0),
                 &Vector::new_vec3(0.0, 0.0, 0.0),
                 &Vector::new_vec3(0.0, 1.0, 0.0),
-            )
+            ),
+            light_type: 0,
         }
     }
     pub fn to_sendable(&self) -> LightSendable {
@@ -351,6 +366,82 @@ impl Light {
             vector: self.vector.to_array3(),
             _pad0: 0u32
         }
+    }
+
+    pub fn update(&mut self, primary_camera: &Camera) {
+        if self.light_type == 0 {
+            let cascade_levels = [primary_camera.far * 0.02, primary_camera.far * 0.04, primary_camera.far * 0.1, primary_camera.far * 0.5];
+
+            let matrices = self.get_cascade_matrix(primary_camera, primary_camera.near, cascade_levels[0]);
+            
+            /*
+    std::vector<glm::mat4> ret;
+    for (size_t i = 0; i < shadowCascadeLevels.size() + 1; ++i)
+    {
+        if (i == 0)
+        {
+            ret.push_back(getLightSpaceMatrix(cameraNearPlane, shadowCascadeLevels[i]));
+        }
+        else if (i < shadowCascadeLevels.size())
+        {
+            ret.push_back(getLightSpaceMatrix(shadowCascadeLevels[i - 1], shadowCascadeLevels[i]));
+        }
+        else
+        {
+            ret.push_back(getLightSpaceMatrix(shadowCascadeLevels[i - 1], cameraFarPlane));
+        }
+    }
+    return ret;
+             */
+            
+            self.view = matrices[0];
+            self.projection = matrices[1];
+        }
+    }
+
+    fn get_cascade_matrix(&self, camera: &Camera, near: f32, far: f32) -> [Matrix; 2] {
+        let corners = camera.get_frustum_corners_with_near_far(near, far);
+
+        let mut sum = Vector::new_empty();
+        for corner in corners.iter() {
+            sum.add_vec_to_self(corner);
+        }
+        let frustum_center = sum.div_float(8.0);
+
+        let view = Matrix::new_look_at(
+            &frustum_center.sub_vec(&Vector::new_vec3(self.vector.x, self.vector.y, self.vector.z).mul_float(1.0)),
+            &frustum_center,
+            &Vector::new_vec3(0.0, 1.0, 0.0)
+        );
+
+        let mut min_x = f32::MAX;
+        let mut max_x = f32::MIN;
+        let mut min_y = f32::MAX;
+        let mut max_y = f32::MIN;
+        let mut min_z = f32::MAX;
+        let mut max_z = f32::MIN;
+        for corner in &corners {
+            let corner_light_view = self.view.mul_vector4(corner);
+            min_x = min_x.min(corner_light_view.x);
+            max_x = max_x.max(corner_light_view.x);
+            min_y = min_y.min(corner_light_view.y);
+            max_y = max_y.max(corner_light_view.y);
+            min_z = min_z.min(corner_light_view.z);
+            max_z = max_z.max(corner_light_view.z);
+        }
+        let z_mult = 10.0f32;
+        if min_z < 0.0 {
+            min_z = min_z * z_mult;
+        } else {
+            min_z = min_z / z_mult;
+        }
+        if max_z < 0.0 {
+            max_z = max_z / z_mult;
+        } else {
+            max_z = max_z * z_mult;
+        }
+        let projection = Matrix::new_ortho(min_x, max_x, min_y, max_y, min_z, max_z);
+        [view, projection]
     }
 }
 #[derive(Copy)]
