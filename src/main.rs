@@ -17,7 +17,7 @@ use std::ptr::slice_from_raw_parts;
 use std::time::Instant;
 
 use ash::vk;
-use ash::vk::{Buffer, DescriptorType, DeviceMemory, Format, ImageAspectFlags, ImageSubresourceRange, ShaderStageFlags};
+use ash::vk::{Buffer, DescriptorType, DeviceMemory, Extent2D, Format, ImageAspectFlags, ImageSubresourceRange, Offset2D, ShaderStageFlags};
 use bytemuck::bytes_of;
 use winit::dpi::{PhysicalPosition, Pixel};
 use winit::event::{ElementState, Event, KeyEvent, WindowEvent};
@@ -93,13 +93,15 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
     //world.add_model(Model::new("C:\\Graphics\\assets\\flower\\scene.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\rivals\\luna\\gltf\\luna.gltf"));
 
-    world.add_model(Model::new("C:\\Graphics\\assets\\bistroGLTF\\untitled.gltf"));
-    //world.add_model(Model::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf"));
+    //world.add_model(Model::new("C:\\Graphics\\assets\\bistroGLTF\\untitled.gltf"));
+    world.add_model(Model::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\catTest\\catTest.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\helmet\\DamagedHelmet.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\hydrant\\untitled.gltf"));
 
     world.add_light(Light::new_sun(Vector::new_vec3(-1.0, -5.0, -1.0).normalize_3d()));
+
+    let shadow_res = 4096u32;
 
     world.initialize(base, MAX_FRAMES_IN_FLIGHT, true);
 
@@ -145,6 +147,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
         .shader_stages(ShaderStageFlags::FRAGMENT);
     //<editor-fold desc = "passes">
     let color_tex_create_info = TextureCreateInfo::new(base).format(Format::R16G16B16A16_SFLOAT);
+    let half_res_color_tex_create_info = TextureCreateInfo::new(base).format(Format::R16G16B16A16_SFLOAT).resolution_denominator(2);
     let geometry_pass_create_info = PassCreateInfo::new(base)
         .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
         .add_color_attachment_info(TextureCreateInfo::new(base).format(Format::R8G8B8A8_SINT)) // material
@@ -157,24 +160,24 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
 
     let shadow_pass_create_info = PassCreateInfo::new(base)
         .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
-        .depth_attachment_info(TextureCreateInfo::new(base).format(Format::D16_UNORM).is_depth(true).clear_value([0.0, 0.0, 0.0, 0.0])); // depth
+        .depth_attachment_info(TextureCreateInfo::new(base).format(Format::D16_UNORM).is_depth(true).clear_value([0.0, 0.0, 0.0, 0.0]).width(shadow_res).height(shadow_res)); // depth
     let shadow_pass = Pass::new(shadow_pass_create_info);
 
     let ssao_pass_create_info = PassCreateInfo::new(base)
         .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
-        .add_color_attachment_info(color_tex_create_info)
-        .depth_attachment_info(TextureCreateInfo::new(base).format(Format::D16_UNORM).is_depth(true).clear_value([1.0, 0.0, 0.0, 0.0])); // depth
+        .add_color_attachment_info(half_res_color_tex_create_info)
+        .depth_attachment_info(TextureCreateInfo::new(base).resolution_denominator(2).format(Format::D16_UNORM).is_depth(true).clear_value([1.0, 0.0, 0.0, 0.0])); // depth
     let ssao_pass = Pass::new(ssao_pass_create_info);
 
     let ssao_blur_pass_create_info = PassCreateInfo::new(base)
         .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
-        .add_color_attachment_info(color_tex_create_info)
-        .depth_attachment_info(TextureCreateInfo::new(base).format(Format::D16_UNORM).is_depth(true).clear_value([1.0, 0.0, 0.0, 0.0])); // depth
+        .add_color_attachment_info(half_res_color_tex_create_info)
+        .depth_attachment_info(TextureCreateInfo::new(base).resolution_denominator(2).format(Format::D16_UNORM).is_depth(true).clear_value([1.0, 0.0, 0.0, 0.0])); // depth
     let ssao_blur_pass_horizontal = Pass::new(ssao_blur_pass_create_info);
     let ssao_blur_pass_create_info = PassCreateInfo::new(base)
         .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
-        .add_color_attachment_info(color_tex_create_info)
-        .depth_attachment_info(TextureCreateInfo::new(base).format(Format::D16_UNORM).is_depth(true).clear_value([1.0, 0.0, 0.0, 0.0])); // depth
+        .add_color_attachment_info(half_res_color_tex_create_info)
+        .depth_attachment_info(TextureCreateInfo::new(base).resolution_denominator(2).format(Format::D16_UNORM).is_depth(true).clear_value([1.0, 0.0, 0.0, 0.0])); // depth
     let ssao_blur_pass_vertical = Pass::new(ssao_blur_pass_create_info);
 
     let lighting_pass_create_info = PassCreateInfo::new(base)
@@ -774,21 +777,38 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
         min_depth: 0.0,
         max_depth: 1.0,
     }];
+    let shadow_viewports = [vk::Viewport {
+        x: 0.0,
+        y: 0.0,
+        width: shadow_res as f32,
+        height: shadow_res as f32,
+        min_depth: 0.0,
+        max_depth: 1.0,
+    }];
     let half_res_viewports = [vk::Viewport {
         x: 0.0,
         y: 0.0,
-        width: (base.surface_resolution.width / 2) as f32,
-        height: (base.surface_resolution.height / 2) as f32,
+        width: base.surface_resolution.width as f32 * 0.5,
+        height: base.surface_resolution.height as f32 * 0.5,
         min_depth: 0.0,
         max_depth: 1.0,
     }];
 
     let scissors = [base.surface_resolution.into()];
+    let shadow_scissors = [vk::Rect2D { offset: Offset2D { x: 0, y: 0 }, extent: Extent2D { width: shadow_res, height: shadow_res } }];
+    let half_res_scissors = [vk::Rect2D { offset: Offset2D { x: 0, y: 0 }, extent: Extent2D { width: base.surface_resolution.width / 2,
+        height: base.surface_resolution.height / 2 } }];
 
 
     let viewport_state_info = vk::PipelineViewportStateCreateInfo::default()
         .scissors(&scissors)
         .viewports(&viewports);
+    let shadow_viewport_state_info = vk::PipelineViewportStateCreateInfo::default()
+        .scissors(&shadow_scissors)
+        .viewports(&shadow_viewports);
+    let half_res_viewport_state_info = vk::PipelineViewportStateCreateInfo::default()
+        .scissors(&half_res_scissors)
+        .viewports(&half_res_viewports);
 
     let rasterization_info = vk::PipelineRasterizationStateCreateInfo {
         front_face: vk::FrontFace::COUNTER_CLOCKWISE,
@@ -914,6 +934,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
         .layout(geometry_pipeline_layout)
         .depth_stencil_state(&infinite_reverse_depth_state_info);
     let shadow_pipeline_info = base_pipeline_info
+        .viewport_state(&shadow_viewport_state_info)
         .stages(&shadow_shader_create_info)
         .vertex_input_state(&shadow_vertex_input_state_info)
         .multisample_state(&null_multisample_state_info)
@@ -924,6 +945,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
         .layout(geometry_pipeline_layout);
     let ssao_pipeline_info = base_pipeline_info
         .stages(&ssao_shader_create_info)
+        .viewport_state(&half_res_viewport_state_info)
         .vertex_input_state(&null_vertex_input_state_info)
         .multisample_state(&null_multisample_state_info)
         .render_pass(ssao_pass.renderpass)
@@ -941,6 +963,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
         .rasterization_state(&fullscreen_quad_rasterization_info)
         .depth_stencil_state(&default_depth_state_info);
     let ssao_blur_pipeline_info = lighting_pipeline_info.clone()
+        .viewport_state(&half_res_viewport_state_info)
         .stages(&bilateral_blur_shader_create_info)
         .render_pass(ssao_pass.renderpass)
         .layout(ssao_blur_pipeline_layout);
@@ -1117,8 +1140,8 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                     projection: player_camera.projection_matrix.data,
                     inverse_projection: player_camera.projection_matrix.inverse().data,
                     radius: 1.5,
-                    width: base.surface_resolution.width as i32,
-                    height: base.surface_resolution.height as i32,
+                    width: base.surface_resolution.width as i32 / 2,
+                    height: base.surface_resolution.height as i32 / 2,
                     _pad0: 0.0,
                 };
                 copy_data_to_memory(ssao_descriptor_set.descriptors[3].owned_buffers.2[current_frame], &[ubo]);
@@ -1158,22 +1181,22 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                 let shadow_pass_pass_begin_info = vk::RenderPassBeginInfo::default()
                     .render_pass(shadow_pass.renderpass)
                     .framebuffer(shadow_pass.framebuffers[current_frame])
-                    .render_area(base.surface_resolution.into())
+                    .render_area(shadow_scissors[0])
                     .clear_values(&shadow_pass.clear_values);
                 let ssao_pass_begin_info = vk::RenderPassBeginInfo::default()
                     .render_pass(ssao_pass.renderpass)
                     .framebuffer(ssao_pass.framebuffers[current_frame])
-                    .render_area(base.surface_resolution.into())
+                    .render_area(half_res_scissors[0])
                     .clear_values(&ssao_pass.clear_values);
                 let ssao_blur_pass_begin_info_horizontal = vk::RenderPassBeginInfo::default()
                     .render_pass(ssao_blur_pass_horizontal.renderpass)
                     .framebuffer(ssao_blur_pass_horizontal.framebuffers[current_frame])
-                    .render_area(base.surface_resolution.into())
+                    .render_area(half_res_scissors[0])
                     .clear_values(&ssao_blur_pass_horizontal.clear_values);
                 let ssao_blur_pass_begin_info_vertical = vk::RenderPassBeginInfo::default()
                     .render_pass(ssao_blur_pass_vertical.renderpass)
                     .framebuffer(ssao_blur_pass_vertical.framebuffers[current_frame])
-                    .render_area(base.surface_resolution.into())
+                    .render_area(half_res_scissors[0])
                     .clear_values(&ssao_blur_pass_vertical.clear_values);
                 let lighting_pass_pass_begin_info = vk::RenderPassBeginInfo::default()
                     .render_pass(lighting_pass.renderpass)
@@ -1247,8 +1270,8 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                         ));
 
                         // draw scene
-                        device.cmd_set_viewport(frame_command_buffer, 0, &viewports);
-                        device.cmd_set_scissor(frame_command_buffer, 0, &scissors);
+                        device.cmd_set_viewport(frame_command_buffer, 0, &shadow_viewports);
+                        device.cmd_set_scissor(frame_command_buffer, 0, &shadow_scissors);
                         device.cmd_bind_descriptor_sets(
                             frame_command_buffer,
                             vk::PipelineBindPoint::GRAPHICS,
@@ -1275,8 +1298,8 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                         );
 
                         // draw quad
-                        device.cmd_set_viewport(frame_command_buffer, 0, &viewports);
-                        device.cmd_set_scissor(frame_command_buffer, 0, &scissors);
+                        device.cmd_set_viewport(frame_command_buffer, 0, &half_res_viewports);
+                        device.cmd_set_scissor(frame_command_buffer, 0, &half_res_scissors);
                         device.cmd_bind_descriptor_sets(
                             frame_command_buffer,
                             vk::PipelineBindPoint::GRAPHICS,
@@ -1296,8 +1319,8 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                             vk::PipelineBindPoint::GRAPHICS,
                             ssao_blur_pipeline,
                         );
-                        device.cmd_set_viewport(frame_command_buffer, 0, &viewports);
-                        device.cmd_set_scissor(frame_command_buffer, 0, &scissors);
+                        device.cmd_set_viewport(frame_command_buffer, 0, &half_res_viewports);
+                        device.cmd_set_scissor(frame_command_buffer, 0, &half_res_scissors);
 
                         device.cmd_begin_render_pass(
                             frame_command_buffer,
