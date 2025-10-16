@@ -191,7 +191,7 @@ impl Pass {
                         .attachments(&framebuffer_attachments)
                         .width(create_info.depth_attachment_create_info.width)
                         .height(create_info.depth_attachment_create_info.height)
-                        .layers(1);
+                        .layers(create_info.depth_attachment_create_info.array_layers);
 
                     let fb = base
                         .device
@@ -286,7 +286,7 @@ impl Pass {
                     base_mip_level: 0,
                     level_count: 1,
                     base_array_layer: 0,
-                    layer_count: 1,
+                    layer_count: tex.array_layers,
                 },
                 ..Default::default()
             };
@@ -356,17 +356,19 @@ pub struct Texture {
     pub clear_value: ClearValue,
     pub format: Format,
     pub resolution: Extent3D,
+    pub array_layers: u32,
     pub samples: SampleCountFlags,
     pub is_depth: bool,
 }
 impl Texture {
     pub unsafe fn new(create_info: &TextureCreateInfo) -> Self { unsafe {
+        if create_info.depth < 1 { panic!("texture depth is too low"); }
         let color_image_create_info = vk::ImageCreateInfo {
             s_type: vk::StructureType::IMAGE_CREATE_INFO,
-            image_type: if create_info.height > 1 { vk::ImageType::TYPE_2D } else { vk::ImageType::TYPE_1D },
-            extent: Extent3D { width: create_info.width, height: create_info.height, depth: 1 },
+            image_type: if create_info.depth > 1 { vk::ImageType::TYPE_3D } else if create_info.height > 1 { vk::ImageType::TYPE_2D } else { vk::ImageType::TYPE_1D },
+            extent: Extent3D { width: create_info.width, height: create_info.height, depth: create_info.depth },
             mip_levels: 1,
-            array_layers: 1,
+            array_layers: create_info.array_layers,
             format: create_info.format,
             tiling: vk::ImageTiling::OPTIMAL,
             initial_layout: vk::ImageLayout::UNDEFINED,
@@ -392,14 +394,26 @@ impl Texture {
         let image_view_info = vk::ImageViewCreateInfo {
             s_type: vk::StructureType::IMAGE_VIEW_CREATE_INFO,
             image,
-            view_type: if create_info.height > 1 { vk::ImageViewType::TYPE_2D } else { vk::ImageViewType::TYPE_1D },
+            view_type: if create_info.array_layers > 1 {
+                    if create_info.height > 1 {
+                        vk::ImageViewType::TYPE_2D_ARRAY
+                    } else {
+                        vk::ImageViewType::TYPE_1D_ARRAY
+                    }
+                } else if create_info.depth > 1 {
+                    vk::ImageViewType::TYPE_3D
+                } else if create_info.height > 1 {
+                    vk::ImageViewType::TYPE_2D
+                } else {
+                    vk::ImageViewType::TYPE_1D
+                },
             format: create_info.format,
             subresource_range: ImageSubresourceRange {
                 aspect_mask: if create_info.is_depth { ImageAspectFlags::DEPTH } else { ImageAspectFlags::COLOR },
                 base_mip_level: 0,
                 level_count: 1,
                 base_array_layer: 0,
-                layer_count: 1,
+                layer_count: create_info.array_layers,
                 ..Default::default()
             },
             ..Default::default()
@@ -413,6 +427,7 @@ impl Texture {
             clear_value: Self::clear_value_for_format(create_info.format, create_info.clear_value),
             format: create_info.format,
             resolution: Extent3D::default().width(create_info.width).height(create_info.height).depth(create_info.depth),
+            array_layers: create_info.array_layers,
             samples: create_info.samples,
             is_depth: create_info.is_depth,
         }
@@ -507,6 +522,7 @@ pub struct TextureCreateInfo<'a> {
     pub format: Format,
     pub is_depth: bool,
     pub usage_flags: ImageUsageFlags,
+    pub array_layers: u32,
     pub clear_value: [f32; 4],
 }
 impl TextureCreateInfo<'_> {
@@ -522,6 +538,7 @@ impl TextureCreateInfo<'_> {
             format: Format::R16G16B16A16_SFLOAT,
             is_depth: false,
             usage_flags: ImageUsageFlags::SAMPLED,
+            array_layers: 1,
             clear_value: [0.0; 4],
         }
     }
@@ -537,6 +554,7 @@ impl TextureCreateInfo<'_> {
             format: Format::R16G16B16A16_SFLOAT,
             is_depth: false,
             usage_flags: ImageUsageFlags::SAMPLED,
+            array_layers: 1,
             clear_value: [0.0; 4],
         }
     }
@@ -568,14 +586,18 @@ impl TextureCreateInfo<'_> {
         self.usage_flags = usage_flags;
         self
     }
+    pub fn array_layers(mut self, array_layers: u32) -> Self {
+        self.array_layers = array_layers;
+        self
+    }
     pub fn clear_value(mut self, clear_value: [f32; 4]) -> Self {
         self.clear_value = clear_value;
         self
     }
     pub fn resolution_denominator(mut self, denominator: u32) -> Self {
-        self.width = self.width / denominator;
-        self.height = self.height / denominator;
-        self.depth = self.depth / denominator;
+        self.width = (self.width / denominator).max(1);
+        self.height = (self.height / denominator).max(1);
+        self.depth = (self.depth / denominator).max(1);
         self
     }
 }

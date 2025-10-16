@@ -38,10 +38,11 @@ struct CameraMatrixUniformData {
     view: [f32; 16],
     projection: [f32; 16],
 }
+const SSAO_KERNAL_SIZE: usize = 16;
 #[derive(Clone, Debug, Copy)]
 #[repr(C)]
 struct SSAOPassUniformData {
-    samples: [[f32; 4]; 16],
+    samples: [[f32; 4]; SSAO_KERNAL_SIZE],
     projection: [f32; 16],
     inverse_projection: [f32; 16],
     radius: f32,
@@ -160,7 +161,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
 
     let shadow_pass_create_info = PassCreateInfo::new(base)
         .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
-        .depth_attachment_info(TextureCreateInfo::new(base).format(Format::D16_UNORM).is_depth(true).clear_value([0.0, 0.0, 0.0, 0.0]).width(shadow_res).height(shadow_res)); // depth
+        .depth_attachment_info(TextureCreateInfo::new(base).format(Format::D16_UNORM).is_depth(true).clear_value([0.0, 0.0, 0.0, 0.0]).width(shadow_res).height(shadow_res).array_layers(4)); // depth
     let shadow_pass = Pass::new(shadow_pass_create_info);
 
     let ssao_pass_create_info = PassCreateInfo::new(base)
@@ -284,9 +285,9 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
 
     //<editor-fold desc = "ssao sampling setup">
     let mut rng = rng();
-    let mut ssao_kernal= [[0.0; 4]; 16];
-    for i in 0..16 {
-        let mut scale = i as f32 / 16.0;
+    let mut ssao_kernal= [[0.0; 4]; SSAO_KERNAL_SIZE];
+    for i in 0..SSAO_KERNAL_SIZE {
+        let mut scale = i as f32 / SSAO_KERNAL_SIZE as f32;
         scale = 0.1 + ((scale * scale) * (1.0 - 0.1));
         ssao_kernal[i] = Vector::new_from_array(&[rng.random::<f32>() * 2.0 - 1.0, rng.random::<f32>() * 2.0 - 1.0, rng.random::<f32>()])
             .normalize_3d()
@@ -819,7 +820,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
     };
     let shadow_rasterization_info = vk::PipelineRasterizationStateCreateInfo {
         front_face: vk::FrontFace::COUNTER_CLOCKWISE,
-        cull_mode: vk::CullModeFlags::NONE,
+        cull_mode: vk::CullModeFlags::FRONT,
         line_width: 1.0,
         polygon_mode: vk::PolygonMode::FILL,
         ..Default::default()

@@ -13,7 +13,7 @@ layout(set = 0, binding = 3) uniform sampler2D g_extra_properties;
 layout(set = 0, binding = 4) uniform sampler2D g_depth;
 layout(set = 0, binding = 5) uniform sampler2D g_view_normal;
 
-layout(set = 0, binding = 6) uniform sampler2D shadowmap;
+layout(set = 0, binding = 6) uniform sampler2DArray shadowmap;
 layout(set = 0, binding = 7) uniform sampler2D ssao_tex;
 
 layout(push_constant) uniform constants {
@@ -51,16 +51,16 @@ float get_shadow(Light light, vec3 world_position, vec3 world_normal) {
     projected_lightspace_position.y = projected_lightspace_position.y;
     float current_depth = projected_lightspace_position.z;
 
-    float closest_depth = texture(shadowmap, projected_lightspace_position.xy).r;
+    float closest_depth = texture(shadowmap, vec3(projected_lightspace_position.xy, 0)).r;
 
     vec3 light_direction = normalize(light.vector);
     float bias = max(0.0001 * (1.0 - dot(world_normal, -light_direction)), 0.0001);
 
     float shadow = 0.0;
-    vec2 texel_size = 1.0 / textureSize(shadowmap, 0);
+    vec2 texel_size = 1.0 / textureSize(shadowmap, 0).xy;
     for (int x = -1; x <= 1; ++x) {
         for (int y = -1; y <= 1; ++y) {
-            float pcf_depth = texture(shadowmap, projected_lightspace_position.xy + vec2(x, y) * texel_size).r;
+            float pcf_depth = texture(shadowmap, vec3(projected_lightspace_position.xy + vec2(x, y) * texel_size, 0)).r;
             shadow += current_depth + bias < pcf_depth  ? 1.0 : 0.0;
         }
     }
@@ -73,7 +73,7 @@ float get_shadow(Light light, vec3 world_position, vec3 world_normal) {
 
 void main() {
     if (uv.x < 0.2 && uv.y < 0.2) {
-        uFragColor = vec4(vec3(texture(shadowmap, uv * 5.0).r), 1.0);
+        uFragColor = vec4(vec3(texture(shadowmap, vec3(uv * 5.0, 0)).r), 1.0);
         return;
     }
     //uFragColor = vec4(vec3(texture(ssao_tex, uv).r), 1.0); return;
