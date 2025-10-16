@@ -38,6 +38,10 @@ struct CameraMatrixUniformData {
     view: [f32; 16],
     projection: [f32; 16],
 }
+struct LightSpaceMatricesUniformData {
+    view: [f32; 16],
+    projections: [[f32; 16]; 16],
+}
 const SSAO_KERNAL_SIZE: usize = 16;
 #[derive(Clone, Debug, Copy)]
 #[repr(C)]
@@ -193,6 +197,11 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
     //</editor-fold>
 
     //<editor-fold desc = "geometry + shadow descriptor sets"
+    let lights_ssbo_create_info = render::DescriptorCreateInfo::new(base)
+        .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
+        .descriptor_type(DescriptorType::STORAGE_BUFFER)
+        .shader_stages(ShaderStageFlags::VERTEX)
+        .buffers(world.lights_buffers.iter().map(|b| {b.0.clone()}).collect());
     let material_ssbo_create_info = render::DescriptorCreateInfo::new(base)
         .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
         .descriptor_type(DescriptorType::STORAGE_BUFFER)
@@ -215,10 +224,12 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
         .add_descriptor(render::Descriptor::new(&material_ssbo_create_info))
         .add_descriptor(render::Descriptor::new(&joints_ssbo_create_info))
         .add_descriptor(render::Descriptor::new(&world_texture_samplers_create_info));
+
     let shadow_descriptor_set_create_info = render::DescriptorSetCreateInfo::new(base)
         .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
         .add_descriptor(render::Descriptor::new(&material_ssbo_create_info))
         .add_descriptor(render::Descriptor::new(&joints_ssbo_create_info))
+        .add_descriptor(render::Descriptor::new(&lights_ssbo_create_info))
         .add_descriptor(render::Descriptor::new(&world_texture_samplers_create_info));
 
     let geometry_descriptor_set = render::DescriptorSet::new(geometry_descriptor_set_create_info);
@@ -260,7 +271,6 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
         .descriptor_type(DescriptorType::STORAGE_BUFFER)
         .shader_stages(ShaderStageFlags::FRAGMENT)
         .buffers(world.lights_buffers.iter().map(|b| {b.0.clone()}).collect());
-
     let lighting_descriptor_set_create_info = render::DescriptorSetCreateInfo::new(base)
         .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
         .add_descriptor(render::Descriptor::new(&texture_sampler_create_info))
@@ -545,7 +555,6 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
         size: size_of::<CameraMatrixUniformData>() as _,
     };
 
-    // reused for shadow pass
     let geometry_pipeline_layout = base
         .device
         .create_pipeline_layout(
@@ -554,6 +563,22 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                 set_layout_count: 1,
                 p_set_layouts: &geometry_descriptor_set.descriptor_set_layout,
                 p_push_constant_ranges: &camera_push_constant_range_vertex,
+                push_constant_range_count: 1,
+                ..Default::default()
+            }, None
+        ).unwrap();
+    let shadow_pipeline_layout = base
+        .device
+        .create_pipeline_layout(
+            &vk::PipelineLayoutCreateInfo {
+                s_type: vk::StructureType::PIPELINE_LAYOUT_CREATE_INFO,
+                set_layout_count: 1,
+                p_set_layouts: &shadow_descriptor_set.descriptor_set_layout,
+                p_push_constant_ranges: &vk::PushConstantRange {
+                    stage_flags: ShaderStageFlags::VERTEX,
+                    offset: 0,
+                    size: 4,
+                },
                 push_constant_range_count: 1,
                 ..Default::default()
             }, None
@@ -943,7 +968,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
         .color_blend_state(&null_blend_state)
         .rasterization_state(&shadow_rasterization_info)
         .depth_stencil_state(&shadow_depth_state_info)
-        .layout(geometry_pipeline_layout);
+        .layout(shadow_pipeline_layout);
     let ssao_pipeline_info = base_pipeline_info
         .stages(&ssao_shader_create_info)
         .viewport_state(&half_res_viewport_state_info)
@@ -1150,10 +1175,6 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                     view: player_camera.view_matrix.data,
                     projection: player_camera.projection_matrix.data,
                 };
-                let shadow_constants = CameraMatrixUniformData {
-                    view: world.lights[0].view.data,
-                    projection: world.lights[0].projection.data,
-                };
                 let ssao_blur_constants_horizontal = SeparableBlurPassData {
                     horizontal: 1,
                     radius: 5,
@@ -1265,18 +1286,17 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                             vk::PipelineBindPoint::GRAPHICS,
                             shadow_pipeline,
                         );
-                        device.cmd_push_constants(frame_command_buffer, geometry_pipeline_layout, ShaderStageFlags::VERTEX, 0, slice::from_raw_parts(
-                            &shadow_constants as *const CameraMatrixUniformData as *const u8,
-                            size_of::<CameraMatrixUniformData>(),
+                        device.cmd_push_constants(frame_command_buffer, shadow_pipeline_layout, ShaderStageFlags::VERTEX, 0, slice::from_raw_parts(
+                            &0 as *const i32 as *const u8, // which light in world.lights to create shadows from
+                            4,
                         ));
-
                         // draw scene
                         device.cmd_set_viewport(frame_command_buffer, 0, &shadow_viewports);
                         device.cmd_set_scissor(frame_command_buffer, 0, &shadow_scissors);
                         device.cmd_bind_descriptor_sets(
                             frame_command_buffer,
                             vk::PipelineBindPoint::GRAPHICS,
-                            geometry_pipeline_layout,
+                            shadow_pipeline_layout,
                             0,
                             &[shadow_descriptor_set.descriptor_sets[current_frame]],
                             &[],
@@ -1452,6 +1472,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
         base.device.destroy_pipeline(pipeline, None);
     }
     base.device.destroy_pipeline_layout(geometry_pipeline_layout, None);
+    base.device.destroy_pipeline_layout(shadow_pipeline_layout, None);
     base.device.destroy_pipeline_layout(ssao_pipeline_layout, None);
     base.device.destroy_pipeline_layout(lighting_pipeline_layout, None);
     base.device.destroy_pipeline_layout(present_pipeline_layout, None);

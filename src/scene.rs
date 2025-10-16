@@ -338,11 +338,10 @@ impl Scene {
     } }
 }
 
-#[derive(Copy)]
 #[derive(Clone)]
 pub struct Light {
     pub vector: Vector,
-    pub projection: Matrix,
+    pub projections: [Matrix; 16],
     pub view: Matrix,
     pub light_type: u32,
 }
@@ -350,7 +349,7 @@ impl Light {
     pub fn new_sun(vector: Vector) -> Light {
         Light {
             vector,
-            projection: Matrix::new_ortho(-10.0, 10.0, -10.0, 10.0, 0.01, 1000.0),
+            projections: [Matrix::new_ortho(-10.0, 10.0, -10.0, 10.0, 0.01, 1000.0); 16],
             view: Matrix::new_look_at(
                 &Vector::new_vec3(vector.x * -100.0, vector.y * -100.0, vector.z * -100.0),
                 &Vector::new_vec3(0.0, 0.0, 0.0),
@@ -360,8 +359,12 @@ impl Light {
         }
     }
     pub fn to_sendable(&self) -> LightSendable {
+        let projections: Vec<[f32; 16]> = self.projections
+            .iter()
+            .map(|m| m.data)
+            .collect();
         LightSendable {
-            projection: self.projection.data,
+            projections: <[[f32; 16]; 16]>::try_from(projections.as_slice()).unwrap(),
             view: self.view.data,
             vector: self.vector.to_array3(),
             _pad0: 0u32
@@ -395,7 +398,7 @@ impl Light {
              */
             
             self.view = matrices[0];
-            self.projection = matrices[1];
+            self.projections[0] = matrices[1];
         }
     }
 
@@ -447,7 +450,7 @@ impl Light {
 #[derive(Copy)]
 #[derive(Clone)]
 pub struct LightSendable {
-    pub projection: [f32; 16],
+    pub projections: [[f32; 16]; 16],
     pub view: [f32; 16],
     pub vector: [f32; 3],
     pub _pad0: u32,

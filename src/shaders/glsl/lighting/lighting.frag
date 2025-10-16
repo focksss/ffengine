@@ -22,7 +22,7 @@ layout(push_constant) uniform constants {
 } ubo;
 
 struct Light {
-    mat4 projection;
+    mat4 projections[16];
     mat4 view;
     vec3 vector;
 };
@@ -44,7 +44,7 @@ vec3 get_position_from_depth() {
 }
 
 float get_shadow(Light light, vec3 world_position, vec3 world_normal) {
-    vec4 position_lightspace = light.projection * light.view * vec4(world_position, 1.0);
+    vec4 position_lightspace = light.projections[0] * light.view * vec4(world_position, 1.0);
     vec3 projected_lightspace_position;
     projected_lightspace_position.xy = (position_lightspace.xy / position_lightspace.w) * 0.5 + 0.5;
     projected_lightspace_position.z = position_lightspace.z / position_lightspace.w;
