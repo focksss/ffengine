@@ -341,20 +341,20 @@ impl Scene {
 #[derive(Clone)]
 pub struct Light {
     pub vector: Vector,
-    pub projections: [Matrix; 16],
-    pub view: Matrix,
+    pub projections: [Matrix; 5],
+    pub views: [Matrix; 5],
     pub light_type: u32,
 }
 impl Light {
     pub fn new_sun(vector: Vector) -> Light {
         Light {
             vector,
-            projections: [Matrix::new_ortho(-10.0, 10.0, -10.0, 10.0, 0.01, 1000.0); 16],
-            view: Matrix::new_look_at(
+            projections: [Matrix::new_ortho(-10.0, 10.0, -10.0, 10.0, 0.01, 1000.0); 5],
+            views: [Matrix::new_look_at(
                 &Vector::new_vec3(vector.x * -100.0, vector.y * -100.0, vector.z * -100.0),
                 &Vector::new_vec3(0.0, 0.0, 0.0),
                 &Vector::new_vec3(0.0, 1.0, 0.0),
-            ),
+            ); 5],
             light_type: 0,
         }
     }
@@ -363,9 +363,13 @@ impl Light {
             .iter()
             .map(|m| m.data)
             .collect();
+        let views: Vec<[f32; 16]> = self.views
+            .iter()
+            .map(|m| m.data)
+            .collect();
         LightSendable {
-            projections: <[[f32; 16]; 16]>::try_from(projections.as_slice()).unwrap(),
-            view: self.view.data,
+            projections: <[[f32; 16]; 5]>::try_from(projections.as_slice()).unwrap(),
+            views: <[[f32; 16]; 5]>::try_from(views.as_slice()).unwrap(),
             vector: self.vector.to_array3(),
             _pad0: 0u32
         }
@@ -375,30 +379,20 @@ impl Light {
         if self.light_type == 0 {
             let cascade_levels = [primary_camera.far * 0.02, primary_camera.far * 0.04, primary_camera.far * 0.1, primary_camera.far * 0.5];
 
-            let matrices = self.get_cascade_matrix(primary_camera, primary_camera.near, cascade_levels[0]);
-            
-            /*
-    std::vector<glm::mat4> ret;
-    for (size_t i = 0; i < shadowCascadeLevels.size() + 1; ++i)
-    {
-        if (i == 0)
-        {
-            ret.push_back(getLightSpaceMatrix(cameraNearPlane, shadowCascadeLevels[i]));
-        }
-        else if (i < shadowCascadeLevels.size())
-        {
-            ret.push_back(getLightSpaceMatrix(shadowCascadeLevels[i - 1], shadowCascadeLevels[i]));
-        }
-        else
-        {
-            ret.push_back(getLightSpaceMatrix(shadowCascadeLevels[i - 1], cameraFarPlane));
-        }
-    }
-    return ret;
-             */
-            
-            self.view = matrices[0];
-            self.projections[0] = matrices[1];
+            for i in 0..cascade_levels.len() + 1 {
+                let matrices: [Matrix; 2];
+                if i == 0 {
+                    matrices = self.get_cascade_matrix(primary_camera, primary_camera.near, cascade_levels[i]);
+                }
+                else if i < cascade_levels.len() {
+                    matrices = self.get_cascade_matrix(primary_camera, cascade_levels[i - 1], cascade_levels[i]);
+                }
+                else {
+                    matrices = self.get_cascade_matrix(primary_camera, cascade_levels[i - 1], primary_camera.far);
+                }
+                self.views[i] = matrices[0];
+                self.projections[i] = matrices[1];
+            }
         }
     }
 
@@ -424,7 +418,7 @@ impl Light {
         let mut min_z = f32::MAX;
         let mut max_z = f32::MIN;
         for corner in &corners {
-            let corner_light_view = self.view.mul_vector4(corner);
+            let corner_light_view = view.mul_vector4(corner);
             min_x = min_x.min(corner_light_view.x);
             max_x = max_x.max(corner_light_view.x);
             min_y = min_y.min(corner_light_view.y);
@@ -450,8 +444,8 @@ impl Light {
 #[derive(Copy)]
 #[derive(Clone)]
 pub struct LightSendable {
-    pub projections: [[f32; 16]; 16],
-    pub view: [f32; 16],
+    pub projections: [[f32; 16]; 5],
+    pub views: [[f32; 16]; 5],
     pub vector: [f32; 3],
     pub _pad0: u32,
 }

@@ -13,20 +13,6 @@ layout (location = 11) in ivec2 indices;
 layout (location = 0) out vec2 o_uv;
 layout (location = 1) out uint o_material;
 
-layout(push_constant) uniform constants {
-    int light_index;
-} ubo;
-
-struct Light {
-    mat4 projections[16];
-    mat4 view;
-    vec3 vector;
-};
-
-layout(set = 0, binding = 2, std430) readonly buffer LightsSSBO {
-    Light lights[];
-} lights_SSBO;
-
 layout(set = 0, binding = 1, std430) readonly buffer JointsSSBO {
     mat4 joint_matrices[];
 } joints_SSBO;
@@ -44,8 +30,7 @@ void main() {
             weights.w * joints_SSBO.joint_matrices[joint_indices.w + joint_offset];
     }
 
-    vec4 position = model_matrix * vec4(pos, 1.0);
-    gl_Position = lights_SSBO.lights[0].projections[0] * lights_SSBO.lights[0].view * position;
+    gl_Position = model_matrix * vec4(pos, 1.0);
 
     o_uv = vec2(uv.x, uv.y);
     o_material = material;

@@ -2,60 +2,114 @@ use std::ffi::c_void;
 use std::io::Cursor;
 use ash::{vk, Device, Instance};
 use ash::util::read_spv;
-use ash::vk::{Buffer, ClearColorValue, ClearDepthStencilValue, ClearValue, DescriptorImageInfo, DescriptorPool, DescriptorPoolCreateFlags, DescriptorPoolSize, DescriptorSetLayout, DescriptorSetLayoutCreateFlags, DescriptorType, DeviceMemory, DeviceSize, Extent3D, Format, Handle, ImageAspectFlags, ImageSubresourceRange, ImageUsageFlags, MemoryAllocateFlags, MemoryPropertyFlags, PhysicalDevice, PipelineShaderStageCreateInfo, SampleCountFlags, ShaderModule, ShaderStageFlags};
+use ash::vk::{Buffer, ClearColorValue, ClearDepthStencilValue, ClearValue, DescriptorImageInfo, DescriptorPool, DescriptorPoolCreateFlags, DescriptorPoolSize, DescriptorSetLayout, DescriptorSetLayoutCreateFlags, DescriptorType, DeviceMemory, DeviceSize, Extent3D, Format, Handle, ImageAspectFlags, ImageSubresourceRange, ImageUsageFlags, MemoryAllocateFlags, MemoryPropertyFlags, PhysicalDevice, PipelineShaderStageCreateInfo, SampleCountFlags, ShaderModule, ShaderModuleCreateInfo, ShaderStageFlags};
 use crate::{CameraMatrixUniformData, MAX_FRAMES_IN_FLIGHT};
 use crate::vk_helper::{find_memorytype_index, load_file, VkBase};
 
 
 
 pub struct Shader {
-    pub modules: (ShaderModule, ShaderModule),
+    pub vertex_module: ShaderModule,
+    pub geometry_module: Option<ShaderModule>,
+    pub fragment_module: ShaderModule,
 }
 impl Shader {
-    pub unsafe fn new(base: &VkBase, vert_path: &str, frag_path: &str) -> Self { unsafe {
+    pub unsafe fn new(base: &VkBase, vert_path: &str, frag_path: &str, geometry_path: Option<&str>) -> Self { unsafe {
         let mut vertex_spv_file = Cursor::new(load_file(vert_path).unwrap());
         let mut frag_spv_file = Cursor::new(load_file(frag_path).unwrap());
+        let mut geometry_spv_file: Option<Cursor<Vec<u8>>> = if geometry_path.is_some() {
+            Some(Cursor::new(load_file(geometry_path.unwrap()).unwrap()))
+        } else {
+            None
+        };
 
         let vertex_code = read_spv(&mut vertex_spv_file).expect("Failed to read vertex shader spv file");
-        let vertex_shader_info = vk::ShaderModuleCreateInfo::default().code(&vertex_code);
+        let vertex_shader_info = ShaderModuleCreateInfo::default().code(&vertex_code);
 
         let frag_code = read_spv(&mut frag_spv_file).expect("Failed to read fragment shader spv file");
-        let frag_shader_info = vk::ShaderModuleCreateInfo::default().code(&frag_code);
+        let frag_shader_info = ShaderModuleCreateInfo::default().code(&frag_code);
+        
+        let geometry_code: Option<Vec<u32>> = if let Some(mut geo_file) = geometry_spv_file {
+            Some(read_spv(&mut geo_file).expect("Failed to read geometry shader spv file"))
+        } else {
+            None
+        };
+        let geometry_shader_info: Option<ShaderModuleCreateInfo> = geometry_code
+            .as_ref()
+            .map(|code| ShaderModuleCreateInfo::default().code(code));
 
         let vertex_shader_module = base
             .device
             .create_shader_module(&vertex_shader_info, None)
             .expect("Vertex shader module error");
-
+        let geometry_shader_module: Option<ShaderModule> = if geometry_path.is_some() {
+            Some(base
+                 .device
+                 .create_shader_module(&geometry_shader_info.unwrap(), None)
+                 .expect("Geometry shader module error"))
+        } else {
+            None
+        };
         let fragment_shader_module = base
             .device
             .create_shader_module(&frag_shader_info, None)
             .expect("Fragment shader module error");
-        Shader { modules: (vertex_shader_module, fragment_shader_module)}
+        Shader {
+            vertex_module: vertex_shader_module,
+            geometry_module: geometry_shader_module,
+            fragment_module: fragment_shader_module,
+        }
     } }
 
-    pub fn generate_shader_stage_create_infos(&self) -> [PipelineShaderStageCreateInfo<'_>; 2] {
+    pub fn generate_shader_stage_create_infos(&self) -> Vec<PipelineShaderStageCreateInfo<'_>> {
         let shader_entry_name = c"main";
-        [
-            PipelineShaderStageCreateInfo {
-                module: self.modules.0,
-                p_name: shader_entry_name.as_ptr(),
-                stage: vk::ShaderStageFlags::VERTEX,
-                ..Default::default()
-            },
-            PipelineShaderStageCreateInfo {
-                s_type: vk::StructureType::PIPELINE_SHADER_STAGE_CREATE_INFO,
-                module: self.modules.1,
-                p_name: shader_entry_name.as_ptr(),
-                stage: vk::ShaderStageFlags::FRAGMENT,
-                ..Default::default()
-            },
-        ]
+        if self.geometry_module.is_some() {
+            vec![
+                PipelineShaderStageCreateInfo {
+                    module: self.vertex_module,
+                    p_name: shader_entry_name.as_ptr(),
+                    stage: vk::ShaderStageFlags::VERTEX,
+                    ..Default::default()
+                },
+                PipelineShaderStageCreateInfo {
+                    module: self.geometry_module.unwrap(),
+                    p_name: shader_entry_name.as_ptr(),
+                    stage: vk::ShaderStageFlags::GEOMETRY,
+                    ..Default::default()
+                },
+                PipelineShaderStageCreateInfo {
+                    s_type: vk::StructureType::PIPELINE_SHADER_STAGE_CREATE_INFO,
+                    module: self.fragment_module,
+                    p_name: shader_entry_name.as_ptr(),
+                    stage: vk::ShaderStageFlags::FRAGMENT,
+                    ..Default::default()
+                },
+            ]
+        } else {
+            vec![
+                PipelineShaderStageCreateInfo {
+                    module: self.vertex_module,
+                    p_name: shader_entry_name.as_ptr(),
+                    stage: ShaderStageFlags::VERTEX,
+                    ..Default::default()
+                },
+                PipelineShaderStageCreateInfo {
+                    s_type: vk::StructureType::PIPELINE_SHADER_STAGE_CREATE_INFO,
+                    module: self.fragment_module,
+                    p_name: shader_entry_name.as_ptr(),
+                    stage: ShaderStageFlags::FRAGMENT,
+                    ..Default::default()
+                },
+            ]
+        }
     }
 
     pub unsafe fn destroy(&self, base: &VkBase) { unsafe {
-        base.device.destroy_shader_module(self.modules.0, None);
-        base.device.destroy_shader_module(self.modules.1, None);
+        base.device.destroy_shader_module(self.vertex_module, None);
+        if self.geometry_module.is_some() {
+            base.device.destroy_shader_module(self.geometry_module.unwrap(), None);
+        }
+        base.device.destroy_shader_module(self.fragment_module, None);
     } }
 }
 

@@ -38,9 +38,10 @@ struct CameraMatrixUniformData {
     view: [f32; 16],
     projection: [f32; 16],
 }
-struct LightSpaceMatricesUniformData {
-    view: [f32; 16],
-    projections: [[f32; 16]; 16],
+#[derive(Clone, Debug, Copy)]
+#[repr(C)]
+struct LightingUniformData {
+    shadow_cascade_distances: [f32; 4],
 }
 const SSAO_KERNAL_SIZE: usize = 16;
 #[derive(Clone, Debug, Copy)]
@@ -98,8 +99,9 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
     //world.add_model(Model::new("C:\\Graphics\\assets\\flower\\scene.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\rivals\\luna\\gltf\\luna.gltf"));
 
-    //world.add_model(Model::new("C:\\Graphics\\assets\\bistroGLTF\\untitled.gltf"));
+    //world.add_model(Model::new("C:\\Graphics\\assets\\shadowTest\\shadowTest.gltf"));
     world.add_model(Model::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf"));
+    //world.add_model(Model::new("C:\\Graphics\\assets\\mountain\\mountain.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\catTest\\catTest.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\helmet\\DamagedHelmet.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\hydrant\\untitled.gltf"));
@@ -165,7 +167,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
 
     let shadow_pass_create_info = PassCreateInfo::new(base)
         .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
-        .depth_attachment_info(TextureCreateInfo::new(base).format(Format::D16_UNORM).is_depth(true).clear_value([0.0, 0.0, 0.0, 0.0]).width(shadow_res).height(shadow_res).array_layers(4)); // depth
+        .depth_attachment_info(TextureCreateInfo::new(base).format(Format::D16_UNORM).is_depth(true).clear_value([0.0, 0.0, 0.0, 0.0]).width(shadow_res).height(shadow_res).array_layers(5)); // depth
     let shadow_pass = Pass::new(shadow_pass_create_info);
 
     let ssao_pass_create_info = PassCreateInfo::new(base)
@@ -200,7 +202,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
     let lights_ssbo_create_info = render::DescriptorCreateInfo::new(base)
         .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
         .descriptor_type(DescriptorType::STORAGE_BUFFER)
-        .shader_stages(ShaderStageFlags::VERTEX)
+        .shader_stages(ShaderStageFlags::GEOMETRY)
         .buffers(world.lights_buffers.iter().map(|b| {b.0.clone()}).collect());
     let material_ssbo_create_info = render::DescriptorCreateInfo::new(base)
         .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
@@ -271,6 +273,11 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
         .descriptor_type(DescriptorType::STORAGE_BUFFER)
         .shader_stages(ShaderStageFlags::FRAGMENT)
         .buffers(world.lights_buffers.iter().map(|b| {b.0.clone()}).collect());
+    let lighting_ubo_create_info = render::DescriptorCreateInfo::new(base)
+        .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
+        .descriptor_type(DescriptorType::UNIFORM_BUFFER)
+        .size(size_of::<LightingUniformData>() as u64)
+        .shader_stages(ShaderStageFlags::FRAGMENT);
     let lighting_descriptor_set_create_info = render::DescriptorSetCreateInfo::new(base)
         .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
         .add_descriptor(render::Descriptor::new(&texture_sampler_create_info))
@@ -281,7 +288,8 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
         .add_descriptor(render::Descriptor::new(&texture_sampler_create_info))
         .add_descriptor(render::Descriptor::new(&texture_sampler_create_info))
         .add_descriptor(render::Descriptor::new(&texture_sampler_create_info))
-        .add_descriptor(render::Descriptor::new(&lights_ssbo_create_info));
+        .add_descriptor(render::Descriptor::new(&lights_ssbo_create_info))
+        .add_descriptor(render::Descriptor::new(&lighting_ubo_create_info));
 
     let lighting_descriptor_set = render::DescriptorSet::new(lighting_descriptor_set_create_info);
     //</editor-fold>
@@ -534,12 +542,12 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
     //</editor-fold>
 
     //<editor-fold desc = "shaders">
-    let geom_shader = Shader::new(base, "geometry\\geometry.vert.spv", "geometry\\geometry.frag.spv");
-    let shadow_shader = Shader::new(base, "shadow\\shadow.vert.spv", "shadow\\shadow.frag.spv");
-    let ssao_shader = Shader::new(base, "quad\\quad.vert.spv", "ssao\\ssao.frag.spv");
-    let lighting_shader = Shader::new(base, "quad\\quad.vert.spv", "lighting\\lighting.frag.spv");
-    let present_shader = Shader::new(base, "quad\\quad.vert.spv", "quad\\quad.frag.spv");
-    let bilateral_blur_shader = Shader::new(base, "quad\\quad.vert.spv", "bilateral_blur\\bilateral_blur.frag.spv");
+    let geom_shader = Shader::new(base, "geometry\\geometry.vert.spv", "geometry\\geometry.frag.spv", None);
+    let shadow_shader = Shader::new(base, "shadow\\shadow.vert.spv", "shadow\\shadow.frag.spv", Some("shadow\\cascade.geom.spv"));
+    let ssao_shader = Shader::new(base, "quad\\quad.vert.spv", "ssao\\ssao.frag.spv", None);
+    let lighting_shader = Shader::new(base, "quad\\quad.vert.spv", "lighting\\lighting.frag.spv", None);
+    let present_shader = Shader::new(base, "quad\\quad.vert.spv", "quad\\quad.frag.spv", None);
+    let bilateral_blur_shader = Shader::new(base, "quad\\quad.vert.spv", "bilateral_blur\\bilateral_blur.frag.spv", None);
     //</editor-fold>
 
     //<editor-fold desc = "full graphics pipeline initiation">
@@ -575,7 +583,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                 set_layout_count: 1,
                 p_set_layouts: &shadow_descriptor_set.descriptor_set_layout,
                 p_push_constant_ranges: &vk::PushConstantRange {
-                    stage_flags: ShaderStageFlags::VERTEX,
+                    stage_flags: ShaderStageFlags::GEOMETRY,
                     offset: 0,
                     size: 4,
                 },
@@ -1171,6 +1179,10 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                     _pad0: 0.0,
                 };
                 copy_data_to_memory(ssao_descriptor_set.descriptors[3].owned_buffers.2[current_frame], &[ubo]);
+                let ubo = LightingUniformData {
+                    shadow_cascade_distances: [player_camera.far * 0.02, player_camera.far * 0.04, player_camera.far * 0.1, player_camera.far * 0.5]
+                };
+                copy_data_to_memory(lighting_descriptor_set.descriptors[9].owned_buffers.2[current_frame], &[ubo]);
                 let camera_constants = CameraMatrixUniformData {
                     view: player_camera.view_matrix.data,
                     projection: player_camera.projection_matrix.data,
@@ -1286,7 +1298,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                             vk::PipelineBindPoint::GRAPHICS,
                             shadow_pipeline,
                         );
-                        device.cmd_push_constants(frame_command_buffer, shadow_pipeline_layout, ShaderStageFlags::VERTEX, 0, slice::from_raw_parts(
+                        device.cmd_push_constants(frame_command_buffer, shadow_pipeline_layout, ShaderStageFlags::GEOMETRY, 0, slice::from_raw_parts(
                             &0 as *const i32 as *const u8, // which light in world.lights to create shadows from
                             4,
                         ));
