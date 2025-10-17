@@ -426,6 +426,7 @@ impl Light {
             min_z = min_z.min(corner_light_view.z);
             max_z = max_z.max(corner_light_view.z);
         }
+        let radius = Vector::new_vec3(max_x - min_x, max_y - min_y, max_z - min_z).magnitude_3d();
         let z_mult = 10.0f32;
         if min_z < 0.0 {
             min_z = min_z * z_mult;
@@ -437,7 +438,7 @@ impl Light {
         } else {
             max_z = max_z * z_mult;
         }
-        let projection = Matrix::new_ortho(min_x, max_x, min_y, max_y, min_z, max_z);
+        let projection = Matrix::new_ortho(-radius, radius, -radius, radius, -radius * 6.0, radius * 6.0);
         [view, projection]
     }
 }

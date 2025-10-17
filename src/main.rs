@@ -99,8 +99,8 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
     //world.add_model(Model::new("C:\\Graphics\\assets\\flower\\scene.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\rivals\\luna\\gltf\\luna.gltf"));
 
-    //world.add_model(Model::new("C:\\Graphics\\assets\\shadowTest\\shadowTest.gltf"));
-    world.add_model(Model::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf"));
+    world.add_model(Model::new("C:\\Graphics\\assets\\shadowTest\\shadowTest.gltf"));
+    //world.add_model(Model::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\mountain\\mountain.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\catTest\\catTest.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\helmet\\DamagedHelmet.gltf"));
@@ -381,9 +381,9 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
     let sampler = base.device.create_sampler(&vk::SamplerCreateInfo {
         mag_filter: vk::Filter::LINEAR,
         min_filter: vk::Filter::LINEAR,
-        address_mode_u: vk::SamplerAddressMode::CLAMP_TO_EDGE,
-        address_mode_v: vk::SamplerAddressMode::CLAMP_TO_EDGE,
-        address_mode_w: vk::SamplerAddressMode::CLAMP_TO_EDGE,
+        address_mode_u: vk::SamplerAddressMode::CLAMP_TO_BORDER,
+        address_mode_v: vk::SamplerAddressMode::CLAMP_TO_BORDER,
+        address_mode_w: vk::SamplerAddressMode::CLAMP_TO_BORDER,
         border_color: vk::BorderColor::FLOAT_OPAQUE_WHITE,
         ..Default::default()
     }, None)?;
