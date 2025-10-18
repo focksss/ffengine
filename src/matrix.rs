@@ -1,4 +1,6 @@
 #![allow(dead_code)]
+
+use std::ops::Mul;
 use crate::vector::Vector;
 const PI: f32 = std::f32::consts::PI;
 #[derive(Debug, Copy, Clone)]
@@ -329,5 +331,54 @@ impl Matrix {
             println!("{:?}", &self.data[i * 4..(i + 1) * 4]);
         }
     }
+}
 
+impl<'a, 'b> Mul<&'b Matrix> for &'a Matrix {
+    type Output = Matrix;
+
+    fn mul(self, other: &'b Matrix) -> Matrix {
+        self.mul_mat4(other)
+    }
+}
+impl<'a> Mul<Matrix> for &'a Matrix {
+    type Output = Matrix;
+    fn mul(self, other: Matrix) -> Matrix {
+        self * &other
+    }
+}
+impl<'b> Mul<&'b Matrix> for Matrix {
+    type Output = Matrix;
+    fn mul(self, other: &'b Matrix) -> Matrix {
+        &self * other
+    }
+}
+impl Mul<Matrix> for Matrix {
+    type Output = Matrix;
+    fn mul(self, other: Matrix) -> Matrix {
+        &self * &other
+    }
+}
+impl<'a, 'b> Mul<&'b Vector> for &'a Matrix {
+    type Output = Vector;
+    fn mul(self, vector: &'b Vector) -> Vector {
+        self.mul_vector4(vector)
+    }
+}
+impl<'a> Mul<Vector> for &'a Matrix {
+    type Output = Vector;
+    fn mul(self, vector: Vector) -> Vector {
+        self * &vector
+    }
+}
+impl<'b> Mul<&'b Vector> for Matrix {
+    type Output = Vector;
+    fn mul(self, vector: &'b Vector) -> Vector {
+        &self * vector
+    }
+}
+impl Mul<Vector> for Matrix {
+    type Output = Vector;
+    fn mul(self, vector: Vector) -> Vector {
+        &self * &vector
+    }
 }

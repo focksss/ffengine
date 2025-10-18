@@ -81,7 +81,8 @@ float get_shadow(Light light, vec3 world_position, vec3 world_normal, float frag
 }
 
 void main() {
-
+    //uFragColor = vec4(vec3(texture(ssao_tex, uv).r), 1.0); return;
+    //uFragColor = vec4(0.01 / texture(g_depth, uv).r, 0.0, 0.0, 1.0);
     if (uv.y < 0.2) {
         if (uv.x < 0.2) {
             uFragColor = vec4(vec3(texture(shadowmap, vec3(uv * 5.0, 0)).r), 1.0);
@@ -101,8 +102,6 @@ void main() {
         }
     }
 
-    //uFragColor = vec4(vec3(texture(ssao_tex, uv).r), 1.0); return;
-    //uFragColor = vec4(0.01 / texture(g_depth, uv).r, 0.0, 0.0, 1.0);
     mat4 inverse_view = inverse(ubo.view);
 
     vec3 albedo = texture(g_albedo, uv).rgb;
@@ -128,8 +127,9 @@ void main() {
     } else if (layer == 4) {
         uFragColor = vec4(vec3(1.0, 0.5, 0.0), 1.0);
     }
-    uFragColor.xyz *= max(0.2, get_shadow(lights_SSBO.lights[0], world_position, world_normal, -view_position.z));
+    uFragColor.xyz *= max(0.2, get_shadow(lights_SSBO.lights[0], world_position, world_normal, -view_position.z)) * texture(ssao_tex, uv).r;
     return;
+
     uFragColor = vec4(
         albedo
         * texture(ssao_tex, uv).r

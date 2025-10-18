@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 
+use std::ops::{Add, Div, Mul, Sub};
+
 #[derive(Clone, Debug, Copy)]
 pub struct Vector {
     pub x: f32,
@@ -275,4 +277,148 @@ impl Vector {
     pub fn println(&self) {
         println!("{:?}", self)
     }
+}
+
+impl<'a, 'b> Add<&'b Vector> for &'a Vector {
+    type Output = Vector;
+
+    fn add(self, other: &'b Vector) -> Vector {
+        Vector::new_vec4(self.x + other.x, self.y + other.y, self.z + other.z, self.w + other.w)
+    }
+}
+impl<'a> Add<Vector> for &'a Vector {
+    type Output = Vector;
+    fn add(self, other: Vector) -> Vector {
+        self + &other
+    }
+}
+impl<'b> Add<&'b Vector> for Vector {
+    type Output = Vector;
+    fn add(self, other: &'b Vector) -> Vector {
+        &self + other
+    }
+}
+impl Add<Vector> for Vector {
+    type Output = Vector;
+    fn add(self, other: Vector) -> Vector {
+        &self + &other
+    }
+}
+
+impl<'a, 'b> Sub<&'b Vector> for &'a Vector {
+    type Output = Vector;
+
+    fn sub(self, other: &'b Vector) -> Vector {
+        Vector::new_vec4(self.x - other.x, self.y - other.y, self.z - other.z, self.w - other.w)
+    }
+}
+impl<'a> Sub<Vector> for &'a Vector {
+    type Output = Vector;
+    fn sub(self, other: Vector) -> Vector {
+        self - &other
+    }
+}
+impl<'b> Sub<&'b Vector> for Vector {
+    type Output = Vector;
+    fn sub(self, other: &'b Vector) -> Vector {
+        &self - other
+    }
+}
+impl Sub<Vector> for Vector {
+    type Output = Vector;
+    fn sub(self, other: Vector) -> Vector {
+        &self - &other
+    }
+}
+
+impl<'a, 'b> Mul<&'b Vector> for &'a Vector {
+    type Output = Vector;
+
+    fn mul(self, other: &'b Vector) -> Vector {
+        Vector::new_vec4(self.x * other.x, self.y * other.y, self.z * other.z, self.w * other.w)
+    }
+}
+impl<'a> Mul<Vector> for &'a Vector {
+    type Output = Vector;
+    fn mul(self, other: Vector) -> Vector {
+        self * &other
+    }
+}
+impl<'b> Mul<&'b Vector> for Vector {
+    type Output = Vector;
+    fn mul(self, other: &'b Vector) -> Vector {
+        &self * other
+    }
+}
+impl Mul<Vector> for Vector {
+    type Output = Vector;
+    fn mul(self, other: Vector) -> Vector {
+        &self * &other
+    }
+}
+impl<'a> Mul<f32> for &'a Vector {
+    type Output = Vector;
+    fn mul(self, scalar: f32) -> Vector {
+        Vector::new_vec4(self.x * scalar, self.y * scalar, self.z * scalar, self.w * scalar)
+    }
+}
+impl Mul<f32> for Vector {
+    type Output = Vector;
+    fn mul(self, scalar: f32) -> Vector { &self * scalar }
+}
+impl<'a> Mul<&'a Vector> for f32 {
+    type Output = Vector;
+    fn mul(self, vector: &'a Vector) -> Vector {
+        Vector::new_vec4(vector.x * self, vector.y * self, vector.z * self, vector.w * self)
+    }
+}
+impl Mul<Vector> for f32 {
+    type Output = Vector;
+    fn mul(self, vector: Vector) -> Vector { self * &vector }
+}
+
+impl<'a, 'b> Div<&'b Vector> for &'a Vector {
+    type Output = Vector;
+
+    fn div(self, other: &'b Vector) -> Vector {
+        Vector::new_vec4(self.x / other.x, self.y / other.y, self.z / other.z, self.w / other.w)
+    }
+}
+impl<'a> Div<Vector> for &'a Vector {
+    type Output = Vector;
+    fn div(self, other: Vector) -> Vector {
+        self / &other
+    }
+}
+impl<'b> Div<&'b Vector> for Vector {
+    type Output = Vector;
+    fn div(self, other: &'b Vector) -> Vector {
+        &self / other
+    }
+}
+impl Div<Vector> for Vector {
+    type Output = Vector;
+    fn div(self, other: Vector) -> Vector {
+        &self / &other
+    }
+}
+impl<'a> Div<f32> for &'a Vector {
+    type Output = Vector;
+    fn div(self, scalar: f32) -> Vector {
+        Vector::new_vec4(self.x / scalar, self.y / scalar, self.z / scalar, self.w / scalar)
+    }
+}
+impl Div<f32> for Vector {
+    type Output = Vector;
+    fn div(self, scalar: f32) -> Vector { &self / scalar }
+}
+impl<'a> Div<&'a Vector> for f32 {
+    type Output = Vector;
+    fn div(self, vector: &'a Vector) -> Vector {
+        Vector::new_vec4(vector.x / self, vector.y / self, vector.z / self, vector.w / self)
+    }
+}
+impl Div<Vector> for f32 {
+    type Output = Vector;
+    fn div(self, vector: Vector) -> Vector { self / &vector }
 }

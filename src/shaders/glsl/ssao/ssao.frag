@@ -39,7 +39,7 @@ void main() {
     float bias = 0.001;
 
     vec3 fragPos = get_position_from_depth(uv);
-    vec3 normal = normalize(texture(view_normal, uv).rgb-0.5)*2.0;
+    vec3 normal = normalize(texture(view_normal, uv).rgb-0.5)* ( textureSize(view_normal, 0).x / ubo.width);
     vec3 randomVec = normalize(texture(tex_noise, uv * noiseScale).xyz);
 
     vec3 tangent = normalize(randomVec - normal * dot(randomVec, normal));

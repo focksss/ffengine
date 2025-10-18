@@ -44,6 +44,7 @@ struct LightingUniformData {
     shadow_cascade_distances: [f32; 4],
 }
 const SSAO_KERNAL_SIZE: usize = 16;
+const SSAO_RESOLUTION_MULTIPLIER: f32 = 1.0;
 #[derive(Clone, Debug, Copy)]
 #[repr(C)]
 struct SSAOPassUniformData {
@@ -100,7 +101,11 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
     //world.add_model(Model::new("C:\\Graphics\\assets\\rivals\\luna\\gltf\\luna.gltf"));
 
     world.add_model(Model::new("C:\\Graphics\\assets\\shadowTest\\shadowTest.gltf"));
+    //world.add_model(Model::new("C:\\Graphics\\assets\\plane\\plane.gltf"));
+    //world.add_model(Model::new("C:\\Graphics\\assets\\unitCube\\unitCube.gltf"));
+    //world.models[1].transform_roots(&Vector::new_vec3(0.0, 1.0, 0.0), &Vector::new_vec(0.0), &Vector::new_vec(1.0));
     //world.add_model(Model::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf"));
+    //world.add_model(Model::new("C:\\Graphics\\assets\\bistroGLTF\\untitled.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\mountain\\mountain.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\catTest\\catTest.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\helmet\\DamagedHelmet.gltf"));
@@ -154,7 +159,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
         .shader_stages(ShaderStageFlags::FRAGMENT);
     //<editor-fold desc = "passes">
     let color_tex_create_info = TextureCreateInfo::new(base).format(Format::R16G16B16A16_SFLOAT);
-    let half_res_color_tex_create_info = TextureCreateInfo::new(base).format(Format::R16G16B16A16_SFLOAT).resolution_denominator(2);
+    let ssao_res_color_tex_create_info = TextureCreateInfo::new(base).format(Format::R16G16B16A16_SFLOAT).resolution_denominator((1.0 / SSAO_RESOLUTION_MULTIPLIER) as u32);
     let geometry_pass_create_info = PassCreateInfo::new(base)
         .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
         .add_color_attachment_info(TextureCreateInfo::new(base).format(Format::R8G8B8A8_SINT)) // material
@@ -172,19 +177,19 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
 
     let ssao_pass_create_info = PassCreateInfo::new(base)
         .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
-        .add_color_attachment_info(half_res_color_tex_create_info)
-        .depth_attachment_info(TextureCreateInfo::new(base).resolution_denominator(2).format(Format::D16_UNORM).is_depth(true).clear_value([1.0, 0.0, 0.0, 0.0])); // depth
+        .add_color_attachment_info(ssao_res_color_tex_create_info)
+        .depth_attachment_info(TextureCreateInfo::new(base).resolution_denominator((1.0 / SSAO_RESOLUTION_MULTIPLIER) as u32).format(Format::D16_UNORM).is_depth(true).clear_value([1.0, 0.0, 0.0, 0.0])); // depth
     let ssao_pass = Pass::new(ssao_pass_create_info);
 
     let ssao_blur_pass_create_info = PassCreateInfo::new(base)
         .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
-        .add_color_attachment_info(half_res_color_tex_create_info)
-        .depth_attachment_info(TextureCreateInfo::new(base).resolution_denominator(2).format(Format::D16_UNORM).is_depth(true).clear_value([1.0, 0.0, 0.0, 0.0])); // depth
+        .add_color_attachment_info(ssao_res_color_tex_create_info)
+        .depth_attachment_info(TextureCreateInfo::new(base).resolution_denominator((1.0 / SSAO_RESOLUTION_MULTIPLIER) as u32).format(Format::D16_UNORM).is_depth(true).clear_value([1.0, 0.0, 0.0, 0.0])); // depth
     let ssao_blur_pass_horizontal = Pass::new(ssao_blur_pass_create_info);
     let ssao_blur_pass_create_info = PassCreateInfo::new(base)
         .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
-        .add_color_attachment_info(half_res_color_tex_create_info)
-        .depth_attachment_info(TextureCreateInfo::new(base).resolution_denominator(2).format(Format::D16_UNORM).is_depth(true).clear_value([1.0, 0.0, 0.0, 0.0])); // depth
+        .add_color_attachment_info(ssao_res_color_tex_create_info)
+        .depth_attachment_info(TextureCreateInfo::new(base).resolution_denominator((1.0 / SSAO_RESOLUTION_MULTIPLIER) as u32).format(Format::D16_UNORM).is_depth(true).clear_value([1.0, 0.0, 0.0, 0.0])); // depth
     let ssao_blur_pass_vertical = Pass::new(ssao_blur_pass_create_info);
 
     let lighting_pass_create_info = PassCreateInfo::new(base)
@@ -307,10 +312,8 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
     for i in 0..SSAO_KERNAL_SIZE {
         let mut scale = i as f32 / SSAO_KERNAL_SIZE as f32;
         scale = 0.1 + ((scale * scale) * (1.0 - 0.1));
-        ssao_kernal[i] = Vector::new_from_array(&[rng.random::<f32>() * 2.0 - 1.0, rng.random::<f32>() * 2.0 - 1.0, rng.random::<f32>()])
-            .normalize_3d()
-            .mul_float(rng.random::<f32>())
-            .mul_float(scale).to_array4();
+        ssao_kernal[i] = (Vector::new_from_array(&[rng.random::<f32>() * 2.0 - 1.0, rng.random::<f32>() * 2.0 - 1.0, rng.random::<f32>()])
+            .normalize_3d() * rng.random::<f32>() * scale).to_array4();
     }
 
     let mut noise_data = Vec::<[f32; 4]>::with_capacity(16);
@@ -819,19 +822,20 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
         min_depth: 0.0,
         max_depth: 1.0,
     }];
-    let half_res_viewports = [vk::Viewport {
+    let ssao_viewports = [vk::Viewport {
         x: 0.0,
         y: 0.0,
-        width: base.surface_resolution.width as f32 * 0.5,
-        height: base.surface_resolution.height as f32 * 0.5,
+        width: base.surface_resolution.width as f32 * SSAO_RESOLUTION_MULTIPLIER,
+        height: base.surface_resolution.height as f32 * SSAO_RESOLUTION_MULTIPLIER,
         min_depth: 0.0,
         max_depth: 1.0,
     }];
 
     let scissors = [base.surface_resolution.into()];
     let shadow_scissors = [vk::Rect2D { offset: Offset2D { x: 0, y: 0 }, extent: Extent2D { width: shadow_res, height: shadow_res } }];
-    let half_res_scissors = [vk::Rect2D { offset: Offset2D { x: 0, y: 0 }, extent: Extent2D { width: base.surface_resolution.width / 2,
-        height: base.surface_resolution.height / 2 } }];
+    let ssao_scissors = [vk::Rect2D { offset: Offset2D { x: 0, y: 0 }, extent: Extent2D { width: (base.surface_resolution.width as f32 * SSAO_RESOLUTION_MULTIPLIER) as u32,
+        height: (base.surface_resolution.height as f32 * SSAO_RESOLUTION_MULTIPLIER) as u32
+    } }];
 
 
     let viewport_state_info = vk::PipelineViewportStateCreateInfo::default()
@@ -840,9 +844,9 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
     let shadow_viewport_state_info = vk::PipelineViewportStateCreateInfo::default()
         .scissors(&shadow_scissors)
         .viewports(&shadow_viewports);
-    let half_res_viewport_state_info = vk::PipelineViewportStateCreateInfo::default()
-        .scissors(&half_res_scissors)
-        .viewports(&half_res_viewports);
+    let ssao_viewport_state_info = vk::PipelineViewportStateCreateInfo::default()
+        .scissors(&ssao_scissors)
+        .viewports(&ssao_viewports);
 
     let rasterization_info = vk::PipelineRasterizationStateCreateInfo {
         front_face: vk::FrontFace::COUNTER_CLOCKWISE,
@@ -979,7 +983,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
         .layout(shadow_pipeline_layout);
     let ssao_pipeline_info = base_pipeline_info
         .stages(&ssao_shader_create_info)
-        .viewport_state(&half_res_viewport_state_info)
+        .viewport_state(&ssao_viewport_state_info)
         .vertex_input_state(&null_vertex_input_state_info)
         .multisample_state(&null_multisample_state_info)
         .render_pass(ssao_pass.renderpass)
@@ -997,7 +1001,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
         .rasterization_state(&fullscreen_quad_rasterization_info)
         .depth_stencil_state(&default_depth_state_info);
     let ssao_blur_pipeline_info = lighting_pipeline_info.clone()
-        .viewport_state(&half_res_viewport_state_info)
+        .viewport_state(&ssao_viewport_state_info)
         .stages(&bilateral_blur_shader_create_info)
         .render_pass(ssao_pass.renderpass)
         .layout(ssao_blur_pipeline_layout);
@@ -1031,7 +1035,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
         0.001,
         100.0,
         base.window.inner_size().width as f32 / base.window.inner_size().height as f32,
-        0.01,
+        0.001,
         1000.0,
         true,
     );
@@ -1167,20 +1171,20 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                     .unwrap();
                 //</editor-fold>
 
-                world.update_lights(base, &player_camera, current_frame);
+                if !pause_frustum { world.update_lights(base, &player_camera, current_frame) };
 
                 let ubo = SSAOPassUniformData {
                     samples: ssao_kernal,
                     projection: player_camera.projection_matrix.data,
                     inverse_projection: player_camera.projection_matrix.inverse().data,
                     radius: 1.5,
-                    width: base.surface_resolution.width as i32 / 2,
-                    height: base.surface_resolution.height as i32 / 2,
+                    width: (base.surface_resolution.width as f32 * SSAO_RESOLUTION_MULTIPLIER) as i32,
+                    height: (base.surface_resolution.height as f32 * SSAO_RESOLUTION_MULTIPLIER) as i32,
                     _pad0: 0.0,
                 };
                 copy_data_to_memory(ssao_descriptor_set.descriptors[3].owned_buffers.2[current_frame], &[ubo]);
                 let ubo = LightingUniformData {
-                    shadow_cascade_distances: [player_camera.far * 0.02, player_camera.far * 0.04, player_camera.far * 0.1, player_camera.far * 0.5]
+                    shadow_cascade_distances: [player_camera.far * 0.01, player_camera.far * 0.03, player_camera.far * 0.09, player_camera.far * 0.3]
                 };
                 copy_data_to_memory(lighting_descriptor_set.descriptors[9].owned_buffers.2[current_frame], &[ubo]);
                 let camera_constants = CameraMatrixUniformData {
@@ -1220,17 +1224,17 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                 let ssao_pass_begin_info = vk::RenderPassBeginInfo::default()
                     .render_pass(ssao_pass.renderpass)
                     .framebuffer(ssao_pass.framebuffers[current_frame])
-                    .render_area(half_res_scissors[0])
+                    .render_area(ssao_scissors[0])
                     .clear_values(&ssao_pass.clear_values);
                 let ssao_blur_pass_begin_info_horizontal = vk::RenderPassBeginInfo::default()
                     .render_pass(ssao_blur_pass_horizontal.renderpass)
                     .framebuffer(ssao_blur_pass_horizontal.framebuffers[current_frame])
-                    .render_area(half_res_scissors[0])
+                    .render_area(ssao_scissors[0])
                     .clear_values(&ssao_blur_pass_horizontal.clear_values);
                 let ssao_blur_pass_begin_info_vertical = vk::RenderPassBeginInfo::default()
                     .render_pass(ssao_blur_pass_vertical.renderpass)
                     .framebuffer(ssao_blur_pass_vertical.framebuffers[current_frame])
-                    .render_area(half_res_scissors[0])
+                    .render_area(ssao_scissors[0])
                     .clear_values(&ssao_blur_pass_vertical.clear_values);
                 let lighting_pass_pass_begin_info = vk::RenderPassBeginInfo::default()
                     .render_pass(lighting_pass.renderpass)
@@ -1331,8 +1335,8 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                         );
 
                         // draw quad
-                        device.cmd_set_viewport(frame_command_buffer, 0, &half_res_viewports);
-                        device.cmd_set_scissor(frame_command_buffer, 0, &half_res_scissors);
+                        device.cmd_set_viewport(frame_command_buffer, 0, &ssao_viewports);
+                        device.cmd_set_scissor(frame_command_buffer, 0, &ssao_scissors);
                         device.cmd_bind_descriptor_sets(
                             frame_command_buffer,
                             vk::PipelineBindPoint::GRAPHICS,
@@ -1352,8 +1356,8 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                             vk::PipelineBindPoint::GRAPHICS,
                             ssao_blur_pipeline,
                         );
-                        device.cmd_set_viewport(frame_command_buffer, 0, &half_res_viewports);
-                        device.cmd_set_scissor(frame_command_buffer, 0, &half_res_scissors);
+                        device.cmd_set_viewport(frame_command_buffer, 0, &ssao_viewports);
+                        device.cmd_set_scissor(frame_command_buffer, 0, &ssao_scissors);
 
                         device.cmd_begin_render_pass(
                             frame_command_buffer,

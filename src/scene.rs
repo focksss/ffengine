@@ -377,7 +377,7 @@ impl Light {
 
     pub fn update(&mut self, primary_camera: &Camera) {
         if self.light_type == 0 {
-            let cascade_levels = [primary_camera.far * 0.02, primary_camera.far * 0.04, primary_camera.far * 0.1, primary_camera.far * 0.5];
+            let cascade_levels = [primary_camera.far * 0.01, primary_camera.far * 0.03, primary_camera.far * 0.09, primary_camera.far * 0.3];
 
             for i in 0..cascade_levels.len() + 1 {
                 let matrices: [Matrix; 2];
@@ -401,12 +401,12 @@ impl Light {
 
         let mut sum = Vector::new_empty();
         for corner in corners.iter() {
-            sum.add_vec_to_self(corner);
+            sum = sum + corner;
         }
         let frustum_center = sum.div_float(8.0);
 
         let view = Matrix::new_look_at(
-            &frustum_center.sub_vec(&Vector::new_vec3(self.vector.x, self.vector.y, self.vector.z).mul_float(1.0)),
+            &(frustum_center - (Vector::new_vec3(self.vector.x, self.vector.y, self.vector.z) * 1.0)),
             &frustum_center,
             &Vector::new_vec3(0.0, 1.0, 0.0)
         );
@@ -418,7 +418,7 @@ impl Light {
         let mut min_z = f32::MAX;
         let mut max_z = f32::MIN;
         for corner in &corners {
-            let corner_light_view = view.mul_vector4(corner);
+            let corner_light_view = view * corner;
             min_x = min_x.min(corner_light_view.x);
             max_x = max_x.max(corner_light_view.x);
             min_y = min_y.min(corner_light_view.y);
@@ -426,7 +426,6 @@ impl Light {
             min_z = min_z.min(corner_light_view.z);
             max_z = max_z.max(corner_light_view.z);
         }
-        let radius = Vector::new_vec3(max_x - min_x, max_y - min_y, max_z - min_z).magnitude_3d();
         let z_mult = 10.0f32;
         if min_z < 0.0 {
             min_z = min_z * z_mult;
@@ -438,6 +437,8 @@ impl Light {
         } else {
             max_z = max_z * z_mult;
         }
+        let radius = corners[0].sub_vec(&corners[6]).magnitude_3d() * 0.5;
+        println!("{}, {}", max_x, radius);
         let projection = Matrix::new_ortho(-radius, radius, -radius, radius, -radius * 6.0, radius * 6.0);
         [view, projection]
     }
@@ -1546,7 +1547,7 @@ impl Node {
                         let mut all_outside_this_plane = true;
 
                         for corner in primitive.corners.iter() {
-                            let world_pos = self.world_transform.mul_vector4(&Vector::new_vec4(corner.x, corner.y, corner.z, 1.0));
+                            let world_pos = self.world_transform * Vector::new_vec4(corner.x, corner.y, corner.z, 1.0);
 
                             if frustum.unwrap().planes[plane_idx].test_point_within(&world_pos) {
                                 all_outside_this_plane = false;
@@ -1579,8 +1580,8 @@ impl Node {
 
     pub fn update_local_transform(&mut self) {
         let rotate = Matrix::new_rotate_quaternion_vec4(&self.rotation.combine(&self.user_rotation.euler_to_quat()));
-        let scale = Matrix::new_scale_vec3(&self.scale.mul_by_vec(&self.user_scale));
-        let translate = Matrix::new_translation_vec3(&self.translation.add_vec(&self.user_translation));
+        let scale = Matrix::new_scale_vec3(&(self.scale * self.user_scale));
+        let translate = Matrix::new_translation_vec3(&(self.translation + self.user_translation));
 
         self.local_transform = Matrix::new();
         self.local_transform.set_and_mul_mat4(&translate);
@@ -1589,7 +1590,7 @@ impl Node {
     }
 
     pub fn update_world_transform(&mut self, parent_transform: &Matrix) {
-        self.world_transform = parent_transform.mul_mat4(&self.local_transform);
+        self.world_transform = parent_transform * self.local_transform;
     }
 
     pub fn update_instances(&self, instances: &mut Vec<Instance>, dirty_instances: &mut Vec<usize>, add_dirty: bool) {

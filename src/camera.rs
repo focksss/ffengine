@@ -64,34 +64,34 @@ impl Camera {
         let half_v = self.far * (self.fov_y*0.5).to_radians().tan();
         let half_h = half_v*self.aspect_ratio;
 
-        let front_by_far = cam_front.mul_float(self.far);
+        let front_by_far = cam_front * self.far;
 
-        let position = self.position.mul_by_vec(&Vector::new_vec3(1.0,1.0,-1.0));
+        let position = self.position * Vector::new_vec3(1.0,1.0,-1.0);
 
         self.frustum = Frustum {
             planes: [
                 Plane {
                     normal: cam_front,
-                    point: position.add_vec(&cam_front.mul_float(self.near)),
+                    point: position + (cam_front * self.near),
                 },
                 Plane {
-                    normal: cam_front.mul_float(-1.0),
-                    point: position.add_vec(&front_by_far),
+                    normal: cam_front * -1.0,
+                    point: position + front_by_far,
                 },
                 Plane {
-                    normal: cam_up.cross( &front_by_far.sub_vec(&cam_right.mul_float(half_h)) ),
+                    normal: cam_up.cross(&(front_by_far - (cam_right * half_h))),
                     point: position,
                 },
                 Plane {
-                    normal: ( &front_by_far.add_vec(&cam_right.mul_float(half_h)) ).cross(&cam_up),
+                    normal: (front_by_far + (cam_right * half_h)).cross(&cam_up),
                     point: position,
                 },
                 Plane {
-                    normal: cam_right.cross( &front_by_far.add_vec(&cam_up.mul_float(half_v)) ),
+                    normal: cam_right.cross(&(front_by_far + (cam_up * half_v))),
                     point: position,
                 },
                 Plane {
-                    normal: ( &front_by_far.sub_vec(&cam_up.mul_float(half_v)) ).cross(&cam_right),
+                    normal: (front_by_far - (cam_up * half_v)).cross(&cam_right),
                     point: position,
                 }
             ],
@@ -99,23 +99,22 @@ impl Camera {
     }
 
     pub fn get_frustum_corners_with_near_far(&self, near: f32, far: f32) -> [Vector; 8] {
-        let inverse_view_projection = Matrix::new_projection(self.fov_y, self.aspect_ratio, near, far).mul_mat4(&self.view_matrix).inverse();
-        let mut corners = [Vector::new_empty(); 8];
-        let mut i = 0;
-        for x in 0..2 {
-            for y in 0..2 {
-                for z in 0..2 {
-                    let corner_clip_space = inverse_view_projection.mul_vector4(&Vector::new_vec4(
-                        2.0 * x as f32 - 1.0,
-                        2.0 * y as f32 - 1.0,
-                        z as f32,
-                        1.0,
-                    ));
-                    corners[i] = corner_clip_space.div_float(corner_clip_space.w);
-                    i = i + 1;
-                }
-            }
+        let inverse_view_projection = (Matrix::new_projection(self.fov_y.to_radians(), self.aspect_ratio, near, far) * (&self.view_matrix)).inverse();
+        let mut corners = [
+            Vector::new_vec4(-1.0,1.0,0.0, 1.0),
+            Vector::new_vec4(1.0,1.0,0.0, 1.0),
+            Vector::new_vec4(1.0,-1.0,0.0, 1.0),
+            Vector::new_vec4(-1.0,-1.0,0.0, 1.0),
+            Vector::new_vec4(-1.0,1.0,1.0, 1.0),
+            Vector::new_vec4(1.0,1.0,1.0, 1.0),
+            Vector::new_vec4(1.0,-1.0,1.0, 1.0),
+            Vector::new_vec4(-1.0,-1.0,1.0, 1.0),
+        ];
+        for i in 0..corners.len() {
+            corners[i] = inverse_view_projection * corners[i];
+            corners[i] = corners[i] / corners[i].w;
         }
+
         corners
     }
 }
@@ -134,7 +133,7 @@ impl Plane {
     }
 
     pub fn test_point_within(&self, point: &Vector) -> bool {
-        let evaluated = self.normal.mul_by_vec(&point.sub_vec(&self.point));
+        let evaluated = self.normal * (point - self.point);
         evaluated.x + evaluated.y + evaluated.z > 0.0
     }
 
@@ -157,7 +156,7 @@ impl Frustum {
         for plane in self.planes.iter() {
             if plane.test_point_within(point) { i += 1 }
         }
-        return i >= 6
+        i >= 6
     }
 
     pub fn test_sphere_within(&self, center: &Vector, radius: f32) -> bool {
