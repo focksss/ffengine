@@ -20,6 +20,17 @@ impl Matrix {
             ]
         }
     }
+    
+    pub fn new_scalar(scalar: f32) -> Self {
+        Self {
+            data: [
+                scalar, 0.0, 0.0, 0.0,
+                0.0, scalar, 0.0, 0.0,
+                0.0, 0.0, scalar, 0.0,
+                0.0, 0.0, 0.0, scalar,
+            ]
+        }
+    }
 
     pub fn new_empty() -> Self {
         Self { data: [0.0; 16] }

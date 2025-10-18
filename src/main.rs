@@ -100,11 +100,11 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
     //world.add_model(Model::new("C:\\Graphics\\assets\\flower\\scene.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\rivals\\luna\\gltf\\luna.gltf"));
 
-    world.add_model(Model::new("C:\\Graphics\\assets\\shadowTest\\shadowTest.gltf"));
+    //world.add_model(Model::new("C:\\Graphics\\assets\\shadowTest\\shadowTest.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\plane\\plane.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\unitCube\\unitCube.gltf"));
     //world.models[1].transform_roots(&Vector::new_vec3(0.0, 1.0, 0.0), &Vector::new_vec(0.0), &Vector::new_vec(1.0));
-    //world.add_model(Model::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf"));
+    world.add_model(Model::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\bistroGLTF\\untitled.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\mountain\\mountain.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\catTest\\catTest.gltf"));
@@ -857,7 +857,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
     };
     let shadow_rasterization_info = vk::PipelineRasterizationStateCreateInfo {
         front_face: vk::FrontFace::COUNTER_CLOCKWISE,
-        cull_mode: vk::CullModeFlags::FRONT,
+        cull_mode: vk::CullModeFlags::NONE,
         line_width: 1.0,
         polygon_mode: vk::PolygonMode::FILL,
         ..Default::default()
@@ -1184,7 +1184,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                 };
                 copy_data_to_memory(ssao_descriptor_set.descriptors[3].owned_buffers.2[current_frame], &[ubo]);
                 let ubo = LightingUniformData {
-                    shadow_cascade_distances: [player_camera.far * 0.01, player_camera.far * 0.03, player_camera.far * 0.09, player_camera.far * 0.3]
+                    shadow_cascade_distances: [player_camera.far * 0.005, player_camera.far * 0.015, player_camera.far * 0.045, player_camera.far * 0.15]
                 };
                 copy_data_to_memory(lighting_descriptor_set.descriptors[9].owned_buffers.2[current_frame], &[ubo]);
                 let camera_constants = CameraMatrixUniformData {

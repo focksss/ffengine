@@ -377,7 +377,7 @@ impl Light {
 
     pub fn update(&mut self, primary_camera: &Camera) {
         if self.light_type == 0 {
-            let cascade_levels = [primary_camera.far * 0.01, primary_camera.far * 0.03, primary_camera.far * 0.09, primary_camera.far * 0.3];
+            let cascade_levels = [primary_camera.far * 0.005, primary_camera.far * 0.015, primary_camera.far * 0.045, primary_camera.far * 0.15];
 
             for i in 0..cascade_levels.len() + 1 {
                 let matrices: [Matrix; 2];
@@ -403,42 +403,22 @@ impl Light {
         for corner in corners.iter() {
             sum = sum + corner;
         }
-        let frustum_center = sum.div_float(8.0);
+        let frustum_center = sum / 8.0;
+
+        let mut max_radius_squared = 0.0f32;
+        for corner in &corners {
+            let v = *corner - frustum_center;
+            let radius_squared = v.dot(&v);
+            if radius_squared > max_radius_squared { max_radius_squared = radius_squared; }
+        }
+        let radius = max_radius_squared.sqrt();
 
         let view = Matrix::new_look_at(
-            &(frustum_center - (Vector::new_vec3(self.vector.x, self.vector.y, self.vector.z) * 1.0)),
+            &(frustum_center - self.vector),
             &frustum_center,
             &Vector::new_vec3(0.0, 1.0, 0.0)
         );
 
-        let mut min_x = f32::MAX;
-        let mut max_x = f32::MIN;
-        let mut min_y = f32::MAX;
-        let mut max_y = f32::MIN;
-        let mut min_z = f32::MAX;
-        let mut max_z = f32::MIN;
-        for corner in &corners {
-            let corner_light_view = view * corner;
-            min_x = min_x.min(corner_light_view.x);
-            max_x = max_x.max(corner_light_view.x);
-            min_y = min_y.min(corner_light_view.y);
-            max_y = max_y.max(corner_light_view.y);
-            min_z = min_z.min(corner_light_view.z);
-            max_z = max_z.max(corner_light_view.z);
-        }
-        let z_mult = 10.0f32;
-        if min_z < 0.0 {
-            min_z = min_z * z_mult;
-        } else {
-            min_z = min_z / z_mult;
-        }
-        if max_z < 0.0 {
-            max_z = max_z / z_mult;
-        } else {
-            max_z = max_z * z_mult;
-        }
-        let radius = corners[0].sub_vec(&corners[6]).magnitude_3d() * 0.5;
-        println!("{}, {}", max_x, radius);
         let projection = Matrix::new_ortho(-radius, radius, -radius, radius, -radius * 6.0, radius * 6.0);
         [view, projection]
     }
