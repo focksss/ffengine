@@ -19,10 +19,14 @@ layout(push_constant) uniform constants {
     float sigmaDepth;    // view-space sigma
     float sigmaNormal;   // normal dot sigma
     vec2 invResolution;  // 1.0 / framebuffer size
+    int infinite_reverse_depth;
 } pc;
 
 float get_view_z(float depth, float near) {
-    return -near / (depth - 1.0);
+    if (pc.infinite_reverse_depth) {
+        return near / depth;
+    }
+    return depth;
 }
 
 float gauss(float x, float sigma) { return exp(-0.5 * (x*x) / (sigma*sigma)); }

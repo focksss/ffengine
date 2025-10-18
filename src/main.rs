@@ -65,7 +65,8 @@ struct SeparableBlurPassData {
     sigma_spatial: f32, // texel-space sigma
     sigma_depth: f32, // view-space sigma
     sigma_normal: f32, // normal dot sigma
-    inv_resolution: [f32; 2] // 1.0 / framebuffer size
+    inv_resolution: [f32; 2], // 1.0 / framebuffer size
+    infinite_reverse_depth: i32,
 }
 
 const MAX_FRAMES_IN_FLIGHT: usize = 3;
@@ -104,8 +105,8 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
     //world.add_model(Model::new("C:\\Graphics\\assets\\plane\\plane.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\unitCube\\unitCube.gltf"));
     //world.models[1].transform_roots(&Vector::new_vec3(0.0, 1.0, 0.0), &Vector::new_vec(0.0), &Vector::new_vec(1.0));
-    world.add_model(Model::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf"));
-    //world.add_model(Model::new("C:\\Graphics\\assets\\bistroGLTF\\untitled.gltf"));
+    //world.add_model(Model::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf"));
+    world.add_model(Model::new("C:\\Graphics\\assets\\bistroGLTF\\untitled.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\mountain\\mountain.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\catTest\\catTest.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\helmet\\DamagedHelmet.gltf"));
@@ -1195,23 +1196,28 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                     view: player_camera.view_matrix.inverse().data,
                     projection: player_camera.projection_matrix.inverse().data,
                 };
+
+                let sigma_depth = 0.025;
+                let sigma_normal = 0.2;
                 let ssao_blur_constants_horizontal = SeparableBlurPassData {
                     horizontal: 1,
                     radius: 5,
                     near: player_camera.near,
                     sigma_spatial: 2.5,
-                    sigma_depth: 0.05,
-                    sigma_normal: 0.2,
-                    inv_resolution: [1.0 / (base.surface_resolution.width as f32), 1.0 / (base.surface_resolution.height as f32)]
+                    sigma_depth,
+                    sigma_normal,
+                    inv_resolution: [1.0 / (base.surface_resolution.width as f32), 1.0 / (base.surface_resolution.height as f32)],
+                    infinite_reverse_depth: 1
                 };
                 let ssao_blur_constants_vertical = SeparableBlurPassData {
                     horizontal: 0,
                     radius: 5,
                     near: player_camera.near,
                     sigma_spatial: 2.5,
-                    sigma_depth: 0.05,
-                    sigma_normal: 0.2,
-                    inv_resolution: [1.0 / (base.surface_resolution.width as f32), 1.0 / (base.surface_resolution.height as f32)]
+                    sigma_depth,
+                    sigma_normal,
+                    inv_resolution: [1.0 / (base.surface_resolution.width as f32), 1.0 / (base.surface_resolution.height as f32)],
+                    infinite_reverse_depth: 1
                 };
 
                 //<editor-fold desc = "passes begin info">
