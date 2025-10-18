@@ -1191,6 +1191,10 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                     view: player_camera.view_matrix.data,
                     projection: player_camera.projection_matrix.data,
                 };
+                let camera_inverse_constants = CameraMatrixUniformData {
+                    view: player_camera.view_matrix.inverse().data,
+                    projection: player_camera.projection_matrix.inverse().data,
+                };
                 let ssao_blur_constants_horizontal = SeparableBlurPassData {
                     horizontal: 1,
                     radius: 5,
@@ -1413,7 +1417,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                             lighting_pipeline,
                         );
                         device.cmd_push_constants(frame_command_buffer, lighting_pipeline_layout, ShaderStageFlags::FRAGMENT, 0, slice::from_raw_parts(
-                            &camera_constants as *const CameraMatrixUniformData as *const u8,
+                            &camera_inverse_constants as *const CameraMatrixUniformData as *const u8,
                             size_of::<CameraMatrixUniformData>(),
                         ));
 

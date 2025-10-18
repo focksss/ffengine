@@ -17,8 +17,8 @@ layout(set = 0, binding = 6) uniform sampler2DArray shadowmap;
 layout(set = 0, binding = 7) uniform sampler2D ssao_tex;
 
 layout(push_constant) uniform constants {
-    mat4 view;
-    mat4 projection;
+    mat4 inverse_view;
+    mat4 inverse_projection;
 } ubo;
 
 struct Light {
@@ -42,16 +42,14 @@ vec3 get_position_from_depth() {
 
     vec4 projected_position = vec4(x, y, z, 1.0);
 
-    vec4 view_space_position = inverse(ubo.projection) * projected_position;
+    vec4 view_space_position = ubo.inverse_projection * projected_position;
 
     return view_space_position.xyz / view_space_position.w;
 }
 
 float get_shadow(Light light, vec3 world_position, vec3 world_normal, float fragment_depth) {
-    int layer = int(fragment_depth >= ubo2.cascade_plane_distances.x)
-    + int(fragment_depth >= ubo2.cascade_plane_distances.y)
-    + int(fragment_depth >= ubo2.cascade_plane_distances.z)
-    + int(fragment_depth >= ubo2.cascade_plane_distances.w);
+    vec4 res = step(ubo2.cascade_plane_distances, vec4(fragment_depth));
+    int layer = int(res.x + res.y + res.z + res.w);
 
     vec4 position_lightspace = light.projections[layer] * light.views[layer] * vec4(world_position, 1.0);
     vec3 projected_lightspace_position;
@@ -84,7 +82,7 @@ void main() {
     //uFragColor = vec4(vec3(texture(ssao_tex, uv).r), 1.0); return;
     //uFragColor = vec4(0.01 / texture(g_depth, uv).r, 0.0, 0.0, 1.0);
 
-    mat4 inverse_view = inverse(ubo.view);
+    mat4 inverse_view = ubo.inverse_view;
 
     vec3 albedo = texture(g_albedo, uv).rgb;
 
@@ -93,24 +91,6 @@ void main() {
 
     vec3 view_normal = (texture(g_view_normal, uv).xyz * 2.0) - 1.0;
     vec3 world_normal = mat3(inverse_view) * view_normal;
-
-    int layer = int(-view_position.z >= ubo2.cascade_plane_distances.x)
-    + int(-view_position.z >= ubo2.cascade_plane_distances.y)
-    + int(-view_position.z >= ubo2.cascade_plane_distances.z)
-    + int(-view_position.z >= ubo2.cascade_plane_distances.w);
-    if (layer == 0) {
-        uFragColor = vec4(vec3(1.0, 0.0, 0.0), 1.0);
-    } else if (layer == 1) {
-        uFragColor = vec4(vec3(0.0, 1.0, 0.0), 1.0);
-    } else if (layer == 2) {
-        uFragColor = vec4(vec3(0.0, 0.0, 1.0), 1.0);
-    } else if (layer == 3) {
-        uFragColor = vec4(vec3(1.0, 0.0, 1.0), 1.0);
-    } else if (layer == 4) {
-        uFragColor = vec4(vec3(1.0, 0.5, 0.0), 1.0);
-    }
-    uFragColor.xyz *= max(0.2, get_shadow(lights_SSBO.lights[0], world_position, world_normal, -view_position.z)) * texture(ssao_tex, uv).r;
-    return;
 
     uFragColor = vec4(
         albedo

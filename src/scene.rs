@@ -348,7 +348,7 @@ pub struct Light {
 impl Light {
     pub fn new_sun(vector: Vector) -> Light {
         Light {
-            vector,
+            vector: Vector::new_vec4(vector.x, vector.y, vector.z, 1.0),
             projections: [Matrix::new_ortho(-10.0, 10.0, -10.0, 10.0, 0.01, 1000.0); 5],
             views: [Matrix::new_look_at(
                 &Vector::new_vec3(vector.x * -100.0, vector.y * -100.0, vector.z * -100.0),
@@ -403,7 +403,8 @@ impl Light {
         for corner in corners.iter() {
             sum = sum + corner;
         }
-        let frustum_center = sum / 8.0;
+        let mut frustum_center = sum / 8.0;
+        frustum_center.w = 1.0;
 
         let mut max_radius_squared = 0.0f32;
         for corner in &corners {
@@ -413,8 +414,22 @@ impl Light {
         }
         let radius = max_radius_squared.sqrt();
 
+        let texels_per_unit = 4096.0 / (radius * 2.0);
+        let scalar_matrix = Matrix::new_scalar(texels_per_unit);
+        let temp_view = Matrix::new_look_at(
+            &(-1.0 * self.vector),
+            &Vector::new_empty(),
+            &Vector::new_vec3(0.0, 1.0, 0.0)
+        ) * scalar_matrix;
+        frustum_center = temp_view * frustum_center;
+        frustum_center.x = frustum_center.x.floor();
+        frustum_center.y = frustum_center.y.floor();
+        frustum_center.w = 1.0;
+        frustum_center = temp_view.inverse() * frustum_center;
+
+
         let view = Matrix::new_look_at(
-            &(frustum_center - self.vector),
+            &(frustum_center - (self.vector * 2.0 * radius)),
             &frustum_center,
             &Vector::new_vec3(0.0, 1.0, 0.0)
         );

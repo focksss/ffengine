@@ -27,7 +27,7 @@ impl Matrix {
                 scalar, 0.0, 0.0, 0.0,
                 0.0, scalar, 0.0, 0.0,
                 0.0, 0.0, scalar, 0.0,
-                0.0, 0.0, 0.0, scalar,
+                0.0, 0.0, 0.0, 1.0,
             ]
         }
     }
@@ -328,9 +328,9 @@ impl Matrix {
         result.data[7] = 0.0;
         result.data[11] = 0.0;
 
-        result.data[12] = -s.dot(position);
-        result.data[13] = -u.dot(position);
-        result.data[14] = -f.dot(position);
+        result.data[12] = -s.dot3(position);
+        result.data[13] = -u.dot3(position);
+        result.data[14] = -f.dot3(position);
         result.data[15] = 1.0;
 
         result
