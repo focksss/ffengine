@@ -23,7 +23,7 @@ layout(push_constant) uniform constants {
 } pc;
 
 float get_view_z(float depth, float near) {
-    if (pc.infinite_reverse_depth) {
+    if (pc.infinite_reverse_depth == 1) {
         return near / depth;
     }
     return depth;
