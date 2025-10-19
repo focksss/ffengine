@@ -103,7 +103,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
     //world.add_model(Model::new("C:\\Graphics\\assets\\rivals\\luna\\gltf\\luna.gltf"));
 
     //world.add_model(Model::new("C:\\Graphics\\assets\\shadowTest\\shadowTest.gltf"));
-    world.add_model(Model::new("C:\\Graphics\\assets\\plane\\plane.gltf"));
+    world.add_model(Model::new("C:\\Graphics\\assets\\rectangle\\rectangle.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\unitCube\\unitCube.gltf"));
     //world.models[1].transform_roots(&Vector::new_vec3(0.0, 1.0, 0.0), &Vector::new_vec(0.0), &Vector::new_vec(1.0));
     //world.add_model(Model::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf"));
@@ -1620,8 +1620,9 @@ unsafe fn do_controls(
     }
     if new_pressed_keys.contains(&PhysicalKey::Code(KeyCode::KeyM)) {
         if (world.models.len() < 2) {
-            world.upload_model_live(base, Model::new("C:\\Graphics\\assets\\unitCube\\unitCube.gltf"));
+            world.upload_model_live(base, Model::new("C:\\Graphics\\assets\\cubes\\cubes.gltf"));
             world.models[1].transform_roots(&player_camera.position, &player_camera.rotation, &Vector::new_vec(1.0));
+            world.models[0].transform_roots(&player_camera.position, &player_camera.rotation, &Vector::new_vec(1.0));
         }
     }
 

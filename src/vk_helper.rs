@@ -15,6 +15,7 @@ use ash::util::{Align};
 use ash::vk::{Buffer, CommandBuffer, DeviceMemory, Extent3D, Format, Image, ImageAspectFlags, ImageSubresourceLayers, ImageSubresourceRange, ImageUsageFlags, ImageView, MemoryPropertyFlags, Offset3D, Sampler, SurfaceFormatKHR, SwapchainKHR};
 use winit::{event_loop::EventLoop, raw_window_handle::{HasDisplayHandle, HasWindowHandle}, window::WindowBuilder};
 use crate::render::{Texture, TextureCreateInfo};
+use crate::scene::Vertex;
 
 // Simple offset_of macro akin to C++ offsetof
 #[macro_export]
@@ -705,7 +706,15 @@ impl VkBase {
         self.device.cmd_copy_buffer(command_buffers[0], *src_buffer, *dst_buffer, &copy_region);
         self.end_single_time_commands(command_buffers);
     } }
-    pub unsafe fn create_device_and_staging_buffer<T: Copy>(&self, buffer_size_in: u64, data: &[T], usage: vk::BufferUsageFlags, destroy_staging: bool, keep_ptr: bool, do_initial_copy: bool) -> ((Buffer, DeviceMemory), (Buffer, DeviceMemory, *mut c_void)) { unsafe {
+    pub unsafe fn create_device_and_staging_buffer<T: Copy>(
+        &self,
+        buffer_size_in: u64,
+        data: &[T],
+        usage: vk::BufferUsageFlags,
+        destroy_staging: bool,
+        keep_ptr: bool,
+        do_initial_copy: bool
+    ) -> ((Buffer, DeviceMemory), (Buffer, DeviceMemory, *mut c_void)) { unsafe {
         let buffer_size;
         if buffer_size_in > 0 {
             buffer_size = buffer_size_in;
@@ -759,6 +768,38 @@ impl VkBase {
             }
             ((buffer, buffer_memory), (staging_buffer, staging_buffer_memory, ptr))
         }
+    } }
+    pub unsafe fn update_buffer_through_staging<T: Copy>(
+        &self,
+        command_buffer: &CommandBuffer,
+        buffer: &(Buffer, DeviceMemory),
+        staging_buffer: &(Buffer, DeviceMemory, *mut c_void),
+        data: &[T],
+        dst_offset: u64,
+        copy_to_staging: bool,
+    ) { unsafe {
+        if copy_to_staging {
+            if staging_buffer.2 != null_mut() {
+                self.device.unmap_memory(staging_buffer.1);
+            }
+            let ptr = self
+                .device
+                .map_memory(
+                    staging_buffer.1,
+                    0,
+                    size_of::<T>() as u64 * data.len() as u64,
+                    vk::MemoryMapFlags::empty(),
+                )
+                .expect("Failed to map buffer memory");
+            copy_data_to_memory(ptr, &data);
+        }
+        let copy_region = vk::BufferCopy {
+            src_offset: 0,
+            dst_offset,
+            size: size_of::<T>() as u64 * data.len() as u64,
+            ..Default::default()
+        };
+        self.device.cmd_copy_buffer(*command_buffer, staging_buffer.0, buffer.0, &[copy_region]);
     } }
     pub fn load_image_fast(uri: &PathBuf) -> (Vec<u8>, u32, u32) {
         let bytes = fs::read(uri).expect(uri.to_string_lossy().as_ref());
