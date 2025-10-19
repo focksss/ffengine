@@ -2,8 +2,8 @@ use std::ffi::c_void;
 use std::io::Cursor;
 use ash::{vk, Device, Instance};
 use ash::util::read_spv;
-use ash::vk::{Buffer, ClearColorValue, ClearDepthStencilValue, ClearValue, DescriptorImageInfo, DescriptorPool, DescriptorPoolCreateFlags, DescriptorPoolSize, DescriptorSetLayout, DescriptorSetLayoutCreateFlags, DescriptorType, DeviceMemory, DeviceSize, Extent3D, Format, Handle, ImageAspectFlags, ImageSubresourceRange, ImageUsageFlags, MemoryAllocateFlags, MemoryPropertyFlags, PhysicalDevice, PipelineShaderStageCreateInfo, SampleCountFlags, ShaderModule, ShaderModuleCreateInfo, ShaderStageFlags};
-use crate::{CameraMatrixUniformData, MAX_FRAMES_IN_FLIGHT};
+use ash::vk::{Buffer, ClearColorValue, ClearDepthStencilValue, ClearValue, DescriptorImageInfo, DescriptorPool, DescriptorPoolCreateFlags, DescriptorPoolSize, DescriptorSetLayout, DescriptorSetLayoutCreateFlags, DescriptorType, DeviceMemory, DeviceSize, Extent3D, Format, ImageAspectFlags, ImageSubresourceRange, ImageUsageFlags, MemoryPropertyFlags, PhysicalDevice, PipelineShaderStageCreateInfo, SampleCountFlags, ShaderModule, ShaderModuleCreateInfo, ShaderStageFlags};
+use crate::{MAX_FRAMES_IN_FLIGHT};
 use crate::vk_helper::{find_memorytype_index, load_file, VkBase};
 
 
@@ -17,7 +17,7 @@ impl Shader {
     pub unsafe fn new(base: &VkBase, vert_path: &str, frag_path: &str, geometry_path: Option<&str>) -> Self { unsafe {
         let mut vertex_spv_file = Cursor::new(load_file(vert_path).unwrap());
         let mut frag_spv_file = Cursor::new(load_file(frag_path).unwrap());
-        let mut geometry_spv_file: Option<Cursor<Vec<u8>>> = if geometry_path.is_some() {
+        let geometry_spv_file: Option<Cursor<Vec<u8>>> = if geometry_path.is_some() {
             Some(Cursor::new(load_file(geometry_path.unwrap()).unwrap()))
         } else {
             None
@@ -68,20 +68,20 @@ impl Shader {
                 PipelineShaderStageCreateInfo {
                     module: self.vertex_module,
                     p_name: shader_entry_name.as_ptr(),
-                    stage: vk::ShaderStageFlags::VERTEX,
+                    stage: ShaderStageFlags::VERTEX,
                     ..Default::default()
                 },
                 PipelineShaderStageCreateInfo {
                     module: self.geometry_module.unwrap(),
                     p_name: shader_entry_name.as_ptr(),
-                    stage: vk::ShaderStageFlags::GEOMETRY,
+                    stage: ShaderStageFlags::GEOMETRY,
                     ..Default::default()
                 },
                 PipelineShaderStageCreateInfo {
                     s_type: vk::StructureType::PIPELINE_SHADER_STAGE_CREATE_INFO,
                     module: self.fragment_module,
                     p_name: shader_entry_name.as_ptr(),
-                    stage: vk::ShaderStageFlags::FRAGMENT,
+                    stage: ShaderStageFlags::FRAGMENT,
                     ..Default::default()
                 },
             ]
@@ -232,7 +232,7 @@ impl Pass {
             .create_render_pass(&renderpass_create_info, None)
             .unwrap();
 
-        let mut clear_values = Vec::new();
+        let clear_values;
         let framebuffers: Vec<vk::Framebuffer> = if !create_info.is_present_pass {
             clear_values = textures[0].iter().map(|texture| {texture.clear_value}).collect();
             let framebuffers = (0..create_info.frames_in_flight)
@@ -259,18 +259,18 @@ impl Pass {
         } else {
             clear_values = vec![
                 ClearValue {
-                    color: vk::ClearColorValue {
+                    color: ClearColorValue {
                         float32: [0.0, 0.0, 0.0, 0.0],
                     },
                 },
                 ClearValue {
-                    depth_stencil: vk::ClearDepthStencilValue {
+                    depth_stencil: ClearDepthStencilValue {
                         depth: 1.0,
                         stencil: 0,
                     },
                 },
                 ClearValue {
-                    color: vk::ClearColorValue {
+                    color: ClearColorValue {
                         float32: [0.0, 0.0, 0.0, 0.0],
                     },
                 },
@@ -405,7 +405,7 @@ impl<'a> PassCreateInfo<'a> {
 pub struct Texture {
     pub image: vk::Image,
     pub image_view: vk::ImageView,
-    pub device_memory: vk::DeviceMemory,
+    pub device_memory: DeviceMemory,
 
     pub clear_value: ClearValue,
     pub format: Format,
@@ -765,7 +765,7 @@ pub struct DescriptorCreateInfo<'a> {
     pub offset: DeviceSize,
     pub range: DeviceSize,
     pub buffers: Option<Vec<Buffer>>,
-    pub image_infos: Option<Vec<vk::DescriptorImageInfo>>,
+    pub image_infos: Option<Vec<DescriptorImageInfo>>,
     pub memory_property_flags: MemoryPropertyFlags,
     pub dynamic: bool,
 }

@@ -10,16 +10,13 @@ use std::default::Default;
 use std::error::Error;
 use std::{mem, slice};
 use std::collections::HashSet;
-use std::ffi::c_void;
 use std::mem::size_of;
 use std::path::PathBuf;
-use std::ptr::slice_from_raw_parts;
 use std::time::Instant;
 
 use ash::vk;
-use ash::vk::{Buffer, DescriptorType, DeviceMemory, Extent2D, Format, ImageAspectFlags, ImageSubresourceRange, Offset2D, ShaderStageFlags};
-use bytemuck::bytes_of;
-use winit::dpi::{PhysicalPosition, Pixel};
+use ash::vk::{DescriptorType, Extent2D, Format, ImageAspectFlags, ImageSubresourceRange, Offset2D, ShaderStageFlags};
+use winit::dpi::{PhysicalPosition};
 use winit::event::{ElementState, Event, KeyEvent, WindowEvent};
 use winit::event_loop::ControlFlow;
 use winit::keyboard::{KeyCode, PhysicalKey};
@@ -29,8 +26,9 @@ use rand::*;
 use crate::{vk_helper::*, vector::*};
 use crate::scene::{Scene, Model, Instance, Light};
 use crate::camera::Camera;
-use crate::matrix::Matrix;
 use crate::render::{Pass, PassCreateInfo, Shader, TextureCreateInfo};
+
+//TODO Choose between making buffers with high sizes and reusing or reinitializing every time scene udpates
 
 #[derive(Clone, Debug, Copy)]
 #[repr(C)]
@@ -74,15 +72,17 @@ const PI: f32 = std::f32::consts::PI;
 
 fn main() -> Result<(), Box<dyn Error>> {
     unsafe {
-        let mut shader_paths = Vec::new();
-        shader_paths.push("src\\shaders\\glsl\\geometry");
-        shader_paths.push("src\\shaders\\glsl\\shadow");
-        shader_paths.push("src\\shaders\\glsl\\ssao");
-        shader_paths.push("src\\shaders\\glsl\\bilateral_blur");
-        shader_paths.push("src\\shaders\\glsl\\lighting");
-        shader_paths.push("src\\shaders\\glsl\\quad");
+        #[cfg(debug_assertions)] {
+            let mut shader_paths = Vec::new();
+            shader_paths.push("src\\shaders\\glsl\\geometry");
+            shader_paths.push("src\\shaders\\glsl\\shadow");
+            shader_paths.push("src\\shaders\\glsl\\ssao");
+            shader_paths.push("src\\shaders\\glsl\\bilateral_blur");
+            shader_paths.push("src\\shaders\\glsl\\lighting");
+            shader_paths.push("src\\shaders\\glsl\\quad");
 
-        compile_shaders(shader_paths).expect("Failed to compile shaders");
+            compile_shaders(shader_paths).expect("Failed to compile shaders");
+        }
 
         let mut base = VkBase::new("ffengine".to_string(), 1920, 1080, MAX_FRAMES_IN_FLIGHT)?;
         run(&mut base).expect("Application launch failed!");
@@ -99,14 +99,15 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
     // world.models[0].animations[0].start();
 
     //world.add_model(Model::new("C:\\Graphics\\assets\\flower\\scene.gltf"));
+    //world.models[0].transform_roots(&Vector::new_vec3(0.0, 1.0, 0.0), &Vector::new_vec(0.0), &Vector::new_vec(1.0));
     //world.add_model(Model::new("C:\\Graphics\\assets\\rivals\\luna\\gltf\\luna.gltf"));
 
     //world.add_model(Model::new("C:\\Graphics\\assets\\shadowTest\\shadowTest.gltf"));
-    //world.add_model(Model::new("C:\\Graphics\\assets\\plane\\plane.gltf"));
+    world.add_model(Model::new("C:\\Graphics\\assets\\plane\\plane.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\unitCube\\unitCube.gltf"));
     //world.models[1].transform_roots(&Vector::new_vec3(0.0, 1.0, 0.0), &Vector::new_vec(0.0), &Vector::new_vec(1.0));
     //world.add_model(Model::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf"));
-    world.add_model(Model::new("C:\\Graphics\\assets\\bistroGLTF\\untitled.gltf"));
+    //world.add_model(Model::new("C:\\Graphics\\assets\\bistroGLTF\\untitled.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\mountain\\mountain.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\catTest\\catTest.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\helmet\\DamagedHelmet.gltf"));
@@ -118,8 +119,8 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
 
     world.initialize(base, MAX_FRAMES_IN_FLIGHT, true);
 
-    // world.models[0].animations[0].repeat = true;
-    // world.models[0].animations[0].start();
+    //world.models[0].animations[0].repeat = true;
+    //world.models[0].animations[0].start();
 
 
 
@@ -488,7 +489,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                 .dst_set(ssao_descriptor_set.descriptor_sets[current_frame])
                 .dst_binding(i as u32)
                 .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
-                .image_info(std::slice::from_ref(info))
+                .image_info(slice::from_ref(info))
         }).collect();
         base.device.update_descriptor_sets(&ssao_descriptor_writes, &[]);
 
@@ -1141,6 +1142,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
             }
             //</editor-fold>
             Event::AboutToWait => {
+                world.update_nodes(base, current_frame);
                 //<editor-fold desc = "frame setup">
                 let now = Instant::now();
                 let delta_time = now.duration_since(last_frame_time).as_secs_f32();
@@ -1148,10 +1150,8 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                 if needs_resize {
 
                 }
-                do_controls(&mut player_camera, &pressed_keys, &mut new_pressed_keys, delta_time, &mut cursor_locked, base, &mut saved_cursor_pos, &mut pause_frustum);
+                do_controls(&mut player_camera, &pressed_keys, &mut new_pressed_keys, delta_time, &mut cursor_locked, base, &mut saved_cursor_pos, &mut pause_frustum, &mut world);
                 player_camera.update_matrices();
-
-                //world.update_nodes(base, current_frame);
 
                 if !pause_frustum {
                     player_camera.update_frustum()
@@ -1541,7 +1541,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
     //</editor-fold>
 } Ok(()) }
 
-fn do_controls(
+unsafe fn do_controls(
     player_camera: &mut Camera,
     pressed_keys: &HashSet<PhysicalKey>,
     new_pressed_keys: &mut HashSet<PhysicalKey>,
@@ -1550,7 +1550,8 @@ fn do_controls(
     base: &VkBase,
     saved_cursor_pos: &mut PhysicalPosition<f64>,
     paused: &mut bool,
-) {
+    world: &mut Scene,
+) { unsafe {
     if pressed_keys.contains(&PhysicalKey::Code(KeyCode::KeyW)) {
         player_camera.position.x += player_camera.speed*delta_time * (player_camera.rotation.y + PI/2.0).cos();
         player_camera.position.z += player_camera.speed*delta_time * (player_camera.rotation.y + PI/2.0).sin();
@@ -1617,11 +1618,17 @@ fn do_controls(
     if new_pressed_keys.contains(&PhysicalKey::Code(KeyCode::KeyP)) {
         *paused = !*paused
     }
+    if new_pressed_keys.contains(&PhysicalKey::Code(KeyCode::KeyM)) {
+        if (world.models.len() < 2) {
+            world.upload_model_live(base, Model::new("C:\\Graphics\\assets\\unitCube\\unitCube.gltf"));
+            world.models[1].transform_roots(&player_camera.position, &player_camera.rotation, &Vector::new_vec(1.0));
+        }
+    }
 
     //player_camera.position.println();
 
     new_pressed_keys.clear();
-}
+} }
 fn do_mouse(player_camera: &mut Camera, mouse_delta: (f32, f32), cursor_locked: &mut bool) {
     if *cursor_locked {
         player_camera.rotation.y += player_camera.sensitivity * mouse_delta.0;

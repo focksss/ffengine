@@ -84,7 +84,6 @@ impl Matrix {
     }
 
     fn adjugate(&self) -> Matrix {
-        let m = &self.data;
         let mut cofactors = [0.0f32; 16];
 
         for row in 0..4 {
@@ -121,7 +120,6 @@ impl Matrix {
         let mut result = Matrix::new_empty();
         for row in 0..4 {
             for col in 0..4 {
-                let mut sum = 0.0;
                 for i in 0..4 {
                     result.data[col * 4 + row] += self.data[i * 4 + row] * other.data[col * 4 + i];
                 }

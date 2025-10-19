@@ -1,13 +1,3 @@
-#![warn(
-    clippy::use_self,
-    deprecated_in_future,
-    rust_2018_idioms,
-    trivial_casts,
-    trivial_numeric_casts,
-    unused_qualifications,
-    dead_code
-)]
-
 use std::{borrow::Cow, cell::RefCell, default::Default, error::Error, ffi, fs, io, ops::Drop, os::raw::c_char};
 use std::ffi::c_void;
 use std::fs::Metadata;
@@ -21,9 +11,9 @@ use ash::{
     khr::{surface, swapchain},
     vk, Device, Entry, Instance,
 };
-use ash::util::{read_spv, Align};
-use ash::vk::{Buffer, CommandBuffer, DeviceMemory, Extent3D, Format, Image, ImageAspectFlags, ImageSubresourceLayers, ImageSubresourceRange, ImageUsageFlags, ImageView, MemoryPropertyFlags, Offset3D, PipelineShaderStageCreateInfo, Sampler, ShaderModule, SurfaceFormatKHR, SwapchainKHR};
-use winit::{event_loop::EventLoop, raw_window_handle::{HasDisplayHandle, HasWindowHandle}, window, window::WindowBuilder};
+use ash::util::{Align};
+use ash::vk::{Buffer, CommandBuffer, DeviceMemory, Extent3D, Format, Image, ImageAspectFlags, ImageSubresourceLayers, ImageSubresourceRange, ImageUsageFlags, ImageView, MemoryPropertyFlags, Offset3D, Sampler, SurfaceFormatKHR, SwapchainKHR};
+use winit::{event_loop::EventLoop, raw_window_handle::{HasDisplayHandle, HasWindowHandle}, window::WindowBuilder};
 use crate::render::{Texture, TextureCreateInfo};
 
 // Simple offset_of macro akin to C++ offsetof
@@ -953,7 +943,7 @@ impl VkBase {
     }
     pub unsafe fn generate_mipmaps_batched(
         &self,
-        command_buffer: vk::CommandBuffer,
+        command_buffer: CommandBuffer,
         image: Image,
         mips: u32,
         extent: Extent3D,
@@ -1139,7 +1129,7 @@ impl VkBase {
                 },
                 mip_levels: image_mip_levels,
                 array_layers: 1,
-                format: vk::Format::R8G8B8A8_UNORM,
+                format: Format::R8G8B8A8_UNORM,
                 tiling: vk::ImageTiling::OPTIMAL,
                 initial_layout: vk::ImageLayout::UNDEFINED,
                 usage,
@@ -1207,7 +1197,7 @@ impl VkBase {
                 s_type: vk::StructureType::IMAGE_VIEW_CREATE_INFO,
                 image: texture_image,
                 view_type: vk::ImageViewType::TYPE_2D,
-                format: vk::Format::R8G8B8A8_UNORM,
+                format: Format::R8G8B8A8_UNORM,
                 subresource_range: ImageSubresourceRange {
                     aspect_mask: ImageAspectFlags::COLOR,
                     base_mip_level: 0,
@@ -1429,10 +1419,10 @@ pub unsafe fn copy_data_to_memory<T: Copy>(ptr: *mut c_void, data: &[T]) { unsaf
         (data.len() * size_of::<T>()) as u64,
     );
     assert!(!ptr.is_null(), "copy_data_to_memory: ptr is null!");
-    assert!(data.len() * std::mem::size_of::<T>() <= isize::MAX as usize, "data size too big");
+    assert!(data.len() * size_of::<T>() <= isize::MAX as usize, "data size too big");
 
     let ptr = ptr as *mut T;
-    assert_eq!(ptr.align_offset(std::mem::align_of::<T>()), 0, "pointer is not aligned");
+    assert_eq!(ptr.align_offset(align_of::<T>()), 0, "pointer is not aligned");
     
     aligned.copy_from_slice(&data);
 } }

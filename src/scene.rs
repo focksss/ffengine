@@ -1,6 +1,4 @@
-use std::any::Any;
 use std::cell::RefCell;
-use std::cmp::min;
 use std::ffi::c_void;
 use std::fs;
 use std::rc::Rc;
@@ -9,7 +7,6 @@ use std::ptr::null_mut;
 use std::time::SystemTime;
 use ash::vk;
 use ash::vk::{CommandBuffer, DeviceMemory, ImageView, Sampler};
-use bytemuck::Contiguous;
 use json::JsonValue;
 use crate::matrix::Matrix;
 use crate::camera::{Camera, Frustum};
@@ -17,7 +14,12 @@ use crate::vector::Vector;
 use crate::vk_helper::{copy_data_to_memory, VkBase};
 
 // SHOULD DETECT MATH VS COLOR DATA TEXTURES, LOAD COLOR AS SRGB, MATH AS UNORM
-
+const MAX_VERTICES: u64 = 10u64 * 10u64.pow(6);
+const MAX_INDICES: u64 = 10u64 * 10u64.pow(7);
+const MAX_INSTANCES: u64 = 10u64 * 10u64.pow(4);
+const MAX_MATERIALS: u64 = 10u64 * 10u64.pow(4);
+const MAX_JOINTS: u64 = 10u64 * 10u64.pow(4);
+const MAX_LIGHTS: u64 = 10u64 * 10u64.pow(3);
 pub struct Scene {
     pub models: Vec<Model>,
     pub lights: Vec<Light>,
@@ -125,11 +127,11 @@ impl Scene {
             texture_count += model.textures.len() as i32;
         }
         let lights_send = self.lights.iter().map(|light| light.to_sendable()).collect::<Vec<_>>();
-        self.instance_buffer_size = self.primitive_count as u64 * size_of::<Instance>() as u64;
-        self.material_buffer_size = materials_send.len() as u64 * size_of::<MaterialSendable>() as u64;
-        self.lights_buffers_size = self.lights.len() as u64 * size_of::<LightSendable>() as u64;
-        self.vertex_buffer = base.create_device_and_staging_buffer(0, &*all_vertices, vk::BufferUsageFlags::VERTEX_BUFFER, true, false, true).0;
-        self.index_buffer = base.create_device_and_staging_buffer(0, &*all_indices, vk::BufferUsageFlags::INDEX_BUFFER, true, false, true).0;
+        self.instance_buffer_size = MAX_INSTANCES * size_of::<Instance>() as u64;
+        self.material_buffer_size = MAX_MATERIALS * size_of::<MaterialSendable>() as u64;
+        self.lights_buffers_size = MAX_LIGHTS * size_of::<LightSendable>() as u64;
+        self.vertex_buffer = base.create_device_and_staging_buffer(size_of::<Vertex>() as u64 * MAX_VERTICES, &*all_vertices, vk::BufferUsageFlags::VERTEX_BUFFER, true, false, true).0;
+        self.index_buffer = base.create_device_and_staging_buffer(MAX_INDICES, &*all_indices, vk::BufferUsageFlags::INDEX_BUFFER, true, false, true).0;
         for i in 0..frames_in_flight {
             self.instance_buffers.push((vk::Buffer::null(), DeviceMemory::null()));
             self.material_buffers.push((vk::Buffer::null(), DeviceMemory::null()));
@@ -139,25 +141,23 @@ impl Scene {
                 (self.instance_buffers[i], self.instance_staging_buffer) =
                     base.create_device_and_staging_buffer(self.instance_buffer_size, &[0], vk::BufferUsageFlags::VERTEX_BUFFER, false, true, false);
                 (self.material_buffers[i], self.material_staging_buffer) =
-                    base.create_device_and_staging_buffer(0, &materials_send, vk::BufferUsageFlags::STORAGE_BUFFER, false, false, true);
+                    base.create_device_and_staging_buffer(self.material_buffer_size, &materials_send, vk::BufferUsageFlags::STORAGE_BUFFER, false, false, true);
                 (self.lights_buffers[i], self.lights_staging_buffer) =
-                    base.create_device_and_staging_buffer(size_of::<LightSendable>() as u64 * 100, &lights_send, vk::BufferUsageFlags::STORAGE_BUFFER, false, true, true);
+                    base.create_device_and_staging_buffer(self.lights_buffers_size, &lights_send, vk::BufferUsageFlags::STORAGE_BUFFER, false, true, true);
             } else {
                 self.instance_buffers[i] = base.create_device_and_staging_buffer(self.instance_buffer_size, &[0], vk::BufferUsageFlags::VERTEX_BUFFER, true, false, false).0;
-                self.material_buffers[i] = base.create_device_and_staging_buffer(0, &materials_send, vk::BufferUsageFlags::STORAGE_BUFFER, true, false, true).0;
-                self.lights_buffers[i] = base.create_device_and_staging_buffer(0, &lights_send, vk::BufferUsageFlags::STORAGE_BUFFER, true, false, true).0;
+                self.material_buffers[i] = base.create_device_and_staging_buffer(self.material_buffer_size, &materials_send, vk::BufferUsageFlags::STORAGE_BUFFER, true, false, true).0;
+                self.lights_buffers[i] = base.create_device_and_staging_buffer(self.lights_buffers_size, &lights_send, vk::BufferUsageFlags::STORAGE_BUFFER, true, false, true).0;
             }
         }
 
         self.update_instances_all_frames(base);
-        self.joints_buffers_size = 1;
+        self.joints_buffers_size = size_of::<Matrix>() as u64 * MAX_JOINTS;
         let mut joints_send = Vec::new();
         for model in self.models.iter_mut() {
             for skin in model.skins.iter_mut() {
-                self.joints_buffers_size += size_of::<Matrix>() as u64; // for skin joint offset matrix
                 skin.construct_joint_matrices(&model.nodes);
                 for joint in skin.joint_matrices.iter() {
-                    self.joints_buffers_size += size_of::<Matrix>() as u64;
                     joints_send.push(joint.clone());
                 }
             }
@@ -170,7 +170,6 @@ impl Scene {
                 self.joints_buffers[i] = base.create_device_and_staging_buffer(self.joints_buffers_size, &joints_send, vk::BufferUsageFlags::STORAGE_BUFFER, true, false, true).0;
             }
         }
-
         if load_textures {
             for model in self.models.iter_mut() {
                 model.construct_textures(base)
@@ -295,6 +294,11 @@ impl Scene {
             model.draw(base, draw_command_buffer, frustum);
         }
     } }
+
+    pub unsafe fn upload_model_live(&mut self, base: &VkBase, mut model: Model) {
+
+    }
+
 
     pub unsafe fn destroy(&mut self, base: &VkBase) { unsafe {
         for instance_buffer in &self.instance_buffers {
