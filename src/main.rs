@@ -87,9 +87,11 @@ fn main() -> Result<(), Box<dyn Error>> {
 }
 
 unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
+    let font = Font::new(base, "resources\\fonts\\JetBrainsMono-Bold.ttf");
+
     let mut world = Scene::new();
 
-    // world.add_model(Model::new(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("local_assets\\ffocks\\untitled.gltf").to_str().unwrap()));
+    // world.add_model(Model::new(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources\\models\\ffocks\\untitled.gltf").to_str().unwrap()));
     // world.models[0].transform_roots(&Vector::new_vec(0.0), &Vector::new_vec(0.0), &Vector::new_vec(0.01));
     // world.models[0].animations[0].repeat = true;
     // world.models[0].animations[0].start();
@@ -100,12 +102,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
 
     //world.add_model(Model::new("C:\\Graphics\\assets\\shadowTest\\shadowTest.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\asgard\\asgard.gltf"));
-    //world.add_model(Model::new("C:\\Graphics\\assets\\unitCube\\unitCube.gltf"));
-    //world.models[1].transform_roots(&Vector::new_vec3(0.0, 1.0, 0.0), &Vector::new_vec(0.0), &Vector::new_vec(1.0));
-    //world.add_model(Model::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf"));
-    world.add_model(Model::new("C:\\Graphics\\assets\\bistroGLTF\\untitled.gltf"));
-    //world.add_model(Model::new("C:\\Graphics\\assets\\mountain\\mountain.gltf"));
-    //world.add_model(Model::new("C:\\Graphics\\assets\\catTest\\catTest.gltf"));
+    //sa
     //world.add_model(Model::new("C:\\Graphics\\assets\\helmet\\DamagedHelmet.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\hydrant\\untitled.gltf"));
 
@@ -120,7 +117,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
 
 
 
-    let null_tex = base.create_2d_texture_image(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("local_assets\\null8x.png"), true);
+    let null_tex = base.create_2d_texture_image(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources\\null8x.png"), true);
     let mut image_infos: Vec<vk::DescriptorImageInfo> = Vec::with_capacity(1024);
     for model in &world.models {
         for texture in &model.textures {
@@ -1615,9 +1612,10 @@ unsafe fn do_controls(
         *paused = !*paused
     }
     if new_pressed_keys.contains(&PhysicalKey::Code(KeyCode::KeyM)) {
-        if (world.models.len() < 2) {
+        let models = world.models.len();
+        if models < 2 {
             world.upload_model_live(base, Model::new("C:\\Graphics\\assets\\cubes\\cubes.gltf"));
-            world.models[1].transform_roots(&player_camera.position, &player_camera.rotation, &Vector::new_vec(1.0));
+            world.models[0.max(models)].transform_roots(&player_camera.position, &player_camera.rotation, &Vector::new_vec(1.0));
         }
     }
 

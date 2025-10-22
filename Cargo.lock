@@ -551,6 +551,7 @@ dependencies = [
  "png 0.18.0",
  "rand 0.10.0-rc.0",
  "rayon",
+ "ttf-parser",
  "winit",
 ]
 
