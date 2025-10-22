@@ -6,7 +6,7 @@ use ash::vk::{Buffer, ClearColorValue, ClearDepthStencilValue, ClearValue, Descr
 use crate::{MAX_FRAMES_IN_FLIGHT};
 use crate::render::*;
 
-
+const SHADER_PATH: &str = "src\\render\\shaders\\spv\\";
 
 pub struct Shader {
     pub vertex_module: ShaderModule,
@@ -15,10 +15,10 @@ pub struct Shader {
 }
 impl Shader {
     pub unsafe fn new(base: &VkBase, vert_path: &str, frag_path: &str, geometry_path: Option<&str>) -> Self { unsafe {
-        let mut vertex_spv_file = Cursor::new(load_file(vert_path).unwrap());
-        let mut frag_spv_file = Cursor::new(load_file(frag_path).unwrap());
+        let mut vertex_spv_file = Cursor::new(load_file(&(SHADER_PATH.to_owned() + vert_path)).unwrap());
+        let mut frag_spv_file = Cursor::new(load_file(&(SHADER_PATH.to_owned() + frag_path)).unwrap());
         let geometry_spv_file: Option<Cursor<Vec<u8>>> = if geometry_path.is_some() {
-            Some(Cursor::new(load_file(geometry_path.unwrap()).unwrap()))
+            Some(Cursor::new(load_file(&(SHADER_PATH.to_owned() + geometry_path.unwrap())).unwrap()))
         } else {
             None
         };

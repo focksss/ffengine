@@ -70,12 +70,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     unsafe {
         #[cfg(debug_assertions)] {
             let mut shader_paths = Vec::new();
-            shader_paths.push("src\\shaders\\glsl\\geometry");
-            shader_paths.push("src\\shaders\\glsl\\shadow");
-            shader_paths.push("src\\shaders\\glsl\\ssao");
-            shader_paths.push("src\\shaders\\glsl\\bilateral_blur");
-            shader_paths.push("src\\shaders\\glsl\\lighting");
-            shader_paths.push("src\\shaders\\glsl\\quad");
+            shader_paths.push("src\\render\\shaders\\glsl\\geometry");
+            shader_paths.push("src\\render\\shaders\\glsl\\shadow");
+            shader_paths.push("src\\render\\shaders\\glsl\\ssao");
+            shader_paths.push("src\\render\\shaders\\glsl\\bilateral_blur");
+            shader_paths.push("src\\render\\shaders\\glsl\\lighting");
+            shader_paths.push("src\\render\\shaders\\glsl\\quad");
 
             compile_shaders(shader_paths).expect("Failed to compile shaders");
         }

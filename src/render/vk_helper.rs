@@ -1539,6 +1539,6 @@ pub fn compile_shaders(shader_directories: Vec<&str>) -> io::Result<()> {
     Ok(())
 }
 pub fn load_file(path: &str) -> io::Result<Vec<u8>> {
-    let path_final = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src\\shaders\\spv").join(path);
+    let path_final = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(path);
     fs::read(path_final)
 }
