@@ -127,7 +127,6 @@ impl Matrix {
         }
         result
     }
-
     pub fn set_and_mul_mat4(&mut self, other: &Matrix) {
         self.data = self.mul_mat4(other).data;
     }
@@ -209,13 +208,13 @@ impl Matrix {
         let rx = Matrix::new_rotate_x(x);
         let ry = Matrix::new_rotate_y(y);
         let rz = Matrix::new_rotate_z(z);
-        rx.mul_mat4(&ry).mul_mat4(&rz)
+        (rx * ry) * rz
     }
     pub fn new_rotate_euler_3f(x: f32, y: f32, z: f32) -> Self {
         let rx = Matrix::new_rotate_x(x);
         let ry = Matrix::new_rotate_y(y);
         let rz = Matrix::new_rotate_z(z);
-        rx.mul_mat4(&ry).mul_mat4(&rz)
+        (rx * ry) * rz
     }
 
     pub fn new_rotate_quaternion_vec4(quaternion: &Vector) -> Self {
@@ -299,7 +298,7 @@ impl Matrix {
         let t = Matrix::new_translation_vec3(&pos.mul_by_vec(&Vector::new_vec3(-1.0, -1.0, 1.0)));
         let r = Matrix::new_rotate_euler_vec3(&rot.mul_by_vec(&Vector::new_vec3(-1.0,1.0,-1.0)));
 
-        let result = r.mul_mat4(&t);
+        let result = r * t;
 
         result
     }

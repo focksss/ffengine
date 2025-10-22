@@ -1548,14 +1548,12 @@ impl Primitive {
                 f * (delta_uv2.1 * e1.0 - delta_uv1.1 * e2.0),
                 f * (delta_uv2.1 * e1.1 - delta_uv1.1 * e2.1),
                 f * (delta_uv2.1 * e1.2 - delta_uv1.1 * e2.2),
-            );
+            ).normalize_3d();
             let mut bitangent = Vector::new_vec3(
                 f * (-delta_uv2.0 * e1.0 + delta_uv1.0 * e2.0),
                 f * (-delta_uv2.0 * e1.1 + delta_uv1.0 * e2.1),
                 f * (-delta_uv2.0 * e1.2 + delta_uv1.0 * e2.2),
-            );
-            tangent.normalize_self_3d();
-            bitangent.normalize_self_3d();
+            ).normalize_3d();
 
             v1.tangent = tangent.to_array3();
             v2.tangent = tangent.to_array3();
@@ -1754,8 +1752,7 @@ impl Skin {
         let mut joint = 0;
         for node_index in self.joint_indices.iter() {
             self.joint_matrices.push(
-                nodes[*node_index].world_transform.clone().
-                    mul_mat4(&self.inverse_bind_matrices[joint])
+                nodes[*node_index].world_transform * self.inverse_bind_matrices[joint]
             );
             joint += 1
         }
@@ -1766,8 +1763,7 @@ impl Skin {
         let mut joint = 0;
         for node_index in self.joint_indices.iter() {
             self.joint_matrices.push(
-                nodes[*node_index].world_transform.clone().
-                    mul_mat4(&self.inverse_bind_matrices[joint])
+                nodes[*node_index].world_transform * self.inverse_bind_matrices[joint]
             );
             joint += 1
         }

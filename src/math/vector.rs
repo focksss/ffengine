@@ -89,24 +89,10 @@ impl Vector {
     }
 
     pub fn normalize_3d(&self) -> Vector {
-        self.div_float(self.magnitude_3d())
+        self / self.magnitude_3d()
     }
     pub fn normalize_4d(&self) -> Vector {
-        self.div_float(self.magnitude_4d())
-    }
-
-    pub fn normalize_self_3d(&mut self)  {
-        let temp = self.div_float(self.magnitude_3d());
-        self.x = temp.x;
-        self.y = temp.y;
-        self.z = temp.z;
-    }
-    pub fn normalize_self_4d(&mut self) {
-        let temp = self.div_float(self.magnitude_4d());
-        self.x = temp.x;
-        self.y = temp.y;
-        self.z = temp.z;
-        self.w = temp.w;
+        self / self.magnitude_4d()
     }
 
     pub fn euler_to_quat(&self) -> Vector {
@@ -138,9 +124,6 @@ impl Vector {
             self.y * other.z - self.z * other.y,
             self.z * other.x - self.x * other.z,
             self.x * other.y - self.y * other.x)
-    }
-    pub fn add_vec(&self, vec: &Vector) -> Vector {
-        Vector::new_vec4(self.x + vec.x, self.y + vec.y, self.z + vec.z, self.w + vec.w)
     }
 
     pub fn add_vec_to_self(&mut self, vec: &Vector) {
@@ -218,7 +201,7 @@ impl Vector {
         let mut dot = a.dot(&b).clamp(-1.0, 1.0);
 
         if dot < 0.0 {
-            b = b.mul_float(-1.0);
+            b = b * -1.0;
             dot = -dot;
         }
 
@@ -232,7 +215,7 @@ impl Vector {
         let w1 = ((1.0 - t) * theta).sin() / sin_theta;
         let w2 = (t * theta).sin() / sin_theta;
 
-        a.mul_float(w1).add_vec(&b.mul_float(w2)).normalize_4d()
+        (a * w1 + b * w2).normalize_4d()
     }
 
     pub fn rotate(&self, rot: &Vector) -> Vector {
@@ -268,12 +251,6 @@ impl Vector {
     }
     pub fn sub_float(&self, v: f32) -> Vector {
         Vector::new_vec4(self.x - v, self.y - v, self.z - v, self.w - v)
-    }
-    pub fn mul_float(&self, v: f32) -> Vector {
-        Vector::new_vec4(self.x * v, self.y * v, self.z * v, self.w * v)
-    }
-    pub fn div_float(&self, v: f32) -> Vector {
-        Vector::new_vec4(self.x / v, self.y / v, self.z / v, self.w / v)
     }
     //</editor-fold>
     

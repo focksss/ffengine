@@ -51,14 +51,9 @@ impl Camera {
     }
 
     pub fn update_frustum(&mut self) {
-        let cam_front = Vector::new_vec3(0.0,0.0,1.0).
-            rotate(&(&self.rotation.
-                mul_by_vec(&Vector::new_vec3(1.0, 1.0, 1.0))).
-                add_vec(&Vector::new_vec3(0.0,-PI,0.0)));
-        let cam_up = Vector::new_vec3(0.0,1.0,0.0).
-            rotate(&(&self.rotation.
-                mul_by_vec(&Vector::new_vec3(1.0, 1.0, 1.0))).
-                add_vec(&Vector::new_vec3(0.0,-PI,0.0)));
+        let rotation = &self.rotation.mul_by_vec(&Vector::new_vec3(1.0, 1.0, 1.0)) + Vector::new_vec3(0.0,-PI,0.0);
+        let cam_front = Vector::new_vec3(0.0,0.0,1.0).rotate(&rotation);
+        let cam_up = Vector::new_vec3(0.0,1.0,0.0).rotate(&rotation);
         let cam_right = cam_up.cross(&cam_front).normalize_3d();
 
         let half_v = self.far * (self.fov_y*0.5).to_radians().tan();
