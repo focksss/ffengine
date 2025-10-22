@@ -8,10 +8,10 @@ use std::time::SystemTime;
 use ash::vk;
 use ash::vk::{CommandBuffer, DeviceMemory, ImageView, Sampler};
 use json::JsonValue;
-use crate::matrix::Matrix;
-use crate::camera::{Camera, Frustum};
-use crate::vector::Vector;
-use crate::vk_helper::{copy_data_to_memory, VkBase};
+use crate::math::matrix::Matrix;
+use crate::engine::camera::{Camera, Frustum};
+use crate::render::*;
+use crate::math::vector::Vector;
 
 // SHOULD DETECT MATH VS COLOR DATA TEXTURES, LOAD COLOR AS SRGB, MATH AS UNORM
 const MAX_VERTICES: u64 = 10u64 * 10u64.pow(6);

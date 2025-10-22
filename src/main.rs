@@ -1,10 +1,7 @@
 #![warn(unused_qualifications)]
-mod matrix;
-mod vector;
-mod vk_helper;
-mod camera;
-mod scene;
 mod render;
+mod math;
+mod engine;
 
 use std::default::Default;
 use std::error::Error;
@@ -16,19 +13,18 @@ use std::time::Instant;
 
 use ash::vk;
 use ash::vk::{DescriptorType, Extent2D, Format, ImageAspectFlags, ImageSubresourceRange, Offset2D, ShaderStageFlags};
-use winit::dpi::{PhysicalPosition};
+use winit::dpi::PhysicalPosition;
 use winit::event::{ElementState, Event, KeyEvent, WindowEvent};
 use winit::event_loop::ControlFlow;
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
 use winit::window::CursorGrabMode;
 use rand::*;
-use crate::{vk_helper::*, vector::*};
-use crate::scene::{Scene, Model, Instance, Light};
-use crate::camera::Camera;
-use crate::render::{Pass, PassCreateInfo, Shader, TextureCreateInfo};
-
-//TODO Choose between making buffers with high sizes and reusing or reinitializing every time scene udpates
+use math::vector::*;
+use engine::scene::{Instance, Light, Model, Scene};
+use engine::camera::Camera;
+use engine::scene;
+use crate::render::*;
 
 #[derive(Clone, Debug, Copy)]
 #[repr(C)]
@@ -103,11 +99,11 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
     //world.add_model(Model::new("C:\\Graphics\\assets\\rivals\\luna\\gltf\\luna.gltf"));
 
     //world.add_model(Model::new("C:\\Graphics\\assets\\shadowTest\\shadowTest.gltf"));
-    world.add_model(Model::new("C:\\Graphics\\assets\\rectangle\\rectangle.gltf"));
+    //world.add_model(Model::new("C:\\Graphics\\assets\\asgard\\asgard.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\unitCube\\unitCube.gltf"));
     //world.models[1].transform_roots(&Vector::new_vec3(0.0, 1.0, 0.0), &Vector::new_vec(0.0), &Vector::new_vec(1.0));
     //world.add_model(Model::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf"));
-    //world.add_model(Model::new("C:\\Graphics\\assets\\bistroGLTF\\untitled.gltf"));
+    world.add_model(Model::new("C:\\Graphics\\assets\\bistroGLTF\\untitled.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\mountain\\mountain.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\catTest\\catTest.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\helmet\\DamagedHelmet.gltf"));
@@ -1622,7 +1618,6 @@ unsafe fn do_controls(
         if (world.models.len() < 2) {
             world.upload_model_live(base, Model::new("C:\\Graphics\\assets\\cubes\\cubes.gltf"));
             world.models[1].transform_roots(&player_camera.position, &player_camera.rotation, &Vector::new_vec(1.0));
-            world.models[0].transform_roots(&player_camera.position, &player_camera.rotation, &Vector::new_vec(1.0));
         }
     }
 

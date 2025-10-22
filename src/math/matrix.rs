@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use std::ops::Mul;
-use crate::vector::Vector;
+use crate::math::vector::Vector;
 const PI: f32 = std::f32::consts::PI;
 #[derive(Debug, Copy, Clone)]
 pub struct Matrix {

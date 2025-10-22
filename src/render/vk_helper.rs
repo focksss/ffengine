@@ -15,7 +15,7 @@ use ash::util::{Align};
 use ash::vk::{Buffer, CommandBuffer, DeviceMemory, Extent3D, Format, Image, ImageAspectFlags, ImageSubresourceLayers, ImageSubresourceRange, ImageUsageFlags, ImageView, MemoryPropertyFlags, Offset3D, Sampler, SurfaceFormatKHR, SwapchainKHR};
 use winit::{event_loop::EventLoop, raw_window_handle::{HasDisplayHandle, HasWindowHandle}, window::WindowBuilder};
 use crate::render::{Texture, TextureCreateInfo};
-use crate::scene::Vertex;
+use crate::engine::scene::Vertex;
 
 // Simple offset_of macro akin to C++ offsetof
 #[macro_export]

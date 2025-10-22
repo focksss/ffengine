@@ -1,5 +1,5 @@
-use crate::matrix::Matrix;
-use crate::vector::Vector;
+use crate::math::matrix::Matrix;
+use crate::math::vector::Vector;
 
 const PI: f32 = std::f32::consts::PI;
 pub struct Camera {
