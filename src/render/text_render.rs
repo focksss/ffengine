@@ -39,7 +39,7 @@ impl Font {
             image_view: atlas.0.0,
             device_memory: atlas.1.1,
             clear_value: vk::ClearValue::default(),
-            format: vk::Format::R16G16B16A16_SFLOAT,
+            format: vk::Format::R8G8B8A8_UNORM,
             resolution: vk::Extent3D::default(),
             array_layers: 1,
             samples: base.msaa_samples,
