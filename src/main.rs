@@ -70,12 +70,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     unsafe {
         #[cfg(debug_assertions)] {
             let mut shader_paths = Vec::new();
-            shader_paths.push("src\\render\\shaders\\glsl\\geometry");
-            shader_paths.push("src\\render\\shaders\\glsl\\shadow");
-            shader_paths.push("src\\render\\shaders\\glsl\\ssao");
-            shader_paths.push("src\\render\\shaders\\glsl\\bilateral_blur");
-            shader_paths.push("src\\render\\shaders\\glsl\\lighting");
-            shader_paths.push("src\\render\\shaders\\glsl\\quad");
+            shader_paths.push("resources\\shaders\\glsl\\geometry");
+            shader_paths.push("resources\\shaders\\glsl\\shadow");
+            shader_paths.push("resources\\shaders\\glsl\\ssao");
+            shader_paths.push("resources\\shaders\\glsl\\bilateral_blur");
+            shader_paths.push("resources\\shaders\\glsl\\lighting");
+            shader_paths.push("resources\\shaders\\glsl\\quad");
 
             compile_shaders(shader_paths).expect("Failed to compile shaders");
         }
@@ -101,7 +101,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
     //world.add_model(Model::new("C:\\Graphics\\assets\\rivals\\luna\\gltf\\luna.gltf"));
 
     //world.add_model(Model::new("C:\\Graphics\\assets\\shadowTest\\shadowTest.gltf"));
-    //world.add_model(Model::new("C:\\Graphics\\assets\\asgard\\asgard.gltf"));
+    world.add_model(Model::new("C:\\Graphics\\assets\\asgard\\asgard.gltf"));
     //sa
     //world.add_model(Model::new("C:\\Graphics\\assets\\helmet\\DamagedHelmet.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\hydrant\\untitled.gltf"));
