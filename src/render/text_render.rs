@@ -30,7 +30,7 @@ impl<'a> TextRenderer<'a> {
         let color_tex_create_info = TextureCreateInfo::new(base).format(Format::R16G16B16A16_SFLOAT);
         let pass_create_info = PassCreateInfo::new(base)
             .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
-            .add_color_attachment_info(color_tex_create_info)
+            .add_color_attachment_info(color_tex_create_info.usage_flags(color_tex_create_info.usage_flags | vk::ImageUsageFlags::TRANSFER_SRC))
             .depth_attachment_info(TextureCreateInfo::new(base).format(Format::D16_UNORM).is_depth(true).clear_value([1.0, 0.0, 0.0, 0.0])); // depth
         let renderpass = Pass::new(pass_create_info);
         //</editor-fold>
@@ -147,18 +147,18 @@ impl<'a> TextRenderer<'a> {
             max_depth_bounds: 1.0,
             ..Default::default()
         };
-        let null_blend_attachment = vk::PipelineColorBlendAttachmentState {
-            blend_enable: vk::FALSE,  // Disable blending
-            src_color_blend_factor: vk::BlendFactor::ONE,
-            dst_color_blend_factor: vk::BlendFactor::ZERO,
+        let color_blend_attachment_states = [vk::PipelineColorBlendAttachmentState {
+            blend_enable: vk::TRUE,
+            src_color_blend_factor: vk::BlendFactor::SRC_ALPHA,
+            dst_color_blend_factor: vk::BlendFactor::ONE_MINUS_SRC_ALPHA,
             color_blend_op: vk::BlendOp::ADD,
             src_alpha_blend_factor: vk::BlendFactor::ONE,
-            dst_alpha_blend_factor: vk::BlendFactor::ZERO,
+            dst_alpha_blend_factor: vk::BlendFactor::ONE_MINUS_SRC_ALPHA,
             alpha_blend_op: vk::BlendOp::ADD,
             color_write_mask: vk::ColorComponentFlags::RGBA,
-        };
-        let null_blend_states = [null_blend_attachment; 1];
-        let null_blend_state = vk::PipelineColorBlendStateCreateInfo::default().attachments(&null_blend_states);
+        }];
+        let color_blend_state = vk::PipelineColorBlendStateCreateInfo::default()
+            .attachments(&color_blend_attachment_states);
 
         let shader_create_info = shader.generate_shader_stage_create_infos();
 
@@ -172,7 +172,7 @@ impl<'a> TextRenderer<'a> {
             .vertex_input_state(&vertex_input_state_info)
             .multisample_state(&multisample_state_info)
             .render_pass(renderpass.renderpass)
-            .color_blend_state(&null_blend_state)
+            .color_blend_state(&color_blend_state)
             .layout(pipeline_layout)
             .depth_stencil_state(&depth_state_info);
 
@@ -316,7 +316,7 @@ pub struct TextInformation<'a> {
     font_size: f32,
     scale_vector: Vector,
     color: Vector,
-    newline_distance: f32,
+    auto_wrap_distance: f32,
     bold: bool,
     italic: bool,
 
@@ -336,7 +336,7 @@ impl<'a> TextInformation<'a> {
             font_size: 0.1,
             scale_vector: Vector::new_vec(1.0),
             color: Vector::new_vec(1.0),
-            newline_distance: 20.0,
+            auto_wrap_distance: 20.0,
             bold: false,
             italic: false,
 
@@ -369,49 +369,66 @@ impl<'a> TextInformation<'a> {
         let font = &self.font;
         let per_line_shift = (font.ascent - font.descent) + font.line_gap;
         let scale_factor = self.scale_vector * self.font_size;
+        let space_advance = font.glyphs.get_key_value(&' ').unwrap().1.advance;
+        let auto_wrap_distance = self.auto_wrap_distance / self.font_size;
 
         self.glyph_count = 0;
-        let mut vertices = Vec::new();
-        let mut indices = Vec::new();
-        let mut advance_sum = 0.0;
-        let line_shift = 0.0;
+        let mut vertices: Vec<GlyphQuadVertex> = Vec::new();
+        let mut indices: Vec<u32> = Vec::new();
 
-        for character in self.text.chars() {
-            if let Some(glyph_pattern) = font.glyphs.get_key_value(&character) {
-                self.glyph_count += 1;
-                let glyph = glyph_pattern.1;
-                let position_extent = (glyph.plane_max - glyph.plane_min) * scale_factor;
-                let uv_extent = glyph.uv_max - glyph.uv_min;
+        let mut words = Vec::new();
+        let mut advances = Vec::new();
 
-                let p = Vector::new_vec2(advance_sum, line_shift) * scale_factor;
-                let bl = GlyphQuadVertex::new( // min
-                    p + (glyph.plane_min * scale_factor),
-                    glyph.uv_min,
-                    self.color
-                );
-                let tl = GlyphQuadVertex::new(
-                    p + (glyph.plane_min * scale_factor) + Vector::new_vec2(0.0, position_extent.y),
-                    glyph.uv_min + Vector::new_vec2(0.0, uv_extent.y),
-                    self.color
-                );
-                let tr = GlyphQuadVertex::new( // max
-                    p + (glyph.plane_max * scale_factor),
-                    glyph.uv_max,
-                    self.color
-                );
-                let br = GlyphQuadVertex::new(
-                    p + (glyph.plane_min * scale_factor) + Vector::new_vec2(position_extent.x, 0.0),
-                    glyph.uv_min + Vector::new_vec2(uv_extent.x, 0.0),
-                    self.color
-                );
-                let v = vertices.len() as u32;
-                vertices.push(bl); vertices.push(tl); vertices.push(tr); vertices.push(br);
-                indices.push(v); indices.push(v + 1); indices.push(v + 2);
-                indices.push(v); indices.push(v + 2); indices.push(v + 3);
-
-                advance_sum += glyph.advance;
-            } // else the character is not included in the font atlas, and will be skipped.
+        let mut advance = 0.0;
+        {
+            let mut current_word = Vec::new();
+            for character in self.text.chars() {
+                if let Some(glyph_pattern) = font.glyphs.get_key_value(&character) {
+                    let glyph = glyph_pattern.1;
+                    current_word.push(glyph);
+                    advance += glyph.advance;
+                    if character == ' ' {
+                        words.push(current_word.clone());
+                        advances.push(advance);
+                        current_word.clear();
+                        advance = 0.0;
+                    }
+                } // else the character is not included in the font atlas, and will be skipped.
+            }
+            if !current_word.is_empty() {
+                words.push(current_word);
+                advances.push(advance);
+            }
         }
+        let mut advance_sum = 0.0;
+        let mut line_shift = 0.0;
+        let word_advance = |word: &Vec<&Glyph>| -> f32 {
+            word.iter().map(|g| g.advance).sum()
+        };
+        for (i, word) in words.iter().enumerate() {
+            let w_advance = word_advance(word);
+
+            if advance_sum > 0.0 && (advance_sum + w_advance) > auto_wrap_distance {
+                line_shift -= per_line_shift;
+                advance_sum = 0.0;
+            }
+
+            for glyph in word.iter() {
+                if advance_sum > 0.0 && (advance_sum + glyph.advance) > auto_wrap_distance {
+                    line_shift -= per_line_shift;
+                    advance_sum = 0.0;
+                }
+                let p = Vector::new_vec2(advance_sum, line_shift);
+                glyph.push_to_buffers(&mut vertices, &mut indices, p, &scale_factor, &self.color);
+                self.glyph_count += 1;
+                advance_sum += glyph.advance;
+            }
+
+            if i != words.len() - 1 {
+                advance_sum += space_advance;
+            }
+        }
+
         unsafe {
             (self.vertex_buffer, self.vertex_staging_buffer) =
                 self.base.create_device_and_staging_buffer(
@@ -454,7 +471,7 @@ impl<'a> TextInformation<'a> {
         self
     }
     pub fn newline_distance(mut self, distance: f32) -> Self {
-        self.newline_distance = distance;
+        self.auto_wrap_distance = distance;
         self
     }
     pub fn bold(mut self, bold: bool) -> Self {
@@ -620,5 +637,40 @@ pub struct Glyph {
     pub plane_max: Vector,
     pub advance: f32,
 }
+impl Glyph {
+    pub fn get_quad(&self, position: Vector, scale_factor: &Vector, color: &Vector) -> [GlyphQuadVertex; 4] {
+        let position_extent = (self.plane_max - self.plane_min) * scale_factor;
+        let uv_extent = self.uv_max - self.uv_min;
 
+        let p = position * scale_factor;
+        let bl = GlyphQuadVertex::new( // min
+            p + (self.plane_min * scale_factor),
+            self.uv_min,
+            color.clone()
+        );
+        let tl = GlyphQuadVertex::new(
+            p + (self.plane_min * scale_factor) + Vector::new_vec2(0.0, position_extent.y),
+            self.uv_min + Vector::new_vec2(0.0, uv_extent.y),
+            color.clone()
+        );
+        let tr = GlyphQuadVertex::new( // max
+            p + (self.plane_max * scale_factor),
+            self.uv_max,
+            color.clone()
+        );
+        let br = GlyphQuadVertex::new(
+            p + (self.plane_min * scale_factor) + Vector::new_vec2(position_extent.x, 0.0),
+            self.uv_min + Vector::new_vec2(uv_extent.x, 0.0),
+            color.clone()
+        );
+        [bl, tl, tr, br]
+    }
+    pub fn push_to_buffers(&self, vertex_buffer: &mut Vec<GlyphQuadVertex>, index_buffer: &mut Vec<u32>, position: Vector, scale_factor: &Vector, color: &Vector) {
+        let v = vertex_buffer.len() as u32;
+        let [bl, tl, tr, br] = self.get_quad(position, &scale_factor, &color);
+        vertex_buffer.push(bl); vertex_buffer.push(tl); vertex_buffer.push(tr); vertex_buffer.push(br);
+        index_buffer.push(v); index_buffer.push(v + 1); index_buffer.push(v + 2);
+        index_buffer.push(v); index_buffer.push(v + 2); index_buffer.push(v + 3);
+    }
+}
 

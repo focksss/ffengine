@@ -88,21 +88,31 @@ fn main() -> Result<(), Box<dyn Error>> {
 }
 
 unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
-    let font = Font::new(base, "resources\\fonts\\JetBrainsMono-Bold.ttf", Some(64), Some(2.0));
+    //let font = Font::new(base, "resources\\fonts\\JetBrainsMono-Bold.ttf", Some(64), Some(2.0));
+    //let font = Font::new(base, "resources\\fonts\\MonsieurLaDoulaise-Regular.ttf", Some(128), Some(2.0));
+    let font = Font::new(base, "resources\\fonts\\Oxygen-Regular.ttf", Some(32), Some(2.0));
     let text_renderer = TextRenderer::new(base);
+
+    let test_tex = TextInformation::new(&font)
+        .text("In a democracy, citizens must have access to information about what 891 their elected representatives are doing to keep watch on their activities, hold them accountable, and potentially punish them at the voting booth if those representatives are no longer serving their interests. On the other side of the equation, elected representatives need to know what their constituents want to get elected and to carry out their wishes once they are in office. Conveying opinions and preferences to candidates or elected officials requires that people have preferences on issues in the first place and that these preferences are coherent and meaningful. These are the challenges of measuring public opinion, which is the sum of individual attitudes about government, policies, and issues. In this chapter, we will focus on American public opinion in one specific area: the treatment of young African Americans. Following several high-profile police shootings of unarmed African American men, protests erupted, including those by players in the National Football League. We will question whether or not these events have produced meaningful changes in American public opinion on issues involving both officer safety and civil liberties. public opinion the sum of individual attitudes about government, policies, and issues. 892 Differing Views of Race Discrimination in America On August 9, 2014, law enforcement office Darren Wilson shot and killed Michael Brown following a confrontation in Ferguson, Missouri. In an interview with ABC News in fall 2014, Darren Wilson, who had announced his resignation from the Ferguson Police Department, argued that he acted in self-defense in killing Brown: “I had to. If I don’t, he [Brown] will kill me if he gets to me.” Some eyewitnesses said that Brown had his hands raised in surrender when he was shot. The day after Brown’s death protesters gathered peacefully in Ferguson. Tension, however, flared off and on through the evening. By nightfall, there was violence: “After a candlelight vigil, people smash[ed] car windows, carr[ied] away armloads of looted goods from stores and burn[ed] down a Quick Trip.” By the time the first wave of violence ended, “more than two dozen businesses in Ferguson and neighboring Dellwood were damaged or looted.” The protests, some peaceful and some violent, continued for weeks. In the weeks following Brown’s death, many of the protestors and other residents of Ferguson called for the arrest and prosecution of the officer who had shot Brown. Some chanted, “Black lives matter.” The social movement to which the protesters were referring existed before Ferguson. It had begun with the Twitter hashtag #BlackLivesMatter, 1 2 3 4 893 which sprang into use following the 2013 acquittal of George Zimmerman in the shooting death of Trayvon Martin in Florida. After Ferguson, however, Black Lives Matter became part of the national conversation in ways it had never been before. Time magazine included the protestors of Ferguson in its list of candidates for “Person of the Year.” The Black Lives Matter movement began after the death of Trayvon Martin, an unarmed black Florida teenager who was shot to death by a white neighborhood watch volunteer in 2012. The group continued protesting in Ferguson after Michael Brown’s death. How Events at Ferguson Led to Change in Public Opinion By 2015, the national conversation had changed. Maybe this was due 5 894 to one specific tragic event or to several deaths of young African American men during police stops and arrests in 2014. Perhaps it was due to a complicated mixture of events, media coverage, and the use of social media that followed these deaths. Regardless of the exact reason, public opinion on the issue of police-citizen interactions, especially in predominantly African American communities, appeared to be shifting. To many Americans, especially whites, the protesters’ anger over the events in Ferguson came as a surprise. To individuals within African American communities across the country, the only surprising thing about the fallout from Ferguson was that the issue had not come to the public’s attention sooner. According to former Representative John Conyers of Michigan, who was the dean of the Congressional Black Caucus at the time, “There are virtually no African American males—including congressmen, actors, athletes and office workers, who have not been stopped at one time or another for driving while black.” Less than two weeks following Brown’s death, the Pew Research Center published the results of a public opinion survey of Americans’ responses to what Ferguson and racial identity meant in the larger national conversation. To conduct the survey, researchers had contacted a random sample of one thousand American adults, half via landlines and half via cell phones. The divisions between African Americans and whites on what Ferguson meant were clear. Eighty percent of blacks said that Brown’s shooting raised “important issues about race.” Only 37 percent of white respondents agreed. Forty-seven percent of whites said that “race [was] getting more attention than it 6 895 deserves.” Police officers nationwide felt an impact from the events in Ferguson.")
+        .position(Vector::new_vec2(100.0, 1000.0))
+        .font_size(32.0)
+        .newline_distance(1720.0)
+        .update_buffers();
 
     let mut world = Scene::new();
 
-    world.preload_model(Model::new(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources\\models\\ffocks\\untitled.gltf").to_str().unwrap()));
-    world.models[0].transform_roots(&Vector::new_vec(0.0), &Vector::new_vec(0.0), &Vector::new_vec(0.01));
-    world.models[0].animations[0].repeat = true;
-    world.models[0].animations[0].start();
+    //world.preload_model(Model::new(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources\\models\\ffocks\\untitled.gltf").to_str().unwrap()));
+    //world.models[0].transform_roots(&Vector::new_vec(0.0), &Vector::new_vec(0.0), &Vector::new_vec(0.01));
+    //world.models[0].animations[0].repeat = true;
+    //world.models[0].animations[0].start();
 
     //world.add_model(Model::new("C:\\Graphics\\assets\\flower\\scene.gltf"));
     //world.models[0].transform_roots(&Vector::new_vec3(0.0, 1.0, 0.0), &Vector::new_vec(0.0), &Vector::new_vec(1.0));
-    //world.add_model(Model::new("C:\\Graphics\\assets\\rivals\\luna\\gltf\\luna.gltf"));
+    //world.preload_model(Model::new("C:\\Graphics\\assets\\rivals\\luna\\gltf\\luna.gltf"));
 
-    //world.add_model(Model::new("C:\\Graphics\\assets\\shadowTest\\shadowTest.gltf"));
+    world.preload_model(Model::new("C:\\Graphics\\assets\\shadowTest\\shadowTest.gltf"));
+    //world.preload_model(Model::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\asgard\\asgard.gltf"));
     //sa
     //world.add_model(Model::new("C:\\Graphics\\assets\\helmet\\DamagedHelmet.gltf"));
@@ -114,8 +124,8 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
 
     world.initialize(base, MAX_FRAMES_IN_FLIGHT, true);
 
-    world.models[0].animations[0].repeat = true;
-    world.models[0].animations[0].start();
+    //world.models[0].animations[0].repeat = true;
+    //world.models[0].animations[0].start();
 
 
 
@@ -191,7 +201,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
 
     let lighting_pass_create_info = PassCreateInfo::new(base)
         .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
-        .add_color_attachment_info(color_tex_create_info)
+        .add_color_attachment_info(color_tex_create_info.usage_flags(color_tex_create_info.usage_flags | vk::ImageUsageFlags::TRANSFER_SRC))
         .depth_attachment_info(TextureCreateInfo::new(base).format(Format::D16_UNORM).is_depth(true).clear_value([1.0, 0.0, 0.0, 0.0])); // depth
     let lighting_pass = Pass::new(lighting_pass_create_info);
 
@@ -1048,12 +1058,8 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
         base.window.inner_size().height as f32 * 0.5))
         .expect("failed to reset mouse position");
 
-
-    let test_tex = TextInformation::new(&font)
-        .text("Hello World!")
-        .position(Vector::new_vec2(0.5, 0.5))
-        .font_size(0.1)
-        .update_buffers();
+    let mut screenshot_manager = ScreenshotManager::new(base, &lighting_pass.textures[0][0]);
+    let mut screenshot_pending = false;
 
     base.event_loop.borrow_mut().run_on_demand(|event, elwp| {
         elwp.set_control_flow(ControlFlow::Poll);
@@ -1148,7 +1154,18 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                 if needs_resize {
 
                 }
-                do_controls(&mut player_camera, &pressed_keys, &mut new_pressed_keys, delta_time, &mut cursor_locked, base, &mut saved_cursor_pos, &mut pause_frustum, &mut world);
+                do_controls(
+                    &mut player_camera,
+                    &pressed_keys,
+                    &mut new_pressed_keys,
+                    delta_time,
+                    &mut cursor_locked,
+                    base,
+                    &mut saved_cursor_pos,
+                    &mut pause_frustum,
+                    &mut screenshot_pending,
+                    &mut world
+                );
                 player_camera.update_matrices();
 
                 if !pause_frustum {
@@ -1471,8 +1488,13 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
 
                         device.cmd_end_render_pass(frame_command_buffer);
                         //</editor-fold>
+
+                        if screenshot_pending {
+                            screenshot_manager.screenshot_queue(&text_renderer.renderpass.textures[0][0], vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL, current_draw_command_buffer);
+                        }
                     },
                 );
+
                 let wait_semaphores = [current_rendering_complete_semaphore];
                 let swapchains = [base.swapchain];
                 let image_indices = [present_index];
@@ -1484,6 +1506,20 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                 base.swapchain_loader
                     .queue_present(base.present_queue, &present_info)
                     .unwrap();
+                if screenshot_pending {
+                    base.device.queue_wait_idle(base.present_queue).unwrap();
+
+                    let timestamp = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs();
+                    let filename = format!("screenshots\\screenshot_{}.png", timestamp);
+
+                    screenshot_manager
+                        .save_screenshot(filename);
+
+                    screenshot_pending = false;
+                }
                 current_frame = (current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
             },
             _ => (),
@@ -1555,6 +1591,7 @@ unsafe fn do_controls(
     base: &VkBase,
     saved_cursor_pos: &mut PhysicalPosition<f64>,
     paused: &mut bool,
+    screenshot_pending: &mut bool,
     world: &mut Scene,
 ) { unsafe {
     if pressed_keys.contains(&PhysicalKey::Code(KeyCode::KeyW)) {
@@ -1629,6 +1666,9 @@ unsafe fn do_controls(
             world.add_model(base, Model::new("C:\\Graphics\\assets\\helmet\\DamagedHelmet.gltf"));
             world.models[0.max(models)].transform_roots(&player_camera.position, &player_camera.rotation, &Vector::new_vec(1.0));
         }
+    }
+    if new_pressed_keys.contains(&PhysicalKey::Code(KeyCode::F2)) {
+        *screenshot_pending = true;
     }
 
     //player_camera.position.println();
