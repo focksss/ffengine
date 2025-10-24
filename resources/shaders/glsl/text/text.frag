@@ -15,5 +15,5 @@ layout(push_constant) uniform constants {
 } ubo;
 
 void main() {
-    frag_color = vec4(1.0);
+    frag_color = vec4(texture(atlas, uv).rgb, 1.0);
 }

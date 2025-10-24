@@ -449,9 +449,9 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
         }).collect();
         base.device.update_descriptor_sets(&lighting_descriptor_writes, &[]);
 
-        let info = [vk::DescriptorImageInfo {
+        let present_info = [vk::DescriptorImageInfo {
             sampler,
-            image_view: lighting_pass.textures[current_frame][0].image_view,
+            image_view: text_renderer.renderpass.textures[current_frame][0].image_view,
             image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
         }];
         let present_descriptor_writes: Vec<vk::WriteDescriptorSet> = vec![
@@ -459,7 +459,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                 .dst_set(present_descriptor_set.descriptor_sets[current_frame])
                 .dst_binding(0)
                 .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
-                .image_info(&info)];
+                .image_info(&present_info)];
         base.device.update_descriptor_sets(&present_descriptor_writes, &[]);
 
         let image_infos = [
@@ -1052,6 +1052,12 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
         base.window.inner_size().height as f32 * 0.5))
         .expect("failed to reset mouse position");
 
+
+    let test_tex = TextInformation::new(&font)
+        .text("ABCDEFG")
+        .position(Vector::new_vec2(0.5, 0.5))
+        .update_buffers();
+
     base.event_loop.borrow_mut().run_on_demand(|event, elwp| {
         elwp.set_control_flow(ControlFlow::Poll);
         match event {
@@ -1438,6 +1444,9 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                         device.cmd_end_render_pass(frame_command_buffer);
                         //</editor-fold>
                         lighting_pass.transition_to_readable(base, frame_command_buffer, current_frame);
+
+                        text_renderer.render_text(current_frame, frame_command_buffer, &test_tex);
+
                         // <editor-fold desc = "present pass">
                         device.cmd_begin_render_pass(
                             frame_command_buffer,
@@ -1490,7 +1499,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
     //<editor-fold desc = "cleanup">
     base.device.device_wait_idle().unwrap();
 
-    font.destroy(base);
+    font.destroy();
     text_renderer.destroy();
 
     for pipeline in graphics_pipelines {
