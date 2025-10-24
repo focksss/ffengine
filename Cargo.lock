@@ -545,6 +545,7 @@ dependencies = [
  "ash",
  "ash-window",
  "bytemuck",
+ "half",
  "image",
  "jpeg-decoder",
  "json",
