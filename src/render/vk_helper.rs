@@ -157,8 +157,6 @@ pub struct VkBase {
 
     pub depth_texture: Texture,
 
-    pub color_texture: Texture,
-
     pub present_complete_semaphores: Vec<vk::Semaphore>,
     pub rendering_complete_semaphores: Vec<vk::Semaphore>,
 
@@ -421,17 +419,9 @@ impl VkBase {
             //</editor-fold>
             //<editor-fold desc = "depth">
             let depth_texture_create_info = TextureCreateInfo::new_without_base(&device, &pdevice, &instance, &surface_resolution)
-                .samples(msaa_samples)
                 .format(Format::D16_UNORM)
                 .is_depth(true);
             let depth_texture = Texture::new(&depth_texture_create_info);
-            //</editor-fold>
-            //<editor-fold desc = "color">
-            let color_image_create_info = TextureCreateInfo::new_without_base(&device, &pdevice, &instance, &surface_resolution)
-                .samples(msaa_samples)
-                .format(surface_format.format)
-                .usage_flags(ImageUsageFlags::TRANSIENT_ATTACHMENT);
-            let color_texture = Texture::new(&color_image_create_info);
             //</editor-fold>
 
             record_submit_commandbuffer(
@@ -509,7 +499,6 @@ impl VkBase {
                 draw_command_buffers,
                 setup_command_buffer,
                 depth_texture,
-                color_texture,
                 present_complete_semaphores,
                 rendering_complete_semaphores,
                 draw_commands_reuse_fences,
@@ -545,18 +534,10 @@ impl VkBase {
             //</editor-fold>
             //<editor-fold desc = "depth">
             let depth_texture_create_info = TextureCreateInfo::new(&self)
-                .samples(self.msaa_samples)
                 .format(Format::D16_UNORM)
                 .is_depth(true);
             self.depth_texture = Texture::new(&depth_texture_create_info);
             //</editor-fold>
-            //<editor-fold desc = "color">
-            let color_image_create_info = TextureCreateInfo::new(&self)
-                .samples(self.msaa_samples)
-                .format(surface_format.format)
-                .usage_flags(ImageUsageFlags::TRANSIENT_ATTACHMENT);
-            self.color_texture = Texture::new(&color_image_create_info);
-            //</editor-fold> {
         }
     }
     pub fn create_swapchain(
@@ -1436,7 +1417,6 @@ impl Drop for VkBase {
             self.device
                 .destroy_fence(self.setup_commands_reuse_fence, None);
             self.depth_texture.destroy(self);
-            self.color_texture.destroy(self);
 
             for &image_view in self.present_image_views.iter() {
                 self.device.destroy_image_view(image_view, None);

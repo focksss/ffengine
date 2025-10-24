@@ -276,6 +276,9 @@ impl<'a> TextRenderer<'a> {
                 clip_max: Vector::new_vec(1.0).to_array2(),
                 position: text_info.position.to_array2(),
                 resolution: [base.surface_resolution.width as i32, base.surface_resolution.height as i32],
+                glyph_size: font.glyph_size,
+                distance_range: font.distance_range,
+                _pad: [0; 2]
             } as *const TextPushConstants as *const u8,
             size_of::<TextPushConstants>(),
         ));
@@ -492,6 +495,9 @@ struct TextPushConstants {
     clip_max: [f32; 2],
     position: [f32; 2],
     resolution: [i32; 2],
+    glyph_size: u32,
+    distance_range: f32,
+    _pad: [u32; 2],
 }
 
 pub struct Font<'a> {
@@ -500,12 +506,16 @@ pub struct Font<'a> {
     pub sampler: Sampler,
     pub glyphs: HashMap<char, Glyph>,
     pub atlas_size: Vector,
+    pub glyph_size: u32,
+    pub distance_range: f32,
     pub ascent: f32,
     pub descent: f32,
     pub line_gap: f32,
 }
 impl<'a> Font<'a> {
-    pub fn new(base: &'a VkBase, path: &str) -> Self { unsafe {
+    pub fn new(base: &'a VkBase, path: &str, glyph_size: Option<u32>, distance_range: Option<f32>) -> Self { unsafe {
+        let glyph_size_final = glyph_size.unwrap_or(64);
+        let distance_range_final = distance_range.unwrap_or(2.0);
         let font_name = PathBuf::from(path).file_name()
             .expect("Font path must be to a named file")
             .to_str().unwrap().to_string()
@@ -525,8 +535,8 @@ impl<'a> Font<'a> {
                 "-font", path,
                 "-imageout", &atlas_path_str,
                 "-json", &json_path_str,
-                "-size", "64", // base pixel size for glyphs
-                "-pxrange", "2.0" // width of SDF distance range in output pixels
+                "-size", glyph_size_final.to_string().as_str(), // base pixel size for glyphs
+                "-pxrange", distance_range_final.to_string().as_str() // width of SDF distance range in output pixels
             ])
             .status()
             .expect("Failed to run msdfgen");
@@ -589,6 +599,8 @@ impl<'a> Font<'a> {
             sampler: atlas.0.1,
             glyphs,
             atlas_size: Vector::new_vec2(atlas_w, atlas_h),
+            glyph_size: glyph_size_final,
+            distance_range: distance_range_final,
             ascent,
             descent,
             line_gap,

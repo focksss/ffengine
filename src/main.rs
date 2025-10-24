@@ -88,7 +88,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 }
 
 unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
-    let font = Font::new(base, "resources\\fonts\\JetBrainsMono-Bold.ttf");
+    let font = Font::new(base, "resources\\fonts\\JetBrainsMono-Bold.ttf", Some(64), Some(2.0));
     let text_renderer = TextRenderer::new(base);
 
     let mut world = Scene::new();
@@ -867,10 +867,6 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
         ..Default::default()
     };
 
-    let multisample_state_info = vk::PipelineMultisampleStateCreateInfo {
-        rasterization_samples: base.msaa_samples,
-        ..Default::default()
-    };
     let null_multisample_state_info = vk::PipelineMultisampleStateCreateInfo {
         rasterization_samples: vk::SampleCountFlags::TYPE_1,
         ..Default::default()
@@ -1005,7 +1001,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
     let present_pipeline_info = base_pipeline_info
         .stages(&present_shader_create_info)
         .vertex_input_state(&null_vertex_input_state_info)
-        .multisample_state(&multisample_state_info)
+        .multisample_state(&null_multisample_state_info)
         .render_pass(present_pass.renderpass)
         .color_blend_state(&color_blend_state)
         .layout(present_pipeline_layout)

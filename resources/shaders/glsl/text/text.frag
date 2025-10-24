@@ -14,6 +14,8 @@ layout(push_constant) uniform constants {
     vec2 max;
     vec2 position;
     ivec2 resolution;
+    int glyph_size;
+    float distance_range;
 } ubo;
 
 float median(float r, float g, float b) {
@@ -24,7 +26,7 @@ void main() {
     vec3 msd = texture(atlas, uv).rgb;
     float sd = median(msd.r, msd.g, msd.b);
 
-    float screen_px_range = 2.0 * float(ubo.resolution.y) / 64.0;
+    float screen_px_range = ubo.distance_range * float(ubo.resolution.y) / float(ubo.glyph_size);
     float screen_px_distance = screen_px_range * (sd - 0.5);
 
     float opacity = clamp(screen_px_distance + 0.5, 0.0, 1.0);

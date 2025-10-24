@@ -14,6 +14,8 @@ layout(push_constant) uniform constants {
     vec2 max;
     vec2 position;
     ivec2 resolution;
+    int glyph_size;
+    float distance_range;
 } ubo;
 
 void main() {

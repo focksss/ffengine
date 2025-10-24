@@ -162,32 +162,21 @@ impl Pass {
             }
         } else {
             attachments_vec.push(vk::AttachmentDescription {
-                format: base.color_texture.format,
-                samples: base.msaa_samples,
+                format: base.surface_format.format,
+                samples: SampleCountFlags::TYPE_1,
                 load_op: vk::AttachmentLoadOp::CLEAR,
                 store_op: vk::AttachmentStoreOp::STORE,
                 initial_layout: vk::ImageLayout::UNDEFINED,
-                final_layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                final_layout: vk::ImageLayout::PRESENT_SRC_KHR,
                 ..Default::default()
             });
             attachments_vec.push(vk::AttachmentDescription {
                 format: base.depth_texture.format,
-                samples: base.msaa_samples,
+                samples: SampleCountFlags::TYPE_1,
                 load_op: vk::AttachmentLoadOp::CLEAR,
                 store_op: vk::AttachmentStoreOp::STORE,
                 initial_layout: vk::ImageLayout::UNDEFINED,
                 final_layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-                ..Default::default()
-            });
-            attachments_vec.push(vk::AttachmentDescription {
-                format: base.surface_format.format,
-                samples: SampleCountFlags::TYPE_1,
-                load_op: vk::AttachmentLoadOp::DONT_CARE,
-                store_op: vk::AttachmentStoreOp::STORE,
-                stencil_load_op: vk::AttachmentLoadOp::DONT_CARE,
-                stencil_store_op: vk::AttachmentStoreOp::DONT_CARE,
-                initial_layout: vk::ImageLayout::UNDEFINED,
-                final_layout: vk::ImageLayout::PRESENT_SRC_KHR,
                 ..Default::default()
             });
             color_attachment_refs_vec.push(vk::AttachmentReference {
@@ -212,16 +201,10 @@ impl Pass {
             ..Default::default()
         }];
 
-        let mut subpass = vk::SubpassDescription::default()
+        let subpass = vk::SubpassDescription::default()
             .color_attachments(&color_attachment_refs)
             .depth_stencil_attachment(&depth_attachment_ref)
             .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS);
-        if create_info.is_present_pass {
-            subpass = subpass.resolve_attachments(&[vk::AttachmentReference {
-                attachment: 2,
-                layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-            }]);
-        }
 
         let renderpass_create_info = vk::RenderPassCreateInfo::default()
             .attachments(&attachments)
@@ -270,17 +253,12 @@ impl Pass {
                         stencil: 0,
                     },
                 },
-                ClearValue {
-                    color: ClearColorValue {
-                        float32: [0.0, 0.0, 0.0, 0.0],
-                    },
-                },
             ];
             let present_framebuffers: Vec<vk::Framebuffer> = base
                 .present_image_views
                 .iter()
                 .map(|&present_image_view| {
-                    let framebuffer_attachments = [base.color_texture.image_view, base.depth_texture.image_view, present_image_view];
+                    let framebuffer_attachments = [present_image_view, base.depth_texture.image_view];
                     let framebuffer_create_info = vk::FramebufferCreateInfo::default()
                         .render_pass(renderpass)
                         .attachments(&framebuffer_attachments)
