@@ -76,6 +76,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             shader_paths.push("resources\\shaders\\glsl\\bilateral_blur");
             shader_paths.push("resources\\shaders\\glsl\\lighting");
             shader_paths.push("resources\\shaders\\glsl\\quad");
+            shader_paths.push("resources\\shaders\\glsl\\text");
 
             compile_shaders(shader_paths).expect("Failed to compile shaders");
         }
@@ -88,17 +89,18 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
     let font = Font::new(base, "resources\\fonts\\JetBrainsMono-Bold.ttf");
+    let text_renderer = TextRenderer::new(base);
 
     let mut world = Scene::new();
 
-    // world.add_model(Model::new(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources\\models\\ffocks\\untitled.gltf").to_str().unwrap()));
-    // world.models[0].transform_roots(&Vector::new_vec(0.0), &Vector::new_vec(0.0), &Vector::new_vec(0.01));
-    // world.models[0].animations[0].repeat = true;
-    // world.models[0].animations[0].start();
+    world.preload_model(Model::new(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources\\models\\ffocks\\untitled.gltf").to_str().unwrap()));
+    world.models[0].transform_roots(&Vector::new_vec(0.0), &Vector::new_vec(0.0), &Vector::new_vec(0.01));
+    world.models[0].animations[0].repeat = true;
+    world.models[0].animations[0].start();
 
     //world.add_model(Model::new("C:\\Graphics\\assets\\flower\\scene.gltf"));
     //world.models[0].transform_roots(&Vector::new_vec3(0.0, 1.0, 0.0), &Vector::new_vec(0.0), &Vector::new_vec(1.0));
-    world.add_model(Model::new("C:\\Graphics\\assets\\rivals\\luna\\gltf\\luna.gltf"));
+    //world.add_model(Model::new("C:\\Graphics\\assets\\rivals\\luna\\gltf\\luna.gltf"));
 
     //world.add_model(Model::new("C:\\Graphics\\assets\\shadowTest\\shadowTest.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\asgard\\asgard.gltf"));
@@ -268,30 +270,30 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
     let ssao_blur_descriptor_set_vertical = render::DescriptorSet::new(ssao_blur_descriptor_set_create_info);
     //</editor-fold>
     //<editor-fold desc = "lighting descriptor set">
-    let lights_ssbo_create_info = render::DescriptorCreateInfo::new(base)
+    let lights_ssbo_create_info = DescriptorCreateInfo::new(base)
         .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
         .descriptor_type(DescriptorType::STORAGE_BUFFER)
         .shader_stages(ShaderStageFlags::FRAGMENT)
         .buffers(world.lights_buffers.iter().map(|b| {b.0.clone()}).collect());
-    let lighting_ubo_create_info = render::DescriptorCreateInfo::new(base)
+    let lighting_ubo_create_info = DescriptorCreateInfo::new(base)
         .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
         .descriptor_type(DescriptorType::UNIFORM_BUFFER)
         .size(size_of::<LightingUniformData>() as u64)
         .shader_stages(ShaderStageFlags::FRAGMENT);
-    let lighting_descriptor_set_create_info = render::DescriptorSetCreateInfo::new(base)
+    let lighting_descriptor_set_create_info = DescriptorSetCreateInfo::new(base)
         .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
-        .add_descriptor(render::Descriptor::new(&texture_sampler_create_info))
-        .add_descriptor(render::Descriptor::new(&texture_sampler_create_info))
-        .add_descriptor(render::Descriptor::new(&texture_sampler_create_info))
-        .add_descriptor(render::Descriptor::new(&texture_sampler_create_info))
-        .add_descriptor(render::Descriptor::new(&texture_sampler_create_info))
-        .add_descriptor(render::Descriptor::new(&texture_sampler_create_info))
-        .add_descriptor(render::Descriptor::new(&texture_sampler_create_info))
-        .add_descriptor(render::Descriptor::new(&texture_sampler_create_info))
-        .add_descriptor(render::Descriptor::new(&lights_ssbo_create_info))
-        .add_descriptor(render::Descriptor::new(&lighting_ubo_create_info));
+        .add_descriptor(Descriptor::new(&texture_sampler_create_info))
+        .add_descriptor(Descriptor::new(&texture_sampler_create_info))
+        .add_descriptor(Descriptor::new(&texture_sampler_create_info))
+        .add_descriptor(Descriptor::new(&texture_sampler_create_info))
+        .add_descriptor(Descriptor::new(&texture_sampler_create_info))
+        .add_descriptor(Descriptor::new(&texture_sampler_create_info))
+        .add_descriptor(Descriptor::new(&texture_sampler_create_info))
+        .add_descriptor(Descriptor::new(&texture_sampler_create_info))
+        .add_descriptor(Descriptor::new(&lights_ssbo_create_info))
+        .add_descriptor(Descriptor::new(&lighting_ubo_create_info));
 
-    let lighting_descriptor_set = render::DescriptorSet::new(lighting_descriptor_set_create_info);
+    let lighting_descriptor_set = DescriptorSet::new(lighting_descriptor_set_create_info);
     //</editor-fold>
     // <editor-fold desc = "present descriptor set">
     let present_descriptor_set_create_info = render::DescriptorSetCreateInfo::new(base)
@@ -1484,8 +1486,12 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
 
 
     println!("Render loop exited successfully, cleaning up");
+
     //<editor-fold desc = "cleanup">
     base.device.device_wait_idle().unwrap();
+
+    font.destroy(base);
+    text_renderer.destroy();
 
     for pipeline in graphics_pipelines {
         base.device.destroy_pipeline(pipeline, None);
@@ -1614,7 +1620,7 @@ unsafe fn do_controls(
     if new_pressed_keys.contains(&PhysicalKey::Code(KeyCode::KeyM)) {
         let models = world.models.len();
         if models < 2 {
-            world.upload_model_live(base, Model::new("C:\\Graphics\\assets\\cubes\\cubes.gltf"));
+            world.add_model(base, Model::new("C:\\Graphics\\assets\\helmet\\DamagedHelmet.gltf"));
             world.models[0.max(models)].transform_roots(&player_camera.position, &player_camera.rotation, &Vector::new_vec(1.0));
         }
     }

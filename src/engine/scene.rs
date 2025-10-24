@@ -87,7 +87,7 @@ impl Scene {
         }
     }
 
-    pub fn add_model(&mut self, mut model: Model) {
+    pub fn preload_model(&mut self, mut model: Model) {
         let mut num_skins = 0i32;
         for scene_model in &self.models {
             num_skins += scene_model.skins.len() as i32;
@@ -196,7 +196,7 @@ impl Scene {
             }
         }
     } }
-    pub unsafe fn upload_model_live(&mut self, base: &VkBase, mut model: Model) { unsafe {
+    pub unsafe fn add_model(&mut self, base: &VkBase, mut model: Model) { unsafe {
         let mut new_vertices: Vec<Vertex> = vec![];
         let mut new_indices: Vec<u32> = vec![];
         let mut new_materials_send: Vec<MaterialSendable> = vec![];
