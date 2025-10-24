@@ -1054,8 +1054,9 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
 
 
     let test_tex = TextInformation::new(&font)
-        .text("ABCDEFG")
+        .text("Hello World!")
         .position(Vector::new_vec2(0.5, 0.5))
+        .font_size(0.1)
         .update_buffers();
 
     base.event_loop.borrow_mut().run_on_demand(|event, elwp| {

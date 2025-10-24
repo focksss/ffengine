@@ -1,4 +1,4 @@
-use crate::{mem, CameraMatrixUniformData};
+use crate::{mem};
 use std::collections::HashMap;
 use std::{fs, slice};
 use std::ffi::c_void;
@@ -49,7 +49,7 @@ impl<'a> TextRenderer<'a> {
         //</editor-fold>
         //<editor-fold desc = "graphics pipeline initiation">
         let push_constant_range = vk::PushConstantRange {
-            stage_flags: ShaderStageFlags::FRAGMENT,
+            stage_flags: ShaderStageFlags::ALL_GRAPHICS,
             offset: 0,
             size: size_of::<TextPushConstants>() as _,
         };
@@ -270,6 +270,15 @@ impl<'a> TextRenderer<'a> {
             &[self.descriptor_set.descriptor_sets[frame]],
             &[],
         );
+        device.cmd_push_constants(frame_command_buffer, self.pipeline_layout, ShaderStageFlags::ALL_GRAPHICS, 0, slice::from_raw_parts(
+            &TextPushConstants {
+                clip_min: Vector::new_vec(0.0).to_array2(),
+                clip_max: Vector::new_vec(1.0).to_array2(),
+                position: text_info.position.to_array2(),
+                resolution: [base.surface_resolution.width as i32, base.surface_resolution.height as i32],
+            } as *const TextPushConstants as *const u8,
+            size_of::<TextPushConstants>(),
+        ));
         device.cmd_bind_vertex_buffers(
             frame_command_buffer,
             0,
@@ -371,7 +380,7 @@ impl<'a> TextInformation<'a> {
                 let position_extent = (glyph.plane_max - glyph.plane_min) * scale_factor;
                 let uv_extent = glyph.uv_max - glyph.uv_min;
 
-                let p = self.position + (Vector::new_vec2(advance_sum, line_shift) * scale_factor);
+                let p = Vector::new_vec2(advance_sum, line_shift) * scale_factor;
                 let bl = GlyphQuadVertex::new( // min
                     p + (glyph.plane_min * scale_factor),
                     glyph.uv_min,
@@ -421,6 +430,10 @@ impl<'a> TextInformation<'a> {
         self.text = text.to_string();
         self
     }
+
+    /**
+     * (0, 0) = bottom left (implemented in vertex shader)
+     */
     pub fn position(mut self, position: Vector) -> Self {
         self.position = position;
         self
@@ -477,6 +490,8 @@ impl GlyphQuadVertex {
 struct TextPushConstants {
     clip_min: [f32; 2],
     clip_max: [f32; 2],
+    position: [f32; 2],
+    resolution: [i32; 2],
 }
 
 pub struct Font<'a> {
@@ -510,7 +525,8 @@ impl<'a> Font<'a> {
                 "-font", path,
                 "-imageout", &atlas_path_str,
                 "-json", &json_path_str,
-                "-size", "64" // base pixel size for glyphs
+                "-size", "64", // base pixel size for glyphs
+                "-pxrange", "2.0" // width of SDF distance range in output pixels
             ])
             .status()
             .expect("Failed to run msdfgen");
@@ -559,7 +575,7 @@ impl<'a> Font<'a> {
                 let r = bounds["right"].as_f64().unwrap_or(0.0) as f32 / atlas_w;
                 let b = bounds["bottom"].as_f64().unwrap_or(0.0) as f32 / atlas_h;
                 let t = bounds["top"].as_f64().unwrap_or(0.0) as f32 / atlas_h;
-                (Vector::new_vec2(l, b), Vector::new_vec2(r, t))
+                (Vector::new_vec2(l, 1.0 - b), Vector::new_vec2(r, 1.0 - t))
             } else {
                 (Vector::new_vec2(0.0, 0.0), Vector::new_vec2(0.0, 0.0))
             };
