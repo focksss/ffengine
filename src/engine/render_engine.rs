@@ -2,7 +2,7 @@ use crate::mem;
 use std::path::PathBuf;
 use std::slice;
 use ash::vk;
-use ash::vk::{DescriptorType, Format, RenderPass, ShaderStageFlags};
+use ash::vk::{DescriptorType, Format, RenderPass, RenderPassCreateInfo, ShaderStageFlags};
 use rand::{rng, Rng};
 use crate::{offset_of, render, MAX_FRAMES_IN_FLIGHT};
 use crate::engine::camera::Camera;
@@ -21,46 +21,16 @@ pub struct RenderEngine<'a> {
     pub null_texture: Texture,
     pub null_tex_sampler: vk::Sampler,
 
-    pub geometry_pass: Pass,
-    pub shadow_pass: Pass,
-    pub ssao_pass: Pass,
-    pub ssao_blur_pass_horizontal: Pass,
-    pub ssao_blur_pass_vertical: Pass,
-    pub lighting_pass: Pass,
+    pub geometry_renderpass: Renderpass,
+    pub shadow_renderpass: Renderpass,
+    pub ssao_renderpass: Renderpass,
+    pub ssao_blur_renderpass_horizontal: Renderpass,
+    pub ssao_blur_renderpass_vertical: Renderpass,
+    pub lighting_renderpass: Renderpass,
 
     pub present_pass: Pass,
-
-
-    pub geometry_descriptor_set: DescriptorSet,
-    pub shadow_descriptor_set: DescriptorSet,
-    pub ssao_descriptor_set: DescriptorSet,
-    pub ssao_blur_descriptor_set_horizontal: DescriptorSet,
-    pub ssao_blur_descriptor_set_vertical: DescriptorSet,
-    pub lighting_descriptor_set: DescriptorSet,
-
     pub present_descriptor_set: DescriptorSet,
-
-
-    pub geometry_shader: Shader,
-    pub shadow_shader: Shader,
-    pub ssao_shader: Shader,
-    pub ssao_blur_shader: Shader,
-    pub lighting_shader: Shader,
-
     pub present_shader: Shader,
-
-
-    pub geometry_pipeline: vk::Pipeline,
-    pub geometry_pipeline_layout: vk::PipelineLayout,
-    pub shadow_pipeline: vk::Pipeline,
-    pub shadow_pipeline_layout: vk::PipelineLayout,
-    pub ssao_pipeline: vk::Pipeline,
-    pub ssao_pipeline_layout: vk::PipelineLayout,
-    pub ssao_blur_pipeline: vk::Pipeline,
-    pub ssao_blur_pipeline_layout: vk::PipelineLayout,
-    pub lighting_pipeline: vk::Pipeline,
-    pub lighting_pipeline_layout: vk::PipelineLayout,
-
     pub present_pipeline: vk::Pipeline,
     pub present_pipeline_layout: vk::PipelineLayout,
 
@@ -70,10 +40,6 @@ pub struct RenderEngine<'a> {
     pub ssao_noise_texture: Texture,
     pub viewport: vk::Viewport,
     pub scissor: vk::Rect2D,
-    pub shadow_viewport: vk::Viewport,
-    pub shadow_scissor: vk::Rect2D,
-    pub ssao_viewport: vk::Viewport,
-    pub ssao_scissor: vk::Rect2D,
 }
 impl<'a> RenderEngine<'a> {
     pub unsafe fn new(base: &'a VkBase, world: &Scene) -> RenderEngine<'a> { unsafe {
@@ -137,35 +103,29 @@ impl<'a> RenderEngine<'a> {
             .add_color_attachment_info(color_tex_create_info) // extra properties
             .add_color_attachment_info(color_tex_create_info) // view normal
             .depth_attachment_info(TextureCreateInfo::new(base).format(Format::D32_SFLOAT).is_depth(true).clear_value([0.0, 0.0, 0.0, 0.0])); // depth
-        let geometry_pass = Pass::new(geometry_pass_create_info);
 
         let shadow_pass_create_info = PassCreateInfo::new(base)
             .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
             .depth_attachment_info(TextureCreateInfo::new(base).format(Format::D16_UNORM).is_depth(true).clear_value([0.0, 0.0, 0.0, 0.0]).width(SHADOW_RES).height(SHADOW_RES).array_layers(5)); // depth
-        let shadow_pass = Pass::new(shadow_pass_create_info);
 
         let ssao_pass_create_info = PassCreateInfo::new(base)
             .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
             .add_color_attachment_info(ssao_res_color_tex_create_info)
             .depth_attachment_info(TextureCreateInfo::new(base).resolution_denominator((1.0 / SSAO_RESOLUTION_MULTIPLIER) as u32).format(Format::D16_UNORM).is_depth(true).clear_value([1.0, 0.0, 0.0, 0.0])); // depth
-        let ssao_pass = Pass::new(ssao_pass_create_info);
 
-        let ssao_blur_pass_create_info = PassCreateInfo::new(base)
+        let ssao_blur_pass_create_info_horiz = PassCreateInfo::new(base)
             .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
             .add_color_attachment_info(ssao_res_color_tex_create_info)
             .depth_attachment_info(TextureCreateInfo::new(base).resolution_denominator((1.0 / SSAO_RESOLUTION_MULTIPLIER) as u32).format(Format::D16_UNORM).is_depth(true).clear_value([1.0, 0.0, 0.0, 0.0])); // depth
-        let ssao_blur_pass_horizontal = Pass::new(ssao_blur_pass_create_info);
-        let ssao_blur_pass_create_info = PassCreateInfo::new(base)
+        let ssao_blur_pass_create_info_vert = PassCreateInfo::new(base)
             .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
             .add_color_attachment_info(ssao_res_color_tex_create_info)
             .depth_attachment_info(TextureCreateInfo::new(base).resolution_denominator((1.0 / SSAO_RESOLUTION_MULTIPLIER) as u32).format(Format::D16_UNORM).is_depth(true).clear_value([1.0, 0.0, 0.0, 0.0])); // depth
-        let ssao_blur_pass_vertical = Pass::new(ssao_blur_pass_create_info);
 
         let lighting_pass_create_info = PassCreateInfo::new(base)
             .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
             .add_color_attachment_info(color_tex_create_info.usage_flags(color_tex_create_info.usage_flags | vk::ImageUsageFlags::TRANSFER_SRC))
             .depth_attachment_info(TextureCreateInfo::new(base).format(Format::D16_UNORM).is_depth(true).clear_value([1.0, 0.0, 0.0, 0.0])); // depth
-        let lighting_pass = Pass::new(lighting_pass_create_info);
 
         let present_pass_create_info = PassCreateInfo::new(base)
             .set_is_present_pass(true);
@@ -206,9 +166,6 @@ impl<'a> RenderEngine<'a> {
             .add_descriptor(Descriptor::new(&joints_ssbo_create_info))
             .add_descriptor(Descriptor::new(&lights_ssbo_create_info))
             .add_descriptor(Descriptor::new(&world_texture_samplers_create_info));
-
-        let geometry_descriptor_set = DescriptorSet::new(geometry_descriptor_set_create_info);
-        let shadow_descriptor_set = DescriptorSet::new(shadow_descriptor_set_create_info);
         //</editor-fold>]
         // <editor-fold desc = "SSAO descriptor set">
         let ssbo_ubo_create_info = DescriptorCreateInfo::new(base)
@@ -222,23 +179,19 @@ impl<'a> RenderEngine<'a> {
             .add_descriptor(Descriptor::new(&texture_sampler_create_info))
             .add_descriptor(Descriptor::new(&texture_sampler_create_info))
             .add_descriptor(Descriptor::new(&ssbo_ubo_create_info));
-
-        let ssao_descriptor_set = DescriptorSet::new(ssao_descriptor_set_create_info);
         //</editor-fold>
         // <editor-fold desc = "SSAO blur descriptor set">
-        let ssao_blur_descriptor_set_create_info = render::DescriptorSetCreateInfo::new(base)
+        let ssao_blur_descriptor_set_create_info_horiz = render::DescriptorSetCreateInfo::new(base)
             .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
             .add_descriptor(render::Descriptor::new(&texture_sampler_create_info))
             .add_descriptor(render::Descriptor::new(&texture_sampler_create_info))
             .add_descriptor(render::Descriptor::new(&texture_sampler_create_info));
-        let ssao_blur_descriptor_set_horizontal = render::DescriptorSet::new(ssao_blur_descriptor_set_create_info);
 
-        let ssao_blur_descriptor_set_create_info = render::DescriptorSetCreateInfo::new(base)
+        let ssao_blur_descriptor_set_create_info_vert = render::DescriptorSetCreateInfo::new(base)
             .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
             .add_descriptor(render::Descriptor::new(&texture_sampler_create_info))
             .add_descriptor(render::Descriptor::new(&texture_sampler_create_info))
             .add_descriptor(render::Descriptor::new(&texture_sampler_create_info));
-        let ssao_blur_descriptor_set_vertical = render::DescriptorSet::new(ssao_blur_descriptor_set_create_info);
         //</editor-fold>
         //<editor-fold desc = "lighting descriptor set">
         let lights_ssbo_create_info = DescriptorCreateInfo::new(base)
@@ -263,8 +216,6 @@ impl<'a> RenderEngine<'a> {
             .add_descriptor(Descriptor::new(&texture_sampler_create_info))
             .add_descriptor(Descriptor::new(&lights_ssbo_create_info))
             .add_descriptor(Descriptor::new(&lighting_ubo_create_info));
-
-        let lighting_descriptor_set = DescriptorSet::new(lighting_descriptor_set_create_info);
         //</editor-fold>
         // <editor-fold desc = "present descriptor set">
         let present_descriptor_set_create_info = render::DescriptorSetCreateInfo::new(base)
@@ -348,180 +299,7 @@ impl<'a> RenderEngine<'a> {
         base.device.free_memory(staging_buffer_memory, None);
         //</editor-fold>
 
-        //<editor-fold desc = "descriptor updates">
-        let sampler = base.device.create_sampler(&vk::SamplerCreateInfo {
-            mag_filter: vk::Filter::LINEAR,
-            min_filter: vk::Filter::LINEAR,
-            address_mode_u: vk::SamplerAddressMode::CLAMP_TO_BORDER,
-            address_mode_v: vk::SamplerAddressMode::CLAMP_TO_BORDER,
-            address_mode_w: vk::SamplerAddressMode::CLAMP_TO_BORDER,
-            border_color: vk::BorderColor::FLOAT_OPAQUE_WHITE,
-            ..Default::default()
-        }, None).unwrap();
-        let nearest_sampler = base.device.create_sampler(&vk::SamplerCreateInfo {
-            mag_filter: vk::Filter::NEAREST,
-            min_filter: vk::Filter::NEAREST,
-            address_mode_u: vk::SamplerAddressMode::REPEAT,
-            address_mode_v: vk::SamplerAddressMode::REPEAT,
-            address_mode_w: vk::SamplerAddressMode::REPEAT,
-            border_color: vk::BorderColor::FLOAT_OPAQUE_WHITE,
-            ..Default::default()
-        }, None).unwrap();
-
-        for current_frame in 0..MAX_FRAMES_IN_FLIGHT {
-            let image_infos = [
-                vk::DescriptorImageInfo {
-                    sampler,
-                    image_view: geometry_pass.textures[current_frame][0].image_view,
-                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                }, // material
-                vk::DescriptorImageInfo {
-                    sampler,
-                    image_view: geometry_pass.textures[current_frame][1].image_view,
-                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                }, // albedo
-                vk::DescriptorImageInfo {
-                    sampler,
-                    image_view: geometry_pass.textures[current_frame][2].image_view,
-                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                }, // metallic roughness
-                vk::DescriptorImageInfo {
-                    sampler,
-                    image_view: geometry_pass.textures[current_frame][3].image_view,
-                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                }, // extra properties
-                vk::DescriptorImageInfo {
-                    sampler,
-                    image_view: geometry_pass.textures[current_frame][5].image_view,
-                    image_layout: vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
-                }, // depth
-                vk::DescriptorImageInfo {
-                    sampler,
-                    image_view: geometry_pass.textures[current_frame][4].image_view,
-                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                }, // view normal
-                vk::DescriptorImageInfo {
-                    sampler,
-                    image_view: shadow_pass.textures[current_frame][0].image_view,
-                    image_layout: vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
-                }, // shadow map
-                vk::DescriptorImageInfo {
-                    sampler,
-                    image_view: ssao_blur_pass_vertical.textures[current_frame][0].image_view,
-                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                }, // ssao tex
-            ];
-            let lighting_descriptor_writes: Vec<vk::WriteDescriptorSet> = image_infos.iter().enumerate().map(|(i, info)| {
-                vk::WriteDescriptorSet::default()
-                    .dst_set(lighting_descriptor_set.descriptor_sets[current_frame])
-                    .dst_binding(i as u32)
-                    .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
-                    .image_info(std::slice::from_ref(info))
-            }).collect();
-            base.device.update_descriptor_sets(&lighting_descriptor_writes, &[]);
-
-            let present_info = [vk::DescriptorImageInfo {
-                sampler,
-                image_view: lighting_pass.textures[current_frame][0].image_view,
-                image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-            }];
-            let present_descriptor_writes: Vec<vk::WriteDescriptorSet> = vec![
-                vk::WriteDescriptorSet::default()
-                    .dst_set(present_descriptor_set.descriptor_sets[current_frame])
-                    .dst_binding(0)
-                    .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
-                    .image_info(&present_info)];
-            base.device.update_descriptor_sets(&present_descriptor_writes, &[]);
-
-            let image_infos = [
-                vk::DescriptorImageInfo {
-                    sampler,
-                    image_view: geometry_pass.textures[current_frame][5].image_view,
-                    image_layout: vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
-                }, // geometry depth
-                vk::DescriptorImageInfo {
-                    sampler,
-                    image_view: geometry_pass.textures[current_frame][4].image_view,
-                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                }, // view normal
-                vk::DescriptorImageInfo {
-                    sampler: nearest_sampler,
-                    image_view: ssao_noise_texture.image_view,
-                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                }, // noise tex
-            ];
-            let ssao_descriptor_writes: Vec<vk::WriteDescriptorSet> = image_infos.iter().enumerate().map(|(i, info)| {
-                vk::WriteDescriptorSet::default()
-                    .dst_set(ssao_descriptor_set.descriptor_sets[current_frame])
-                    .dst_binding(i as u32)
-                    .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
-                    .image_info(slice::from_ref(info))
-            }).collect();
-            base.device.update_descriptor_sets(&ssao_descriptor_writes, &[]);
-
-            let image_infos = [
-                vk::DescriptorImageInfo {
-                    sampler,
-                    image_view: ssao_pass.textures[current_frame][0].image_view,
-                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                }, // ssao raw
-                vk::DescriptorImageInfo {
-                    sampler,
-                    image_view: geometry_pass.textures[current_frame][5].image_view,
-                    image_layout: vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
-                }, // depth
-                vk::DescriptorImageInfo {
-                    sampler,
-                    image_view: geometry_pass.textures[current_frame][4].image_view,
-                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                }, // view normal
-            ];
-            let descriptor_writes: Vec<vk::WriteDescriptorSet> = image_infos.iter().enumerate().map(|(i, info)| {
-                vk::WriteDescriptorSet::default()
-                    .dst_set(ssao_blur_descriptor_set_horizontal.descriptor_sets[current_frame])
-                    .dst_binding(i as u32)
-                    .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
-                    .image_info(slice::from_ref(info))
-            }).collect();
-            base.device.update_descriptor_sets(&descriptor_writes, &[]);
-            let image_infos = [
-                vk::DescriptorImageInfo {
-                    sampler,
-                    image_view: ssao_blur_pass_horizontal.textures[current_frame][0].image_view,
-                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                }, // ssao horizontally blurred
-                vk::DescriptorImageInfo {
-                    sampler,
-                    image_view: geometry_pass.textures[current_frame][5].image_view,
-                    image_layout: vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
-                }, // depth
-                vk::DescriptorImageInfo {
-                    sampler,
-                    image_view: geometry_pass.textures[current_frame][4].image_view,
-                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                }, // view normal
-            ];
-            let descriptor_writes: Vec<vk::WriteDescriptorSet> = image_infos.iter().enumerate().map(|(i, info)| {
-                vk::WriteDescriptorSet::default()
-                    .dst_set(ssao_blur_descriptor_set_vertical.descriptor_sets[current_frame])
-                    .dst_binding(i as u32)
-                    .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
-                    .image_info(slice::from_ref(info))
-            }).collect();
-            base.device.update_descriptor_sets(&descriptor_writes, &[]);
-        }
-        //</editor-fold>
-
-        //<editor-fold desc = "shaders">
-        let geom_shader = Shader::new(base, "geometry\\geometry.vert.spv", "geometry\\geometry.frag.spv", None);
-        let shadow_shader = Shader::new(base, "shadow\\shadow.vert.spv", "shadow\\shadow.frag.spv", Some("shadow\\cascade.geom.spv"));
-        let ssao_shader = Shader::new(base, "quad\\quad.vert.spv", "ssao\\ssao.frag.spv", None);
-        let lighting_shader = Shader::new(base, "quad\\quad.vert.spv", "lighting\\lighting.frag.spv", None);
         let present_shader = Shader::new(base, "quad\\quad.vert.spv", "quad\\quad.frag.spv", None);
-        let bilateral_blur_shader = Shader::new(base, "quad\\quad.vert.spv", "bilateral_blur\\bilateral_blur.frag.spv", None);
-        //</editor-fold>
-
-        //<editor-fold desc = "full graphics pipeline initiation">
 
         let camera_push_constant_range_vertex = vk::PushConstantRange {
             stage_flags: ShaderStageFlags::VERTEX,
@@ -533,73 +311,7 @@ impl<'a> RenderEngine<'a> {
             offset: 0,
             size: size_of::<CameraMatrixUniformData>() as _,
         };
-
-        let geometry_pipeline_layout = base
-            .device
-            .create_pipeline_layout(
-                &vk::PipelineLayoutCreateInfo {
-                    s_type: vk::StructureType::PIPELINE_LAYOUT_CREATE_INFO,
-                    set_layout_count: 1,
-                    p_set_layouts: &geometry_descriptor_set.descriptor_set_layout,
-                    p_push_constant_ranges: &camera_push_constant_range_vertex,
-                    push_constant_range_count: 1,
-                    ..Default::default()
-                }, None
-            ).unwrap();
-        let shadow_pipeline_layout = base
-            .device
-            .create_pipeline_layout(
-                &vk::PipelineLayoutCreateInfo {
-                    s_type: vk::StructureType::PIPELINE_LAYOUT_CREATE_INFO,
-                    set_layout_count: 1,
-                    p_set_layouts: &shadow_descriptor_set.descriptor_set_layout,
-                    p_push_constant_ranges: &vk::PushConstantRange {
-                        stage_flags: ShaderStageFlags::GEOMETRY,
-                        offset: 0,
-                        size: 4,
-                    },
-                    push_constant_range_count: 1,
-                    ..Default::default()
-                }, None
-            ).unwrap();
-        let ssao_pipeline_layout = base
-            .device
-            .create_pipeline_layout(
-                &vk::PipelineLayoutCreateInfo {
-                    s_type: vk::StructureType::PIPELINE_LAYOUT_CREATE_INFO,
-                    set_layout_count: 1,
-                    p_set_layouts: &ssao_descriptor_set.descriptor_set_layout,
-                    ..Default::default()
-                }, None
-            ).unwrap();
-        let ssao_blur_pipeline_layout = base
-            .device
-            .create_pipeline_layout(
-                &vk::PipelineLayoutCreateInfo {
-                    s_type: vk::StructureType::PIPELINE_LAYOUT_CREATE_INFO,
-                    set_layout_count: 1,
-                    p_set_layouts: &ssao_blur_descriptor_set_horizontal.descriptor_set_layout,
-                    p_push_constant_ranges: &vk::PushConstantRange {
-                        stage_flags: ShaderStageFlags::FRAGMENT,
-                        offset: 0,
-                        size: size_of::<SeparableBlurPassData>() as _,
-                    },
-                    push_constant_range_count: 1,
-                    ..Default::default()
-                }, None
-            ).unwrap();
-        let lighting_pipeline_layout = base
-            .device
-            .create_pipeline_layout(
-                &vk::PipelineLayoutCreateInfo {
-                    s_type: vk::StructureType::PIPELINE_LAYOUT_CREATE_INFO,
-                    set_layout_count: 1,
-                    p_set_layouts: &lighting_descriptor_set.descriptor_set_layout,
-                    p_push_constant_ranges: &camera_push_constant_range_fragment,
-                    push_constant_range_count: 1,
-                    ..Default::default()
-                }, None
-            ).unwrap();
+        //<editor-fold desc = "full graphics pipeline initiation">
         let present_pipeline_layout = base
             .device
             .create_pipeline_layout(
@@ -782,14 +494,6 @@ impl<'a> RenderEngine<'a> {
             min_depth: 0.0,
             max_depth: 1.0,
         }];
-        let shadow_viewports = [vk::Viewport {
-            x: 0.0,
-            y: 0.0,
-            width: SHADOW_RES as f32,
-            height: SHADOW_RES as f32,
-            min_depth: 0.0,
-            max_depth: 1.0,
-        }];
         let ssao_viewports = [vk::Viewport {
             x: 0.0,
             y: 0.0,
@@ -800,21 +504,11 @@ impl<'a> RenderEngine<'a> {
         }];
 
         let scissors = [base.surface_resolution.into()];
-        let shadow_scissors = [vk::Rect2D { offset: vk::Offset2D { x: 0, y: 0 }, extent: vk::Extent2D { width: SHADOW_RES, height: SHADOW_RES } }];
-        let ssao_scissors = [vk::Rect2D { offset: vk::Offset2D { x: 0, y: 0 }, extent: vk::Extent2D { width: (base.surface_resolution.width as f32 * SSAO_RESOLUTION_MULTIPLIER) as u32,
-            height: (base.surface_resolution.height as f32 * SSAO_RESOLUTION_MULTIPLIER) as u32
-        } }];
 
 
         let viewport_state_info = vk::PipelineViewportStateCreateInfo::default()
             .scissors(&scissors)
             .viewports(&viewports);
-        let shadow_viewport_state_info = vk::PipelineViewportStateCreateInfo::default()
-            .scissors(&shadow_scissors)
-            .viewports(&shadow_viewports);
-        let ssao_viewport_state_info = vk::PipelineViewportStateCreateInfo::default()
-            .scissors(&ssao_scissors)
-            .viewports(&ssao_viewports);
 
         let rasterization_info = vk::PipelineRasterizationStateCreateInfo {
             front_face: vk::FrontFace::COUNTER_CLOCKWISE,
@@ -915,60 +609,13 @@ impl<'a> RenderEngine<'a> {
         let dynamic_state_info =
             vk::PipelineDynamicStateCreateInfo::default().dynamic_states(&dynamic_state);
 
-        let geom_shader_create_info = geom_shader.generate_shader_stage_create_infos();
-        let shadow_shader_create_info = shadow_shader.generate_shader_stage_create_infos();
-        let ssao_shader_create_info = ssao_shader.generate_shader_stage_create_infos();
-        let lighting_shader_create_info = lighting_shader.generate_shader_stage_create_infos();
         let present_shader_create_info = present_shader.generate_shader_stage_create_infos();
-        let bilateral_blur_shader_create_info = bilateral_blur_shader.generate_shader_stage_create_infos();
 
         let base_pipeline_info = vk::GraphicsPipelineCreateInfo::default()
             .input_assembly_state(&vertex_input_assembly_state_info)
             .viewport_state(&viewport_state_info)
             .rasterization_state(&rasterization_info)
             .dynamic_state(&dynamic_state_info);
-        let geometry_pipeline_info = base_pipeline_info
-            .stages(&geom_shader_create_info)
-            .vertex_input_state(&geometry_vertex_input_state_info)
-            .multisample_state(&null_multisample_state_info)
-            .render_pass(geometry_pass.renderpass)
-            .color_blend_state(&null_blend_state)
-            .layout(geometry_pipeline_layout)
-            .depth_stencil_state(&infinite_reverse_depth_state_info);
-        let shadow_pipeline_info = base_pipeline_info
-            .viewport_state(&shadow_viewport_state_info)
-            .stages(&shadow_shader_create_info)
-            .vertex_input_state(&shadow_vertex_input_state_info)
-            .multisample_state(&null_multisample_state_info)
-            .render_pass(shadow_pass.renderpass)
-            .color_blend_state(&null_blend_state)
-            .rasterization_state(&shadow_rasterization_info)
-            .depth_stencil_state(&shadow_depth_state_info)
-            .layout(shadow_pipeline_layout);
-        let ssao_pipeline_info = base_pipeline_info
-            .stages(&ssao_shader_create_info)
-            .viewport_state(&ssao_viewport_state_info)
-            .vertex_input_state(&null_vertex_input_state_info)
-            .multisample_state(&null_multisample_state_info)
-            .render_pass(ssao_pass.renderpass)
-            .color_blend_state(&null_blend_state_singular)
-            .layout(ssao_pipeline_layout)
-            .rasterization_state(&fullscreen_quad_rasterization_info)
-            .depth_stencil_state(&default_depth_state_info);
-        let lighting_pipeline_info = base_pipeline_info
-            .stages(&lighting_shader_create_info)
-            .vertex_input_state(&null_vertex_input_state_info)
-            .multisample_state(&null_multisample_state_info)
-            .render_pass(lighting_pass.renderpass)
-            .color_blend_state(&null_blend_state_singular)
-            .layout(lighting_pipeline_layout)
-            .rasterization_state(&fullscreen_quad_rasterization_info)
-            .depth_stencil_state(&default_depth_state_info);
-        let ssao_blur_pipeline_info = lighting_pipeline_info.clone()
-            .viewport_state(&ssao_viewport_state_info)
-            .stages(&bilateral_blur_shader_create_info)
-            .render_pass(ssao_pass.renderpass)
-            .layout(ssao_blur_pipeline_layout);
         let present_pipeline_info = base_pipeline_info
             .stages(&present_shader_create_info)
             .vertex_input_state(&null_vertex_input_state_info)
@@ -981,55 +628,306 @@ impl<'a> RenderEngine<'a> {
 
         let graphics_pipelines = base
             .device
-            .create_graphics_pipelines(vk::PipelineCache::null(), &[geometry_pipeline_info, shadow_pipeline_info, ssao_pipeline_info, lighting_pipeline_info, present_pipeline_info, ssao_blur_pipeline_info], None)
+            .create_graphics_pipelines(vk::PipelineCache::null(), &[present_pipeline_info], None)
             .expect("Unable to create graphics pipeline");
-
-        let geometry_pipeline = graphics_pipelines[0];
-        let shadow_pipeline = graphics_pipelines[1];
-        let ssao_pipeline = graphics_pipelines[2];
-        let lighting_pipeline = graphics_pipelines[3];
-        let present_pipeline = graphics_pipelines[4];
-        let ssao_blur_pipeline = graphics_pipelines[5];
+        let present_pipeline = graphics_pipelines[0];
         //</editor-fold>
+
+
+        let geometry_renderpass_create_info = { RenderpassCreateInfo::new(base)
+            .pass_create_info(geometry_pass_create_info)
+            .descriptor_set_create_info(geometry_descriptor_set_create_info)
+            .vertex_shader_uri(String::from("geometry\\geometry.vert.spv"))
+            .fragment_shader_uri(String::from("geometry\\geometry.frag.spv"))
+            .push_constant_range(camera_push_constant_range_vertex)
+            .pipeline_vertex_input_state(geometry_vertex_input_state_info)
+            .pipeline_rasterization_state(rasterization_info)
+            .pipeline_depth_stencil_state(infinite_reverse_depth_state_info)
+            .pipeline_color_blend_state_create_info(null_blend_state) };
+        let geometry_renderpass = Renderpass::new(geometry_renderpass_create_info);
+
+        let shadow_renderpass_create_info = { RenderpassCreateInfo::new(base)
+            .pass_create_info(shadow_pass_create_info)
+            .descriptor_set_create_info(shadow_descriptor_set_create_info)
+            .vertex_shader_uri(String::from("shadow\\shadow.vert.spv"))
+            .fragment_shader_uri(String::from("shadow\\shadow.frag.spv"))
+            .geometry_shader_uri(String::from("shadow\\cascade.geom.spv"))
+            .push_constant_range(vk::PushConstantRange {
+                stage_flags: ShaderStageFlags::GEOMETRY,
+                offset: 0,
+                size: 4,
+            })
+            .pipeline_vertex_input_state(shadow_vertex_input_state_info)
+            .pipeline_rasterization_state(shadow_rasterization_info)
+            .pipeline_depth_stencil_state(shadow_depth_state_info)
+            .pipeline_color_blend_state_create_info(null_blend_state_singular)
+            .viewport(vk::Viewport {
+                x: 0.0,
+                y: 0.0,
+                width: SHADOW_RES as f32,
+                height: SHADOW_RES as f32,
+                min_depth: 0.0,
+                max_depth: 1.0,
+            })
+            .scissor(vk::Rect2D { offset: vk::Offset2D { x: 0, y: 0 }, extent: vk::Extent2D { width: SHADOW_RES, height: SHADOW_RES } }) };
+        let shadow_renderpass = Renderpass::new(shadow_renderpass_create_info);
+
+        let ssao_renderpass_create_info = { RenderpassCreateInfo::new(base)
+            .pass_create_info(ssao_pass_create_info)
+            .descriptor_set_create_info(ssao_descriptor_set_create_info)
+            .vertex_shader_uri(String::from("quad\\quad.vert.spv"))
+            .fragment_shader_uri(String::from("ssao\\ssao.frag.spv"))
+            .pipeline_color_blend_state_create_info(null_blend_state_singular)
+            .viewport(vk::Viewport {
+                x: 0.0,
+                y: 0.0,
+                width: base.surface_resolution.width as f32 * SSAO_RESOLUTION_MULTIPLIER,
+                height: base.surface_resolution.height as f32 * SSAO_RESOLUTION_MULTIPLIER,
+                min_depth: 0.0,
+                max_depth: 1.0,
+            })
+            .scissor(vk::Rect2D { offset: vk::Offset2D { x: 0, y: 0 }, extent: vk::Extent2D { width: (base.surface_resolution.width as f32 * SSAO_RESOLUTION_MULTIPLIER) as u32,
+                height: (base.surface_resolution.height as f32 * SSAO_RESOLUTION_MULTIPLIER) as u32
+            } }) };
+        let ssao_renderpass = Renderpass::new(ssao_renderpass_create_info);
+
+        let ssao_blur_horizontal_renderpass_create_info = { RenderpassCreateInfo::new(base)
+            .pass_create_info(ssao_blur_pass_create_info_horiz)
+            .descriptor_set_create_info(ssao_blur_descriptor_set_create_info_horiz)
+            .vertex_shader_uri(String::from("quad\\quad.vert.spv"))
+            .fragment_shader_uri(String::from("bilateral_blur\\bilateral_blur.frag.spv"))
+            .pipeline_color_blend_state_create_info(null_blend_state_singular)
+            .push_constant_range(vk::PushConstantRange {
+                stage_flags: ShaderStageFlags::FRAGMENT,
+                offset: 0,
+                size: size_of::<SeparableBlurPassData>() as _,
+            })
+            .viewport(vk::Viewport {
+                x: 0.0,
+                y: 0.0,
+                width: base.surface_resolution.width as f32 * SSAO_RESOLUTION_MULTIPLIER,
+                height: base.surface_resolution.height as f32 * SSAO_RESOLUTION_MULTIPLIER,
+                min_depth: 0.0,
+                max_depth: 1.0,
+            })
+            .scissor(vk::Rect2D { offset: vk::Offset2D { x: 0, y: 0 }, extent: vk::Extent2D { width: (base.surface_resolution.width as f32 * SSAO_RESOLUTION_MULTIPLIER) as u32,
+                height: (base.surface_resolution.height as f32 * SSAO_RESOLUTION_MULTIPLIER) as u32
+            } }) };
+        let ssao_blur_renderpass_horizontal = Renderpass::new(ssao_blur_horizontal_renderpass_create_info);
+        let ssao_blur_vertical_renderpass_create_info = { RenderpassCreateInfo::new(base)
+            .pass_create_info(ssao_blur_pass_create_info_vert)
+            .descriptor_set_create_info(ssao_blur_descriptor_set_create_info_vert)
+            .vertex_shader_uri(String::from("quad\\quad.vert.spv"))
+            .fragment_shader_uri(String::from("bilateral_blur\\bilateral_blur.frag.spv"))
+            .pipeline_color_blend_state_create_info(null_blend_state_singular)
+            .push_constant_range(vk::PushConstantRange {
+                stage_flags: ShaderStageFlags::FRAGMENT,
+                offset: 0,
+                size: size_of::<SeparableBlurPassData>() as _,
+            })
+            .viewport(vk::Viewport {
+                x: 0.0,
+                y: 0.0,
+                width: base.surface_resolution.width as f32 * SSAO_RESOLUTION_MULTIPLIER,
+                height: base.surface_resolution.height as f32 * SSAO_RESOLUTION_MULTIPLIER,
+                min_depth: 0.0,
+                max_depth: 1.0,
+            })
+            .scissor(vk::Rect2D { offset: vk::Offset2D { x: 0, y: 0 }, extent: vk::Extent2D { width: (base.surface_resolution.width as f32 * SSAO_RESOLUTION_MULTIPLIER) as u32,
+                height: (base.surface_resolution.height as f32 * SSAO_RESOLUTION_MULTIPLIER) as u32
+            } }) };
+        let ssao_blur_renderpass_vertical = Renderpass::new(ssao_blur_vertical_renderpass_create_info);
+
+        let lighting_renderpass_create_info = { RenderpassCreateInfo::new(base)
+            .pass_create_info(lighting_pass_create_info)
+            .descriptor_set_create_info(lighting_descriptor_set_create_info)
+            .vertex_shader_uri(String::from("quad\\quad.vert.spv"))
+            .fragment_shader_uri(String::from("lighting\\lighting.frag.spv"))
+            .pipeline_color_blend_state_create_info(null_blend_state_singular)
+            .push_constant_range(camera_push_constant_range_fragment) };
+        let lighting_renderpass = Renderpass::new(lighting_renderpass_create_info);
+
+        //<editor-fold desc = "descriptor updates">
+        let sampler = base.device.create_sampler(&vk::SamplerCreateInfo {
+            mag_filter: vk::Filter::LINEAR,
+            min_filter: vk::Filter::LINEAR,
+            address_mode_u: vk::SamplerAddressMode::CLAMP_TO_BORDER,
+            address_mode_v: vk::SamplerAddressMode::CLAMP_TO_BORDER,
+            address_mode_w: vk::SamplerAddressMode::CLAMP_TO_BORDER,
+            border_color: vk::BorderColor::FLOAT_OPAQUE_WHITE,
+            ..Default::default()
+        }, None).unwrap();
+        let nearest_sampler = base.device.create_sampler(&vk::SamplerCreateInfo {
+            mag_filter: vk::Filter::NEAREST,
+            min_filter: vk::Filter::NEAREST,
+            address_mode_u: vk::SamplerAddressMode::REPEAT,
+            address_mode_v: vk::SamplerAddressMode::REPEAT,
+            address_mode_w: vk::SamplerAddressMode::REPEAT,
+            border_color: vk::BorderColor::FLOAT_OPAQUE_WHITE,
+            ..Default::default()
+        }, None).unwrap();
+
+        for current_frame in 0..MAX_FRAMES_IN_FLIGHT {
+            let image_infos = [
+                vk::DescriptorImageInfo {
+                    sampler,
+                    image_view: geometry_renderpass.pass.textures[current_frame][0].image_view,
+                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                }, // material
+                vk::DescriptorImageInfo {
+                    sampler,
+                    image_view: geometry_renderpass.pass.textures[current_frame][1].image_view,
+                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                }, // albedo
+                vk::DescriptorImageInfo {
+                    sampler,
+                    image_view: geometry_renderpass.pass.textures[current_frame][2].image_view,
+                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                }, // metallic roughness
+                vk::DescriptorImageInfo {
+                    sampler,
+                    image_view: geometry_renderpass.pass.textures[current_frame][3].image_view,
+                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                }, // extra properties
+                vk::DescriptorImageInfo {
+                    sampler,
+                    image_view: geometry_renderpass.pass.textures[current_frame][5].image_view,
+                    image_layout: vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
+                }, // depth
+                vk::DescriptorImageInfo {
+                    sampler,
+                    image_view: geometry_renderpass.pass.textures[current_frame][4].image_view,
+                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                }, // view normal
+                vk::DescriptorImageInfo {
+                    sampler,
+                    image_view: shadow_renderpass.pass.textures[current_frame][0].image_view,
+                    image_layout: vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
+                }, // shadow map
+                vk::DescriptorImageInfo {
+                    sampler,
+                    image_view: ssao_blur_renderpass_vertical.pass.textures[current_frame][0].image_view,
+                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                }, // ssao tex
+            ];
+            let lighting_descriptor_writes: Vec<vk::WriteDescriptorSet> = image_infos.iter().enumerate().map(|(i, info)| {
+                vk::WriteDescriptorSet::default()
+                    .dst_set(lighting_renderpass.descriptor_set.descriptor_sets[current_frame])
+                    .dst_binding(i as u32)
+                    .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
+                    .image_info(std::slice::from_ref(info))
+            }).collect();
+            base.device.update_descriptor_sets(&lighting_descriptor_writes, &[]);
+
+            let present_info = [vk::DescriptorImageInfo {
+                sampler,
+                image_view: lighting_renderpass.pass.textures[current_frame][0].image_view,
+                image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            }];
+            let present_descriptor_writes: Vec<vk::WriteDescriptorSet> = vec![
+                vk::WriteDescriptorSet::default()
+                    .dst_set(present_descriptor_set.descriptor_sets[current_frame])
+                    .dst_binding(0)
+                    .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
+                    .image_info(&present_info)];
+            base.device.update_descriptor_sets(&present_descriptor_writes, &[]);
+
+            let image_infos = [
+                vk::DescriptorImageInfo {
+                    sampler,
+                    image_view: geometry_renderpass.pass.textures[current_frame][5].image_view,
+                    image_layout: vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
+                }, // geometry depth
+                vk::DescriptorImageInfo {
+                    sampler,
+                    image_view: geometry_renderpass.pass.textures[current_frame][4].image_view,
+                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                }, // view normal
+                vk::DescriptorImageInfo {
+                    sampler: nearest_sampler,
+                    image_view: ssao_noise_texture.image_view,
+                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                }, // noise tex
+            ];
+            let ssao_descriptor_writes: Vec<vk::WriteDescriptorSet> = image_infos.iter().enumerate().map(|(i, info)| {
+                vk::WriteDescriptorSet::default()
+                    .dst_set(ssao_renderpass.descriptor_set.descriptor_sets[current_frame])
+                    .dst_binding(i as u32)
+                    .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
+                    .image_info(slice::from_ref(info))
+            }).collect();
+            base.device.update_descriptor_sets(&ssao_descriptor_writes, &[]);
+
+            let image_infos = [
+                vk::DescriptorImageInfo {
+                    sampler,
+                    image_view: ssao_renderpass.pass.textures[current_frame][0].image_view,
+                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                }, // ssao raw
+                vk::DescriptorImageInfo {
+                    sampler,
+                    image_view: geometry_renderpass.pass.textures[current_frame][5].image_view,
+                    image_layout: vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
+                }, // depth
+                vk::DescriptorImageInfo {
+                    sampler,
+                    image_view: geometry_renderpass.pass.textures[current_frame][4].image_view,
+                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                }, // view normal
+            ];
+            let descriptor_writes: Vec<vk::WriteDescriptorSet> = image_infos.iter().enumerate().map(|(i, info)| {
+                vk::WriteDescriptorSet::default()
+                    .dst_set(ssao_blur_renderpass_horizontal.descriptor_set.descriptor_sets[current_frame])
+                    .dst_binding(i as u32)
+                    .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
+                    .image_info(slice::from_ref(info))
+            }).collect();
+            base.device.update_descriptor_sets(&descriptor_writes, &[]);
+            let image_infos = [
+                vk::DescriptorImageInfo {
+                    sampler,
+                    image_view: ssao_blur_renderpass_horizontal.pass.textures[current_frame][0].image_view,
+                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                }, // ssao horizontally blurred
+                vk::DescriptorImageInfo {
+                    sampler,
+                    image_view: geometry_renderpass.pass.textures[current_frame][5].image_view,
+                    image_layout: vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
+                }, // depth
+                vk::DescriptorImageInfo {
+                    sampler,
+                    image_view: geometry_renderpass.pass.textures[current_frame][4].image_view,
+                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                }, // view normal
+            ];
+            let descriptor_writes: Vec<vk::WriteDescriptorSet> = image_infos.iter().enumerate().map(|(i, info)| {
+                vk::WriteDescriptorSet::default()
+                    .dst_set(ssao_blur_renderpass_vertical.descriptor_set.descriptor_sets[current_frame])
+                    .dst_binding(i as u32)
+                    .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
+                    .image_info(slice::from_ref(info))
+            }).collect();
+            base.device.update_descriptor_sets(&descriptor_writes, &[]);
+        }
+        //</editor-fold>
+
         RenderEngine {
             base,
 
             null_texture,
             null_tex_sampler,
 
-            geometry_pass,
-            shadow_pass,
-            ssao_pass,
-            ssao_blur_pass_horizontal,
-            ssao_blur_pass_vertical,
-            lighting_pass,
+            geometry_renderpass,
+            shadow_renderpass,
+            ssao_renderpass,
+            ssao_blur_renderpass_horizontal,
+            ssao_blur_renderpass_vertical,
+            lighting_renderpass,
+
             present_pass,
-
-            geometry_descriptor_set,
-            shadow_descriptor_set,
-            ssao_descriptor_set,
-            ssao_blur_descriptor_set_horizontal,
-            ssao_blur_descriptor_set_vertical,
-            lighting_descriptor_set,
             present_descriptor_set,
-
-            geometry_shader: geom_shader,
-            shadow_shader,
-            ssao_shader,
-            ssao_blur_shader: bilateral_blur_shader,
-            lighting_shader,
             present_shader,
 
-            geometry_pipeline,
-            geometry_pipeline_layout,
-            shadow_pipeline,
-            shadow_pipeline_layout,
-            ssao_pipeline,
-            ssao_pipeline_layout,
-            ssao_blur_pipeline,
-            ssao_blur_pipeline_layout,
-            lighting_pipeline,
-            lighting_pipeline_layout,
             present_pipeline,
             present_pipeline_layout,
 
@@ -1039,10 +937,6 @@ impl<'a> RenderEngine<'a> {
             ssao_noise_texture,
             viewport: viewports[0],
             scissor: scissors[0],
-            shadow_viewport: shadow_viewports[0],
-            shadow_scissor: shadow_scissors[0],
-            ssao_viewport: ssao_viewports[0],
-            ssao_scissor: ssao_scissors[0],
         }
     } }
 
@@ -1057,11 +951,11 @@ impl<'a> RenderEngine<'a> {
             height: (base.surface_resolution.height as f32 * SSAO_RESOLUTION_MULTIPLIER) as i32,
             _pad0: 0.0,
         };
-        copy_data_to_memory(self.ssao_descriptor_set.descriptors[3].owned_buffers.2[current_frame], &[ubo]);
+        copy_data_to_memory(self.ssao_renderpass.descriptor_set.descriptors[3].owned_buffers.2[current_frame], &[ubo]);
         let ubo = LightingUniformData {
             shadow_cascade_distances: [player_camera.far * 0.005, player_camera.far * 0.015, player_camera.far * 0.045, player_camera.far * 0.15]
         };
-        copy_data_to_memory(self.lighting_descriptor_set.descriptors[9].owned_buffers.2[current_frame], &[ubo]);
+        copy_data_to_memory(self.lighting_renderpass.descriptor_set.descriptors[9].owned_buffers.2[current_frame], &[ubo]);
         let camera_constants = CameraMatrixUniformData {
             view: player_camera.view_matrix.data,
             projection: player_camera.projection_matrix.data,
@@ -1096,35 +990,35 @@ impl<'a> RenderEngine<'a> {
 
         //<editor-fold desc = "passes begin info">
         let geometry_pass_pass_begin_info = vk::RenderPassBeginInfo::default()
-            .render_pass(self.geometry_pass.renderpass)
-            .framebuffer(self.geometry_pass.framebuffers[current_frame])
+            .render_pass(self.geometry_renderpass.pass.renderpass)
+            .framebuffer(self.geometry_renderpass.pass.framebuffers[current_frame])
             .render_area(base.surface_resolution.into())
-            .clear_values(&self.geometry_pass.clear_values);
+            .clear_values(&self.geometry_renderpass.pass.clear_values);
         let shadow_pass_pass_begin_info = vk::RenderPassBeginInfo::default()
-            .render_pass(self.shadow_pass.renderpass)
-            .framebuffer(self.shadow_pass.framebuffers[current_frame])
-            .render_area(self.shadow_scissor)
-            .clear_values(&self.shadow_pass.clear_values);
+            .render_pass(self.shadow_renderpass.pass.renderpass)
+            .framebuffer(self.shadow_renderpass.pass.framebuffers[current_frame])
+            .render_area(self.shadow_renderpass.scissor)
+            .clear_values(&self.shadow_renderpass.pass.clear_values);
         let ssao_pass_begin_info = vk::RenderPassBeginInfo::default()
-            .render_pass(self.ssao_pass.renderpass)
-            .framebuffer(self.ssao_pass.framebuffers[current_frame])
-            .render_area(self.ssao_scissor)
-            .clear_values(&self.ssao_pass.clear_values);
+            .render_pass(self.ssao_renderpass.pass.renderpass)
+            .framebuffer(self.ssao_renderpass.pass.framebuffers[current_frame])
+            .render_area(self.ssao_renderpass.scissor)
+            .clear_values(&self.ssao_renderpass.pass.clear_values);
         let ssao_blur_pass_begin_info_horizontal = vk::RenderPassBeginInfo::default()
-            .render_pass(self.ssao_blur_pass_horizontal.renderpass)
-            .framebuffer(self.ssao_blur_pass_horizontal.framebuffers[current_frame])
-            .render_area(self.ssao_scissor)
-            .clear_values(&self.ssao_blur_pass_horizontal.clear_values);
+            .render_pass(self.ssao_blur_renderpass_horizontal.pass.renderpass)
+            .framebuffer(self.ssao_blur_renderpass_horizontal.pass.framebuffers[current_frame])
+            .render_area(self.ssao_renderpass.scissor)
+            .clear_values(&self.ssao_blur_renderpass_horizontal.pass.clear_values);
         let ssao_blur_pass_begin_info_vertical = vk::RenderPassBeginInfo::default()
-            .render_pass(self.ssao_blur_pass_vertical.renderpass)
-            .framebuffer(self.ssao_blur_pass_vertical.framebuffers[current_frame])
-            .render_area(self.ssao_scissor)
-            .clear_values(&self.ssao_blur_pass_vertical.clear_values);
+            .render_pass(self.ssao_blur_renderpass_vertical.pass.renderpass)
+            .framebuffer(self.ssao_blur_renderpass_vertical.pass.framebuffers[current_frame])
+            .render_area(self.ssao_renderpass.scissor)
+            .clear_values(&self.ssao_blur_renderpass_vertical.pass.clear_values);
         let lighting_pass_pass_begin_info = vk::RenderPassBeginInfo::default()
-            .render_pass(self.lighting_pass.renderpass)
-            .framebuffer(self.lighting_pass.framebuffers[current_frame])
+            .render_pass(self.lighting_renderpass.pass.renderpass)
+            .framebuffer(self.lighting_renderpass.pass.framebuffers[current_frame])
             .render_area(base.surface_resolution.into())
-            .clear_values(&self.lighting_pass.clear_values);
+            .clear_values(&self.lighting_renderpass.pass.clear_values);
         let present_pass_pass_begin_info = vk::RenderPassBeginInfo::default()
             .render_pass(self.present_pass.renderpass)
             .framebuffer(self.present_pass.framebuffers[present_index as usize])
@@ -1153,9 +1047,9 @@ impl<'a> RenderEngine<'a> {
                 device.cmd_bind_pipeline(
                     frame_command_buffer,
                     vk::PipelineBindPoint::GRAPHICS,
-                    self.geometry_pipeline,
+                    self.geometry_renderpass.pipeline,
                 );
-                device.cmd_push_constants(frame_command_buffer, self.geometry_pipeline_layout, ShaderStageFlags::VERTEX, 0, slice::from_raw_parts(
+                device.cmd_push_constants(frame_command_buffer, self.geometry_renderpass.pipeline_layout, ShaderStageFlags::VERTEX, 0, slice::from_raw_parts(
                     &camera_constants as *const CameraMatrixUniformData as *const u8,
                     size_of::<CameraMatrixUniformData>(),
                 ));
@@ -1166,16 +1060,16 @@ impl<'a> RenderEngine<'a> {
                 device.cmd_bind_descriptor_sets(
                     frame_command_buffer,
                     vk::PipelineBindPoint::GRAPHICS,
-                    self.geometry_pipeline_layout,
+                    self.geometry_renderpass.pipeline_layout,
                     0,
-                    &[self.geometry_descriptor_set.descriptor_sets[current_frame]],
+                    &[self.geometry_renderpass.descriptor_set.descriptor_sets[current_frame]],
                     &[],
                 );
                 world.draw(&frame_command_buffer, current_frame, Some(&player_camera.frustum));
 
                 device.cmd_end_render_pass(frame_command_buffer);
                 //</editor-fold>
-                self.geometry_pass.transition_to_readable(base, frame_command_buffer, current_frame);
+                self.geometry_renderpass.pass.transition_to_readable(base, frame_command_buffer, current_frame);
                 //<editor-fold desc = "shadow pass">
                 device.cmd_begin_render_pass(
                     frame_command_buffer,
@@ -1185,28 +1079,28 @@ impl<'a> RenderEngine<'a> {
                 device.cmd_bind_pipeline(
                     frame_command_buffer,
                     vk::PipelineBindPoint::GRAPHICS,
-                    self.shadow_pipeline,
+                    self.shadow_renderpass.pipeline,
                 );
-                device.cmd_push_constants(frame_command_buffer, self.shadow_pipeline_layout, ShaderStageFlags::GEOMETRY, 0, slice::from_raw_parts(
+                device.cmd_push_constants(frame_command_buffer, self.shadow_renderpass.pipeline_layout, ShaderStageFlags::GEOMETRY, 0, slice::from_raw_parts(
                     &0 as *const i32 as *const u8, // which light in world.lights to create shadows from
                     4,
                 ));
                 // draw scene
-                device.cmd_set_viewport(frame_command_buffer, 0, &[self.shadow_viewport]);
-                device.cmd_set_scissor(frame_command_buffer, 0, &[self.shadow_scissor]);
+                device.cmd_set_viewport(frame_command_buffer, 0, &[self.shadow_renderpass.viewport]);
+                device.cmd_set_scissor(frame_command_buffer, 0, &[self.shadow_renderpass.scissor]);
                 device.cmd_bind_descriptor_sets(
                     frame_command_buffer,
                     vk::PipelineBindPoint::GRAPHICS,
-                    self.shadow_pipeline_layout,
+                    self.shadow_renderpass.pipeline_layout,
                     0,
-                    &[self.shadow_descriptor_set.descriptor_sets[current_frame]],
+                    &[self.shadow_renderpass.descriptor_set.descriptor_sets[current_frame]],
                     &[],
                 );
                 world.draw(&frame_command_buffer, current_frame, None);
 
                 device.cmd_end_render_pass(frame_command_buffer);
                 //</editor-fold>
-                self.shadow_pass.transition_to_readable(base, frame_command_buffer, current_frame);
+                self.shadow_renderpass.pass.transition_to_readable(base, frame_command_buffer, current_frame);
                 //<editor-fold desc = "ssao pass">
                 device.cmd_begin_render_pass(
                     frame_command_buffer,
@@ -1216,33 +1110,33 @@ impl<'a> RenderEngine<'a> {
                 device.cmd_bind_pipeline(
                     frame_command_buffer,
                     vk::PipelineBindPoint::GRAPHICS,
-                    self.ssao_pipeline,
+                    self.ssao_renderpass.pipeline,
                 );
 
                 // draw quad
-                device.cmd_set_viewport(frame_command_buffer, 0, &[self.ssao_viewport]);
-                device.cmd_set_scissor(frame_command_buffer, 0, &[self.ssao_scissor]);
+                device.cmd_set_viewport(frame_command_buffer, 0, &[self.ssao_renderpass.viewport]);
+                device.cmd_set_scissor(frame_command_buffer, 0, &[self.ssao_renderpass.scissor]);
                 device.cmd_bind_descriptor_sets(
                     frame_command_buffer,
                     vk::PipelineBindPoint::GRAPHICS,
-                    self.ssao_pipeline_layout,
+                    self.ssao_renderpass.pipeline_layout,
                     0,
-                    &[self.ssao_descriptor_set.descriptor_sets[current_frame]],
+                    &[self.ssao_renderpass.descriptor_set.descriptor_sets[current_frame]],
                     &[],
                 );
                 device.cmd_draw(current_draw_command_buffer, 6, 1, 0, 0);
 
                 device.cmd_end_render_pass(frame_command_buffer);
                 //</editor-fold>
-                self.ssao_pass.transition_to_readable(base, frame_command_buffer, current_frame);
+                self.ssao_renderpass.pass.transition_to_readable(base, frame_command_buffer, current_frame);
                 //<editor-fold desc = "ssao blur pass">
                 device.cmd_bind_pipeline(
                     frame_command_buffer,
                     vk::PipelineBindPoint::GRAPHICS,
-                    self.ssao_blur_pipeline,
+                    self.ssao_blur_renderpass_horizontal.pipeline,
                 );
-                device.cmd_set_viewport(frame_command_buffer, 0, &[self.ssao_viewport]);
-                device.cmd_set_scissor(frame_command_buffer, 0, &[self.ssao_scissor]);
+                device.cmd_set_viewport(frame_command_buffer, 0, &[self.ssao_renderpass.viewport]);
+                device.cmd_set_scissor(frame_command_buffer, 0, &[self.ssao_renderpass.scissor]);
 
                 device.cmd_begin_render_pass(
                     frame_command_buffer,
@@ -1252,18 +1146,18 @@ impl<'a> RenderEngine<'a> {
                 device.cmd_bind_descriptor_sets(
                     frame_command_buffer,
                     vk::PipelineBindPoint::GRAPHICS,
-                    self.ssao_blur_pipeline_layout,
+                    self.ssao_blur_renderpass_horizontal.pipeline_layout,
                     0,
-                    &[self.ssao_blur_descriptor_set_horizontal.descriptor_sets[current_frame]],
+                    &[self.ssao_blur_renderpass_horizontal.descriptor_set.descriptor_sets[current_frame]],
                     &[],
                 );
-                device.cmd_push_constants(frame_command_buffer, self.ssao_blur_pipeline_layout, ShaderStageFlags::FRAGMENT, 0, slice::from_raw_parts(
+                device.cmd_push_constants(frame_command_buffer, self.ssao_blur_renderpass_horizontal.pipeline_layout, ShaderStageFlags::FRAGMENT, 0, slice::from_raw_parts(
                     &ssao_blur_constants_horizontal as *const SeparableBlurPassData as *const u8,
                     size_of::<SeparableBlurPassData>(),
                 ));
                 device.cmd_draw(current_draw_command_buffer, 6, 1, 0, 0);
                 device.cmd_end_render_pass(frame_command_buffer);
-                self.ssao_blur_pass_horizontal.transition_to_readable(base, frame_command_buffer, current_frame);
+                self.ssao_blur_renderpass_horizontal.pass.transition_to_readable(base, frame_command_buffer, current_frame);
 
                 device.cmd_begin_render_pass(
                     frame_command_buffer,
@@ -1273,18 +1167,18 @@ impl<'a> RenderEngine<'a> {
                 device.cmd_bind_descriptor_sets(
                     frame_command_buffer,
                     vk::PipelineBindPoint::GRAPHICS,
-                    self.ssao_blur_pipeline_layout,
+                    self.ssao_blur_renderpass_vertical.pipeline_layout,
                     0,
-                    &[self.ssao_blur_descriptor_set_vertical.descriptor_sets[current_frame]],
+                    &[self.ssao_blur_renderpass_vertical.descriptor_set.descriptor_sets[current_frame]],
                     &[],
                 );
-                device.cmd_push_constants(frame_command_buffer, self.ssao_blur_pipeline_layout, ShaderStageFlags::FRAGMENT, 0, slice::from_raw_parts(
+                device.cmd_push_constants(frame_command_buffer, self.ssao_blur_renderpass_vertical.pipeline_layout, ShaderStageFlags::FRAGMENT, 0, slice::from_raw_parts(
                     &ssao_blur_constants_vertical as *const SeparableBlurPassData as *const u8,
                     size_of::<SeparableBlurPassData>(),
                 ));
                 device.cmd_draw(current_draw_command_buffer, 6, 1, 0, 0);
                 device.cmd_end_render_pass(frame_command_buffer);
-                self.ssao_blur_pass_vertical.transition_to_readable(base, frame_command_buffer, current_frame);
+                self.ssao_blur_renderpass_vertical.pass.transition_to_readable(base, frame_command_buffer, current_frame);
                 //</editor-fold>
                 //<editor-fold desc = "lighting pass">
                 device.cmd_begin_render_pass(
@@ -1295,9 +1189,9 @@ impl<'a> RenderEngine<'a> {
                 device.cmd_bind_pipeline(
                     frame_command_buffer,
                     vk::PipelineBindPoint::GRAPHICS,
-                    self.lighting_pipeline,
+                    self.lighting_renderpass.pipeline,
                 );
-                device.cmd_push_constants(frame_command_buffer, self.lighting_pipeline_layout, ShaderStageFlags::FRAGMENT, 0, slice::from_raw_parts(
+                device.cmd_push_constants(frame_command_buffer, self.lighting_renderpass.pipeline_layout, ShaderStageFlags::FRAGMENT, 0, slice::from_raw_parts(
                     &camera_inverse_constants as *const CameraMatrixUniformData as *const u8,
                     size_of::<CameraMatrixUniformData>(),
                 ));
@@ -1308,16 +1202,16 @@ impl<'a> RenderEngine<'a> {
                 device.cmd_bind_descriptor_sets(
                     frame_command_buffer,
                     vk::PipelineBindPoint::GRAPHICS,
-                    self.lighting_pipeline_layout,
+                    self.lighting_renderpass.pipeline_layout,
                     0,
-                    &[self.lighting_descriptor_set.descriptor_sets[current_frame]],
+                    &[self.lighting_renderpass.descriptor_set.descriptor_sets[current_frame]],
                     &[],
                 );
                 device.cmd_draw(current_draw_command_buffer, 6, 1, 0, 0);
 
                 device.cmd_end_render_pass(frame_command_buffer);
                 //</editor-fold>
-                self.lighting_pass.transition_to_readable(base, frame_command_buffer, current_frame);
+                self.lighting_renderpass.pass.transition_to_readable(base, frame_command_buffer, current_frame);
 
                 // <editor-fold desc = "present pass">
                 device.cmd_begin_render_pass(
@@ -1353,41 +1247,19 @@ impl<'a> RenderEngine<'a> {
 impl Drop for RenderEngine<'_> {
     fn drop(&mut self) { unsafe {
         let base = self.base;
-        base.device.destroy_pipeline(self.geometry_pipeline, None);
-        base.device.destroy_pipeline(self.shadow_pipeline, None);
-        base.device.destroy_pipeline(self.ssao_pipeline, None);
-        base.device.destroy_pipeline(self.ssao_blur_pipeline, None);
-        base.device.destroy_pipeline(self.lighting_pipeline, None);
+
+        self.geometry_renderpass.destroy(base);
+        self.shadow_renderpass.destroy(base);
+        self.ssao_renderpass.destroy(base);
+        self.ssao_blur_renderpass_horizontal.destroy(base);
+        self.ssao_blur_renderpass_vertical.destroy(base);
+        self.lighting_renderpass.destroy(base);
+
         base.device.destroy_pipeline(self.present_pipeline, None);
-        base.device.destroy_pipeline_layout(self.geometry_pipeline_layout, None);
-        base.device.destroy_pipeline_layout(self.shadow_pipeline_layout, None);
-        base.device.destroy_pipeline_layout(self.ssao_pipeline_layout, None);
-        base.device.destroy_pipeline_layout(self.lighting_pipeline_layout, None);
         base.device.destroy_pipeline_layout(self.present_pipeline_layout, None);
-        base.device.destroy_pipeline_layout(self.ssao_blur_pipeline_layout, None);
-
-        self.geometry_descriptor_set.destroy(base);
-        self.shadow_descriptor_set.destroy(base);
-        self.ssao_descriptor_set.destroy(base);
-        self.lighting_descriptor_set.destroy(base);
         self.present_descriptor_set.destroy(base);
-        self.ssao_blur_descriptor_set_horizontal.destroy(base);
-        self.ssao_blur_descriptor_set_vertical.destroy(base);
-
-        self.geometry_shader.destroy(base);
-        self.shadow_shader.destroy(base);
-        self.ssao_shader.destroy(base);
-        self.lighting_shader.destroy(base);
         self.present_shader.destroy(base);
-        self.ssao_blur_shader.destroy(base);
-
-        self.geometry_pass.destroy(base);
-        self.shadow_pass.destroy(base);
-        self.ssao_pass.destroy(base);
-        self.lighting_pass.destroy(base);
         self.present_pass.destroy(base);
-        self.ssao_blur_pass_horizontal.destroy(base);
-        self.ssao_blur_pass_vertical.destroy(base);
 
         self.ssao_noise_texture.destroy(base);
 

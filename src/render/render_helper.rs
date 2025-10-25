@@ -4,7 +4,8 @@ use std::io::{BufWriter, Cursor};
 use std::path::{Path, PathBuf};
 use ash::{vk, Device, Instance};
 use ash::util::read_spv;
-use ash::vk::{Buffer, ClearColorValue, ClearDepthStencilValue, ClearValue, DescriptorImageInfo, DescriptorPool, DescriptorPoolCreateFlags, DescriptorPoolSize, DescriptorSetLayout, DescriptorSetLayoutCreateFlags, DescriptorType, DeviceMemory, DeviceSize, DynamicState, Extent3D, Format, GraphicsPipelineCreateInfo, ImageAspectFlags, ImageSubresourceRange, ImageUsageFlags, MemoryPropertyFlags, PhysicalDevice, PipelineColorBlendAttachmentState, PipelineDepthStencilStateCreateInfo, PipelineInputAssemblyStateCreateInfo, PipelineMultisampleStateCreateInfo, PipelineRasterizationStateCreateInfo, PipelineShaderStageCreateInfo, PipelineTessellationStateCreateInfo, PipelineVertexInputStateCreateInfo, PushConstantRange, SampleCountFlags, ShaderModule, ShaderModuleCreateInfo, ShaderStageFlags, StencilOpState};
+use ash::vk::{Buffer, ClearColorValue, ClearDepthStencilValue, ClearValue, DescriptorImageInfo, DescriptorPool, DescriptorPoolCreateFlags, DescriptorPoolSize, DescriptorSetLayout, DescriptorSetLayoutCreateFlags, DescriptorType, DeviceMemory, DeviceSize, DynamicState, Extent3D, Format, GraphicsPipelineCreateInfo, Handle, ImageAspectFlags, ImageSubresourceRange, ImageUsageFlags, MemoryPropertyFlags, PhysicalDevice, PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo, PipelineDepthStencilStateCreateInfo, PipelineInputAssemblyStateCreateInfo, PipelineMultisampleStateCreateInfo, PipelineRasterizationStateCreateInfo, PipelineShaderStageCreateInfo, PipelineTessellationStateCreateInfo, PipelineVertexInputStateCreateInfo, PushConstantRange, SampleCountFlags, ShaderModule, ShaderModuleCreateInfo, ShaderStageFlags, StencilOpState};
+use crate::engine::render_engine::RenderEngine;
 use crate::MAX_FRAMES_IN_FLIGHT;
 use crate::render::*;
 
@@ -45,16 +46,11 @@ impl Renderpass {
             ).unwrap();
         let viewports = [create_info.viewport];
         let scissors = [create_info.scissor];
-        let dynamic_states = [create_info.dynamic_state];
-        let color_blend_attachment_states = [create_info.pipeline_color_blend_attachment_state];
         let viewport_state = vk::PipelineViewportStateCreateInfo::default()
             .viewports(&viewports)
             .scissors(&scissors);
         let dynamic_state_info =
-            vk::PipelineDynamicStateCreateInfo::default().dynamic_states(&dynamic_states);
-        let color_blend_create_info = vk::PipelineColorBlendStateCreateInfo::default()
-            .logic_op(vk::LogicOp::CLEAR)
-            .attachments(&color_blend_attachment_states);
+            vk::PipelineDynamicStateCreateInfo::default().dynamic_states(&create_info.dynamic_state);
         let pipeline_create_info = GraphicsPipelineCreateInfo::default()
             .stages(&shader_stages_create_infos)
             .vertex_input_state(&create_info.pipeline_vertex_input_state_create_info)
@@ -64,7 +60,7 @@ impl Renderpass {
             .rasterization_state(&create_info.pipeline_rasterization_state_create_info)
             .multisample_state(&create_info.pipeline_multisample_state_create_info)
             .depth_stencil_state(&create_info.pipeline_depth_stencil_state_create_info)
-            .color_blend_state(&color_blend_create_info)
+            .color_blend_state(&create_info.pipeline_color_blend_state_create_info)
             .dynamic_state(&dynamic_state_info)
             .layout(pipeline_layout)
             .render_pass(pass.renderpass);
@@ -82,6 +78,13 @@ impl Renderpass {
             viewport: create_info.viewport,
             scissor: create_info.scissor,
         }
+    } }
+    pub unsafe fn destroy(&self, base: &VkBase) { unsafe {
+        self.shader.destroy(base);
+        self.pass.destroy(base);
+        base.device.destroy_pipeline_layout(self.pipeline_layout, None);
+        base.device.destroy_pipeline(self.pipeline, None);
+        self.descriptor_set.destroy(base);
     } }
 }
 pub struct RenderpassCreateInfo<'a> {
@@ -101,14 +104,23 @@ pub struct RenderpassCreateInfo<'a> {
     pub pipeline_tess_state_create_info: PipelineTessellationStateCreateInfo<'a>,
     pub pipeline_rasterization_state_create_info: PipelineRasterizationStateCreateInfo<'a>,
     pub pipeline_multisample_state_create_info: PipelineMultisampleStateCreateInfo<'a>,
-    pub stencil_op_state: StencilOpState,
     pub pipeline_depth_stencil_state_create_info: PipelineDepthStencilStateCreateInfo<'a>,
-    pub pipeline_color_blend_attachment_state: PipelineColorBlendAttachmentState,
-    pub dynamic_state: DynamicState,
+    pub pipeline_color_blend_state_create_info: PipelineColorBlendStateCreateInfo<'a>,
+    pub dynamic_state: Vec<DynamicState>,
 
 }
 impl<'a> RenderpassCreateInfo<'a> {
+    /**
+    * Defaults to pipeline create info intended for a fullscreen quad pass without blending
+    */
     pub fn new(base: &'a VkBase) -> Self {
+        let noop_stencil_state = StencilOpState {
+            fail_op: vk::StencilOp::KEEP,
+            pass_op: vk::StencilOp::KEEP,
+            depth_fail_op: vk::StencilOp::KEEP,
+            compare_op: vk::CompareOp::ALWAYS,
+            ..Default::default()
+        };
         RenderpassCreateInfo {
             base,
             pass_create_info: PassCreateInfo::new(base),
@@ -116,20 +128,47 @@ impl<'a> RenderpassCreateInfo<'a> {
             vertex_shader_uri: None,
             geometry_shader_uri: None,
             fragment_shader_uri: None,
-            viewport: Default::default(),
-            scissor: Default::default(),
+            viewport: vk::Viewport {
+                x: 0.0,
+                y: 0.0,
+                width: base.surface_resolution.width as f32,
+                height: base.surface_resolution.height as f32,
+                min_depth: 0.0,
+                max_depth: 1.0,
+            },
+            scissor: base.surface_resolution.into(),
 
             push_constant_info: None,
 
-            pipeline_vertex_input_state_create_info: Default::default(),
-            pipeline_input_assembly_state_create_info: Default::default(),
+            pipeline_vertex_input_state_create_info: PipelineVertexInputStateCreateInfo::default(),
+            pipeline_input_assembly_state_create_info: PipelineInputAssemblyStateCreateInfo {
+                topology: vk::PrimitiveTopology::TRIANGLE_LIST,
+                primitive_restart_enable: vk::FALSE,
+                ..Default::default()
+            },
             pipeline_tess_state_create_info: Default::default(),
-            pipeline_rasterization_state_create_info: Default::default(),
-            pipeline_multisample_state_create_info: Default::default(),
-            stencil_op_state: Default::default(),
-            pipeline_depth_stencil_state_create_info: Default::default(),
-            pipeline_color_blend_attachment_state: Default::default(),
-            dynamic_state: Default::default(),
+            pipeline_rasterization_state_create_info: PipelineRasterizationStateCreateInfo {
+                front_face: vk::FrontFace::COUNTER_CLOCKWISE,
+                cull_mode: vk::CullModeFlags::NONE,
+                line_width: 1.0,
+                polygon_mode: vk::PolygonMode::FILL,
+                ..Default::default()
+            },
+            pipeline_multisample_state_create_info: PipelineMultisampleStateCreateInfo {
+                rasterization_samples: vk::SampleCountFlags::TYPE_1,
+                ..Default::default()
+            },
+            pipeline_depth_stencil_state_create_info: PipelineDepthStencilStateCreateInfo {
+                depth_test_enable: 1,
+                depth_write_enable: 1,
+                depth_compare_op: vk::CompareOp::LESS_OR_EQUAL,
+                front: noop_stencil_state,
+                back: noop_stencil_state,
+                max_depth_bounds: 1.0,
+                ..Default::default()
+            },
+            pipeline_color_blend_state_create_info: Default::default(),
+            dynamic_state: vec![DynamicState::VIEWPORT, DynamicState::SCISSOR],
         }
     }
 
@@ -181,10 +220,6 @@ impl<'a> RenderpassCreateInfo<'a> {
         self.pipeline_rasterization_state_create_info = pipeline_rasterization_state;
         self
     }
-    pub fn stencil_op_state(mut self, stencil_op_state: StencilOpState) -> Self {
-        self.stencil_op_state = stencil_op_state;
-        self
-    }
     pub fn pipeline_multisample_state(mut self, pipeline_multisample_state: PipelineMultisampleStateCreateInfo<'a>) -> Self {
         self.pipeline_multisample_state_create_info = pipeline_multisample_state;
         self
@@ -193,11 +228,11 @@ impl<'a> RenderpassCreateInfo<'a> {
         self.pipeline_depth_stencil_state_create_info = pipeline_depth_stencil_state;
         self
     }
-    pub fn pipeline_color_blend_attachment_state(mut self, pipeline_color_blend_attachment_state: PipelineColorBlendAttachmentState) -> Self {
-        self.pipeline_color_blend_attachment_state = pipeline_color_blend_attachment_state;
+    pub fn pipeline_color_blend_state_create_info(mut self, pipeline_color_blend_state_create_info: PipelineColorBlendStateCreateInfo<'a>) -> Self {
+        self.pipeline_color_blend_state_create_info = pipeline_color_blend_state_create_info;
         self
     }
-    pub fn dynamic_state(mut self, dynamic_state: DynamicState) -> Self {
+    pub fn dynamic_state(mut self, dynamic_state: Vec<DynamicState>) -> Self {
         self.dynamic_state = dynamic_state;
         self
     }
@@ -1400,7 +1435,7 @@ impl Shader {
         }
     }
 
-    pub unsafe fn destroy(&self, base: &VkBase) { unsafe {
+    pub fn destroy(&self, base: &VkBase) { unsafe {
         base.device.destroy_shader_module(self.vertex_module, None);
         if self.geometry_module.is_some() {
             base.device.destroy_shader_module(self.geometry_module.unwrap(), None);

@@ -116,7 +116,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
         base.window.inner_size().height as f32 * 0.5))
         .expect("failed to reset mouse position");
 
-    let mut screenshot_manager = ScreenshotManager::new(base, &render_engine.lighting_pass.textures[0][0]);
+    //let mut screenshot_manager = ScreenshotManager::new(base, &render_engine.lighting_pass.textures[0][0]);
     let mut screenshot_pending = false;
 
     base.event_loop.borrow_mut().run_on_demand(|event, elwp| {
@@ -271,8 +271,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                         .as_secs();
                     let filename = format!("screenshots\\screenshot_{}.png", timestamp);
 
-                    screenshot_manager
-                        .save_screenshot(filename);
+                    //screenshot_manager.save_screenshot(filename);
 
                     screenshot_pending = false;
                 }
