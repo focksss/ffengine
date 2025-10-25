@@ -1046,7 +1046,7 @@ impl<'a> RenderEngine<'a> {
         }
     } }
 
-    pub unsafe fn render_frame(&self, current_frame: usize, present_index: u32, world: &Scene, player_camera: &Camera) {
+    pub unsafe fn render_frame(&self, current_frame: usize, present_index: u32, world: &Scene, player_camera: &Camera) { unsafe {
         let base = self.base;
         let ubo = SSAOPassUniformData {
             samples: self.ssao_kernal,
@@ -1348,7 +1348,7 @@ impl<'a> RenderEngine<'a> {
                 //</editor-fold>
             },
         );
-    }
+    } }
 }
 impl Drop for RenderEngine<'_> {
     fn drop(&mut self) { unsafe {
@@ -1393,7 +1393,7 @@ impl Drop for RenderEngine<'_> {
 
         base.device.destroy_sampler(self.sampler, None);
         base.device.destroy_sampler(self.nearest_sampler, None);
-        
+
         self.null_texture.destroy(base);
         base.device.destroy_sampler(self.null_tex_sampler, None);
     } }

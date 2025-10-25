@@ -4,115 +4,203 @@ use std::io::{BufWriter, Cursor};
 use std::path::{Path, PathBuf};
 use ash::{vk, Device, Instance};
 use ash::util::read_spv;
-use ash::vk::{Buffer, ClearColorValue, ClearDepthStencilValue, ClearValue, DescriptorImageInfo, DescriptorPool, DescriptorPoolCreateFlags, DescriptorPoolSize, DescriptorSetLayout, DescriptorSetLayoutCreateFlags, DescriptorType, DeviceMemory, DeviceSize, Extent3D, Format, ImageAspectFlags, ImageSubresourceRange, ImageUsageFlags, MemoryPropertyFlags, PhysicalDevice, PipelineShaderStageCreateInfo, SampleCountFlags, ShaderModule, ShaderModuleCreateInfo, ShaderStageFlags};
-use crate::{MAX_FRAMES_IN_FLIGHT};
+use ash::vk::{Buffer, ClearColorValue, ClearDepthStencilValue, ClearValue, DescriptorImageInfo, DescriptorPool, DescriptorPoolCreateFlags, DescriptorPoolSize, DescriptorSetLayout, DescriptorSetLayoutCreateFlags, DescriptorType, DeviceMemory, DeviceSize, DynamicState, Extent3D, Format, GraphicsPipelineCreateInfo, ImageAspectFlags, ImageSubresourceRange, ImageUsageFlags, MemoryPropertyFlags, PhysicalDevice, PipelineColorBlendAttachmentState, PipelineDepthStencilStateCreateInfo, PipelineInputAssemblyStateCreateInfo, PipelineMultisampleStateCreateInfo, PipelineRasterizationStateCreateInfo, PipelineShaderStageCreateInfo, PipelineTessellationStateCreateInfo, PipelineVertexInputStateCreateInfo, PushConstantRange, SampleCountFlags, ShaderModule, ShaderModuleCreateInfo, ShaderStageFlags, StencilOpState};
+use crate::MAX_FRAMES_IN_FLIGHT;
 use crate::render::*;
 
 const SHADER_PATH: &str = "resources\\shaders\\spv\\";
 
-pub struct Shader {
-    pub vertex_module: ShaderModule,
-    pub geometry_module: Option<ShaderModule>,
-    pub fragment_module: ShaderModule,
+pub struct Renderpass {
+    pub pass: Pass,
+    pub descriptor_set: DescriptorSet,
+    pub shader: Shader,
+    pub pipeline: vk::Pipeline,
+    pub pipeline_layout: vk::PipelineLayout,
+    pub viewport: vk::Viewport,
+    pub scissor: vk::Rect2D,
 }
-impl Shader {
-    pub unsafe fn new(base: &VkBase, vert_path: &str, frag_path: &str, geometry_path: Option<&str>) -> Self { unsafe {
-        let mut vertex_spv_file = Cursor::new(load_file(&(SHADER_PATH.to_owned() + vert_path)).unwrap());
-        let mut frag_spv_file = Cursor::new(load_file(&(SHADER_PATH.to_owned() + frag_path)).unwrap());
-        let geometry_spv_file: Option<Cursor<Vec<u8>>> = if geometry_path.is_some() {
-            Some(Cursor::new(load_file(&(SHADER_PATH.to_owned() + geometry_path.unwrap())).unwrap()))
-        } else {
-            None
-        };
-
-        let vertex_code = read_spv(&mut vertex_spv_file).expect("Failed to read vertex shader spv file");
-        let vertex_shader_info = ShaderModuleCreateInfo::default().code(&vertex_code);
-
-        let frag_code = read_spv(&mut frag_spv_file).expect("Failed to read fragment shader spv file");
-        let frag_shader_info = ShaderModuleCreateInfo::default().code(&frag_code);
-        
-        let geometry_code: Option<Vec<u32>> = if let Some(mut geo_file) = geometry_spv_file {
-            Some(read_spv(&mut geo_file).expect("Failed to read geometry shader spv file"))
-        } else {
-            None
-        };
-        let geometry_shader_info: Option<ShaderModuleCreateInfo> = geometry_code
-            .as_ref()
-            .map(|code| ShaderModuleCreateInfo::default().code(code));
-
-        let vertex_shader_module = base
+impl Renderpass {
+    pub unsafe fn new(create_info: RenderpassCreateInfo) -> Renderpass { unsafe {
+        let base = create_info.base;
+        let pass = Pass::new(create_info.pass_create_info);
+        let descriptor_set = DescriptorSet::new(create_info.descriptor_set_create_info);
+        let shader = Shader::new(
+            base,
+            &*create_info.vertex_shader_uri.expect("Must have a vertex shader per pipeline"),
+            &*create_info.fragment_shader_uri.expect("Must have a fragment shader per pipeline"),
+            create_info.geometry_shader_uri.as_ref().map(|s| s.as_str()),
+        );
+        let shader_stages_create_infos = shader.generate_shader_stage_create_infos();
+        let pipeline_layout = base
             .device
-            .create_shader_module(&vertex_shader_info, None)
-            .expect("Vertex shader module error");
-        let geometry_shader_module: Option<ShaderModule> = if geometry_path.is_some() {
-            Some(base
-                 .device
-                 .create_shader_module(&geometry_shader_info.unwrap(), None)
-                 .expect("Geometry shader module error"))
-        } else {
+            .create_pipeline_layout(
+                &vk::PipelineLayoutCreateInfo {
+                    s_type: vk::StructureType::PIPELINE_LAYOUT_CREATE_INFO,
+                    set_layout_count: 1,
+                    p_set_layouts: &descriptor_set.descriptor_set_layout,
+                    p_push_constant_ranges: &create_info.push_constant_info.unwrap_or_default(),
+                    push_constant_range_count: if create_info.push_constant_info.is_some() { 1 } else { 0 },
+                    ..Default::default()
+                }, None
+            ).unwrap();
+        let viewports = [create_info.viewport];
+        let scissors = [create_info.scissor];
+        let dynamic_states = [create_info.dynamic_state];
+        let color_blend_attachment_states = [create_info.pipeline_color_blend_attachment_state];
+        let viewport_state = vk::PipelineViewportStateCreateInfo::default()
+            .viewports(&viewports)
+            .scissors(&scissors);
+        let dynamic_state_info =
+            vk::PipelineDynamicStateCreateInfo::default().dynamic_states(&dynamic_states);
+        let color_blend_create_info = vk::PipelineColorBlendStateCreateInfo::default()
+            .logic_op(vk::LogicOp::CLEAR)
+            .attachments(&color_blend_attachment_states);
+        let pipeline_create_info = GraphicsPipelineCreateInfo::default()
+            .stages(&shader_stages_create_infos)
+            .vertex_input_state(&create_info.pipeline_vertex_input_state_create_info)
+            .input_assembly_state(&create_info.pipeline_input_assembly_state_create_info)
+            .tessellation_state(&create_info.pipeline_tess_state_create_info)
+            .viewport_state(&viewport_state)
+            .rasterization_state(&create_info.pipeline_rasterization_state_create_info)
+            .multisample_state(&create_info.pipeline_multisample_state_create_info)
+            .depth_stencil_state(&create_info.pipeline_depth_stencil_state_create_info)
+            .color_blend_state(&color_blend_create_info)
+            .dynamic_state(&dynamic_state_info)
+            .layout(pipeline_layout)
+            .render_pass(pass.renderpass);
+        let pipeline = base.device.create_graphics_pipelines(
+            vk::PipelineCache::null(),
+            &[pipeline_create_info],
             None
-        };
-        let fragment_shader_module = base
-            .device
-            .create_shader_module(&frag_shader_info, None)
-            .expect("Fragment shader module error");
-        Shader {
-            vertex_module: vertex_shader_module,
-            geometry_module: geometry_shader_module,
-            fragment_module: fragment_shader_module,
+        ).expect("Failed to create pipeline")[0];
+        Renderpass {
+            pass,
+            descriptor_set,
+            shader,
+            pipeline,
+            pipeline_layout,
+            viewport: create_info.viewport,
+            scissor: create_info.scissor,
         }
     } }
+}
+pub struct RenderpassCreateInfo<'a> {
+    pub base: &'a VkBase,
+    pub pass_create_info: PassCreateInfo<'a>,
+    pub descriptor_set_create_info: DescriptorSetCreateInfo<'a>,
+    pub vertex_shader_uri: Option<String>,
+    pub geometry_shader_uri: Option<String>,
+    pub fragment_shader_uri: Option<String>,
+    pub viewport: vk::Viewport,
+    pub scissor: vk::Rect2D,
 
-    pub fn generate_shader_stage_create_infos(&self) -> Vec<PipelineShaderStageCreateInfo<'_>> {
-        let shader_entry_name = c"main";
-        if self.geometry_module.is_some() {
-            vec![
-                PipelineShaderStageCreateInfo {
-                    module: self.vertex_module,
-                    p_name: shader_entry_name.as_ptr(),
-                    stage: ShaderStageFlags::VERTEX,
-                    ..Default::default()
-                },
-                PipelineShaderStageCreateInfo {
-                    module: self.geometry_module.unwrap(),
-                    p_name: shader_entry_name.as_ptr(),
-                    stage: ShaderStageFlags::GEOMETRY,
-                    ..Default::default()
-                },
-                PipelineShaderStageCreateInfo {
-                    s_type: vk::StructureType::PIPELINE_SHADER_STAGE_CREATE_INFO,
-                    module: self.fragment_module,
-                    p_name: shader_entry_name.as_ptr(),
-                    stage: ShaderStageFlags::FRAGMENT,
-                    ..Default::default()
-                },
-            ]
-        } else {
-            vec![
-                PipelineShaderStageCreateInfo {
-                    module: self.vertex_module,
-                    p_name: shader_entry_name.as_ptr(),
-                    stage: ShaderStageFlags::VERTEX,
-                    ..Default::default()
-                },
-                PipelineShaderStageCreateInfo {
-                    s_type: vk::StructureType::PIPELINE_SHADER_STAGE_CREATE_INFO,
-                    module: self.fragment_module,
-                    p_name: shader_entry_name.as_ptr(),
-                    stage: ShaderStageFlags::FRAGMENT,
-                    ..Default::default()
-                },
-            ]
+    pub push_constant_info: Option<PushConstantRange>,
+
+    pub pipeline_vertex_input_state_create_info: PipelineVertexInputStateCreateInfo<'a>,
+    pub pipeline_input_assembly_state_create_info: PipelineInputAssemblyStateCreateInfo<'a>,
+    pub pipeline_tess_state_create_info: PipelineTessellationStateCreateInfo<'a>,
+    pub pipeline_rasterization_state_create_info: PipelineRasterizationStateCreateInfo<'a>,
+    pub pipeline_multisample_state_create_info: PipelineMultisampleStateCreateInfo<'a>,
+    pub stencil_op_state: StencilOpState,
+    pub pipeline_depth_stencil_state_create_info: PipelineDepthStencilStateCreateInfo<'a>,
+    pub pipeline_color_blend_attachment_state: PipelineColorBlendAttachmentState,
+    pub dynamic_state: DynamicState,
+
+}
+impl<'a> RenderpassCreateInfo<'a> {
+    pub fn new(base: &'a VkBase) -> Self {
+        RenderpassCreateInfo {
+            base,
+            pass_create_info: PassCreateInfo::new(base),
+            descriptor_set_create_info: DescriptorSetCreateInfo::new(base),
+            vertex_shader_uri: None,
+            geometry_shader_uri: None,
+            fragment_shader_uri: None,
+            viewport: Default::default(),
+            scissor: Default::default(),
+
+            push_constant_info: None,
+
+            pipeline_vertex_input_state_create_info: Default::default(),
+            pipeline_input_assembly_state_create_info: Default::default(),
+            pipeline_tess_state_create_info: Default::default(),
+            pipeline_rasterization_state_create_info: Default::default(),
+            pipeline_multisample_state_create_info: Default::default(),
+            stencil_op_state: Default::default(),
+            pipeline_depth_stencil_state_create_info: Default::default(),
+            pipeline_color_blend_attachment_state: Default::default(),
+            dynamic_state: Default::default(),
         }
     }
 
-    pub unsafe fn destroy(&self, base: &VkBase) { unsafe {
-        base.device.destroy_shader_module(self.vertex_module, None);
-        if self.geometry_module.is_some() {
-            base.device.destroy_shader_module(self.geometry_module.unwrap(), None);
-        }
-        base.device.destroy_shader_module(self.fragment_module, None);
-    } }
+    pub fn pass_create_info(mut self, pass_create_info: PassCreateInfo<'a>) -> Self {
+        self.pass_create_info = pass_create_info;
+        self
+    }
+    pub fn descriptor_set_create_info(mut self, descriptor_set_create_info: DescriptorSetCreateInfo<'a>) -> Self {
+        self.descriptor_set_create_info = descriptor_set_create_info;
+        self
+    }
+    pub fn vertex_shader_uri(mut self, vertex_shader_uri: String) -> Self {
+        self.vertex_shader_uri = Some(vertex_shader_uri);
+        self
+    }
+    pub fn geometry_shader_uri(mut self, geometry_shader_uri: String) -> Self {
+        self.geometry_shader_uri = Some(geometry_shader_uri);
+        self
+    }
+    pub fn fragment_shader_uri(mut self, fragment_shader_uri: String) -> Self {
+        self.fragment_shader_uri = Some(fragment_shader_uri);
+        self
+    }
+    pub fn viewport(mut self, viewport: vk::Viewport) -> Self {
+        self.viewport = viewport;
+        self
+    }
+    pub fn scissor(mut self, scissor: vk::Rect2D) -> Self {
+        self.scissor = scissor;
+        self
+    }
+    pub fn push_constant_range(mut self, push_constant_range: PushConstantRange) -> Self {
+        self.push_constant_info = Some(push_constant_range);
+        self
+    }
+    pub fn pipeline_vertex_input_state(mut self, pipeline_vertex_input_state: PipelineVertexInputStateCreateInfo<'a>) -> Self {
+        self.pipeline_vertex_input_state_create_info = pipeline_vertex_input_state;
+        self
+    }
+    pub fn pipeline_input_assembly_state(mut self, pipeline_input_assembly_state: PipelineInputAssemblyStateCreateInfo<'a>) -> Self {
+        self.pipeline_input_assembly_state_create_info = pipeline_input_assembly_state;
+        self
+    }
+    pub fn pipeline_tess_state(mut self, pipeline_tess_state: PipelineTessellationStateCreateInfo<'a>) -> Self {
+        self.pipeline_tess_state_create_info = pipeline_tess_state;
+        self
+    }
+    pub fn pipeline_rasterization_state(mut self, pipeline_rasterization_state: PipelineRasterizationStateCreateInfo<'a>) -> Self {
+        self.pipeline_rasterization_state_create_info = pipeline_rasterization_state;
+        self
+    }
+    pub fn stencil_op_state(mut self, stencil_op_state: StencilOpState) -> Self {
+        self.stencil_op_state = stencil_op_state;
+        self
+    }
+    pub fn pipeline_multisample_state(mut self, pipeline_multisample_state: PipelineMultisampleStateCreateInfo<'a>) -> Self {
+        self.pipeline_multisample_state_create_info = pipeline_multisample_state;
+        self
+    }
+    pub fn pipeline_depth_stencil_state(mut self, pipeline_depth_stencil_state: PipelineDepthStencilStateCreateInfo<'a>) -> Self {
+        self.pipeline_depth_stencil_state_create_info = pipeline_depth_stencil_state;
+        self
+    }
+    pub fn pipeline_color_blend_attachment_state(mut self, pipeline_color_blend_attachment_state: PipelineColorBlendAttachmentState) -> Self {
+        self.pipeline_color_blend_attachment_state = pipeline_color_blend_attachment_state;
+        self
+    }
+    pub fn dynamic_state(mut self, dynamic_state: DynamicState) -> Self {
+        self.dynamic_state = dynamic_state;
+        self
+    }
 }
 
 pub struct Pass {
@@ -1213,5 +1301,110 @@ impl<'a> ScreenshotManager<'a> {
 
         self.screenshot_pending = false;
         println!("Screenshot saved!");
+    } }
+}
+
+pub struct Shader {
+    pub vertex_module: ShaderModule,
+    pub geometry_module: Option<ShaderModule>,
+    pub fragment_module: ShaderModule,
+}
+impl Shader {
+    pub unsafe fn new(base: &VkBase, vert_path: &str, frag_path: &str, geometry_path: Option<&str>) -> Self { unsafe {
+        let mut vertex_spv_file = Cursor::new(load_file(&(SHADER_PATH.to_owned() + vert_path)).unwrap());
+        let mut frag_spv_file = Cursor::new(load_file(&(SHADER_PATH.to_owned() + frag_path)).unwrap());
+        let geometry_spv_file: Option<Cursor<Vec<u8>>> = if geometry_path.is_some() {
+            Some(Cursor::new(load_file(&(SHADER_PATH.to_owned() + geometry_path.unwrap())).unwrap()))
+        } else {
+            None
+        };
+
+        let vertex_code = read_spv(&mut vertex_spv_file).expect("Failed to read vertex shader spv file");
+        let vertex_shader_info = ShaderModuleCreateInfo::default().code(&vertex_code);
+
+        let frag_code = read_spv(&mut frag_spv_file).expect("Failed to read fragment shader spv file");
+        let frag_shader_info = ShaderModuleCreateInfo::default().code(&frag_code);
+
+        let geometry_code: Option<Vec<u32>> = if let Some(mut geo_file) = geometry_spv_file {
+            Some(read_spv(&mut geo_file).expect("Failed to read geometry shader spv file"))
+        } else {
+            None
+        };
+        let geometry_shader_info: Option<ShaderModuleCreateInfo> = geometry_code
+            .as_ref()
+            .map(|code| ShaderModuleCreateInfo::default().code(code));
+
+        let vertex_shader_module = base
+            .device
+            .create_shader_module(&vertex_shader_info, None)
+            .expect("Vertex shader module error");
+        let geometry_shader_module: Option<ShaderModule> = if geometry_path.is_some() {
+            Some(base
+                .device
+                .create_shader_module(&geometry_shader_info.unwrap(), None)
+                .expect("Geometry shader module error"))
+        } else {
+            None
+        };
+        let fragment_shader_module = base
+            .device
+            .create_shader_module(&frag_shader_info, None)
+            .expect("Fragment shader module error");
+        Shader {
+            vertex_module: vertex_shader_module,
+            geometry_module: geometry_shader_module,
+            fragment_module: fragment_shader_module,
+        }
+    } }
+
+    pub fn generate_shader_stage_create_infos(&self) -> Vec<PipelineShaderStageCreateInfo<'_>> {
+        let shader_entry_name = c"main";
+        if self.geometry_module.is_some() {
+            vec![
+                PipelineShaderStageCreateInfo {
+                    module: self.vertex_module,
+                    p_name: shader_entry_name.as_ptr(),
+                    stage: ShaderStageFlags::VERTEX,
+                    ..Default::default()
+                },
+                PipelineShaderStageCreateInfo {
+                    module: self.geometry_module.unwrap(),
+                    p_name: shader_entry_name.as_ptr(),
+                    stage: ShaderStageFlags::GEOMETRY,
+                    ..Default::default()
+                },
+                PipelineShaderStageCreateInfo {
+                    s_type: vk::StructureType::PIPELINE_SHADER_STAGE_CREATE_INFO,
+                    module: self.fragment_module,
+                    p_name: shader_entry_name.as_ptr(),
+                    stage: ShaderStageFlags::FRAGMENT,
+                    ..Default::default()
+                },
+            ]
+        } else {
+            vec![
+                PipelineShaderStageCreateInfo {
+                    module: self.vertex_module,
+                    p_name: shader_entry_name.as_ptr(),
+                    stage: ShaderStageFlags::VERTEX,
+                    ..Default::default()
+                },
+                PipelineShaderStageCreateInfo {
+                    s_type: vk::StructureType::PIPELINE_SHADER_STAGE_CREATE_INFO,
+                    module: self.fragment_module,
+                    p_name: shader_entry_name.as_ptr(),
+                    stage: ShaderStageFlags::FRAGMENT,
+                    ..Default::default()
+                },
+            ]
+        }
+    }
+
+    pub unsafe fn destroy(&self, base: &VkBase) { unsafe {
+        base.device.destroy_shader_module(self.vertex_module, None);
+        if self.geometry_module.is_some() {
+            base.device.destroy_shader_module(self.geometry_module.unwrap(), None);
+        }
+        base.device.destroy_shader_module(self.fragment_module, None);
     } }
 }
