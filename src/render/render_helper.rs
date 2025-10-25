@@ -956,10 +956,10 @@ impl DescriptorSet {
             descriptors: create_info.descriptors,
         }
     } }
-    pub unsafe fn destroy(self, base: &VkBase) { unsafe {
+    pub unsafe fn destroy(&self, base: &VkBase) { unsafe {
         base.device.destroy_descriptor_set_layout(self.descriptor_set_layout, None);
         base.device.destroy_descriptor_pool(self.descriptor_pool, None);
-        for descriptor in self.descriptors {
+        for descriptor in &self.descriptors {
             descriptor.destroy(base);
         }
     } }

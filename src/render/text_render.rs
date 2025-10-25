@@ -567,7 +567,7 @@ impl<'a> Font<'a> {
             format: Format::R8G8B8A8_UNORM,
             resolution: vk::Extent3D::default(),
             array_layers: 1,
-            samples: base.msaa_samples,
+            samples: SampleCountFlags::TYPE_1,
             is_depth: false,
         };
 

@@ -6,12 +6,14 @@ use std::path::{Path, PathBuf};
 use std::ptr::null_mut;
 use std::time::SystemTime;
 use ash::vk;
-use ash::vk::{CommandBuffer, DeviceMemory, ImageView, Sampler};
+use ash::vk::{CommandBuffer, DeviceMemory, Format, ImageView, SampleCountFlags, Sampler};
 use json::JsonValue;
 use crate::math::matrix::Matrix;
 use crate::engine::camera::{Camera, Frustum};
 use crate::render::*;
 use crate::math::vector::Vector;
+use crate::render;
+use render::*;
 
 // SHOULD DETECT MATH VS COLOR DATA TEXTURES, LOAD COLOR AS SRGB, MATH AS UNORM
 const MAX_VERTICES: u64 = 10u64 * 10u64.pow(6);
@@ -20,7 +22,8 @@ const MAX_INSTANCES: u64 = 10u64 * 10u64.pow(4);
 const MAX_MATERIALS: u64 = 10u64 * 10u64.pow(4);
 const MAX_JOINTS: u64 = 10u64 * 10u64.pow(4);
 const MAX_LIGHTS: u64 = 10u64 * 10u64.pow(3);
-pub struct Scene {
+pub struct Scene<'a> {
+    base: &'a VkBase,
     pub models: Vec<Model>,
     pub lights: Vec<Light>,
 
@@ -55,9 +58,10 @@ pub struct Scene {
     pub dirty_instances: Vec<usize>,
     pub primitive_count: usize,
 }
-impl Scene {
-    pub fn new() -> Self {
+impl<'a> Scene<'a> {
+    pub fn new(base: &'a VkBase) -> Self {
         Self {
+            base,
             models: Vec::new(),
             lights: Vec::new(),
             texture_count: 0,
@@ -104,7 +108,8 @@ impl Scene {
         self.lights.push(light);
     }
 
-    pub unsafe fn initialize(&mut self, base: &VkBase, frames_in_flight: usize, load_textures: bool) { unsafe {
+    pub unsafe fn initialize(&mut self, frames_in_flight: usize, load_textures: bool) { unsafe {
+        let base = self.base;
         let mut all_vertices: Vec<Vertex> = vec![];
         let mut all_indices: Vec<u32> = vec![];
         self.primitive_count = 0;
@@ -170,7 +175,7 @@ impl Scene {
             }
         }
 
-        self.update_instances_all_frames(base);
+        self.update_instances_all_frames();
         self.joints_buffers_size = size_of::<Matrix>() as u64 * MAX_JOINTS;
         let mut joints_send = Vec::new();
         for model in self.models.iter_mut() {
@@ -196,7 +201,8 @@ impl Scene {
             }
         }
     } }
-    pub unsafe fn add_model(&mut self, base: &VkBase, mut model: Model) { unsafe {
+    pub unsafe fn add_model(&mut self, mut model: Model) { unsafe {
+        let base = self.base;
         let mut new_vertices: Vec<Vertex> = vec![];
         let mut new_indices: Vec<u32> = vec![];
         let mut new_materials_send: Vec<MaterialSendable> = vec![];
@@ -293,7 +299,8 @@ impl Scene {
 
         self.models.push(model);
     } }
-    pub unsafe fn update_instances(&mut self, base: &VkBase) { unsafe {
+    pub unsafe fn update_instances(&mut self) { unsafe {
+        let base = self.base;
         self.dirty_instances.clear();
         for model in self.models.iter_mut() {
             for node in &model.scene.nodes.clone() {
@@ -330,7 +337,8 @@ impl Scene {
         }
     } }
 
-    pub unsafe fn update_lights(&mut self, base: &VkBase, primary_camera: &Camera, frame: usize) { unsafe {
+    pub unsafe fn update_lights(&mut self, primary_camera: &Camera, frame: usize) { unsafe {
+        let base = self.base;
         for light in &mut self.lights {
             light.update(primary_camera);
         }
@@ -340,7 +348,8 @@ impl Scene {
         base.copy_buffer(&self.lights_staging_buffer.0, &self.lights_buffers[frame].0, &self.lights_buffers_size);
     } }
 
-    pub unsafe fn update_instances_all_frames(&mut self, base: &VkBase) { unsafe {
+    pub unsafe fn update_instances_all_frames(&mut self) { unsafe {
+        let base = self.base;
         for model in self.models.iter_mut() {
             for node in &model.scene.nodes.clone() {
                 model.update_node(&mut self.instance_data, &mut self.dirty_instances, *node, &mut Matrix::new(), true);
@@ -360,17 +369,19 @@ impl Scene {
         base.end_single_time_commands(command_buffers);
     } }
 
-    pub unsafe fn update_nodes(&mut self, base: &VkBase, frame: usize) { unsafe {
+    pub unsafe fn update_nodes(&mut self, frame: usize) { unsafe {
+        let base = self.base;
         for model in self.models.iter_mut() {
             for animation in model.animations.iter_mut() {
                 animation.update(&mut model.nodes)
             }
         }
-        self.update_instances(base);
-        self.update_joints(base, frame);
+        self.update_instances();
+        self.update_joints(frame);
     } }
 
-    pub unsafe fn update_joints(&mut self, base: &VkBase, frame: usize) { unsafe {
+    pub unsafe fn update_joints(&mut self, frame: usize) { unsafe {
+        let base = self.base;
         let mut joints = Vec::new();
         let mut total_skins = 0f32;
         for model in self.models.iter_mut() {
@@ -397,7 +408,8 @@ impl Scene {
         base.copy_buffer(&self.joints_staging_buffer.0, &self.joints_buffers[frame].0, &self.joints_buffers_size);
     }}
 
-    pub unsafe fn draw(&self, base: &VkBase, draw_command_buffer: &CommandBuffer, frame: usize, frustum: Option<&Frustum>) { unsafe {
+    pub unsafe fn draw(&self, draw_command_buffer: &CommandBuffer, frame: usize, frustum: Option<&Frustum>) { unsafe {
+        let base = self.base;
         base.device.cmd_bind_vertex_buffers(
             *draw_command_buffer,
             1,
@@ -421,7 +433,9 @@ impl Scene {
         }
     } }
 
-    pub unsafe fn destroy(&mut self, base: &VkBase) { unsafe {
+    pub unsafe fn destroy(&mut self) { unsafe {
+        let base = self.base;
+
         for instance_buffer in &self.instance_buffers {
             base.device.destroy_buffer(instance_buffer.0, None);
             base.device.free_memory(instance_buffer.1, None);
@@ -465,6 +479,11 @@ impl Scene {
             model.cleanup(base);
         }
     } }
+}
+impl Drop for Scene<'_> {
+    fn drop(&mut self) {
+        unsafe { self.destroy() }
+    }
 }
 
 #[derive(Clone)]
@@ -585,7 +604,7 @@ pub struct Model {
     pub nodes: Vec<Node>,
     pub meshes: Vec<Rc<RefCell<Mesh>>>,
     pub materials: Vec<Material>,
-    pub textures: Vec<Rc<RefCell<Texture>>>,
+    pub textures: Vec<Rc<RefCell<SceneTexture>>>,
     pub images: Vec<Rc<RefCell<Image>>>,
     pub accessors: Vec<Rc<Accessor>>,
     pub buffer_views: Vec<Rc<BufferView>>,
@@ -679,7 +698,7 @@ impl Model {
         let mut textures = Vec::new();
         for texture in json["textures"].members() {
             textures.push(
-                Rc::new(RefCell::new(Texture {
+                Rc::new(RefCell::new(SceneTexture {
                     source: images[texture["source"].as_usize().unwrap()].clone(),
                     sampler: Sampler::null()
                 })))
@@ -1243,12 +1262,12 @@ impl Image {
     } }
 }
 
-pub struct Texture {
+pub struct SceneTexture {
     pub source: Rc<RefCell<Image>>,
 
     pub sampler: Sampler,
 }
-impl Texture {
+impl SceneTexture {
     pub unsafe fn construct_sampler(&mut self, base: &VkBase) { unsafe {
         let sampler_info = vk::SamplerCreateInfo {
             s_type: vk::StructureType::SAMPLER_CREATE_INFO,
