@@ -1,8 +1,8 @@
-use crate::mem;
+use crate::{mem, FrametimeManager};
 use std::path::PathBuf;
 use std::slice;
 use ash::vk;
-use ash::vk::{DescriptorType, Format, RenderPass, RenderPassCreateInfo, ShaderStageFlags};
+use ash::vk::{CommandBuffer, DescriptorType, Format, Handle, RenderPass, RenderPassCreateInfo, ShaderStageFlags};
 use rand::{rng, Rng};
 use crate::{offset_of, render, MAX_FRAMES_IN_FLIGHT};
 use crate::engine::camera::Camera;
@@ -12,7 +12,7 @@ use crate::render::*;
 use crate::scene::*;
 
 const SSAO_KERNAL_SIZE: usize = 16;
-const SSAO_RESOLUTION_MULTIPLIER: f32 = 1.0;
+const SSAO_RESOLUTION_MULTIPLIER: f32 = 0.5;
 const SHADOW_RES: u32 = 4096;
 
 pub struct RenderEngine<'a> {
@@ -31,7 +31,7 @@ pub struct RenderEngine<'a> {
 
     pub sampler: vk::Sampler,
     pub nearest_sampler: vk::Sampler,
-    pub ssao_kernal: [[f32; 4]; 16],
+    pub ssao_kernal: [[f32; 4]; SSAO_KERNAL_SIZE],
     pub ssao_noise_texture: Texture,
 }
 impl<'a> RenderEngine<'a> {
@@ -190,6 +190,7 @@ impl<'a> RenderEngine<'a> {
             .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
             .descriptor_type(DescriptorType::STORAGE_BUFFER)
             .shader_stages(ShaderStageFlags::FRAGMENT)
+            // .binding_flags(vk::DescriptorBindingFlags::UPDATE_AFTER_BIND)
             .buffers(world.lights_buffers.iter().map(|b| {b.0.clone()}).collect());
         let lighting_ubo_create_info = DescriptorCreateInfo::new(base)
             .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
@@ -860,9 +861,84 @@ impl<'a> RenderEngine<'a> {
             ssao_noise_texture,
         }
     } }
+    fn get_image_infos(&self, world: &Scene) -> Vec<vk::DescriptorImageInfo> {
+        let mut image_infos: Vec<vk::DescriptorImageInfo> = Vec::with_capacity(1024);
+        for model in &world.models {
+            for texture in &model.textures {
+                if texture.borrow().source.borrow().generated {
+                    image_infos.push(vk::DescriptorImageInfo {
+                        image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                        image_view: texture.borrow().source.borrow().image_view,
+                        sampler: texture.borrow().sampler,
+                        ..Default::default()
+                    });
+                } else {
+                    image_infos.push(vk::DescriptorImageInfo {
+                        image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                        image_view: self.null_texture.image_view,
+                        sampler: self.null_tex_sampler,
+                        ..Default::default()
+                    });
+                }
+            }
+        }
+        let missing = 1024 - image_infos.len();
+        for _ in 0..missing {
+            image_infos.push(vk::DescriptorImageInfo {
+                image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                image_view: self.null_texture.image_view,
+                sampler: self.null_tex_sampler,
+                ..Default::default()
+            });
+        }
+        image_infos
+    }
 
-    pub unsafe fn render_frame(&self, current_frame: usize, present_index: u32, world: &Scene, player_camera: &Camera) { unsafe {
+    pub unsafe fn render_frame(&self, current_frame: usize, present_index: u32, world: &Scene, player_camera: &Camera, frametime_manager: &mut FrametimeManager) { unsafe {
         let base = self.base;
+        let device = &base.device;
+
+        let frame_command_buffer = base.draw_command_buffers[current_frame];
+
+        //<editor-fold desc = "passes begin info">
+        let geometry_pass_pass_begin_info = vk::RenderPassBeginInfo::default()
+            .render_pass(self.geometry_renderpass.pass.renderpass)
+            .framebuffer(self.geometry_renderpass.pass.framebuffers[current_frame])
+            .render_area(base.surface_resolution.into())
+            .clear_values(&self.geometry_renderpass.pass.clear_values);
+        let shadow_pass_pass_begin_info = vk::RenderPassBeginInfo::default()
+            .render_pass(self.shadow_renderpass.pass.renderpass)
+            .framebuffer(self.shadow_renderpass.pass.framebuffers[current_frame])
+            .render_area(self.shadow_renderpass.scissor)
+            .clear_values(&self.shadow_renderpass.pass.clear_values);
+        let ssao_pass_begin_info = vk::RenderPassBeginInfo::default()
+            .render_pass(self.ssao_renderpass.pass.renderpass)
+            .framebuffer(self.ssao_renderpass.pass.framebuffers[current_frame])
+            .render_area(self.ssao_renderpass.scissor)
+            .clear_values(&self.ssao_renderpass.pass.clear_values);
+        let ssao_blur_pass_begin_info_horizontal = vk::RenderPassBeginInfo::default()
+            .render_pass(self.ssao_blur_renderpass_horizontal.pass.renderpass)
+            .framebuffer(self.ssao_blur_renderpass_horizontal.pass.framebuffers[current_frame])
+            .render_area(self.ssao_renderpass.scissor)
+            .clear_values(&self.ssao_blur_renderpass_horizontal.pass.clear_values);
+        let ssao_blur_pass_begin_info_vertical = vk::RenderPassBeginInfo::default()
+            .render_pass(self.ssao_blur_renderpass_vertical.pass.renderpass)
+            .framebuffer(self.ssao_blur_renderpass_vertical.pass.framebuffers[current_frame])
+            .render_area(self.ssao_renderpass.scissor)
+            .clear_values(&self.ssao_blur_renderpass_vertical.pass.clear_values);
+        let lighting_pass_pass_begin_info = vk::RenderPassBeginInfo::default()
+            .render_pass(self.lighting_renderpass.pass.renderpass)
+            .framebuffer(self.lighting_renderpass.pass.framebuffers[current_frame])
+            .render_area(base.surface_resolution.into())
+            .clear_values(&self.lighting_renderpass.pass.clear_values);
+        let present_pass_pass_begin_info = vk::RenderPassBeginInfo::default()
+            .render_pass(self.present_renderpass.pass.renderpass)
+            .framebuffer(self.present_renderpass.pass.framebuffers[present_index as usize])
+            .render_area(base.surface_resolution.into())
+            .clear_values(&self.present_renderpass.pass.clear_values);
+        //</editor-fold>
+
+        // frametime_manager.record_cpu_action_start(String::from("ubo updates"));
         let ubo = SSAOPassUniformData {
             samples: self.ssao_kernal,
             projection: player_camera.projection_matrix.data,
@@ -908,261 +984,221 @@ impl<'a> RenderEngine<'a> {
             inv_resolution: [1.0 / (base.surface_resolution.width as f32), 1.0 / (base.surface_resolution.height as f32)],
             infinite_reverse_depth: 1
         };
+        // frametime_manager.record_cpu_action_end();
 
-        //<editor-fold desc = "passes begin info">
-        let geometry_pass_pass_begin_info = vk::RenderPassBeginInfo::default()
-            .render_pass(self.geometry_renderpass.pass.renderpass)
-            .framebuffer(self.geometry_renderpass.pass.framebuffers[current_frame])
-            .render_area(base.surface_resolution.into())
-            .clear_values(&self.geometry_renderpass.pass.clear_values);
-        let shadow_pass_pass_begin_info = vk::RenderPassBeginInfo::default()
-            .render_pass(self.shadow_renderpass.pass.renderpass)
-            .framebuffer(self.shadow_renderpass.pass.framebuffers[current_frame])
-            .render_area(self.shadow_renderpass.scissor)
-            .clear_values(&self.shadow_renderpass.pass.clear_values);
-        let ssao_pass_begin_info = vk::RenderPassBeginInfo::default()
-            .render_pass(self.ssao_renderpass.pass.renderpass)
-            .framebuffer(self.ssao_renderpass.pass.framebuffers[current_frame])
-            .render_area(self.ssao_renderpass.scissor)
-            .clear_values(&self.ssao_renderpass.pass.clear_values);
-        let ssao_blur_pass_begin_info_horizontal = vk::RenderPassBeginInfo::default()
-            .render_pass(self.ssao_blur_renderpass_horizontal.pass.renderpass)
-            .framebuffer(self.ssao_blur_renderpass_horizontal.pass.framebuffers[current_frame])
-            .render_area(self.ssao_renderpass.scissor)
-            .clear_values(&self.ssao_blur_renderpass_horizontal.pass.clear_values);
-        let ssao_blur_pass_begin_info_vertical = vk::RenderPassBeginInfo::default()
-            .render_pass(self.ssao_blur_renderpass_vertical.pass.renderpass)
-            .framebuffer(self.ssao_blur_renderpass_vertical.pass.framebuffers[current_frame])
-            .render_area(self.ssao_renderpass.scissor)
-            .clear_values(&self.ssao_blur_renderpass_vertical.pass.clear_values);
-        let lighting_pass_pass_begin_info = vk::RenderPassBeginInfo::default()
-            .render_pass(self.lighting_renderpass.pass.renderpass)
-            .framebuffer(self.lighting_renderpass.pass.framebuffers[current_frame])
-            .render_area(base.surface_resolution.into())
-            .clear_values(&self.lighting_renderpass.pass.clear_values);
-        let present_pass_pass_begin_info = vk::RenderPassBeginInfo::default()
-            .render_pass(self.present_renderpass.pass.renderpass)
-            .framebuffer(self.present_renderpass.pass.framebuffers[present_index as usize])
-            .render_area(base.surface_resolution.into())
-            .clear_values(&self.present_renderpass.pass.clear_values);
-        //</editor-fold>
 
-        let current_rendering_complete_semaphore = base.rendering_complete_semaphores[current_frame];
-        let current_draw_command_buffer = base.draw_command_buffers[current_frame];
-        let current_fence = base.draw_commands_reuse_fences[current_frame];
-        record_submit_commandbuffer(
-            &base.device,
-            current_draw_command_buffer,
-            current_fence,
-            base.present_queue,
-            &[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT],
-            &[base.present_complete_semaphores[current_frame]],
-            &[current_rendering_complete_semaphore],
-            |device, frame_command_buffer| {
-                //<editor-fold desc = "geometry pass">
-                device.cmd_begin_render_pass(
-                    frame_command_buffer,
-                    &geometry_pass_pass_begin_info,
-                    vk::SubpassContents::INLINE,
-                );
-                device.cmd_bind_pipeline(
-                    frame_command_buffer,
-                    vk::PipelineBindPoint::GRAPHICS,
-                    self.geometry_renderpass.pipeline,
-                );
-                device.cmd_push_constants(frame_command_buffer, self.geometry_renderpass.pipeline_layout, ShaderStageFlags::VERTEX, 0, slice::from_raw_parts(
-                    &camera_constants as *const CameraMatrixUniformData as *const u8,
-                    size_of::<CameraMatrixUniformData>(),
-                ));
-
-                // draw scene
-                device.cmd_set_viewport(frame_command_buffer, 0, &[self.present_renderpass.viewport]);
-                device.cmd_set_scissor(frame_command_buffer, 0, &[self.present_renderpass.scissor]);
-                device.cmd_bind_descriptor_sets(
-                    frame_command_buffer,
-                    vk::PipelineBindPoint::GRAPHICS,
-                    self.geometry_renderpass.pipeline_layout,
-                    0,
-                    &[self.geometry_renderpass.descriptor_set.descriptor_sets[current_frame]],
-                    &[],
-                );
-                world.draw(&frame_command_buffer, current_frame, Some(&player_camera.frustum));
-
-                device.cmd_end_render_pass(frame_command_buffer);
-                //</editor-fold>
-                self.geometry_renderpass.pass.transition_to_readable(base, frame_command_buffer, current_frame);
-                //<editor-fold desc = "shadow pass">
-                device.cmd_begin_render_pass(
-                    frame_command_buffer,
-                    &shadow_pass_pass_begin_info,
-                    vk::SubpassContents::INLINE,
-                );
-                device.cmd_bind_pipeline(
-                    frame_command_buffer,
-                    vk::PipelineBindPoint::GRAPHICS,
-                    self.shadow_renderpass.pipeline,
-                );
-                device.cmd_push_constants(frame_command_buffer, self.shadow_renderpass.pipeline_layout, ShaderStageFlags::GEOMETRY, 0, slice::from_raw_parts(
-                    &0 as *const i32 as *const u8, // which light in world.lights to create shadows from
-                    4,
-                ));
-                // draw scene
-                device.cmd_set_viewport(frame_command_buffer, 0, &[self.shadow_renderpass.viewport]);
-                device.cmd_set_scissor(frame_command_buffer, 0, &[self.shadow_renderpass.scissor]);
-                device.cmd_bind_descriptor_sets(
-                    frame_command_buffer,
-                    vk::PipelineBindPoint::GRAPHICS,
-                    self.shadow_renderpass.pipeline_layout,
-                    0,
-                    &[self.shadow_renderpass.descriptor_set.descriptor_sets[current_frame]],
-                    &[],
-                );
-                world.draw(&frame_command_buffer, current_frame, None);
-
-                device.cmd_end_render_pass(frame_command_buffer);
-                //</editor-fold>
-                self.shadow_renderpass.pass.transition_to_readable(base, frame_command_buffer, current_frame);
-                //<editor-fold desc = "ssao pass">
-                device.cmd_begin_render_pass(
-                    frame_command_buffer,
-                    &ssao_pass_begin_info,
-                    vk::SubpassContents::INLINE,
-                );
-                device.cmd_bind_pipeline(
-                    frame_command_buffer,
-                    vk::PipelineBindPoint::GRAPHICS,
-                    self.ssao_renderpass.pipeline,
-                );
-
-                // draw quad
-                device.cmd_set_viewport(frame_command_buffer, 0, &[self.ssao_renderpass.viewport]);
-                device.cmd_set_scissor(frame_command_buffer, 0, &[self.ssao_renderpass.scissor]);
-                device.cmd_bind_descriptor_sets(
-                    frame_command_buffer,
-                    vk::PipelineBindPoint::GRAPHICS,
-                    self.ssao_renderpass.pipeline_layout,
-                    0,
-                    &[self.ssao_renderpass.descriptor_set.descriptor_sets[current_frame]],
-                    &[],
-                );
-                device.cmd_draw(current_draw_command_buffer, 6, 1, 0, 0);
-
-                device.cmd_end_render_pass(frame_command_buffer);
-                //</editor-fold>
-                self.ssao_renderpass.pass.transition_to_readable(base, frame_command_buffer, current_frame);
-                //<editor-fold desc = "ssao blur pass">
-                device.cmd_bind_pipeline(
-                    frame_command_buffer,
-                    vk::PipelineBindPoint::GRAPHICS,
-                    self.ssao_blur_renderpass_horizontal.pipeline,
-                );
-                device.cmd_set_viewport(frame_command_buffer, 0, &[self.ssao_renderpass.viewport]);
-                device.cmd_set_scissor(frame_command_buffer, 0, &[self.ssao_renderpass.scissor]);
-
-                device.cmd_begin_render_pass(
-                    frame_command_buffer,
-                    &ssao_blur_pass_begin_info_horizontal,
-                    vk::SubpassContents::INLINE,
-                );
-                device.cmd_bind_descriptor_sets(
-                    frame_command_buffer,
-                    vk::PipelineBindPoint::GRAPHICS,
-                    self.ssao_blur_renderpass_horizontal.pipeline_layout,
-                    0,
-                    &[self.ssao_blur_renderpass_horizontal.descriptor_set.descriptor_sets[current_frame]],
-                    &[],
-                );
-                device.cmd_push_constants(frame_command_buffer, self.ssao_blur_renderpass_horizontal.pipeline_layout, ShaderStageFlags::FRAGMENT, 0, slice::from_raw_parts(
-                    &ssao_blur_constants_horizontal as *const SeparableBlurPassData as *const u8,
-                    size_of::<SeparableBlurPassData>(),
-                ));
-                device.cmd_draw(current_draw_command_buffer, 6, 1, 0, 0);
-                device.cmd_end_render_pass(frame_command_buffer);
-                self.ssao_blur_renderpass_horizontal.pass.transition_to_readable(base, frame_command_buffer, current_frame);
-
-                device.cmd_begin_render_pass(
-                    frame_command_buffer,
-                    &ssao_blur_pass_begin_info_vertical,
-                    vk::SubpassContents::INLINE,
-                );
-                device.cmd_bind_descriptor_sets(
-                    frame_command_buffer,
-                    vk::PipelineBindPoint::GRAPHICS,
-                    self.ssao_blur_renderpass_vertical.pipeline_layout,
-                    0,
-                    &[self.ssao_blur_renderpass_vertical.descriptor_set.descriptor_sets[current_frame]],
-                    &[],
-                );
-                device.cmd_push_constants(frame_command_buffer, self.ssao_blur_renderpass_vertical.pipeline_layout, ShaderStageFlags::FRAGMENT, 0, slice::from_raw_parts(
-                    &ssao_blur_constants_vertical as *const SeparableBlurPassData as *const u8,
-                    size_of::<SeparableBlurPassData>(),
-                ));
-                device.cmd_draw(current_draw_command_buffer, 6, 1, 0, 0);
-                device.cmd_end_render_pass(frame_command_buffer);
-                self.ssao_blur_renderpass_vertical.pass.transition_to_readable(base, frame_command_buffer, current_frame);
-                //</editor-fold>
-                //<editor-fold desc = "lighting pass">
-                device.cmd_begin_render_pass(
-                    frame_command_buffer,
-                    &lighting_pass_pass_begin_info,
-                    vk::SubpassContents::INLINE,
-                );
-                device.cmd_bind_pipeline(
-                    frame_command_buffer,
-                    vk::PipelineBindPoint::GRAPHICS,
-                    self.lighting_renderpass.pipeline,
-                );
-                device.cmd_push_constants(frame_command_buffer, self.lighting_renderpass.pipeline_layout, ShaderStageFlags::FRAGMENT, 0, slice::from_raw_parts(
-                    &camera_inverse_constants as *const CameraMatrixUniformData as *const u8,
-                    size_of::<CameraMatrixUniformData>(),
-                ));
-
-                // draw quad
-                device.cmd_set_viewport(frame_command_buffer, 0, &[self.present_renderpass.viewport]);
-                device.cmd_set_scissor(frame_command_buffer, 0, &[self.present_renderpass.scissor]);
-                device.cmd_bind_descriptor_sets(
-                    frame_command_buffer,
-                    vk::PipelineBindPoint::GRAPHICS,
-                    self.lighting_renderpass.pipeline_layout,
-                    0,
-                    &[self.lighting_renderpass.descriptor_set.descriptor_sets[current_frame]],
-                    &[],
-                );
-                device.cmd_draw(current_draw_command_buffer, 6, 1, 0, 0);
-
-                device.cmd_end_render_pass(frame_command_buffer);
-                //</editor-fold>
-                self.lighting_renderpass.pass.transition_to_readable(base, frame_command_buffer, current_frame);
-
-                // <editor-fold desc = "present pass">
-                device.cmd_begin_render_pass(
-                    frame_command_buffer,
-                    &present_pass_pass_begin_info,
-                    vk::SubpassContents::INLINE,
-                );
-                device.cmd_bind_pipeline(
-                    frame_command_buffer,
-                    vk::PipelineBindPoint::GRAPHICS,
-                    self.present_renderpass.pipeline,
-                );
-
-                // draw quad
-                device.cmd_set_viewport(frame_command_buffer, 0, &[self.present_renderpass.viewport]);
-                device.cmd_set_scissor(frame_command_buffer, 0, &[self.present_renderpass.scissor]);
-                device.cmd_bind_descriptor_sets(
-                    frame_command_buffer,
-                    vk::PipelineBindPoint::GRAPHICS,
-                    self.present_renderpass.pipeline_layout,
-                    0,
-                    &[self.present_renderpass.descriptor_set.descriptor_sets[current_frame]],
-                    &[],
-                );
-                device.cmd_draw(current_draw_command_buffer, 6, 1, 0, 0);
-
-                device.cmd_end_render_pass(frame_command_buffer);
-                //</editor-fold>
-            },
+        // frametime_manager.record_cpu_action_start(String::from("geometry pass"));
+        //<editor-fold desc = "geometry pass">
+        device.cmd_begin_render_pass(
+            frame_command_buffer,
+            &geometry_pass_pass_begin_info,
+            vk::SubpassContents::INLINE,
         );
+        device.cmd_bind_pipeline(
+            frame_command_buffer,
+            vk::PipelineBindPoint::GRAPHICS,
+            self.geometry_renderpass.pipeline,
+        );
+        device.cmd_push_constants(frame_command_buffer, self.geometry_renderpass.pipeline_layout, ShaderStageFlags::VERTEX, 0, slice::from_raw_parts(
+            &camera_constants as *const CameraMatrixUniformData as *const u8,
+            size_of::<CameraMatrixUniformData>(),
+        ));
+
+        // draw scene
+        device.cmd_set_viewport(frame_command_buffer, 0, &[self.present_renderpass.viewport]);
+        device.cmd_set_scissor(frame_command_buffer, 0, &[self.present_renderpass.scissor]);
+        device.cmd_bind_descriptor_sets(
+            frame_command_buffer,
+            vk::PipelineBindPoint::GRAPHICS,
+            self.geometry_renderpass.pipeline_layout,
+            0,
+            &[self.geometry_renderpass.descriptor_set.descriptor_sets[current_frame]],
+            &[],
+        );
+        world.draw(&frame_command_buffer, current_frame, Some(&player_camera.frustum));
+
+        device.cmd_end_render_pass(frame_command_buffer);
+        //</editor-fold>
+        // frametime_manager.record_cpu_action_end();
+        // frametime_manager.record_cpu_action_start(String::from("geometry pass transition"));
+        self.geometry_renderpass.pass.transition_to_readable(base, frame_command_buffer, current_frame);
+        // frametime_manager.record_cpu_action_end();
+        // frametime_manager.record_cpu_action_start(String::from("shadow pass"));
+        //<editor-fold desc = "shadow pass">
+        device.cmd_begin_render_pass(
+            frame_command_buffer,
+            &shadow_pass_pass_begin_info,
+            vk::SubpassContents::INLINE,
+        );
+        device.cmd_bind_pipeline(
+            frame_command_buffer,
+            vk::PipelineBindPoint::GRAPHICS,
+            self.shadow_renderpass.pipeline,
+        );
+        device.cmd_push_constants(frame_command_buffer, self.shadow_renderpass.pipeline_layout, ShaderStageFlags::GEOMETRY, 0, slice::from_raw_parts(
+            &0 as *const i32 as *const u8, // which light in world.lights to create shadows from
+            4,
+        ));
+        // draw scene
+        device.cmd_set_viewport(frame_command_buffer, 0, &[self.shadow_renderpass.viewport]);
+        device.cmd_set_scissor(frame_command_buffer, 0, &[self.shadow_renderpass.scissor]);
+        device.cmd_bind_descriptor_sets(
+            frame_command_buffer,
+            vk::PipelineBindPoint::GRAPHICS,
+            self.shadow_renderpass.pipeline_layout,
+            0,
+            &[self.shadow_renderpass.descriptor_set.descriptor_sets[current_frame]],
+            &[],
+        );
+        world.draw(&frame_command_buffer, current_frame, None);
+
+        device.cmd_end_render_pass(frame_command_buffer);
+        //</editor-fold>
+        // frametime_manager.record_cpu_action_end();
+        // frametime_manager.record_cpu_action_start(String::from("shadow pass transition"));
+        self.shadow_renderpass.pass.transition_to_readable(base, frame_command_buffer, current_frame);
+        // frametime_manager.record_cpu_action_end();
+        //<editor-fold desc = "ssao pass">
+        device.cmd_begin_render_pass(
+            frame_command_buffer,
+            &ssao_pass_begin_info,
+            vk::SubpassContents::INLINE,
+        );
+        device.cmd_bind_pipeline(
+            frame_command_buffer,
+            vk::PipelineBindPoint::GRAPHICS,
+            self.ssao_renderpass.pipeline,
+        );
+
+        // draw quad
+        device.cmd_set_viewport(frame_command_buffer, 0, &[self.ssao_renderpass.viewport]);
+        device.cmd_set_scissor(frame_command_buffer, 0, &[self.ssao_renderpass.scissor]);
+        device.cmd_bind_descriptor_sets(
+            frame_command_buffer,
+            vk::PipelineBindPoint::GRAPHICS,
+            self.ssao_renderpass.pipeline_layout,
+            0,
+            &[self.ssao_renderpass.descriptor_set.descriptor_sets[current_frame]],
+            &[],
+        );
+        device.cmd_draw(frame_command_buffer, 6, 1, 0, 0);
+
+        device.cmd_end_render_pass(frame_command_buffer);
+        //</editor-fold>
+        self.ssao_renderpass.pass.transition_to_readable(base, frame_command_buffer, current_frame);
+        //<editor-fold desc = "ssao blur pass">
+        device.cmd_bind_pipeline(
+            frame_command_buffer,
+            vk::PipelineBindPoint::GRAPHICS,
+            self.ssao_blur_renderpass_horizontal.pipeline,
+        );
+        device.cmd_set_viewport(frame_command_buffer, 0, &[self.ssao_renderpass.viewport]);
+        device.cmd_set_scissor(frame_command_buffer, 0, &[self.ssao_renderpass.scissor]);
+
+        device.cmd_begin_render_pass(
+            frame_command_buffer,
+            &ssao_blur_pass_begin_info_horizontal,
+            vk::SubpassContents::INLINE,
+        );
+        device.cmd_bind_descriptor_sets(
+            frame_command_buffer,
+            vk::PipelineBindPoint::GRAPHICS,
+            self.ssao_blur_renderpass_horizontal.pipeline_layout,
+            0,
+            &[self.ssao_blur_renderpass_horizontal.descriptor_set.descriptor_sets[current_frame]],
+            &[],
+        );
+        device.cmd_push_constants(frame_command_buffer, self.ssao_blur_renderpass_horizontal.pipeline_layout, ShaderStageFlags::FRAGMENT, 0, slice::from_raw_parts(
+            &ssao_blur_constants_horizontal as *const SeparableBlurPassData as *const u8,
+            size_of::<SeparableBlurPassData>(),
+        ));
+        device.cmd_draw(frame_command_buffer, 6, 1, 0, 0);
+        device.cmd_end_render_pass(frame_command_buffer);
+        self.ssao_blur_renderpass_horizontal.pass.transition_to_readable(base, frame_command_buffer, current_frame);
+
+        device.cmd_begin_render_pass(
+            frame_command_buffer,
+            &ssao_blur_pass_begin_info_vertical,
+            vk::SubpassContents::INLINE,
+        );
+        device.cmd_bind_descriptor_sets(
+            frame_command_buffer,
+            vk::PipelineBindPoint::GRAPHICS,
+            self.ssao_blur_renderpass_vertical.pipeline_layout,
+            0,
+            &[self.ssao_blur_renderpass_vertical.descriptor_set.descriptor_sets[current_frame]],
+            &[],
+        );
+        device.cmd_push_constants(frame_command_buffer, self.ssao_blur_renderpass_vertical.pipeline_layout, ShaderStageFlags::FRAGMENT, 0, slice::from_raw_parts(
+            &ssao_blur_constants_vertical as *const SeparableBlurPassData as *const u8,
+            size_of::<SeparableBlurPassData>(),
+        ));
+        device.cmd_draw(frame_command_buffer, 6, 1, 0, 0);
+        device.cmd_end_render_pass(frame_command_buffer);
+        self.ssao_blur_renderpass_vertical.pass.transition_to_readable(base, frame_command_buffer, current_frame);
+        //</editor-fold>
+        //<editor-fold desc = "lighting pass">
+        device.cmd_begin_render_pass(
+            frame_command_buffer,
+            &lighting_pass_pass_begin_info,
+            vk::SubpassContents::INLINE,
+        );
+        device.cmd_bind_pipeline(
+            frame_command_buffer,
+            vk::PipelineBindPoint::GRAPHICS,
+            self.lighting_renderpass.pipeline,
+        );
+        device.cmd_push_constants(frame_command_buffer, self.lighting_renderpass.pipeline_layout, ShaderStageFlags::FRAGMENT, 0, slice::from_raw_parts(
+            &camera_inverse_constants as *const CameraMatrixUniformData as *const u8,
+            size_of::<CameraMatrixUniformData>(),
+        ));
+
+        // draw quad
+        device.cmd_set_viewport(frame_command_buffer, 0, &[self.present_renderpass.viewport]);
+        device.cmd_set_scissor(frame_command_buffer, 0, &[self.present_renderpass.scissor]);
+        device.cmd_bind_descriptor_sets(
+            frame_command_buffer,
+            vk::PipelineBindPoint::GRAPHICS,
+            self.lighting_renderpass.pipeline_layout,
+            0,
+            &[self.lighting_renderpass.descriptor_set.descriptor_sets[current_frame]],
+            &[],
+        );
+        device.cmd_draw(frame_command_buffer, 6, 1, 0, 0);
+
+        device.cmd_end_render_pass(frame_command_buffer);
+        //</editor-fold>
+        self.lighting_renderpass.pass.transition_to_readable(base, frame_command_buffer, current_frame);
+
+
+
+        // <editor-fold desc = "present pass">
+        device.cmd_begin_render_pass(
+            frame_command_buffer,
+            &present_pass_pass_begin_info,
+            vk::SubpassContents::INLINE,
+        );
+        device.cmd_bind_pipeline(
+            frame_command_buffer,
+            vk::PipelineBindPoint::GRAPHICS,
+            self.present_renderpass.pipeline,
+        );
+
+        // draw quad
+        device.cmd_set_viewport(frame_command_buffer, 0, &[self.present_renderpass.viewport]);
+        device.cmd_set_scissor(frame_command_buffer, 0, &[self.present_renderpass.scissor]);
+        device.cmd_bind_descriptor_sets(
+            frame_command_buffer,
+            vk::PipelineBindPoint::GRAPHICS,
+            self.present_renderpass.pipeline_layout,
+            0,
+            &[self.present_renderpass.descriptor_set.descriptor_sets[current_frame]],
+            &[],
+        );
+        device.cmd_draw(frame_command_buffer, 6, 1, 0, 0);
+
+        device.cmd_end_render_pass(frame_command_buffer);
+        //</editor-fold>
     } }
 }
 impl Drop for RenderEngine<'_> {

@@ -86,6 +86,8 @@ void main() {
 
     vec3 albedo = texture(g_albedo, uv).rgb;
 
+    // uFragColor = vec4(albedo, 1.0); return;
+
     vec3 view_position = get_position_from_depth();
     vec3 world_position = (inverse_view * vec4(view_position, 1.0)).xyz * vec3(1.0, 1.0, 1.0);
 

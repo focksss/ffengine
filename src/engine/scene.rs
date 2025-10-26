@@ -16,8 +16,8 @@ use crate::render;
 use render::*;
 
 // SHOULD DETECT MATH VS COLOR DATA TEXTURES, LOAD COLOR AS SRGB, MATH AS UNORM
-const MAX_VERTICES: u64 = 10u64 * 10u64.pow(6);
-const MAX_INDICES: u64 = 10u64 * 10u64.pow(7);
+const MAX_VERTICES: u64 = 3 * 10u64.pow(6);
+const MAX_INDICES: u64 = 4 * 10u64.pow(5);
 const MAX_INSTANCES: u64 = 10u64 * 10u64.pow(4);
 const MAX_MATERIALS: u64 = 10u64 * 10u64.pow(4);
 const MAX_JOINTS: u64 = 10u64 * 10u64.pow(4);
@@ -155,7 +155,7 @@ impl<'a> Scene<'a> {
         self.material_buffer_size = MAX_MATERIALS * size_of::<MaterialSendable>() as u64;
         self.lights_buffers_size = MAX_LIGHTS * size_of::<LightSendable>() as u64;
         (self.vertex_buffer, self.vertex_staging_buffer) = base.create_device_and_staging_buffer(size_of::<Vertex>() as u64 * MAX_VERTICES, &*all_vertices, vk::BufferUsageFlags::VERTEX_BUFFER, false, false, true);
-        (self.index_buffer, self.index_staging_buffer) = base.create_device_and_staging_buffer(MAX_INDICES, &*all_indices, vk::BufferUsageFlags::INDEX_BUFFER, false, false, true);
+        (self.index_buffer, self.index_staging_buffer) = base.create_device_and_staging_buffer(size_of::<u32>() as u64 * 3 * MAX_INDICES, &*all_indices, vk::BufferUsageFlags::INDEX_BUFFER, false, false, true);
         for i in 0..frames_in_flight {
             self.instance_buffers.push((vk::Buffer::null(), DeviceMemory::null()));
             self.material_buffers.push((vk::Buffer::null(), DeviceMemory::null()));
@@ -337,7 +337,7 @@ impl<'a> Scene<'a> {
         }
     } }
 
-    pub unsafe fn update_lights(&mut self, primary_camera: &Camera, frame: usize) { unsafe {
+    pub unsafe fn update_lights(&mut self, command_buffer: CommandBuffer, primary_camera: &Camera, frame: usize) { unsafe {
         let base = self.base;
         for light in &mut self.lights {
             light.update(primary_camera);
@@ -345,7 +345,7 @@ impl<'a> Scene<'a> {
 
         let lights_send = self.lights.iter().map(|light| light.to_sendable()).collect::<Vec<_>>();
         copy_data_to_memory(self.lights_staging_buffer.2, &lights_send);
-        base.copy_buffer(&self.lights_staging_buffer.0, &self.lights_buffers[frame].0, &self.lights_buffers_size);
+        base.copy_buffer_synchronous(command_buffer, &self.lights_staging_buffer.0, &self.lights_buffers[frame].0, &self.lights_buffers_size);
     } }
 
     pub unsafe fn update_instances_all_frames(&mut self) { unsafe {

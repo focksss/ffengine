@@ -4,7 +4,7 @@ use std::io::{BufWriter, Cursor};
 use std::path::{Path, PathBuf};
 use ash::{vk, Device, Instance};
 use ash::util::read_spv;
-use ash::vk::{Buffer, ClearColorValue, ClearDepthStencilValue, ClearValue, DescriptorImageInfo, DescriptorPool, DescriptorPoolCreateFlags, DescriptorPoolSize, DescriptorSetLayout, DescriptorSetLayoutCreateFlags, DescriptorType, DeviceMemory, DeviceSize, DynamicState, Extent3D, Format, GraphicsPipelineCreateInfo, Handle, ImageAspectFlags, ImageSubresourceRange, ImageUsageFlags, MemoryPropertyFlags, PhysicalDevice, PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo, PipelineDepthStencilStateCreateInfo, PipelineInputAssemblyStateCreateInfo, PipelineMultisampleStateCreateInfo, PipelineRasterizationStateCreateInfo, PipelineShaderStageCreateInfo, PipelineTessellationStateCreateInfo, PipelineVertexInputStateCreateInfo, PushConstantRange, SampleCountFlags, ShaderModule, ShaderModuleCreateInfo, ShaderStageFlags, StencilOpState};
+use ash::vk::{Buffer, ClearColorValue, ClearDepthStencilValue, ClearValue, DescriptorBindingFlags, DescriptorImageInfo, DescriptorPool, DescriptorPoolCreateFlags, DescriptorPoolSize, DescriptorSetLayout, DescriptorSetLayoutCreateFlags, DescriptorType, DeviceMemory, DeviceSize, DynamicState, Extent3D, Format, GraphicsPipelineCreateInfo, Handle, ImageAspectFlags, ImageSubresourceRange, ImageUsageFlags, MemoryPropertyFlags, PhysicalDevice, PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo, PipelineDepthStencilStateCreateInfo, PipelineInputAssemblyStateCreateInfo, PipelineMultisampleStateCreateInfo, PipelineRasterizationStateCreateInfo, PipelineShaderStageCreateInfo, PipelineTessellationStateCreateInfo, PipelineVertexInputStateCreateInfo, PushConstantRange, SampleCountFlags, ShaderModule, ShaderModuleCreateInfo, ShaderStageFlags, StencilOpState};
 use crate::engine::render_engine::RenderEngine;
 use crate::MAX_FRAMES_IN_FLIGHT;
 use crate::render::*;
@@ -546,6 +546,7 @@ impl Texture {
             ).expect("unable to get mem type index for texture image"),
             ..Default::default()
         };
+        // println!("this texture requires {}", image_memory_req.size);
         let image_memory = create_info.device.allocate_memory(&image_alloc_info, None).expect("Failed to allocate image memory");
         create_info.device.bind_image_memory(image, image_memory, 0).expect("Failed to bind image memory");
         let image_view_info = vk::ImageViewCreateInfo {
@@ -770,6 +771,7 @@ pub struct Descriptor {
     pub buffer_refs: Vec<Buffer>,
     pub image_infos: Option<*const DescriptorImageInfo>,
     pub descriptor_count: u32,
+    pub binding_flags: Option<vk::DescriptorBindingFlags>
 }
 impl Descriptor {
     pub unsafe fn new(create_info: &DescriptorCreateInfo) -> Self { unsafe {
@@ -805,7 +807,8 @@ impl Descriptor {
                     descriptor_count: 1,
                     owned_buffers: (uniform_buffers, uniform_buffers_memory, uniform_buffers_mapped),
                     buffer_refs: Vec::new(),
-                    image_infos: None
+                    image_infos: None,
+                    binding_flags: create_info.binding_flags,
                 }
             }
             DescriptorType::STORAGE_BUFFER => {
@@ -818,7 +821,8 @@ impl Descriptor {
                     descriptor_count: 1,
                     owned_buffers: (Vec::new(), Vec::new(), Vec::new()),
                     buffer_refs: create_info.buffers.clone().unwrap(),
-                    image_infos: None
+                    image_infos: None,
+                    binding_flags: create_info.binding_flags,
                 }
             }
             DescriptorType::COMBINED_IMAGE_SAMPLER => {
@@ -832,6 +836,7 @@ impl Descriptor {
                     owned_buffers: (Vec::new(), Vec::new(), Vec::new()),
                     buffer_refs: create_info.buffers.clone().as_ref().map_or(Vec::new(), |v| v.to_vec()),
                     image_infos: create_info.image_infos.as_ref().map_or(None, |i| Some(i.as_ptr())),
+                    binding_flags: create_info.binding_flags
                 }
             }
             _ => {
@@ -845,6 +850,7 @@ impl Descriptor {
                     buffer_refs: Vec::new(),
                     image_infos: None,
                     descriptor_count: 0,
+                    binding_flags: None
                 }
             }
         }
@@ -871,6 +877,7 @@ pub struct DescriptorCreateInfo<'a> {
     pub image_infos: Option<Vec<DescriptorImageInfo>>,
     pub memory_property_flags: MemoryPropertyFlags,
     pub dynamic: bool,
+    pub binding_flags: Option<vk::DescriptorBindingFlags>,
 }
 impl DescriptorCreateInfo<'_> {
     pub fn new(base: &VkBase) -> DescriptorCreateInfo {
@@ -886,6 +893,7 @@ impl DescriptorCreateInfo<'_> {
             image_infos: None,
             memory_property_flags: MemoryPropertyFlags::HOST_VISIBLE | MemoryPropertyFlags::HOST_COHERENT,
             dynamic: false,
+            binding_flags: None,
         }
     }
     pub fn frames_in_flight(mut self, frames_in_flight: usize) -> Self {
@@ -928,6 +936,10 @@ impl DescriptorCreateInfo<'_> {
         self.dynamic = dynamic;
         self
     }
+    pub fn binding_flags(mut self, binding_flags: vk::DescriptorBindingFlags) -> Self {
+        self.binding_flags = Some(binding_flags);
+        self
+    }
 }
 
 pub struct DescriptorSet {
@@ -940,9 +952,15 @@ impl DescriptorSet {
     pub unsafe fn new(create_info: DescriptorSetCreateInfo) -> DescriptorSet { unsafe {
         let base = create_info.base;
         let mut has_dynamic = false;
+        let mut has_update_after_bind = false;
         let mut variable_descriptor_count = 0;
         let descriptor_pool_sizes = create_info.descriptors.iter().map(|d| {
             if d.is_dynamic {has_dynamic = true; variable_descriptor_count = d.descriptor_count;}
+            if d.binding_flags.is_some() {
+                if d.binding_flags.unwrap().contains(DescriptorBindingFlags::UPDATE_AFTER_BIND) {
+                    has_update_after_bind = true
+                }
+            }
             DescriptorPoolSize {
                 ty: d.descriptor_type,
                 descriptor_count: create_info.frames_in_flight as u32 * d.descriptor_count,
@@ -953,12 +971,13 @@ impl DescriptorSet {
             pool_size_count: descriptor_pool_sizes.len() as u32,
             p_pool_sizes: descriptor_pool_sizes.as_ptr(),
             max_sets: MAX_FRAMES_IN_FLIGHT as u32,
-            flags: if has_dynamic {DescriptorPoolCreateFlags::UPDATE_AFTER_BIND} else {DescriptorPoolCreateFlags::empty()},
+            flags: if has_dynamic || has_update_after_bind {DescriptorPoolCreateFlags::UPDATE_AFTER_BIND} else {DescriptorPoolCreateFlags::empty()},
             ..Default::default()
         };
         let descriptor_pool = base.device.create_descriptor_pool(&descriptor_pool_create_info, None).expect("failed to create descriptor pool");
 
         let mut i = 0;
+
         let bindings = create_info.descriptors.iter().map(|d| {
             let ret = vk::DescriptorSetLayoutBinding {
                 binding: i as u32,
@@ -976,7 +995,7 @@ impl DescriptorSet {
                 vk::DescriptorBindingFlags::VARIABLE_DESCRIPTOR_COUNT |
                 vk::DescriptorBindingFlags::UPDATE_AFTER_BIND
             } else {
-                vk::DescriptorBindingFlags::empty()
+                d.binding_flags.unwrap_or_default()
             }
         }).collect::<Vec<vk::DescriptorBindingFlags>>();
         let binding_flags_info = vk::DescriptorSetLayoutBindingFlagsCreateInfo {
@@ -990,7 +1009,7 @@ impl DescriptorSet {
             p_next: &binding_flags_info as *const _ as *const c_void,
             binding_count: bindings.len() as u32,
             p_bindings: bindings.as_ptr(),
-            flags: if has_dynamic {DescriptorSetLayoutCreateFlags::UPDATE_AFTER_BIND_POOL} else {DescriptorSetLayoutCreateFlags::empty()},
+            flags: if has_dynamic || has_update_after_bind {DescriptorSetLayoutCreateFlags::UPDATE_AFTER_BIND_POOL} else {DescriptorSetLayoutCreateFlags::empty()},
             ..Default::default()
         };
         let descriptor_set_layout = base.device.create_descriptor_set_layout(&descriptor_layout_create_info, None).expect("failed to create descriptor set layout");

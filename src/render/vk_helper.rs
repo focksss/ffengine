@@ -179,7 +179,9 @@ impl VkBase {
             let entry = Entry::linked();
             let app_name = c"ffengine";
 
-            let layer_names = [c"VK_LAYER_KHRONOS_validation"];
+            let layer_names = [
+                c"VK_LAYER_KHRONOS_validation",
+            ];
             let layers_names_raw: Vec<*const c_char> = layer_names
                 .iter()
                 .map(|raw_name| raw_name.as_ptr())
@@ -583,7 +585,7 @@ impl VkBase {
             .iter()
             .cloned()
             .find(|&mode| mode == vk::PresentModeKHR::MAILBOX)
-            .unwrap_or(vk::PresentModeKHR::FIFO);
+            .unwrap_or(vk::PresentModeKHR::IMMEDIATE);
         let swapchain_loader = swapchain::Device::new(instance, device);
 
         let swapchain_create_info = vk::SwapchainCreateInfoKHR::default()
@@ -686,6 +688,15 @@ impl VkBase {
         }];
         self.device.cmd_copy_buffer(command_buffers[0], *src_buffer, *dst_buffer, &copy_region);
         self.end_single_time_commands(command_buffers);
+    } }
+    pub unsafe fn copy_buffer_synchronous(&self, command_buffer: CommandBuffer, src_buffer: &Buffer, dst_buffer: &Buffer, size: &vk::DeviceSize) { unsafe {
+        let copy_region = [vk::BufferCopy {
+            src_offset: 0,
+            dst_offset: 0,
+            size: *size,
+            ..Default::default()
+        }];
+        self.device.cmd_copy_buffer(command_buffer, *src_buffer, *dst_buffer, &copy_region);
     } }
     pub unsafe fn create_device_and_staging_buffer<T: Copy>(
         &self,
@@ -1433,20 +1444,20 @@ impl Drop for VkBase {
     }
 }
 
-pub unsafe fn copy_data_to_memory<T: Copy>(ptr: *mut c_void, data: &[T]) { unsafe {
-    let mut aligned = Align::new(
-        ptr,
-        align_of::<T>() as u64,
-        (data.len() * size_of::<T>()) as u64,
-    );
-    assert!(!ptr.is_null(), "copy_data_to_memory: ptr is null!");
+pub unsafe fn copy_data_to_memory<T: Copy>(dst: *mut c_void, data: &[T]) { unsafe {
+    assert!(!dst.is_null(), "copy_data_to_memory: destination pointer is null!");
     assert!(data.len() * size_of::<T>() <= isize::MAX as usize, "data size too big");
 
-    let ptr = ptr as *mut T;
-    assert_eq!(ptr.align_offset(align_of::<T>()), 0, "pointer is not aligned");
-    
-    aligned.copy_from_slice(&data);
+    // Ensure proper alignment for safety
+    assert_eq!((dst as usize) % align_of::<T>(), 0, "Destination pointer not properly aligned");
+
+    std::ptr::copy_nonoverlapping(
+        data.as_ptr(),
+        dst as *mut T,
+        data.len(),
+    );
 } }
+
 pub fn compile_shaders(shader_directories: Vec<&str>) -> io::Result<()> {
     for shader_directory in shader_directories {
         let shader_directory_path = Path::new(&shader_directory);

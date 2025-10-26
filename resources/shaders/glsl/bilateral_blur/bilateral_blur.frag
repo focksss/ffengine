@@ -32,6 +32,8 @@ float get_view_z(float depth, float near) {
 float gauss(float x, float sigma) { return exp(-0.5 * (x*x) / (sigma*sigma)); }
 
 void main() {
+    // uFragColor = vec4(1.0); return;
+
     vec4 center_color = texture(color,  uv);
     float center_depth = texture(depth,  uv).r;
     vec3 center_norm = normalize(texture(view_normal, uv).xyz);

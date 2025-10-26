@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::process::Command;
 use ash::vk;
 use std::ptr::null_mut;
-use ash::vk::{CommandBuffer, DescriptorType, DeviceMemory, Extent2D, Format, Image, ImageView, Offset2D, RenderPass, SampleCountFlags, Sampler, ShaderStageFlags};
+use ash::vk::{CommandBuffer, DescriptorType, DeviceMemory, Extent2D, Format, Handle, Image, ImageView, Offset2D, RenderPass, SampleCountFlags, Sampler, ShaderStageFlags};
 use serde_json::{Value};
 use crate::{offset_of, MAX_FRAMES_IN_FLIGHT};
 use crate::math::Vector;
@@ -33,7 +33,8 @@ impl<'a> TextRenderer<'a> {
         let texture_sampler_create_info = DescriptorCreateInfo::new(base)
             .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
             .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
-            .shader_stages(ShaderStageFlags::FRAGMENT);
+            .shader_stages(ShaderStageFlags::FRAGMENT)
+            .binding_flags(vk::DescriptorBindingFlags::UPDATE_AFTER_BIND);
         let descriptor_set_create_info = DescriptorSetCreateInfo::new(base)
             .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
             .add_descriptor(Descriptor::new(&texture_sampler_create_info));
@@ -80,48 +81,6 @@ impl<'a> TextRenderer<'a> {
             primitive_restart_enable: vk::FALSE,
             ..Default::default()
         };
-        let viewports = [vk::Viewport {
-            x: 0.0,
-            y: 0.0,
-            width: base.surface_resolution.width as f32,
-            height: base.surface_resolution.height as f32,
-            min_depth: 0.0,
-            max_depth: 1.0,
-        }];
-        let scissors = [base.surface_resolution.into()];
-        let viewport_state_info = vk::PipelineViewportStateCreateInfo::default()
-            .scissors(&scissors)
-            .viewports(&viewports);
-        let dynamic_state = [vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR];
-        let dynamic_state_info =
-            vk::PipelineDynamicStateCreateInfo::default().dynamic_states(&dynamic_state);
-        let rasterization_info = vk::PipelineRasterizationStateCreateInfo {
-            front_face: vk::FrontFace::COUNTER_CLOCKWISE,
-            cull_mode: vk::CullModeFlags::NONE,
-            line_width: 1.0,
-            polygon_mode: vk::PolygonMode::FILL,
-            ..Default::default()
-        };
-        let multisample_state_info = vk::PipelineMultisampleStateCreateInfo {
-            rasterization_samples: SampleCountFlags::TYPE_1,
-            ..Default::default()
-        };
-        let noop_stencil_state = vk::StencilOpState {
-            fail_op: vk::StencilOp::KEEP,
-            pass_op: vk::StencilOp::KEEP,
-            depth_fail_op: vk::StencilOp::KEEP,
-            compare_op: vk::CompareOp::ALWAYS,
-            ..Default::default()
-        };
-        let depth_state_info = vk::PipelineDepthStencilStateCreateInfo {
-            depth_test_enable: 1,
-            depth_write_enable: 1,
-            depth_compare_op: vk::CompareOp::LESS_OR_EQUAL,
-            front: noop_stencil_state,
-            back: noop_stencil_state,
-            max_depth_bounds: 1.0,
-            ..Default::default()
-        };
         let color_blend_attachment_states = [vk::PipelineColorBlendAttachmentState {
             blend_enable: vk::TRUE,
             src_color_blend_factor: vk::BlendFactor::SRC_ALPHA,
@@ -140,10 +99,13 @@ impl<'a> TextRenderer<'a> {
             .descriptor_set_create_info(descriptor_set_create_info)
             .vertex_shader_uri(String::from("text\\text.vert.spv"))
             .fragment_shader_uri(String::from("text\\text.frag.spv"))
+            .push_constant_range(push_constant_range)
             .pipeline_input_assembly_state(vertex_input_assembly_state_info)
             .pipeline_vertex_input_state(vertex_input_state_info)
             .pipeline_color_blend_state_create_info(color_blend_state);
         let renderpass = Renderpass::new(renderpass_create_info);
+
+        println!("renderpass set handle: 0x{:x}", renderpass.descriptor_set.descriptor_sets[0].as_raw());
         //</editor-fold>
         let sampler = base.device.create_sampler(&vk::SamplerCreateInfo {
             mag_filter: vk::Filter::LINEAR,
@@ -165,9 +127,10 @@ impl<'a> TextRenderer<'a> {
         self.base.device.destroy_sampler(self.sampler, None);
     } }
 
-    pub unsafe fn render_text(&self, frame: usize, frame_command_buffer: CommandBuffer, text_info: &TextInformation) { unsafe {
+    pub unsafe fn render_text(&self, frame: usize, text_info: &TextInformation) { unsafe {
         let font = text_info.font;
         let base = self.base;
+        let frame_command_buffer = base.draw_command_buffers[frame];
         let device = &base.device;
         // <editor-fold desc = "descriptor updates">
         for current_frame in 0..MAX_FRAMES_IN_FLIGHT {
@@ -200,12 +163,6 @@ impl<'a> TextRenderer<'a> {
             vk::PipelineBindPoint::GRAPHICS,
             self.renderpass.pipeline,
         );
-        /*
-        device.cmd_push_constants(frame_command_buffer, self.pipeline_layout, ShaderStageFlags::FRAGMENT, 0, slice::from_raw_parts(
-            &camera_constants as *const CameraMatrixUniformData as *const u8,
-            size_of::<CameraMatrixUniformData>(),
-        ));
-         */
         device.cmd_set_viewport(frame_command_buffer, 0, &[self.renderpass.viewport]);
         device.cmd_set_scissor(frame_command_buffer, 0, &[self.renderpass.scissor]);
         device.cmd_bind_descriptor_sets(

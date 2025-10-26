@@ -9,10 +9,10 @@ use std::{mem, slice};
 use std::collections::HashSet;
 use std::mem::size_of;
 use std::path::PathBuf;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use ash::vk;
-use ash::vk::{DescriptorType, Extent2D, Format, ImageAspectFlags, ImageSubresourceRange, Offset2D, ShaderStageFlags};
+use ash::vk::{DescriptorType, Extent2D, Format, ImageAspectFlags, ImageSubresourceRange, Offset2D, QueryPool, ShaderStageFlags};
 use winit::dpi::PhysicalPosition;
 use winit::event::{ElementState, Event, KeyEvent, WindowEvent};
 use winit::event_loop::ControlFlow;
@@ -75,8 +75,9 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
     //world.models[0].transform_roots(&Vector::new_vec3(0.0, 1.0, 0.0), &Vector::new_vec(0.0), &Vector::new_vec(1.0));
     //world.preload_model(Model::new("C:\\Graphics\\assets\\rivals\\luna\\gltf\\luna.gltf"));
 
-    world.preload_model(Model::new("C:\\Graphics\\assets\\shadowTest\\shadowTest.gltf"));
-    //world.preload_model(Model::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf"));
+    //world.preload_model(Model::new("C:\\Graphics\\assets\\shadowTest\\shadowTest.gltf"));
+    world.preload_model(Model::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf"));
+    //world.preload_model(Model::new("C:\\Graphics\\assets\\bistroGLTF\\untitled.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\asgard\\asgard.gltf"));
     //sa
     //world.preload_model(Model::new("C:\\Graphics\\assets\\helmet\\DamagedHelmet.gltf"));
@@ -88,6 +89,10 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
     //world.models[0].animations[0].start();
     world.initialize(MAX_FRAMES_IN_FLIGHT, true);
     let render_engine = RenderEngine::new(base, &world);
+
+    //<editor-fold desc = "present renderpass">
+
+    //</editor-fold>
 
     let mut player_camera = Camera::new_perspective_rotation(
         Vector::new_vec3(0.0, 0.0, 0.0),
@@ -118,6 +123,8 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
 
     //let mut screenshot_manager = ScreenshotManager::new(base, &render_engine.lighting_pass.textures[0][0]);
     let mut screenshot_pending = false;
+
+    let mut frametime_manager = FrametimeManager::new(base);
 
     base.event_loop.borrow_mut().run_on_demand(|event, elwp| {
         elwp.set_control_flow(ControlFlow::Poll);
@@ -204,7 +211,8 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
             }
             //</editor-fold>
             Event::AboutToWait => {
-                world.update_nodes(current_frame);
+                frametime_manager.record_cpu_action_start(String::from("deltatime setup"));
+                //world.update_nodes(current_frame);
                 //<editor-fold desc = "frame setup">
                 let now = Instant::now();
                 let delta_time = now.duration_since(last_frame_time).as_secs_f32();
@@ -212,6 +220,10 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                 if needs_resize {
 
                 }
+
+                frametime_manager.record_cpu_action_end();
+                frametime_manager.record_cpu_action_start(String::from("controls"));
+
                 do_controls(
                     &mut player_camera,
                     &pressed_keys,
@@ -224,18 +236,27 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                     &mut screenshot_pending,
                     &mut world
                 );
-                player_camera.update_matrices();
 
+                frametime_manager.record_cpu_action_end();
+                frametime_manager.record_cpu_action_start(String::from("update player camera"));
+
+                player_camera.update_matrices();
                 if !pause_frustum {
                     player_camera.update_frustum()
                 }
 
+                frametime_manager.record_cpu_action_end();
+                frametime_manager.record_cpu_action_start(String::from("update light matrices"));
+
+
+                //</editor-fold>
+
+                frametime_manager.record_cpu_action_end();
+                frametime_manager.record_cpu_action_start(String::from("wait for fence"));
+
                 let current_fence = base.draw_commands_reuse_fences[current_frame];
                 base.device.wait_for_fences(&[current_fence], true, u64::MAX).expect("wait failed");
                 base.device.reset_fences(&[current_fence]).expect("reset failed");
-
-                let current_rendering_complete_semaphore = base.rendering_complete_semaphores[current_frame];
-
                 let (present_index, _) = base
                     .swapchain_loader
                     .acquire_next_image(
@@ -245,11 +266,39 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                         vk::Fence::null(),
                     )
                     .unwrap();
-                //</editor-fold>
 
-                if !pause_frustum { world.update_lights(&player_camera, current_frame) };
+                let current_rendering_complete_semaphore = base.rendering_complete_semaphores[current_frame];
+                let current_draw_command_buffer = base.draw_command_buffers[current_frame];
+                let current_fence = base.draw_commands_reuse_fences[current_frame];
 
-                render_engine.render_frame(current_frame, present_index, &world, &player_camera);
+                frametime_manager.record_cpu_action_end();
+                frametime_manager.record_cpu_action_start(String::from("commandbuffer"));
+
+                record_submit_commandbuffer(
+                    &base.device,
+                    current_draw_command_buffer,
+                    current_fence,
+                    base.present_queue,
+                    &[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT],
+                    &[base.present_complete_semaphores[current_frame]],
+                    &[current_rendering_complete_semaphore],
+                    |device, frame_command_buffer| {
+                        if !pause_frustum { world.update_lights(frame_command_buffer, &player_camera, current_frame) };
+
+                        frametime_manager.record_gpu_action_start(frame_command_buffer, current_frame, String::from(
+                            "frame ".to_owned() + current_frame.to_string().as_str())
+                        );
+
+                        text_renderer.render_text(current_frame, &test_tex);
+
+                        render_engine.render_frame(current_frame, present_index, &world, &player_camera, &mut frametime_manager);
+
+                        frametime_manager.record_gpu_action_end(frame_command_buffer, current_frame);
+                    },
+                );
+
+                frametime_manager.record_cpu_action_end();
+                frametime_manager.record_cpu_action_start(String::from("post commandbuffer"));
 
                 let wait_semaphores = [current_rendering_complete_semaphore];
                 let swapchains = [base.swapchain];
@@ -262,7 +311,13 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                 base.swapchain_loader
                     .queue_present(base.present_queue, &present_info)
                     .unwrap();
+
+                frametime_manager.record_cpu_action_end();
                 if screenshot_pending {
+
+                    frametime_manager.report();
+
+                    /*
                     base.device.queue_wait_idle(base.present_queue).unwrap();
 
                     let timestamp = std::time::SystemTime::now()
@@ -271,10 +326,12 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                         .as_secs();
                     let filename = format!("screenshots\\screenshot_{}.png", timestamp);
 
-                    //screenshot_manager.save_screenshot(filename);
-
+                    screenshot_manager.save_screenshot(filename);
+                     */
                     screenshot_pending = false;
                 }
+
+                frametime_manager.reset();
                 current_frame = (current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
             },
             _ => (),
@@ -391,4 +448,103 @@ fn do_mouse(player_camera: &mut Camera, mouse_delta: (f32, f32), cursor_locked: 
         player_camera.rotation.x += player_camera.sensitivity * mouse_delta.1;
         player_camera.rotation.x = player_camera.rotation.x.clamp(-PI * 0.5, PI * 0.5);
     }
+}
+
+pub struct FrametimeManager<'a> {
+    base: &'a VkBase,
+    cpu_actions: Vec<(Instant, Duration, String)>, // Start time, duration, name
+    gpu_action_timestamp_pairs: Vec<String>,
+    current_cpu_action_index: usize,
+    recording_cpu: bool,
+
+    query_pool: QueryPool,
+}
+impl FrametimeManager<'_> {
+    pub fn new(base: &VkBase) -> FrametimeManager {
+        let query_pool_info = vk::QueryPoolCreateInfo::default()
+            .query_type(vk::QueryType::TIMESTAMP)
+            .query_count(2 * MAX_FRAMES_IN_FLIGHT as u32);
+        let query_pool = unsafe {
+            base.device.create_query_pool(&query_pool_info, None).unwrap()
+        };
+        FrametimeManager {
+            base,
+            cpu_actions: Vec::new(),
+            gpu_action_timestamp_pairs: vec![String::new(); 32],
+            current_cpu_action_index: 0,
+            recording_cpu: false,
+            query_pool,
+        }
+    }
+    pub fn reset(&mut self) {
+        self.cpu_actions.clear();
+        self.current_cpu_action_index = 0;
+    }
+
+    pub fn record_cpu_action_start(&mut self, name: String) {
+        if self.recording_cpu {
+            eprintln!("FrametimeManager action recording cpu started when already recording, from {}", name);
+            return
+        }
+        self.cpu_actions.push((Instant::now(), Duration::from_nanos(0), name));
+        self.recording_cpu = true;
+    }
+    pub fn record_cpu_action_end(&mut self) {
+        self.recording_cpu = false;
+        let cpu_action_len = self.cpu_actions.len();
+        let current_action = &mut self.cpu_actions[cpu_action_len - 1] ;
+        current_action.1 = current_action.0.elapsed();
+    }
+
+    pub fn record_gpu_action_start(&mut self, command_buffer: vk::CommandBuffer, action_index: usize, name: String) { unsafe {
+        self.base.device.cmd_reset_query_pool(command_buffer, self.query_pool, action_index as u32 * 2, 2);
+        self.base.device.cmd_write_timestamp(
+            command_buffer,
+            vk::PipelineStageFlags::TOP_OF_PIPE,
+            self.query_pool,
+            action_index as u32 * 2,
+        );
+        self.gpu_action_timestamp_pairs[action_index] = name;
+    } }
+    pub fn record_gpu_action_end(&mut self, command_buffer: vk::CommandBuffer, action_index: usize) { unsafe {
+        self.base.device.cmd_write_timestamp(
+            command_buffer,
+            vk::PipelineStageFlags::BOTTOM_OF_PIPE,
+            self.query_pool,
+            (action_index as u32 * 2) + 1,
+        );
+    } }
+
+    pub fn report(&mut self) {
+        let current_action = &self.cpu_actions[self.current_cpu_action_index];
+        if self.recording_cpu {
+            eprintln!("FrametimeManager report called when recording cpu {}", current_action.2);
+        }
+        println!("FrametimeManager report:");
+        println!(" - CPU actions:");
+        for action in &self.cpu_actions {
+            println!("    - {}, with duration of {}", action.2, action.1.as_micros() as f32 / 1000.0);
+        }
+        println!(" - GPU actions:");
+        let mut timestamps = [0u64; 2];
+        for i in 0..self.gpu_action_timestamp_pairs.len() { unsafe {
+            let action_name = &self.gpu_action_timestamp_pairs[i];
+            if action_name.is_empty() { continue }
+            self.base.device.get_query_pool_results(
+                self.query_pool,
+                i as u32 * 2,
+                &mut timestamps,
+                vk::QueryResultFlags::TYPE_64 | vk::QueryResultFlags::WAIT,
+            ).unwrap();
+            let timestamp_period = unsafe { self.base.instance.get_physical_device_properties(self.base.pdevice).limits.timestamp_period };
+            let gpu_time_ns = (timestamps[1] - timestamps[0]) as f64 * timestamp_period as f64;
+            let gpu_time_ms = gpu_time_ns / 1_000_000.0;
+            println!("    - {} with duration of: {:.3} ms", action_name, gpu_time_ms);
+        } }
+    }
+}
+impl Drop for FrametimeManager<'_> {
+    fn drop(&mut self) { unsafe {
+        self.base.device.destroy_query_pool(self.query_pool, None);
+    } }
 }
