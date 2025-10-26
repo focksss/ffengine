@@ -13,7 +13,7 @@ use crate::scene::*;
 
 const SSAO_KERNAL_SIZE: usize = 16;
 const SSAO_RESOLUTION_MULTIPLIER: f32 = 1.0;
-const SHADOW_RES: u32 = 4096;
+pub const SHADOW_RES: u32 = 4096;
 
 pub struct RenderEngine<'a> {
     base: &'a VkBase,

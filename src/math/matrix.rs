@@ -252,7 +252,7 @@ impl Matrix {
         let f = 1.0 / (fov_y / 2.0).tan();
 
         result.data[0] = f / aspect;
-        result.data[5] = -f;
+        result.data[5] = f;
 
         result.data[10] = far / (near - far);
         result.data[11] = -1.0;
@@ -284,7 +284,7 @@ impl Matrix {
         let f_n = far - near;
 
         result.data[0] = 2.0 / rl;
-        result.data[5] = -2.0 / tb;
+        result.data[5] = 2.0 / tb;
         result.data[10] = 1.0 / f_n;
         result.data[12] = -(right + left) / rl;
         result.data[13] = -(top + bottom) / tb;

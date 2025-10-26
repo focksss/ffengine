@@ -14,6 +14,7 @@ use crate::render::*;
 use crate::math::vector::Vector;
 use crate::render;
 use render::*;
+use crate::engine::render_engine::{RenderEngine, SHADOW_RES};
 
 // SHOULD DETECT MATH VS COLOR DATA TEXTURES, LOAD COLOR AS SRGB, MATH AS UNORM
 const MAX_VERTICES: u64 = 3 * 10u64.pow(6);
@@ -565,7 +566,7 @@ impl Sun {
                 matrices = self.get_cascade_matrix(primary_camera, cascade_levels[i - 1], cascade_levels[i]);
             }
             else {
-                matrices = self.get_cascade_matrix(primary_camera, cascade_levels[i - 1], primary_camera.far);
+                matrices = self.get_cascade_matrix(primary_camera, cascade_levels[i - 1], primary_camera.far.min(500.0));
             }
             self.views[i] = matrices[0];
             self.projections[i] = matrices[1];
@@ -590,7 +591,7 @@ impl Sun {
         }
         let radius = max_radius_squared.sqrt();
 
-        let texels_per_unit = 4096.0 / (radius * 2.0);
+        let texels_per_unit = SHADOW_RES as f32 / (radius * 2.0);
         let scalar_matrix = Matrix::new_scalar(texels_per_unit);
         let temp_view = Matrix::new_look_at(
             &(-1.0 * self.vector),
@@ -603,14 +604,25 @@ impl Sun {
         frustum_center.w = 1.0;
         frustum_center = temp_view.inverse() * frustum_center;
 
-
         let view = Matrix::new_look_at(
             &(frustum_center - (self.vector * 2.0 * radius)),
             &frustum_center,
             &Vector::new_vec3(0.0, 1.0, 0.0)
         );
 
-        let projection = Matrix::new_ortho(-radius, radius, -radius, radius, -radius * 6.0, radius * 6.0);
+        let mut min_x = f32::MAX; let mut min_y = f32::MAX; let mut min_z = f32::MAX;
+        let mut max_x = f32::MIN; let mut max_y = f32::MIN; let mut max_z = f32::MIN;
+        for corner in &corners {
+            let corner_light_space = view * corner;
+            min_x = min_x.min(corner_light_space.x);
+            min_y = min_y.min(corner_light_space.y);
+            min_z = min_z.min(corner_light_space.z);
+            max_x = max_x.max(corner_light_space.x);
+            max_y = max_y.max(corner_light_space.y);
+            max_z = max_z.max(corner_light_space.z);
+        }
+
+        let projection = Matrix::new_ortho(min_x, max_x, min_y, max_y, -radius * 6.0, radius * 6.0);
         [view, projection]
     }
 }

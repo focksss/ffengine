@@ -26,8 +26,7 @@ impl<'a> TextRenderer<'a> {
         let color_tex_create_info = TextureCreateInfo::new(base).format(Format::R8G8B8A8_UNORM);
         let pass_create_info = PassCreateInfo::new(base)
             .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
-            .add_color_attachment_info(color_tex_create_info.add_usage_flag(vk::ImageUsageFlags::TRANSFER_SRC))
-            .depth_attachment_info(TextureCreateInfo::new(base).format(Format::D16_UNORM).is_depth(true).clear_value([1.0, 0.0, 0.0, 0.0])); // depth
+            .add_color_attachment_info(color_tex_create_info.add_usage_flag(vk::ImageUsageFlags::TRANSFER_SRC));
         //</editor-fold>
         //<editor-fold desc = "descriptor set">
         let texture_sampler_create_info = DescriptorCreateInfo::new(base)
