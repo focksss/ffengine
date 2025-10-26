@@ -1,4 +1,3 @@
-use std::arch::x86_64::__cpuid;
 use std::cell::RefCell;
 use std::ffi::c_void;
 use std::fs;
@@ -7,15 +6,14 @@ use std::path::{Path, PathBuf};
 use std::ptr::null_mut;
 use std::time::SystemTime;
 use ash::vk;
-use ash::vk::{CommandBuffer, DeviceMemory, Format, ImageView, SampleCountFlags, Sampler};
+use ash::vk::{CommandBuffer, DeviceMemory, ImageView, Sampler};
 use json::JsonValue;
 use crate::math::matrix::Matrix;
 use crate::engine::camera::{Camera, Frustum};
 use crate::render::*;
 use crate::math::vector::Vector;
 use crate::render;
-use render::*;
-use crate::render::render_engine::{RenderEngine, SHADOW_RES};
+use crate::render::render_engine::SHADOW_RES;
 
 // SHOULD DETECT MATH VS COLOR DATA TEXTURES, LOAD COLOR AS SRGB, MATH AS UNORM
 const MAX_VERTICES: u64 = 3 * 10u64.pow(6);
@@ -1602,12 +1600,12 @@ impl Primitive {
                 v3.uv[1] - v1.uv[1],
             );
             let f = 1.0 / (delta_uv1.0 * delta_uv2.1 - delta_uv2.0 * delta_uv1.1);
-            let mut tangent = Vector::new_vec3(
+            let tangent = Vector::new_vec3(
                 f * (delta_uv2.1 * e1.0 - delta_uv1.1 * e2.0),
                 f * (delta_uv2.1 * e1.1 - delta_uv1.1 * e2.1),
                 f * (delta_uv2.1 * e1.2 - delta_uv1.1 * e2.2),
             ).normalize_3d();
-            let mut bitangent = Vector::new_vec3(
+            let bitangent = Vector::new_vec3(
                 f * (-delta_uv2.0 * e1.0 + delta_uv1.0 * e2.0),
                 f * (-delta_uv2.0 * e1.1 + delta_uv1.0 * e2.1),
                 f * (-delta_uv2.0 * e1.2 + delta_uv1.0 * e2.2),

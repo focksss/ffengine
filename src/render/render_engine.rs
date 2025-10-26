@@ -2,7 +2,7 @@ use crate::{mem, FrametimeManager};
 use std::path::PathBuf;
 use std::slice;
 use ash::vk;
-use ash::vk::{CommandBuffer, DescriptorType, Format, Handle, RenderPass, RenderPassCreateInfo, ShaderStageFlags};
+use ash::vk::{DescriptorType, Format, ShaderStageFlags};
 use rand::{rng, Rng};
 use crate::{offset_of, render, MAX_FRAMES_IN_FLIGHT};
 use crate::engine::camera::Camera;
@@ -52,7 +52,7 @@ impl<'a> RenderEngine<'a> {
         };
         let null_tex_sampler = null_tex_info.0.1;
 
-        let mut image_infos: Vec<vk::DescriptorImageInfo> = vec![vk::DescriptorImageInfo {
+        let image_infos: Vec<vk::DescriptorImageInfo> = vec![vk::DescriptorImageInfo {
             image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
             image_view: null_texture.image_view,
             sampler: null_tex_sampler,
@@ -146,17 +146,17 @@ impl<'a> RenderEngine<'a> {
             .add_descriptor(Descriptor::new(&ssbo_ubo_create_info));
         //</editor-fold>
         // <editor-fold desc = "SSAO blur descriptor set">
-        let ssao_blur_descriptor_set_create_info_horiz = render::DescriptorSetCreateInfo::new(base)
+        let ssao_blur_descriptor_set_create_info_horiz = DescriptorSetCreateInfo::new(base)
             .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
-            .add_descriptor(render::Descriptor::new(&texture_sampler_create_info))
-            .add_descriptor(render::Descriptor::new(&texture_sampler_create_info))
-            .add_descriptor(render::Descriptor::new(&texture_sampler_create_info));
+            .add_descriptor(Descriptor::new(&texture_sampler_create_info))
+            .add_descriptor(Descriptor::new(&texture_sampler_create_info))
+            .add_descriptor(Descriptor::new(&texture_sampler_create_info));
 
-        let ssao_blur_descriptor_set_create_info_vert = render::DescriptorSetCreateInfo::new(base)
+        let ssao_blur_descriptor_set_create_info_vert = DescriptorSetCreateInfo::new(base)
             .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
-            .add_descriptor(render::Descriptor::new(&texture_sampler_create_info))
-            .add_descriptor(render::Descriptor::new(&texture_sampler_create_info))
-            .add_descriptor(render::Descriptor::new(&texture_sampler_create_info));
+            .add_descriptor(Descriptor::new(&texture_sampler_create_info))
+            .add_descriptor(Descriptor::new(&texture_sampler_create_info))
+            .add_descriptor(Descriptor::new(&texture_sampler_create_info));
         //</editor-fold>
         //<editor-fold desc = "lighting descriptor set">
         let lights_ssbo_create_info = DescriptorCreateInfo::new(base)
@@ -195,7 +195,7 @@ impl<'a> RenderEngine<'a> {
             );
         //</editor-fold>
         // <editor-fold desc = "present descriptor set">
-        let present_descriptor_set_create_info = render::DescriptorSetCreateInfo::new(base)
+        let present_descriptor_set_create_info = DescriptorSetCreateInfo::new(base)
             .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
             .add_descriptor(Descriptor::new(&texture_sampler_create_info));
         //</editor-fold>
@@ -229,7 +229,7 @@ impl<'a> RenderEngine<'a> {
                     vk::ImageUsageFlags::TRANSFER_DST
             )
             .clear_value([0.0; 4]);
-        let ssao_noise_texture = render::Texture::new(&ssao_noise_tex_info);
+        let ssao_noise_texture = Texture::new(&ssao_noise_tex_info);
 
         let ((staging_buffer, staging_buffer_memory), _) = base.create_device_and_staging_buffer(
             0,
@@ -288,7 +288,7 @@ impl<'a> RenderEngine<'a> {
         let vertex_input_binding_descriptions = [
             vk::VertexInputBindingDescription {
                 binding: 0,
-                stride: size_of::<scene::Vertex>() as u32,
+                stride: size_of::<Vertex>() as u32,
                 input_rate: vk::VertexInputRate::VERTEX,
             },
             vk::VertexInputBindingDescription {
@@ -308,69 +308,69 @@ impl<'a> RenderEngine<'a> {
             vk::VertexInputAttributeDescription {
                 location: 1,
                 binding: 0,
-                format: vk::Format::R32G32B32_SFLOAT,
-                offset: offset_of!(scene::Vertex, normal) as u32,
+                format: Format::R32G32B32_SFLOAT,
+                offset: offset_of!(Vertex, normal) as u32,
             }, // normal
             vk::VertexInputAttributeDescription {
                 location: 2,
                 binding: 0,
-                format: vk::Format::R32G32_SFLOAT,
-                offset: offset_of!(scene::Vertex, uv) as u32,
+                format: Format::R32G32_SFLOAT,
+                offset: offset_of!(Vertex, uv) as u32,
             }, // uv
             vk::VertexInputAttributeDescription {
                 location: 3,
                 binding: 0,
-                format: vk::Format::R32G32B32_SFLOAT,
-                offset: offset_of!(scene::Vertex, tangent) as u32,
+                format: Format::R32G32B32_SFLOAT,
+                offset: offset_of!(Vertex, tangent) as u32,
             }, // tangent
             vk::VertexInputAttributeDescription {
                 location: 4,
                 binding: 0,
-                format: vk::Format::R32G32B32_SFLOAT,
-                offset: offset_of!(scene::Vertex, bitangent) as u32,
+                format: Format::R32G32B32_SFLOAT,
+                offset: offset_of!(Vertex, bitangent) as u32,
             }, // bitangent
             vk::VertexInputAttributeDescription {
                 location: 5,
                 binding: 0,
-                format: vk::Format::R32G32B32A32_UINT,
-                offset: offset_of!(scene::Vertex, joint_indices) as u32,
+                format: Format::R32G32B32A32_UINT,
+                offset: offset_of!(Vertex, joint_indices) as u32,
             }, // joint indices
             vk::VertexInputAttributeDescription {
                 location: 6,
                 binding: 0,
-                format: vk::Format::R32G32B32A32_SFLOAT,
-                offset: offset_of!(scene::Vertex, joint_weights) as u32,
+                format: Format::R32G32B32A32_SFLOAT,
+                offset: offset_of!(Vertex, joint_weights) as u32,
             }, // join weights
 
             // instance
             vk::VertexInputAttributeDescription {
                 location: 7,
                 binding: 1,
-                format: vk::Format::R32G32B32A32_SFLOAT,
+                format: Format::R32G32B32A32_SFLOAT,
                 offset: 0,
             }, // model matrix
             vk::VertexInputAttributeDescription {
                 location: 8,
                 binding: 1,
-                format: vk::Format::R32G32B32A32_SFLOAT,
+                format: Format::R32G32B32A32_SFLOAT,
                 offset: 16,
             }, // |
             vk::VertexInputAttributeDescription {
                 location: 9,
                 binding: 1,
-                format: vk::Format::R32G32B32A32_SFLOAT,
+                format: Format::R32G32B32A32_SFLOAT,
                 offset: 32,
             }, // |
             vk::VertexInputAttributeDescription {
                 location: 10,
                 binding: 1,
-                format: vk::Format::R32G32B32A32_SFLOAT,
+                format: Format::R32G32B32A32_SFLOAT,
                 offset: 48,
             }, // |
             vk::VertexInputAttributeDescription {
                 location: 11,
                 binding: 1,
-                format: vk::Format::R32G32_SINT,
+                format: Format::R32G32_SINT,
                 offset: offset_of!(Instance, indices) as u32,
             }, // indices (material + skin)
         ];
@@ -379,57 +379,57 @@ impl<'a> RenderEngine<'a> {
             vk::VertexInputAttributeDescription {
                 location: 0,
                 binding: 0,
-                format: vk::Format::R32G32B32_SFLOAT,
-                offset: offset_of!(scene::Vertex, position) as u32,
+                format: Format::R32G32B32_SFLOAT,
+                offset: offset_of!(Vertex, position) as u32,
             }, // position
             vk::VertexInputAttributeDescription {
                 location: 2,
                 binding: 0,
-                format: vk::Format::R32G32_SFLOAT,
-                offset: offset_of!(scene::Vertex, uv) as u32,
+                format: Format::R32G32_SFLOAT,
+                offset: offset_of!(Vertex, uv) as u32,
             }, // uv
             vk::VertexInputAttributeDescription {
                 location: 5,
                 binding: 0,
-                format: vk::Format::R32G32B32A32_UINT,
-                offset: offset_of!(scene::Vertex, joint_indices) as u32,
+                format: Format::R32G32B32A32_UINT,
+                offset: offset_of!(Vertex, joint_indices) as u32,
             }, // joint indices
             vk::VertexInputAttributeDescription {
                 location: 6,
                 binding: 0,
-                format: vk::Format::R32G32B32A32_SFLOAT,
-                offset: offset_of!(scene::Vertex, joint_weights) as u32,
+                format: Format::R32G32B32A32_SFLOAT,
+                offset: offset_of!(Vertex, joint_weights) as u32,
             }, // joint weights
 
             // instance
             vk::VertexInputAttributeDescription {
                 location: 7,
                 binding: 1,
-                format: vk::Format::R32G32B32A32_SFLOAT,
+                format: Format::R32G32B32A32_SFLOAT,
                 offset: 0,
             }, // model matrix
             vk::VertexInputAttributeDescription {
                 location: 8,
                 binding: 1,
-                format: vk::Format::R32G32B32A32_SFLOAT,
+                format: Format::R32G32B32A32_SFLOAT,
                 offset: 16,
             }, // |
             vk::VertexInputAttributeDescription {
                 location: 9,
                 binding: 1,
-                format: vk::Format::R32G32B32A32_SFLOAT,
+                format: Format::R32G32B32A32_SFLOAT,
                 offset: 32,
             }, // |
             vk::VertexInputAttributeDescription {
                 location: 10,
                 binding: 1,
-                format: vk::Format::R32G32B32A32_SFLOAT,
+                format: Format::R32G32B32A32_SFLOAT,
                 offset: 48,
             }, // |
             vk::VertexInputAttributeDescription {
                 location: 11,
                 binding: 1,
-                format: vk::Format::R32G32_SINT,
+                format: Format::R32G32_SINT,
                 offset: offset_of!(Instance, indices) as u32,
             }, // indices (material + skin)
         ];
@@ -685,7 +685,7 @@ impl<'a> RenderEngine<'a> {
                     .dst_set(lighting_renderpass.descriptor_set.descriptor_sets[current_frame])
                     .dst_binding(i as u32)
                     .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
-                    .image_info(std::slice::from_ref(info))
+                    .image_info(slice::from_ref(info))
             }).collect();
             base.device.update_descriptor_sets(&lighting_descriptor_writes, &[]);
 

@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::process::Command;
 use ash::vk;
 use std::ptr::null_mut;
-use ash::vk::{CommandBuffer, DescriptorType, DeviceMemory, Extent2D, Format, Handle, Image, ImageView, Offset2D, RenderPass, SampleCountFlags, Sampler, ShaderStageFlags};
+use ash::vk::{CommandBuffer, DescriptorType, DeviceMemory, Format, Handle, SampleCountFlags, Sampler, ShaderStageFlags};
 use serde_json::{Value};
 use crate::{offset_of, MAX_FRAMES_IN_FLIGHT};
 use crate::math::Vector;

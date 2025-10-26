@@ -5,23 +5,21 @@ mod engine;
 
 use std::default::Default;
 use std::error::Error;
-use std::{mem, slice};
+use std::mem;
 use std::collections::HashSet;
-use std::mem::size_of;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use ash::vk;
-use ash::vk::{DescriptorType, Extent2D, Format, ImageAspectFlags, ImageSubresourceRange, Offset2D, QueryPool, ShaderStageFlags};
+use ash::vk::QueryPool;
 use winit::dpi::PhysicalPosition;
 use winit::event::{ElementState, Event, KeyEvent, WindowEvent};
 use winit::event_loop::ControlFlow;
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
 use winit::window::CursorGrabMode;
-use rand::*;
 use math::vector::*;
-use engine::scene::{Instance, Light, Model, Scene};
+use engine::scene::{Model, Scene};
 use engine::camera::Camera;
 use engine::scene;
 use render::render_engine::RenderEngine;

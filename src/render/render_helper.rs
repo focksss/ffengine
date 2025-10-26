@@ -1,11 +1,10 @@
 use std::ffi::c_void;
 use std::fs::File;
 use std::io::{BufWriter, Cursor};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use ash::{vk, Device, Instance};
 use ash::util::read_spv;
-use ash::vk::{Buffer, ClearColorValue, ClearDepthStencilValue, ClearValue, DescriptorBindingFlags, DescriptorImageInfo, DescriptorPool, DescriptorPoolCreateFlags, DescriptorPoolSize, DescriptorSetLayout, DescriptorSetLayoutCreateFlags, DescriptorType, DeviceMemory, DeviceSize, DynamicState, Extent3D, Format, GraphicsPipelineCreateInfo, Handle, ImageAspectFlags, ImageSubresourceRange, ImageUsageFlags, MemoryPropertyFlags, PhysicalDevice, PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo, PipelineDepthStencilStateCreateInfo, PipelineInputAssemblyStateCreateInfo, PipelineMultisampleStateCreateInfo, PipelineRasterizationStateCreateInfo, PipelineShaderStageCreateInfo, PipelineTessellationStateCreateInfo, PipelineVertexInputStateCreateInfo, PushConstantRange, SampleCountFlags, ShaderModule, ShaderModuleCreateInfo, ShaderStageFlags, StencilOpState};
-use crate::render::render_engine::RenderEngine;
+use ash::vk::{Buffer, ClearColorValue, ClearDepthStencilValue, ClearValue, DescriptorBindingFlags, DescriptorImageInfo, DescriptorPool, DescriptorPoolCreateFlags, DescriptorPoolSize, DescriptorSetLayout, DescriptorSetLayoutCreateFlags, DescriptorType, DeviceMemory, DeviceSize, DynamicState, Extent3D, Format, GraphicsPipelineCreateInfo, ImageAspectFlags, ImageSubresourceRange, ImageUsageFlags, MemoryPropertyFlags, PhysicalDevice, PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo, PipelineDepthStencilStateCreateInfo, PipelineInputAssemblyStateCreateInfo, PipelineMultisampleStateCreateInfo, PipelineRasterizationStateCreateInfo, PipelineShaderStageCreateInfo, PipelineTessellationStateCreateInfo, PipelineVertexInputStateCreateInfo, PushConstantRange, SampleCountFlags, ShaderModule, ShaderModuleCreateInfo, ShaderStageFlags, StencilOpState};
 use crate::MAX_FRAMES_IN_FLIGHT;
 use crate::render::*;
 
@@ -165,7 +164,7 @@ impl<'a> RenderpassCreateInfo<'a> {
                 ..Default::default()
             },
             pipeline_multisample_state_create_info: PipelineMultisampleStateCreateInfo {
-                rasterization_samples: vk::SampleCountFlags::TYPE_1,
+                rasterization_samples: SampleCountFlags::TYPE_1,
                 ..Default::default()
             },
             pipeline_depth_stencil_state_create_info: PipelineDepthStencilStateCreateInfo {
@@ -790,7 +789,7 @@ pub struct Descriptor {
     pub buffer_refs: Vec<Buffer>,
     pub image_infos: Option<*const DescriptorImageInfo>,
     pub descriptor_count: u32,
-    pub binding_flags: Option<vk::DescriptorBindingFlags>
+    pub binding_flags: Option<DescriptorBindingFlags>
 }
 impl Descriptor {
     pub unsafe fn new(create_info: &DescriptorCreateInfo) -> Self { unsafe {
@@ -896,7 +895,7 @@ pub struct DescriptorCreateInfo<'a> {
     pub image_infos: Option<Vec<DescriptorImageInfo>>,
     pub memory_property_flags: MemoryPropertyFlags,
     pub dynamic: bool,
-    pub binding_flags: Option<vk::DescriptorBindingFlags>,
+    pub binding_flags: Option<DescriptorBindingFlags>,
 }
 impl DescriptorCreateInfo<'_> {
     pub fn new(base: &VkBase) -> DescriptorCreateInfo {
@@ -955,7 +954,7 @@ impl DescriptorCreateInfo<'_> {
         self.dynamic = dynamic;
         self
     }
-    pub fn binding_flags(mut self, binding_flags: vk::DescriptorBindingFlags) -> Self {
+    pub fn binding_flags(mut self, binding_flags: DescriptorBindingFlags) -> Self {
         self.binding_flags = Some(binding_flags);
         self
     }
@@ -1010,13 +1009,13 @@ impl DescriptorSet {
         }).collect::<Vec<vk::DescriptorSetLayoutBinding>>();
         let binding_flags = create_info.descriptors.iter().map(|d| {
             if d.is_dynamic {
-                vk::DescriptorBindingFlags::PARTIALLY_BOUND |
-                vk::DescriptorBindingFlags::VARIABLE_DESCRIPTOR_COUNT |
-                vk::DescriptorBindingFlags::UPDATE_AFTER_BIND
+                DescriptorBindingFlags::PARTIALLY_BOUND |
+                DescriptorBindingFlags::VARIABLE_DESCRIPTOR_COUNT |
+                DescriptorBindingFlags::UPDATE_AFTER_BIND
             } else {
                 d.binding_flags.unwrap_or_default()
             }
-        }).collect::<Vec<vk::DescriptorBindingFlags>>();
+        }).collect::<Vec<DescriptorBindingFlags>>();
         let binding_flags_info = vk::DescriptorSetLayoutBindingFlagsCreateInfo {
             s_type: vk::StructureType::DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO,
             binding_count: binding_flags.len() as u32,
