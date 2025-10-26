@@ -24,7 +24,7 @@ use math::vector::*;
 use engine::scene::{Instance, Light, Model, Scene};
 use engine::camera::Camera;
 use engine::scene;
-use crate::engine::render_engine::RenderEngine;
+use render::render_engine::RenderEngine;
 use crate::render::*;
 
 const MAX_FRAMES_IN_FLIGHT: usize = 3;
@@ -59,25 +59,26 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
 
     let mut world = Scene::new(base);
 
-    //world.preload_model(Model::new(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources\\models\\ffocks\\untitled.gltf").to_str().unwrap()));
-    //world.models[0].transform_roots(&Vector::new_vec(0.0), &Vector::new_vec(0.0), &Vector::new_vec(0.01));
-    //world.models[0].animations[0].repeat = true;
-    //world.models[0].animations[0].start();
+    world.preload_model(Model::new(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources\\models\\ffocks\\untitled.gltf").to_str().unwrap()));
+    world.models[0].transform_roots(&Vector::new_vec3(0.0, 0.0, -3.0), &Vector::new_vec(0.0), &Vector::new_vec(0.05));
+    world.models[0].animations[0].repeat = true;
+    world.models[0].animations[0].start();
 
     //world.add_model(Model::new("C:\\Graphics\\assets\\flower\\scene.gltf"));
     //world.models[0].transform_roots(&Vector::new_vec3(0.0, 1.0, 0.0), &Vector::new_vec(0.0), &Vector::new_vec(1.0));
-    //world.preload_model(Model::new("C:\\Graphics\\assets\\rivals\\luna\\gltf\\luna.gltf"));
+    // world.preload_model(Model::new("C:\\Graphics\\assets\\rivals\\luna\\gltf\\luna.gltf"));
+    // world.models[1].animations[0].repeat = true;
+    // world.models[1].animations[0].start();
 
-    //world.preload_model(Model::new(&PathBuf::from("resources/models/shadowTest/shadowTest.gltf").to_str().unwrap()));
-    world.preload_model(Model::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf"));
+    world.preload_model(Model::new(&PathBuf::from("resources/models/shadowTest/shadowTest.gltf").to_str().unwrap()));
+    world.models[1].transform_roots(&Vector::new_vec3(0.0, 0.0, -5.0), &Vector::new_vec(0.0), &Vector::new_vec(1.0));
+    //world.preload_model(Model::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf"));
     //world.preload_model(Model::new("C:\\Graphics\\assets\\bistroGLTF\\untitled.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\asgard\\asgard.gltf"));
     //sa
     //world.preload_model(Model::new("C:\\Graphics\\assets\\helmet\\DamagedHelmet.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\hydrant\\untitled.gltf"));
 
-    //world.models[0].animations[0].repeat = true;
-    //world.models[0].animations[0].start();
     world.initialize(MAX_FRAMES_IN_FLIGHT, true);
     let render_engine = RenderEngine::new(base, &world);
 
@@ -212,7 +213,6 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
             Event::AboutToWait => {
 
                 frametime_manager.record_cpu_action_start(String::from("deltatime setup"));
-                //world.update_nodes(current_frame);
                 if !pause_frustum { world.update_sun(&player_camera) };
                 //<editor-fold desc = "frame setup">
                 let now = Instant::now();
@@ -284,6 +284,8 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                     &[base.present_complete_semaphores[current_frame]],
                     &[current_rendering_complete_semaphore],
                     |device, frame_command_buffer| {
+                        world.update_nodes(frame_command_buffer, current_frame);
+                        world.update_lights(frame_command_buffer, current_frame);
                         if last_fps_render.elapsed().as_secs_f32() > 0.1 {
                             fps_tex.update_text(format!("FPS: {}", 1.0 / delta_time).as_str());
                             fps_tex.update_buffers_all_frames(frame_command_buffer);
@@ -434,7 +436,7 @@ unsafe fn do_controls(
     }
     if new_pressed_keys.contains(&PhysicalKey::Code(KeyCode::KeyM)) {
         let models = world.models.len();
-        if models < 2 {
+        if models < 3 {
             world.add_model(Model::new("C:\\Graphics\\assets\\helmet\\DamagedHelmet.gltf"));
             world.models[0.max(models)].transform_roots(&player_camera.position, &player_camera.rotation, &Vector::new_vec(1.0));
         }

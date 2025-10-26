@@ -155,8 +155,6 @@ pub struct VkBase {
     pub draw_command_buffers: Vec<CommandBuffer>,
     pub setup_command_buffer: CommandBuffer,
 
-    pub depth_texture: Texture,
-
     pub present_complete_semaphores: Vec<vk::Semaphore>,
     pub rendering_complete_semaphores: Vec<vk::Semaphore>,
 
@@ -419,48 +417,7 @@ impl VkBase {
             let present_images = present_images_create_info.0;
             let present_image_views = present_images_create_info.1;
             //</editor-fold>
-            //<editor-fold desc = "depth">
-            let depth_texture_create_info = TextureCreateInfo::new_without_base(&device, &pdevice, &instance, &surface_resolution)
-                .format(Format::D16_UNORM)
-                .is_depth(true);
-            let depth_texture = Texture::new(&depth_texture_create_info);
-            //</editor-fold>
 
-            record_submit_commandbuffer(
-                &device,
-                setup_command_buffer,
-                setup_commands_reuse_fence,
-                present_queue,
-                &[],
-                &[],
-                &[],
-                |device, setup_command_buffer| {
-                    let layout_transition_barriers = vk::ImageMemoryBarrier::default()
-                        .image(depth_texture.image)
-                        .dst_access_mask(
-                            vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_READ
-                                | vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE,
-                        )
-                        .new_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
-                        .old_layout(vk::ImageLayout::UNDEFINED)
-                        .subresource_range(
-                            ImageSubresourceRange::default()
-                                .aspect_mask(ImageAspectFlags::DEPTH)
-                                .layer_count(1)
-                                .level_count(1),
-                        );
-
-                    device.cmd_pipeline_barrier(
-                        setup_command_buffer,
-                        vk::PipelineStageFlags::BOTTOM_OF_PIPE,
-                        vk::PipelineStageFlags::LATE_FRAGMENT_TESTS,
-                        vk::DependencyFlags::empty(),
-                        &[],
-                        &[],
-                        &[layout_transition_barriers],
-                    );
-                },
-            );
             //<editor-fold desc = "semaphores">
             let semaphore_create_info = vk::SemaphoreCreateInfo::default();
 
@@ -500,7 +457,6 @@ impl VkBase {
                 pool,
                 draw_command_buffers,
                 setup_command_buffer,
-                depth_texture,
                 present_complete_semaphores,
                 rendering_complete_semaphores,
                 draw_commands_reuse_fences,
@@ -533,12 +489,6 @@ impl VkBase {
             );
             self.present_images = present_images_create_info.0;
             self.present_image_views = present_images_create_info.1;
-            //</editor-fold>
-            //<editor-fold desc = "depth">
-            let depth_texture_create_info = TextureCreateInfo::new(&self)
-                .format(Format::D16_UNORM)
-                .is_depth(true);
-            self.depth_texture = Texture::new(&depth_texture_create_info);
             //</editor-fold>
         }
     }
@@ -689,13 +639,13 @@ impl VkBase {
         self.device.cmd_copy_buffer(command_buffers[0], *src_buffer, *dst_buffer, &copy_region);
         self.end_single_time_commands(command_buffers);
     } }
-    pub unsafe fn copy_buffer_synchronous(&self, command_buffer: CommandBuffer, src_buffer: &Buffer, dst_buffer: &Buffer, size: &vk::DeviceSize) { unsafe {
-        let copy_region = [vk::BufferCopy {
+    pub unsafe fn copy_buffer_synchronous(&self, command_buffer: CommandBuffer, src_buffer: &Buffer, dst_buffer: &Buffer, regions: Option<Vec<vk::BufferCopy>>, size: &vk::DeviceSize) { unsafe {
+        let copy_region = regions.unwrap_or(vec![vk::BufferCopy {
             src_offset: 0,
             dst_offset: 0,
             size: *size,
             ..Default::default()
-        }];
+        }]);
         self.device.cmd_copy_buffer(command_buffer, *src_buffer, *dst_buffer, &copy_region);
     } }
     pub unsafe fn create_device_and_staging_buffer<T: Copy>(
@@ -1427,7 +1377,6 @@ impl Drop for VkBase {
             }
             self.device
                 .destroy_fence(self.setup_commands_reuse_fence, None);
-            self.depth_texture.destroy(self);
 
             for &image_view in self.present_image_views.iter() {
                 self.device.destroy_image_view(image_view, None);

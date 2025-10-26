@@ -1,3 +1,4 @@
+use std::arch::x86_64::__cpuid;
 use std::cell::RefCell;
 use std::ffi::c_void;
 use std::fs;
@@ -14,7 +15,7 @@ use crate::render::*;
 use crate::math::vector::Vector;
 use crate::render;
 use render::*;
-use crate::engine::render_engine::{RenderEngine, SHADOW_RES};
+use crate::render::render_engine::{RenderEngine, SHADOW_RES};
 
 // SHOULD DETECT MATH VS COLOR DATA TEXTURES, LOAD COLOR AS SRGB, MATH AS UNORM
 const MAX_VERTICES: u64 = 3 * 10u64.pow(6);
@@ -303,12 +304,14 @@ impl<'a> Scene<'a> {
 
         self.models.push(model);
     } }
-    pub unsafe fn update_instances(&mut self) { unsafe {
+    pub unsafe fn update_instances(&mut self, command_buffer: CommandBuffer, frame: usize) { unsafe {
         let base = self.base;
-        self.dirty_instances.clear();
-        for model in self.models.iter_mut() {
-            for node in &model.scene.nodes.clone() {
-                model.update_node(&mut self.instance_data, &mut self.dirty_instances, *node, &mut Matrix::new(), false);
+        if frame == 0 {
+            self.dirty_instances.clear();
+            for model in self.models.iter_mut() {
+                for node in &model.scene.nodes.clone() {
+                    model.update_node(&mut self.instance_data, &mut self.dirty_instances, *node, &mut Matrix::new(), false);
+                }
             }
         }
         if self.dirty_instances.len() > 0 {
@@ -328,16 +331,13 @@ impl<'a> Scene<'a> {
                     size: size_of::<Instance>() as u64,
                 }
             }).collect();
-            let command_buffers = base.begin_single_time_commands(1);
-            for frame in 0..self.instance_buffers.len() {
-                base.device.cmd_copy_buffer(
-                    command_buffers[0],
-                    self.instance_staging_buffer.0,
-                    self.instance_buffers[frame].0,
-                    &copy_regions,
-                );
-            }
-            base.end_single_time_commands(command_buffers);
+            base.copy_buffer_synchronous(
+                command_buffer,
+                &self.instance_staging_buffer.0,
+                &self.instance_buffers[frame].0,
+                Some(copy_regions),
+                &0u64
+            );
         }
     } }
 
@@ -345,7 +345,7 @@ impl<'a> Scene<'a> {
         let base = self.base;
         let lights_send = self.lights.iter().map(|light| light.to_sendable()).collect::<Vec<_>>();
         copy_data_to_memory(self.lights_staging_buffer.2, &lights_send);
-        base.copy_buffer_synchronous(command_buffer, &self.lights_staging_buffer.0, &self.lights_buffers[frame].0, &self.lights_buffers_size);
+        base.copy_buffer_synchronous(command_buffer, &self.lights_staging_buffer.0, &self.lights_buffers[frame].0, None, &self.lights_buffers_size);
     } }
     pub fn update_sun(&mut self, primary_camera: &Camera) {
         self.sun.update(primary_camera);
@@ -372,18 +372,17 @@ impl<'a> Scene<'a> {
         base.end_single_time_commands(command_buffers);
     } }
 
-    pub unsafe fn update_nodes(&mut self, frame: usize) { unsafe {
-        let base = self.base;
+    pub unsafe fn update_nodes(&mut self, command_buffer: CommandBuffer, frame: usize) { unsafe {
         for model in self.models.iter_mut() {
             for animation in model.animations.iter_mut() {
                 animation.update(&mut model.nodes)
             }
         }
-        self.update_instances();
-        self.update_joints(frame);
+        self.update_instances(command_buffer, frame);
+        self.update_joints(command_buffer, frame);
     } }
 
-    pub unsafe fn update_joints(&mut self, frame: usize) { unsafe {
+    pub unsafe fn update_joints(&mut self, command_buffer: CommandBuffer, frame: usize) { unsafe {
         let base = self.base;
         let mut joints = Vec::new();
         let mut total_skins = 0f32;
@@ -408,7 +407,7 @@ impl<'a> Scene<'a> {
             }
         }
         copy_data_to_memory(self.joints_staging_buffer.2, &joints);
-        base.copy_buffer(&self.joints_staging_buffer.0, &self.joints_buffers[frame].0, &self.joints_buffers_size);
+        base.copy_buffer_synchronous(command_buffer, &self.joints_staging_buffer.0, &self.joints_buffers[frame].0, None, &self.joints_buffers_size);
     }}
 
     pub unsafe fn draw(&self, draw_command_buffer: &CommandBuffer, frame: usize, frustum: Option<&Frustum>) { unsafe {

@@ -27,6 +27,7 @@ pub struct RenderEngine<'a> {
     pub ssao_blur_renderpass_horizontal: Renderpass,
     pub ssao_blur_renderpass_vertical: Renderpass,
     pub lighting_renderpass: Renderpass,
+
     pub present_renderpass: Renderpass,
 
     pub sampler: vk::Sampler,
@@ -636,8 +637,7 @@ impl<'a> RenderEngine<'a> {
             .pass_create_info(present_pass_create_info)
             .descriptor_set_create_info(present_descriptor_set_create_info)
             .vertex_shader_uri(String::from("quad\\quad.vert.spv"))
-            .fragment_shader_uri(String::from("quad\\quad.frag.spv"))
-            .pipeline_color_blend_state_create_info(color_blend_state) };
+            .fragment_shader_uri(String::from("quad\\quad.frag.spv")) };
         let present_renderpass = Renderpass::new(present_renderpass_create_info);
 
         //<editor-fold desc = "descriptor updates">

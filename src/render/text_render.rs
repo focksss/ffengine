@@ -379,12 +379,14 @@ impl<'a> TextInformation<'a> {
             command_buffer,
             &self.vertex_staging_buffer.0,
             &self.vertex_buffer[frame].0,
+            None,
             &(vertex_buffer_size as u64)
         );
         self.base.copy_buffer_synchronous(
             command_buffer,
             &self.index_staging_buffer.0,
             &self.index_buffer[frame].0,
+            None,
             &(index_buffer_size as u64)
         );
     } }
