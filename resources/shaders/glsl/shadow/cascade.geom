@@ -12,23 +12,19 @@ layout(location = 1) flat in uint in_material[];
 layout(location = 0) out vec2 o_uv;
 layout(location = 1) flat out uint material;
 
-layout(push_constant) uniform constants {
-    int light_index;
-} ubo;
-
-struct Light {
-    mat4 projections[5];
-    mat4 views[5];
+struct Sun {
+    mat4 matrices[5];
     vec3 vector;
 };
 
-layout(set = 0, binding = 2, std430) readonly buffer LightsSSBO {
-    Light lights[];
-} lights_SSBO;
+layout(binding = 2) uniform SunUBO {
+    Sun sun;
+} sun_ubo;
 
 void main() {
+    Sun sun = sun_ubo.sun;
     for (int i = 0; i < 3; ++i) {
-        gl_Position = lights_SSBO.lights[ubo.light_index].projections[gl_InvocationID] * lights_SSBO.lights[ubo.light_index].views[gl_InvocationID] * gl_in[i].gl_Position;
+        gl_Position = sun.matrices[gl_InvocationID] * gl_in[i].gl_Position;
         gl_Layer = gl_InvocationID;
 
         o_uv = in_uv[i];

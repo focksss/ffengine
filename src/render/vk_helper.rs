@@ -795,7 +795,7 @@ impl VkBase {
     } }
     pub fn load_image_fast(uri: &PathBuf) -> (Vec<u8>, u32, u32) {
         let bytes = fs::read(uri).expect(uri.to_string_lossy().as_ref());
-        
+
         if uri.extension().and_then(|s| s.to_str()) == Some("png") {
             let decoder = png::Decoder::new(Cursor::new(&bytes));
             let mut reader = decoder.read_info().expect("Failed to read PNG info");
@@ -803,7 +803,7 @@ impl VkBase {
             let info = reader.next_frame(&mut buf).expect("Failed to decode PNG");
 
             let (width, height) = (info.width, info.height);
-            
+
             let rgba_data = match info.color_type {
                 png::ColorType::Rgba => buf[..info.buffer_size()].to_vec(),
                 png::ColorType::Rgb => {
@@ -842,7 +842,7 @@ impl VkBase {
 
             return (rgba_data, width, height);
         }
-        
+
         if let Some(ext) = uri.extension().and_then(|s| s.to_str()) {
             if ext == "jpg" || ext == "jpeg" {
                 let mut decoder = jpeg_decoder::Decoder::new(Cursor::new(&bytes));
@@ -850,7 +850,7 @@ impl VkBase {
                 let info = decoder.info().expect("Failed to get JPEG info");
 
                 let (width, height) = (info.width as u32, info.height as u32);
-                
+
                 let mut rgba = Vec::with_capacity((width * height * 4) as usize);
                 match info.pixel_format {
                     jpeg_decoder::PixelFormat::RGB24 => {
@@ -877,7 +877,7 @@ impl VkBase {
                 return (rgba, width, height);
             }
         }
-        
+
         let img = image::load_from_memory(&bytes)
             .expect("Failed to load image")
             .to_rgba8();
@@ -1465,8 +1465,6 @@ pub fn compile_shaders(shader_directories: Vec<&str>) -> io::Result<()> {
         let spv_dest_str = shader_directory.replace("shaders\\glsl", "shaders\\spv");
         let spv_dest = Path::new(&spv_dest_str);
 
-        println!("{},{},{:?}",spv_dest_str,spv_dest.exists(),shader_directory_path.is_file());
-
         if !spv_dest.exists() {
             if shader_directory_path.is_dir() {
                 println!("Creating folder: {:?}", spv_dest);
@@ -1530,6 +1528,6 @@ pub fn compile_shaders(shader_directories: Vec<&str>) -> io::Result<()> {
     Ok(())
 }
 pub fn load_file(path: &str) -> io::Result<Vec<u8>> {
-    let path_final = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(path);
+    let path_final = PathBuf::from("").join(path);
     fs::read(path_final)
 }

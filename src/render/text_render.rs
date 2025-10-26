@@ -17,7 +17,7 @@ const OUTPUT_DIR: &str = "resources\\fonts\\generated";
 
 pub struct TextRenderer<'a> {
     base: &'a VkBase,
-    renderpass: Renderpass,
+    pub renderpass: Renderpass,
     sampler: Sampler,
 }
 impl<'a> TextRenderer<'a> {
@@ -188,12 +188,12 @@ impl<'a> TextRenderer<'a> {
         device.cmd_bind_vertex_buffers(
             frame_command_buffer,
             0,
-            &[text_info.vertex_buffer.0],
+            &[text_info.vertex_buffer[frame].0],
             &[0],
         );
         device.cmd_bind_index_buffer(
             frame_command_buffer,
-            text_info.index_buffer.0,
+            text_info.index_buffer[frame].0,
             0,
             vk::IndexType::UINT32,
         );
@@ -225,9 +225,9 @@ pub struct TextInformation<'a> {
 
     base: &'a VkBase,
     pub glyph_count: u32,
-    pub vertex_buffer: (vk::Buffer, DeviceMemory),
+    pub vertex_buffer: Vec<(vk::Buffer, DeviceMemory)>,
     pub vertex_staging_buffer: (vk::Buffer, DeviceMemory, *mut c_void),
-    pub index_buffer: (vk::Buffer, DeviceMemory),
+    pub index_buffer: Vec<(vk::Buffer, DeviceMemory)>,
     pub index_staging_buffer: (vk::Buffer, DeviceMemory, *mut c_void),
 }
 impl<'a> TextInformation<'a> {
@@ -245,20 +245,24 @@ impl<'a> TextInformation<'a> {
 
             base: font.base,
             glyph_count: 0,
-            vertex_buffer: (vk::Buffer::null(), DeviceMemory::null()),
+            vertex_buffer: vec![(vk::Buffer::null(), DeviceMemory::null()); MAX_FRAMES_IN_FLIGHT],
             vertex_staging_buffer: (vk::Buffer::null(), DeviceMemory::null(), null_mut()),
-            index_buffer: (vk::Buffer::null(), DeviceMemory::null()),
+            index_buffer: vec![(vk::Buffer::null(), DeviceMemory::null()); MAX_FRAMES_IN_FLIGHT],
             index_staging_buffer: (vk::Buffer::null(), DeviceMemory::null(), null_mut()),
         }
     }
     pub fn destroy(&mut self) { unsafe {
         let base = self.base;
-        base.device.destroy_buffer(self.index_buffer.0, None);
-        base.device.free_memory(self.index_buffer.1, None);
+        for buffer in self.vertex_buffer.iter() {
+            base.device.destroy_buffer(buffer.0, None);
+            base.device.free_memory(buffer.1, None);
+        }
+        for buffer in self.index_buffer.iter() {
+            base.device.destroy_buffer(buffer.0, None);
+            base.device.free_memory(buffer.1, None);
+        }
         base.device.destroy_buffer(self.index_staging_buffer.0, None);
         base.device.free_memory(self.index_staging_buffer.1, None);
-        base.device.destroy_buffer(self.vertex_buffer.0, None);
-        base.device.free_memory(self.vertex_buffer.1, None);
         base.device.destroy_buffer(self.vertex_staging_buffer.0, None);
         base.device.free_memory(self.vertex_staging_buffer.1, None);
     } }
@@ -268,7 +272,7 @@ impl<'a> TextInformation<'a> {
           * Let max = P + glyph.plane_max(), with UV of glyph.uv_max()
           * Increase Σ(prior advances) by glyph.advance()
     */
-    pub fn update_buffers(mut self) -> Self {
+    fn get_vertex_and_index_data(&mut self) -> (Vec<GlyphQuadVertex>, Vec<u32>) {
         let font = &self.font;
         let per_line_shift = (font.ascent - font.descent) + font.line_gap;
         let scale_factor = self.scale_vector * self.font_size;
@@ -331,29 +335,74 @@ impl<'a> TextInformation<'a> {
                 advance_sum += space_advance;
             }
         }
-
+        (vertices, indices)
+    }
+    pub fn set_buffers(mut self) -> Self {
+        let (vertices, indices) = self.get_vertex_and_index_data();
         unsafe {
-            (self.vertex_buffer, self.vertex_staging_buffer) =
-                self.base.create_device_and_staging_buffer(
-                    (size_of::<GlyphQuadVertex>() * vertices.len()) as u64,
-                    &vertices,
-                    vk::BufferUsageFlags::VERTEX_BUFFER, false, false, true
-                );
-            (self.index_buffer, self.index_staging_buffer) =
-                self.base.create_device_and_staging_buffer(
-                    (size_of::<u32>() * indices.len()) as u64,
-                    &indices,
-                    vk::BufferUsageFlags::INDEX_BUFFER, false, false, true
-                );
+            for i in 0..MAX_FRAMES_IN_FLIGHT {
+                if i == 0 {
+                    (self.vertex_buffer[i], self.vertex_staging_buffer) =
+                        self.base.create_device_and_staging_buffer(
+                            0 as vk::DeviceSize,
+                            &vertices,
+                            vk::BufferUsageFlags::VERTEX_BUFFER, false, true, true
+                        );
+                    (self.index_buffer[i], self.index_staging_buffer) =
+                        self.base.create_device_and_staging_buffer(
+                            0 as vk::DeviceSize,
+                            &indices,
+                            vk::BufferUsageFlags::INDEX_BUFFER, false, true, true
+                        );
+                } else {
+                    self.vertex_buffer[i] = self.base.create_device_and_staging_buffer(
+                        0 as vk::DeviceSize,
+                        &vertices,
+                        vk::BufferUsageFlags::VERTEX_BUFFER, true, false, true
+                    ).0;
+                    self.index_buffer[i] = self.base.create_device_and_staging_buffer(
+                        0 as vk::DeviceSize,
+                        &indices,
+                        vk::BufferUsageFlags::INDEX_BUFFER, true, false, true
+                    ).0
+                }
+            }
         }
         self
+    }
+    pub fn update_buffers(&mut self, command_buffer: CommandBuffer, frame: usize) { unsafe {
+        let (vertices, indices) = self.get_vertex_and_index_data();
+        let vertex_buffer_size = size_of::<GlyphQuadVertex>() * vertices.len();
+        let index_buffer_size = size_of::<u32>() * indices.len();
+        copy_data_to_memory(self.vertex_staging_buffer.2, &vertices);
+        copy_data_to_memory(self.index_staging_buffer.2, &indices);
+        self.base.copy_buffer_synchronous(
+            command_buffer,
+            &self.vertex_staging_buffer.0,
+            &self.vertex_buffer[frame].0,
+            &(vertex_buffer_size as u64)
+        );
+        self.base.copy_buffer_synchronous(
+            command_buffer,
+            &self.index_staging_buffer.0,
+            &self.index_buffer[frame].0,
+            &(index_buffer_size as u64)
+        );
+    } }
+    pub fn update_buffers_all_frames(&mut self, command_buffer: CommandBuffer) {
+        for frame in 0..self.vertex_buffer.len() {
+            self.update_buffers(command_buffer, frame);
+        }
+    }
+
+    pub fn update_text(&mut self, text: &str) {
+        self.text = text.to_string();
     }
 
     pub fn text(mut self, text: &str) -> Self {
         self.text = text.to_string();
         self
     }
-
     /**
      * (0, 0) = bottom left (implemented in vertex shader)
      */

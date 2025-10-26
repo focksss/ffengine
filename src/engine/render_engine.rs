@@ -12,7 +12,7 @@ use crate::render::*;
 use crate::scene::*;
 
 const SSAO_KERNAL_SIZE: usize = 16;
-const SSAO_RESOLUTION_MULTIPLIER: f32 = 0.5;
+const SSAO_RESOLUTION_MULTIPLIER: f32 = 1.0;
 const SHADOW_RES: u32 = 4096;
 
 pub struct RenderEngine<'a> {
@@ -36,7 +36,7 @@ pub struct RenderEngine<'a> {
 }
 impl<'a> RenderEngine<'a> {
     pub unsafe fn new(base: &'a VkBase, world: &Scene) -> RenderEngine<'a> { unsafe {
-        let null_tex_info = unsafe { base.create_2d_texture_image(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources\\null8x.png"), true) };
+        let null_tex_info = unsafe { base.create_2d_texture_image(&PathBuf::from("").join("resources\\null8x.png"), true) };
 
         let null_texture = Texture {
             image: null_tex_info.1.0,
@@ -124,11 +124,11 @@ impl<'a> RenderEngine<'a> {
             .set_is_present_pass(true);
         //</editor-fold>
         //<editor-fold desc = "geometry + shadow descriptor sets"
-        let lights_ssbo_create_info = DescriptorCreateInfo::new(base)
+        let sun_ubo_create_info = DescriptorCreateInfo::new(base)
             .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
-            .descriptor_type(DescriptorType::STORAGE_BUFFER)
+            .descriptor_type(DescriptorType::UNIFORM_BUFFER)
             .shader_stages(ShaderStageFlags::GEOMETRY)
-            .buffers(world.lights_buffers.iter().map(|b| {b.0.clone()}).collect());
+            .size(size_of::<SunSendable>() as u64);
         let material_ssbo_create_info = DescriptorCreateInfo::new(base)
             .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
             .descriptor_type(DescriptorType::STORAGE_BUFFER)
@@ -156,7 +156,7 @@ impl<'a> RenderEngine<'a> {
             .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
             .add_descriptor(Descriptor::new(&material_ssbo_create_info))
             .add_descriptor(Descriptor::new(&joints_ssbo_create_info))
-            .add_descriptor(Descriptor::new(&lights_ssbo_create_info))
+            .add_descriptor(Descriptor::new(&sun_ubo_create_info))
             .add_descriptor(Descriptor::new(&world_texture_samplers_create_info));
         //</editor-fold>]
         // <editor-fold desc = "SSAO descriptor set">
@@ -190,8 +190,12 @@ impl<'a> RenderEngine<'a> {
             .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
             .descriptor_type(DescriptorType::STORAGE_BUFFER)
             .shader_stages(ShaderStageFlags::FRAGMENT)
-            // .binding_flags(vk::DescriptorBindingFlags::UPDATE_AFTER_BIND)
             .buffers(world.lights_buffers.iter().map(|b| {b.0.clone()}).collect());
+        let sun_ubo_create_info = DescriptorCreateInfo::new(base)
+            .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
+            .descriptor_type(DescriptorType::UNIFORM_BUFFER)
+            .size(size_of::<SunSendable>() as u64)
+            .shader_stages(ShaderStageFlags::FRAGMENT);
         let lighting_ubo_create_info = DescriptorCreateInfo::new(base)
             .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
             .descriptor_type(DescriptorType::UNIFORM_BUFFER)
@@ -208,7 +212,14 @@ impl<'a> RenderEngine<'a> {
             .add_descriptor(Descriptor::new(&texture_sampler_create_info))
             .add_descriptor(Descriptor::new(&texture_sampler_create_info))
             .add_descriptor(Descriptor::new(&lights_ssbo_create_info))
-            .add_descriptor(Descriptor::new(&lighting_ubo_create_info));
+            .add_descriptor(Descriptor::new(&lighting_ubo_create_info))
+            .add_descriptor(Descriptor::new(&sun_ubo_create_info))
+            .add_descriptor(Descriptor::new(&DescriptorCreateInfo::new(base)
+                .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
+                .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
+                .shader_stages(ShaderStageFlags::FRAGMENT)
+                .binding_flags(vk::DescriptorBindingFlags::UPDATE_AFTER_BIND))
+            );
         //</editor-fold>
         // <editor-fold desc = "present descriptor set">
         let present_descriptor_set_create_info = render::DescriptorSetCreateInfo::new(base)
@@ -573,11 +584,6 @@ impl<'a> RenderEngine<'a> {
             .vertex_shader_uri(String::from("shadow\\shadow.vert.spv"))
             .fragment_shader_uri(String::from("shadow\\shadow.frag.spv"))
             .geometry_shader_uri(String::from("shadow\\cascade.geom.spv"))
-            .push_constant_range(vk::PushConstantRange {
-                stage_flags: ShaderStageFlags::GEOMETRY,
-                offset: 0,
-                size: 4,
-            })
             .pipeline_vertex_input_state(shadow_vertex_input_state_info)
             .pipeline_rasterization_state(shadow_rasterization_info)
             .pipeline_depth_stencil_state(shadow_depth_state_info)
@@ -894,7 +900,7 @@ impl<'a> RenderEngine<'a> {
         image_infos
     }
 
-    pub unsafe fn render_frame(&self, current_frame: usize, present_index: u32, world: &Scene, player_camera: &Camera, frametime_manager: &mut FrametimeManager) { unsafe {
+    pub unsafe fn render_frame(&self, current_frame: usize, present_index: u32, world: &Scene, player_camera: &Camera, frametime_manager: &mut FrametimeManager, text_renderer: &TextRenderer) { unsafe {
         let base = self.base;
         let device = &base.device;
 
@@ -937,8 +943,23 @@ impl<'a> RenderEngine<'a> {
             .render_area(base.surface_resolution.into())
             .clear_values(&self.present_renderpass.pass.clear_values);
         //</editor-fold>
+        let image_info = vk::DescriptorImageInfo {
+            sampler: self.sampler,
+            image_view: text_renderer.renderpass.pass.textures[current_frame][0].image_view,
+            image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+        };
+        let descriptor_write = vk::WriteDescriptorSet::default()
+            .dst_set(self.lighting_renderpass.descriptor_set.descriptor_sets[current_frame])
+            .dst_binding(11u32)
+            .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
+            .image_info(slice::from_ref(&image_info));
+
+        base.device.update_descriptor_sets(&[descriptor_write], &[]);
 
         // frametime_manager.record_cpu_action_start(String::from("ubo updates"));
+        let ubo = world.sun.to_sendable();
+        copy_data_to_memory(self.lighting_renderpass.descriptor_set.descriptors[10].owned_buffers.2[current_frame], &[ubo]);
+        copy_data_to_memory(self.shadow_renderpass.descriptor_set.descriptors[2].owned_buffers.2[current_frame], &[ubo]);
         let ubo = SSAOPassUniformData {
             samples: self.ssao_kernal,
             projection: player_camera.projection_matrix.data,
@@ -1035,10 +1056,6 @@ impl<'a> RenderEngine<'a> {
             vk::PipelineBindPoint::GRAPHICS,
             self.shadow_renderpass.pipeline,
         );
-        device.cmd_push_constants(frame_command_buffer, self.shadow_renderpass.pipeline_layout, ShaderStageFlags::GEOMETRY, 0, slice::from_raw_parts(
-            &0 as *const i32 as *const u8, // which light in world.lights to create shadows from
-            4,
-        ));
         // draw scene
         device.cmd_set_viewport(frame_command_buffer, 0, &[self.shadow_renderpass.viewport]);
         device.cmd_set_scissor(frame_command_buffer, 0, &[self.shadow_renderpass.scissor]);

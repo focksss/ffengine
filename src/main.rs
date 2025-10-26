@@ -62,7 +62,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
         .position(Vector::new_vec2(100.0, 1000.0))
         .font_size(32.0)
         .newline_distance(1720.0)
-        .update_buffers();
+        .set_buffers();
 
     let mut world = Scene::new(base);
 
@@ -75,15 +75,13 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
     //world.models[0].transform_roots(&Vector::new_vec3(0.0, 1.0, 0.0), &Vector::new_vec(0.0), &Vector::new_vec(1.0));
     //world.preload_model(Model::new("C:\\Graphics\\assets\\rivals\\luna\\gltf\\luna.gltf"));
 
-    //world.preload_model(Model::new("C:\\Graphics\\assets\\shadowTest\\shadowTest.gltf"));
+    //world.preload_model(Model::new(&PathBuf::from("resources/models/shadowTest/shadowTest.gltf").to_str().unwrap()));
     world.preload_model(Model::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf"));
     //world.preload_model(Model::new("C:\\Graphics\\assets\\bistroGLTF\\untitled.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\asgard\\asgard.gltf"));
     //sa
     //world.preload_model(Model::new("C:\\Graphics\\assets\\helmet\\DamagedHelmet.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\hydrant\\untitled.gltf"));
-
-    world.add_light(Light::new_sun(Vector::new_vec3(-1.0, -5.0, -1.0).normalize_3d()));
 
     //world.models[0].animations[0].repeat = true;
     //world.models[0].animations[0].start();
@@ -125,6 +123,14 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
     let mut screenshot_pending = false;
 
     let mut frametime_manager = FrametimeManager::new(base);
+
+    let mut last_fps_render = Instant::now();
+    let mut fps_tex = TextInformation::new(&font)
+        .text("making this text long is one way to force the buffers to be large enough...")
+        .position(Vector::new_vec2(100.0, 100.0))
+        .font_size(32.0)
+        .newline_distance(1720.0)
+        .set_buffers();
 
     base.event_loop.borrow_mut().run_on_demand(|event, elwp| {
         elwp.set_control_flow(ControlFlow::Poll);
@@ -211,8 +217,10 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
             }
             //</editor-fold>
             Event::AboutToWait => {
+
                 frametime_manager.record_cpu_action_start(String::from("deltatime setup"));
                 //world.update_nodes(current_frame);
+                if !pause_frustum { world.update_sun(&player_camera) };
                 //<editor-fold desc = "frame setup">
                 let now = Instant::now();
                 let delta_time = now.duration_since(last_frame_time).as_secs_f32();
@@ -283,15 +291,19 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                     &[base.present_complete_semaphores[current_frame]],
                     &[current_rendering_complete_semaphore],
                     |device, frame_command_buffer| {
-                        if !pause_frustum { world.update_lights(frame_command_buffer, &player_camera, current_frame) };
+                        if last_fps_render.elapsed().as_secs_f32() > 1.0 {
+                            fps_tex.update_text(format!("FPS: {}", 1.0 / delta_time).as_str());
+                            fps_tex.update_buffers_all_frames(frame_command_buffer);
+                            last_fps_render = Instant::now();
+                        }
 
                         frametime_manager.record_gpu_action_start(frame_command_buffer, current_frame, String::from(
                             "frame ".to_owned() + current_frame.to_string().as_str())
                         );
 
-                        text_renderer.render_text(current_frame, &test_tex);
+                        text_renderer.render_text(current_frame, &fps_tex);
 
-                        render_engine.render_frame(current_frame, present_index, &world, &player_camera, &mut frametime_manager);
+                        render_engine.render_frame(current_frame, present_index, &world, &player_camera, &mut frametime_manager, &text_renderer);
 
                         frametime_manager.record_gpu_action_end(frame_command_buffer, current_frame);
                     },

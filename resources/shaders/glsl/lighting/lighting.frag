@@ -16,20 +16,30 @@ layout(set = 0, binding = 5) uniform sampler2D g_view_normal;
 layout(set = 0, binding = 6) uniform sampler2DArray shadowmap;
 layout(set = 0, binding = 7) uniform sampler2D ssao_tex;
 
+layout(set = 0, binding = 11) uniform sampler2D text_tex;
+
 layout(push_constant) uniform constants {
     mat4 inverse_view;
     mat4 inverse_projection;
 } ubo;
 
 struct Light {
-    mat4 projections[5];
-    mat4 views[5];
+    mat4 matrix;
     vec3 vector;
 };
 
 layout(set = 0, binding = 8, std430) readonly buffer LightsSSBO {
     Light lights[];
 } lights_SSBO;
+
+struct Sun {
+    mat4 matrices[5];
+    vec3 vector;
+};
+
+layout(binding = 10) uniform SunUBO {
+    Sun sun;
+} sun_ubo;
 
 layout(binding = 9) uniform UniformBuffer {
     vec4 cascade_plane_distances;
@@ -47,11 +57,13 @@ vec3 get_position_from_depth() {
     return view_space_position.xyz / view_space_position.w;
 }
 
-float get_shadow(Light light, vec3 world_position, vec3 world_normal, float fragment_depth) {
+float get_shadow(vec3 world_position, vec3 world_normal, float fragment_depth) {
     vec4 res = step(ubo2.cascade_plane_distances, vec4(fragment_depth));
     int layer = int(res.x + res.y + res.z + res.w);
 
-    vec4 position_lightspace = light.projections[layer] * light.views[layer] * vec4(world_position, 1.0);
+    Sun sun = sun_ubo.sun;
+
+    vec4 position_lightspace = sun.matrices[layer] * vec4(world_position, 1.0);
     vec3 projected_lightspace_position;
     projected_lightspace_position.xy = (position_lightspace.xy / position_lightspace.w) * 0.5 + 0.5;
     projected_lightspace_position.z = position_lightspace.z / position_lightspace.w;
@@ -60,7 +72,7 @@ float get_shadow(Light light, vec3 world_position, vec3 world_normal, float frag
 
     float closest_depth = texture(shadowmap, vec3(projected_lightspace_position.xy, layer)).r;
 
-    vec3 light_direction = normalize(light.vector);
+    vec3 light_direction = normalize(sun.vector);
     float bias = max(0.0001 * (1.0 - dot(world_normal, -light_direction)), 0.0001);
 
     float shadow = 0.0;
@@ -79,6 +91,11 @@ float get_shadow(Light light, vec3 world_position, vec3 world_normal, float frag
 }
 
 void main() {
+    vec4 text = texture(text_tex, uv);
+    if (text.a > 0.0) {
+        uFragColor = vec4(text.rgb, 1.0);
+        return;
+    }
     //uFragColor = vec4(vec3(texture(ssao_tex, uv).r), 1.0); return;
     //uFragColor = vec4(0.01 / texture(g_depth, uv).r, 0.0, 0.0, 1.0);
 
@@ -97,7 +114,7 @@ void main() {
     uFragColor = vec4(
         albedo
         * texture(ssao_tex, uv).r
-        * max(0.2, get_shadow(lights_SSBO.lights[0], world_position, world_normal, -view_position.z)
-        * max(0.0, dot(world_normal, -normalize(lights_SSBO.lights[0].vector))))
+        * max(0.2, get_shadow(world_position, world_normal, -view_position.z)
+        * max(0.0, dot(world_normal, -normalize(sun_ubo.sun.vector))))
     , 1.0);
 }

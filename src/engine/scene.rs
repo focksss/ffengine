@@ -26,6 +26,7 @@ pub struct Scene<'a> {
     base: &'a VkBase,
     pub models: Vec<Model>,
     pub lights: Vec<Light>,
+    pub sun: Sun,
 
     pub texture_count: i32,
 
@@ -64,6 +65,8 @@ impl<'a> Scene<'a> {
             base,
             models: Vec::new(),
             lights: Vec::new(),
+            sun: Sun::new_sun(Vector::new_vec3(-1.0, -5.0, -1.0)),
+
             texture_count: 0,
             index_buffer: (vk::Buffer::null(), DeviceMemory::null()),
             index_staging_buffer: (vk::Buffer::null(), DeviceMemory::null(), null_mut()),
@@ -337,16 +340,15 @@ impl<'a> Scene<'a> {
         }
     } }
 
-    pub unsafe fn update_lights(&mut self, command_buffer: CommandBuffer, primary_camera: &Camera, frame: usize) { unsafe {
+    pub unsafe fn update_lights(&mut self, command_buffer: CommandBuffer, frame: usize) { unsafe {
         let base = self.base;
-        for light in &mut self.lights {
-            light.update(primary_camera);
-        }
-
         let lights_send = self.lights.iter().map(|light| light.to_sendable()).collect::<Vec<_>>();
         copy_data_to_memory(self.lights_staging_buffer.2, &lights_send);
         base.copy_buffer_synchronous(command_buffer, &self.lights_staging_buffer.0, &self.lights_buffers[frame].0, &self.lights_buffers_size);
     } }
+    pub fn update_sun(&mut self, primary_camera: &Camera) {
+        self.sun.update(primary_camera);
+    }
 
     pub unsafe fn update_instances_all_frames(&mut self) { unsafe {
         let base = self.base;
@@ -489,58 +491,84 @@ impl Drop for Scene<'_> {
 #[derive(Clone)]
 pub struct Light {
     pub vector: Vector,
-    pub projections: [Matrix; 5],
-    pub views: [Matrix; 5],
+    pub projection: Matrix,
+    pub view: Matrix,
     pub light_type: u32,
 }
 impl Light {
-    pub fn new_sun(vector: Vector) -> Light {
+    pub fn new(vector: Vector) -> Light {
         Light {
             vector: Vector::new_vec4(vector.x, vector.y, vector.z, 1.0),
+            projection: Matrix::new_ortho(-10.0, 10.0, -10.0, 10.0, 0.01, 1000.0),
+            view: Matrix::new_look_at(
+                &Vector::new_vec3(vector.x * -100.0, vector.y * -100.0, vector.z * -100.0),
+                &Vector::new_vec3(0.0, 0.0, 0.0),
+                &Vector::new_vec3(0.0, 1.0, 0.0),
+            ),
+            light_type: 0,
+        }
+    }
+    pub fn to_sendable(&self) -> LightSendable {
+        LightSendable {
+            matrix: (self.projection * self.view).data,
+            vector: self.vector.to_array3(),
+            _pad0: 0u32
+        }
+    }
+}
+#[derive(Copy)]
+#[derive(Clone)]
+pub struct LightSendable {
+    pub matrix: [f32; 16],
+    pub vector: [f32; 3],
+    pub _pad0: u32,
+}
+#[derive(Clone)]
+pub struct Sun {
+    pub vector: Vector,
+    pub projections: [Matrix; 5],
+    pub views: [Matrix; 5],
+}
+impl Sun {
+    pub fn new_sun(vector: Vector) -> Sun {
+        Sun {
+            vector: Vector::new_vec4(vector.x, vector.y, vector.z, 1.0).normalize_3d(),
             projections: [Matrix::new_ortho(-10.0, 10.0, -10.0, 10.0, 0.01, 1000.0); 5],
             views: [Matrix::new_look_at(
                 &Vector::new_vec3(vector.x * -100.0, vector.y * -100.0, vector.z * -100.0),
                 &Vector::new_vec3(0.0, 0.0, 0.0),
                 &Vector::new_vec3(0.0, 1.0, 0.0),
             ); 5],
-            light_type: 0,
         }
     }
-    pub fn to_sendable(&self) -> LightSendable {
-        let projections: Vec<[f32; 16]> = self.projections
-            .iter()
-            .map(|m| m.data)
-            .collect();
-        let views: Vec<[f32; 16]> = self.views
-            .iter()
-            .map(|m| m.data)
-            .collect();
-        LightSendable {
-            projections: <[[f32; 16]; 5]>::try_from(projections.as_slice()).unwrap(),
-            views: <[[f32; 16]; 5]>::try_from(views.as_slice()).unwrap(),
+    pub fn to_sendable(&self) -> SunSendable {
+        let mut matrices = Vec::new();
+        for i in 0..5 {
+            matrices.push((self.projections[i] * self.views[i]).data);
+        }
+        SunSendable {
+            matrices: <[[f32; 16]; 5]>::try_from(matrices.as_slice()).unwrap(),
             vector: self.vector.to_array3(),
             _pad0: 0u32
         }
     }
 
     pub fn update(&mut self, primary_camera: &Camera) {
-        if self.light_type == 0 {
-            let cascade_levels = [primary_camera.far * 0.005, primary_camera.far * 0.015, primary_camera.far * 0.045, primary_camera.far * 0.15];
+        let cascade_levels = [primary_camera.far * 0.005, primary_camera.far * 0.015, primary_camera.far * 0.045, primary_camera.far * 0.15];
 
-            for i in 0..cascade_levels.len() + 1 {
-                let matrices: [Matrix; 2];
-                if i == 0 {
-                    matrices = self.get_cascade_matrix(primary_camera, primary_camera.near, cascade_levels[i]);
-                }
-                else if i < cascade_levels.len() {
-                    matrices = self.get_cascade_matrix(primary_camera, cascade_levels[i - 1], cascade_levels[i]);
-                }
-                else {
-                    matrices = self.get_cascade_matrix(primary_camera, cascade_levels[i - 1], primary_camera.far);
-                }
-                self.views[i] = matrices[0];
-                self.projections[i] = matrices[1];
+        for i in 0..cascade_levels.len() + 1 {
+            let matrices: [Matrix; 2];
+            if i == 0 {
+                matrices = self.get_cascade_matrix(primary_camera, primary_camera.near, cascade_levels[i]);
             }
+            else if i < cascade_levels.len() {
+                matrices = self.get_cascade_matrix(primary_camera, cascade_levels[i - 1], cascade_levels[i]);
+            }
+            else {
+                matrices = self.get_cascade_matrix(primary_camera, cascade_levels[i - 1], primary_camera.far);
+            }
+            self.views[i] = matrices[0];
+            self.projections[i] = matrices[1];
         }
     }
 
@@ -588,9 +616,8 @@ impl Light {
 }
 #[derive(Copy)]
 #[derive(Clone)]
-pub struct LightSendable {
-    pub projections: [[f32; 16]; 5],
-    pub views: [[f32; 16]; 5],
+pub struct SunSendable {
+    pub matrices: [[f32; 16]; 5],
     pub vector: [f32; 3],
     pub _pad0: u32,
 }

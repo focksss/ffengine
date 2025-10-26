@@ -29,14 +29,5 @@ layout(set = 0, binding = 0, std430) readonly buffer MaterialSSBO {
 } materialSSBO;
 
 void main() {
-    Material mat = materialSSBO.materials[material];
-    vec4 base_color;
-    if (mat.base_color_tex > -1) {
-        base_color = texture(textures[mat.base_color_tex], o_uv);
-    } else {
-        base_color = mat.base_color;
-    }
-    if (base_color.a < 1.0) {
-        discard;
-    }
+
 }
