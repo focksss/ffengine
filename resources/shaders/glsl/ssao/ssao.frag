@@ -35,7 +35,7 @@ vec3 get_position_from_depth(vec2 in_uv) {
 }
 
 void main() {
-    // fragColor = vec4(1.0); return;
+    // fragColor = vec4(1.0, 0.0, 1.0, 1.0); return;
     vec2 noiseScale = vec2(float(ubo.width) / 4.0, float(ubo.height) / 4.0);
     float bias = 0.001;
 

@@ -86,39 +86,34 @@ impl<'a> RenderEngine<'a> {
             .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
             .shader_stages(ShaderStageFlags::FRAGMENT);
         //<editor-fold desc = "passes">
-        let color_tex_create_info = TextureCreateInfo::new(base).format(Format::R16G16B16A16_SFLOAT);
-        let ssao_res_color_tex_create_info = TextureCreateInfo::new(base).format(Format::R16G16B16A16_SFLOAT).resolution_denominator((1.0 / SSAO_RESOLUTION_MULTIPLIER) as u32);
+        let ssao_res_color_tex_create_info = TextureCreateInfo::new(base).format(Format::R8_UNORM).resolution_denominator((1.0 / SSAO_RESOLUTION_MULTIPLIER) as u32);
         let geometry_pass_create_info = PassCreateInfo::new(base)
             .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
-            .add_color_attachment_info(TextureCreateInfo::new(base).format(Format::R8G8B8A8_SINT)) // material
-            .add_color_attachment_info(color_tex_create_info) // albedo
-            .add_color_attachment_info(color_tex_create_info) // metallic roughness
-            .add_color_attachment_info(color_tex_create_info) // extra properties
-            .add_color_attachment_info(color_tex_create_info) // view normal
+            .add_color_attachment_info(TextureCreateInfo::new(base).format(Format::R16_SINT)) // material
+            .add_color_attachment_info(TextureCreateInfo::new(base).format(Format::R8G8B8A8_UNORM)) // albedo
+            .add_color_attachment_info(TextureCreateInfo::new(base).format(Format::R8G8B8A8_UNORM)) // metallic roughness
+            .add_color_attachment_info(TextureCreateInfo::new(base).format(Format::R8G8B8A8_UNORM)) // extra properties
+            .add_color_attachment_info(TextureCreateInfo::new(base).format(Format::R16G16B16A16_SFLOAT)) // view normal
             .depth_attachment_info(TextureCreateInfo::new(base).format(Format::D32_SFLOAT).is_depth(true).clear_value([0.0, 0.0, 0.0, 0.0])); // depth
 
         let shadow_pass_create_info = PassCreateInfo::new(base)
             .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
-            .depth_attachment_info(TextureCreateInfo::new(base).format(Format::D16_UNORM).is_depth(true).clear_value([0.0, 0.0, 0.0, 0.0]).width(SHADOW_RES).height(SHADOW_RES).array_layers(5)); // depth
+            .depth_attachment_info(TextureCreateInfo::new(base).format(Format::D16_UNORM).is_depth(true).clear_value([0.0, 0.0, 0.0, 0.0]).width(SHADOW_RES).height(SHADOW_RES).array_layers(5)); // depth;
 
         let ssao_pass_create_info = PassCreateInfo::new(base)
             .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
-            .add_color_attachment_info(ssao_res_color_tex_create_info)
-            .depth_attachment_info(TextureCreateInfo::new(base).resolution_denominator((1.0 / SSAO_RESOLUTION_MULTIPLIER) as u32).format(Format::D16_UNORM).is_depth(true).clear_value([1.0, 0.0, 0.0, 0.0])); // depth
+            .add_color_attachment_info(ssao_res_color_tex_create_info);
 
         let ssao_blur_pass_create_info_horiz = PassCreateInfo::new(base)
             .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
-            .add_color_attachment_info(ssao_res_color_tex_create_info)
-            .depth_attachment_info(TextureCreateInfo::new(base).resolution_denominator((1.0 / SSAO_RESOLUTION_MULTIPLIER) as u32).format(Format::D16_UNORM).is_depth(true).clear_value([1.0, 0.0, 0.0, 0.0])); // depth
+            .add_color_attachment_info(ssao_res_color_tex_create_info);
         let ssao_blur_pass_create_info_vert = PassCreateInfo::new(base)
             .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
-            .add_color_attachment_info(ssao_res_color_tex_create_info)
-            .depth_attachment_info(TextureCreateInfo::new(base).resolution_denominator((1.0 / SSAO_RESOLUTION_MULTIPLIER) as u32).format(Format::D16_UNORM).is_depth(true).clear_value([1.0, 0.0, 0.0, 0.0])); // depth
+            .add_color_attachment_info(ssao_res_color_tex_create_info);
 
         let lighting_pass_create_info = PassCreateInfo::new(base)
             .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
-            .add_color_attachment_info(color_tex_create_info.usage_flags(color_tex_create_info.usage_flags | vk::ImageUsageFlags::TRANSFER_SRC))
-            .depth_attachment_info(TextureCreateInfo::new(base).format(Format::D16_UNORM).is_depth(true).clear_value([1.0, 0.0, 0.0, 0.0])); // depth
+            .add_color_attachment_info(TextureCreateInfo::new(base).format(Format::R16G16B16A16_SFLOAT).add_usage_flag(vk::ImageUsageFlags::TRANSFER_SRC));
 
         let present_pass_create_info = PassCreateInfo::new(base)
             .set_is_present_pass(true);
@@ -466,12 +461,6 @@ impl<'a> RenderEngine<'a> {
         let shadow_vertex_input_state_info = vk::PipelineVertexInputStateCreateInfo::default()
             .vertex_attribute_descriptions(&shadow_vertex_input_attribute_descriptions)
             .vertex_binding_descriptions(&vertex_input_binding_descriptions);
-        let null_vertex_input_state_info = vk::PipelineVertexInputStateCreateInfo::default();
-        let vertex_input_assembly_state_info = vk::PipelineInputAssemblyStateCreateInfo {
-            topology: vk::PrimitiveTopology::TRIANGLE_LIST,
-            primitive_restart_enable: vk::FALSE,
-            ..Default::default()
-        };
         let rasterization_info = vk::PipelineRasterizationStateCreateInfo {
             front_face: vk::FrontFace::COUNTER_CLOCKWISE,
             cull_mode: vk::CullModeFlags::BACK,
@@ -486,17 +475,6 @@ impl<'a> RenderEngine<'a> {
             polygon_mode: vk::PolygonMode::FILL,
             ..Default::default()
         };
-        let fullscreen_quad_rasterization_info = vk::PipelineRasterizationStateCreateInfo {
-            front_face: vk::FrontFace::COUNTER_CLOCKWISE,
-            cull_mode: vk::CullModeFlags::NONE,
-            line_width: 1.0,
-            polygon_mode: vk::PolygonMode::FILL,
-            ..Default::default()
-        };
-        let null_multisample_state_info = vk::PipelineMultisampleStateCreateInfo {
-            rasterization_samples: vk::SampleCountFlags::TYPE_1,
-            ..Default::default()
-        };
         let noop_stencil_state = vk::StencilOpState {
             fail_op: vk::StencilOp::KEEP,
             pass_op: vk::StencilOp::KEEP,
@@ -508,15 +486,6 @@ impl<'a> RenderEngine<'a> {
             depth_test_enable: 1,
             depth_write_enable: 1,
             depth_compare_op: vk::CompareOp::GREATER,
-            front: noop_stencil_state,
-            back: noop_stencil_state,
-            max_depth_bounds: 1.0,
-            ..Default::default()
-        };
-        let default_depth_state_info = vk::PipelineDepthStencilStateCreateInfo {
-            depth_test_enable: 1,
-            depth_write_enable: 1,
-            depth_compare_op: vk::CompareOp::LESS_OR_EQUAL,
             front: noop_stencil_state,
             back: noop_stencil_state,
             max_depth_bounds: 1.0,
@@ -552,17 +521,11 @@ impl<'a> RenderEngine<'a> {
             color_write_mask: vk::ColorComponentFlags::RGBA,
         };
         let null_blend_states = [null_blend_attachment; 5];
-        let null_blend_states_singular = [null_blend_attachment];
         let null_blend_state = vk::PipelineColorBlendStateCreateInfo::default()
             .attachments(&null_blend_states);
-        let null_blend_state_singular = vk::PipelineColorBlendStateCreateInfo::default()
-            .attachments(&null_blend_states_singular);
         let color_blend_state = vk::PipelineColorBlendStateCreateInfo::default()
             .logic_op(vk::LogicOp::CLEAR)
             .attachments(&color_blend_attachment_states);
-        let dynamic_state = [vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR];
-        let dynamic_state_info =
-            vk::PipelineDynamicStateCreateInfo::default().dynamic_states(&dynamic_state);
         //</editor-fold>
 
 
@@ -587,7 +550,6 @@ impl<'a> RenderEngine<'a> {
             .pipeline_vertex_input_state(shadow_vertex_input_state_info)
             .pipeline_rasterization_state(shadow_rasterization_info)
             .pipeline_depth_stencil_state(shadow_depth_state_info)
-            .pipeline_color_blend_state_create_info(null_blend_state_singular)
             .viewport(vk::Viewport {
                 x: 0.0,
                 y: 0.0,
@@ -604,7 +566,6 @@ impl<'a> RenderEngine<'a> {
             .descriptor_set_create_info(ssao_descriptor_set_create_info)
             .vertex_shader_uri(String::from("quad\\quad.vert.spv"))
             .fragment_shader_uri(String::from("ssao\\ssao.frag.spv"))
-            .pipeline_color_blend_state_create_info(null_blend_state_singular)
             .viewport(vk::Viewport {
                 x: 0.0,
                 y: 0.0,
@@ -623,7 +584,6 @@ impl<'a> RenderEngine<'a> {
             .descriptor_set_create_info(ssao_blur_descriptor_set_create_info_horiz)
             .vertex_shader_uri(String::from("quad\\quad.vert.spv"))
             .fragment_shader_uri(String::from("bilateral_blur\\bilateral_blur.frag.spv"))
-            .pipeline_color_blend_state_create_info(null_blend_state_singular)
             .push_constant_range(vk::PushConstantRange {
                 stage_flags: ShaderStageFlags::FRAGMENT,
                 offset: 0,
@@ -646,7 +606,6 @@ impl<'a> RenderEngine<'a> {
             .descriptor_set_create_info(ssao_blur_descriptor_set_create_info_vert)
             .vertex_shader_uri(String::from("quad\\quad.vert.spv"))
             .fragment_shader_uri(String::from("bilateral_blur\\bilateral_blur.frag.spv"))
-            .pipeline_color_blend_state_create_info(null_blend_state_singular)
             .push_constant_range(vk::PushConstantRange {
                 stage_flags: ShaderStageFlags::FRAGMENT,
                 offset: 0,
@@ -670,7 +629,6 @@ impl<'a> RenderEngine<'a> {
             .descriptor_set_create_info(lighting_descriptor_set_create_info)
             .vertex_shader_uri(String::from("quad\\quad.vert.spv"))
             .fragment_shader_uri(String::from("lighting\\lighting.frag.spv"))
-            .pipeline_color_blend_state_create_info(null_blend_state_singular)
             .push_constant_range(camera_push_constant_range_fragment) };
         let lighting_renderpass = Renderpass::new(lighting_renderpass_create_info);
 

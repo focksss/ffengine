@@ -23,10 +23,10 @@ pub struct TextRenderer<'a> {
 impl<'a> TextRenderer<'a> {
     pub unsafe fn new(base: &VkBase) -> TextRenderer { unsafe {
         //<editor-fold desc = "pass">
-        let color_tex_create_info = TextureCreateInfo::new(base).format(Format::R16G16B16A16_SFLOAT);
+        let color_tex_create_info = TextureCreateInfo::new(base).format(Format::R8G8B8A8_UNORM);
         let pass_create_info = PassCreateInfo::new(base)
             .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
-            .add_color_attachment_info(color_tex_create_info.usage_flags(color_tex_create_info.usage_flags | vk::ImageUsageFlags::TRANSFER_SRC))
+            .add_color_attachment_info(color_tex_create_info.add_usage_flag(vk::ImageUsageFlags::TRANSFER_SRC))
             .depth_attachment_info(TextureCreateInfo::new(base).format(Format::D16_UNORM).is_depth(true).clear_value([1.0, 0.0, 0.0, 0.0])); // depth
         //</editor-fold>
         //<editor-fold desc = "descriptor set">

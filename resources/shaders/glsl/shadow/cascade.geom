@@ -12,17 +12,12 @@ layout(location = 1) flat in uint in_material[];
 layout(location = 0) out vec2 o_uv;
 layout(location = 1) flat out uint material;
 
-struct Sun {
+layout(binding = 2) uniform SunUBO {
     mat4 matrices[5];
     vec3 vector;
-};
-
-layout(binding = 2) uniform SunUBO {
-    Sun sun;
-} sun_ubo;
+} sun;
 
 void main() {
-    Sun sun = sun_ubo.sun;
     for (int i = 0; i < 3; ++i) {
         gl_Position = sun.matrices[gl_InvocationID] * gl_in[i].gl_Position;
         gl_Layer = gl_InvocationID;

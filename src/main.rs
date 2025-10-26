@@ -291,7 +291,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                     &[base.present_complete_semaphores[current_frame]],
                     &[current_rendering_complete_semaphore],
                     |device, frame_command_buffer| {
-                        if last_fps_render.elapsed().as_secs_f32() > 1.0 {
+                        if last_fps_render.elapsed().as_secs_f32() > 0.1 {
                             fps_tex.update_text(format!("FPS: {}", 1.0 / delta_time).as_str());
                             fps_tex.update_buffers_all_frames(frame_command_buffer);
                             last_fps_render = Instant::now();

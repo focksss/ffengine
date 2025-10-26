@@ -32,14 +32,10 @@ layout(set = 0, binding = 8, std430) readonly buffer LightsSSBO {
     Light lights[];
 } lights_SSBO;
 
-struct Sun {
+layout(binding = 10) uniform SunUBO {
     mat4 matrices[5];
     vec3 vector;
-};
-
-layout(binding = 10) uniform SunUBO {
-    Sun sun;
-} sun_ubo;
+} sun;
 
 layout(binding = 9) uniform UniformBuffer {
     vec4 cascade_plane_distances;
@@ -60,8 +56,6 @@ vec3 get_position_from_depth() {
 float get_shadow(vec3 world_position, vec3 world_normal, float fragment_depth) {
     vec4 res = step(ubo2.cascade_plane_distances, vec4(fragment_depth));
     int layer = int(res.x + res.y + res.z + res.w);
-
-    Sun sun = sun_ubo.sun;
 
     vec4 position_lightspace = sun.matrices[layer] * vec4(world_position, 1.0);
     vec3 projected_lightspace_position;
@@ -115,6 +109,6 @@ void main() {
         albedo
         * texture(ssao_tex, uv).r
         * max(0.2, get_shadow(world_position, world_normal, -view_position.z)
-        * max(0.0, dot(world_normal, -normalize(sun_ubo.sun.vector))))
+        * max(0.0, dot(world_normal, -normalize(sun.vector))))
     , 1.0);
 }
