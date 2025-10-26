@@ -81,6 +81,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
 
     world.initialize(MAX_FRAMES_IN_FLIGHT, true);
     let render_engine = RenderEngine::new(base, &world);
+    render_engine.update_world_textures_all_frames(&world);
 
     //<editor-fold desc = "present renderpass">
 
@@ -235,7 +236,8 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
                     &mut saved_cursor_pos,
                     &mut pause_frustum,
                     &mut screenshot_pending,
-                    &mut world
+                    &mut world,
+                    &render_engine
                 );
 
                 frametime_manager.record_cpu_action_end();
@@ -367,6 +369,7 @@ unsafe fn do_controls(
     paused: &mut bool,
     screenshot_pending: &mut bool,
     world: &mut Scene,
+    render_engine: &RenderEngine
 ) { unsafe {
     if pressed_keys.contains(&PhysicalKey::Code(KeyCode::KeyW)) {
         player_camera.position.x += player_camera.speed*delta_time * (player_camera.rotation.y + PI/2.0).cos();
@@ -439,6 +442,7 @@ unsafe fn do_controls(
         if models < 3 {
             world.add_model(Model::new("C:\\Graphics\\assets\\helmet\\DamagedHelmet.gltf"));
             world.models[0.max(models)].transform_roots(&player_camera.position, &player_camera.rotation, &Vector::new_vec(1.0));
+            render_engine.update_world_textures_all_frames(world);
         }
     }
     if new_pressed_keys.contains(&PhysicalKey::Code(KeyCode::F2)) {

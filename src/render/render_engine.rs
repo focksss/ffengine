@@ -52,35 +52,12 @@ impl<'a> RenderEngine<'a> {
         };
         let null_tex_sampler = null_tex_info.0.1;
 
-        let mut image_infos: Vec<vk::DescriptorImageInfo> = Vec::with_capacity(1024);
-        for model in &world.models {
-            for texture in &model.textures {
-                if texture.borrow().source.borrow().generated {
-                    image_infos.push(vk::DescriptorImageInfo {
-                        image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                        image_view: texture.borrow().source.borrow().image_view,
-                        sampler: texture.borrow().sampler,
-                        ..Default::default()
-                    });
-                } else {
-                    image_infos.push(vk::DescriptorImageInfo {
-                        image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                        image_view: null_texture.image_view,
-                        sampler: null_tex_sampler,
-                        ..Default::default()
-                    });
-                }
-            }
-        }
-        let missing = 1024 - image_infos.len();
-        for _ in 0..missing {
-            image_infos.push(vk::DescriptorImageInfo {
-                image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                image_view: null_texture.image_view,
-                sampler: null_tex_sampler,
-                ..Default::default()
-            });
-        }
+        let mut image_infos: Vec<vk::DescriptorImageInfo> = vec![vk::DescriptorImageInfo {
+            image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            image_view: null_texture.image_view,
+            sampler: null_tex_sampler,
+            ..Default::default()
+        }; 1024];
 
         let texture_sampler_create_info = DescriptorCreateInfo::new(base)
             .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
@@ -825,7 +802,12 @@ impl<'a> RenderEngine<'a> {
             ssao_noise_texture,
         }
     } }
-    fn get_image_infos(&self, world: &Scene) -> Vec<vk::DescriptorImageInfo> {
+    pub fn update_world_textures_all_frames(&self, world: &Scene) {
+        for frame in 0..MAX_FRAMES_IN_FLIGHT {
+            self.update_world_textures(world, frame);
+        }
+    }
+    pub fn update_world_textures(&self, world: &Scene, frame: usize) { unsafe {
         let mut image_infos: Vec<vk::DescriptorImageInfo> = Vec::with_capacity(1024);
         for model in &world.models {
             for texture in &model.textures {
@@ -855,8 +837,20 @@ impl<'a> RenderEngine<'a> {
                 ..Default::default()
             });
         }
-        image_infos
-    }
+        let image_infos = image_infos.as_slice().as_ptr();
+
+        let descriptor_write = vk::WriteDescriptorSet {
+            s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
+            dst_set: self.geometry_renderpass.descriptor_set.descriptor_sets[frame],
+            dst_binding: 2,
+            dst_array_element: 0,
+            descriptor_type: DescriptorType::COMBINED_IMAGE_SAMPLER,
+            descriptor_count: 1024,
+            p_image_info: image_infos,
+            ..Default::default()
+        };
+        self.base.device.update_descriptor_sets(&[descriptor_write], &[]);
+    }}
 
     pub unsafe fn render_frame(&self, current_frame: usize, present_index: u32, world: &Scene, player_camera: &Camera, frametime_manager: &mut FrametimeManager, text_renderer: &TextRenderer) { unsafe {
         let base = self.base;

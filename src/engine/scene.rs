@@ -302,6 +302,7 @@ impl<'a> Scene<'a> {
         self.texture_count += model.textures.len() as i32;
         self.joints_count += new_joints_send.len();
 
+        model.construct_textures(base);
         self.models.push(model);
     } }
     pub unsafe fn update_instances(&mut self, command_buffer: CommandBuffer, frame: usize) { unsafe {
