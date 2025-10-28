@@ -90,14 +90,12 @@ void main() {
         uFragColor = vec4(text.rgb, 1.0);
         return;
     }
-    //uFragColor = vec4(vec3(texture(ssao_tex, uv).r), 1.0); return;
+    //uFragColor = vec4(vec3(texture(ssao_tex, uv).rgb), 1.0); return;
     //uFragColor = vec4(0.01 / texture(g_depth, uv).r, 0.0, 0.0, 1.0);
 
     mat4 inverse_view = ubo.inverse_view;
 
     vec3 albedo = texture(g_albedo, uv).rgb;
-
-    // uFragColor = vec4(albedo, 1.0); return;
 
     vec3 view_position = get_position_from_depth();
     vec3 world_position = (inverse_view * vec4(view_position, 1.0)).xyz * vec3(1.0, 1.0, 1.0);
@@ -105,6 +103,7 @@ void main() {
     vec3 view_normal = (texture(g_view_normal, uv).xyz * 2.0) - 1.0;
     vec3 world_normal = mat3(inverse_view) * view_normal;
 
+    // uFragColor = vec4(albedo, 1.0); return;
 
     uFragColor = vec4(
         albedo

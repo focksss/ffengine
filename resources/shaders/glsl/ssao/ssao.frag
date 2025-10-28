@@ -40,17 +40,23 @@ void main() {
     float bias = 0.001;
 
     vec3 fragPos = get_position_from_depth(uv);
-    vec3 normal = normalize(texture(view_normal, uv).rgb-0.5)* ( textureSize(view_normal, 0).x / ubo.width);
-    vec3 randomVec = normalize(texture(tex_noise, uv * noiseScale).xyz);
+
+    vec3 normal = normalize((texture(view_normal, uv).rgb - 0.5) * 2.0);
+
+    vec3 randomVec = vec3(texture(tex_noise, uv * noiseScale).xy, 0.0);
 
     vec3 tangent = normalize(randomVec - normal * dot(randomVec, normal));
     vec3 bitangent = cross(normal, tangent);
     mat3 TBN = mat3(tangent, bitangent, normal);
 
+    //  fragColor = vec4(TBN * vec3(0.0, 0.0, 1.0), 1.0); return;
+
     float occlusion = 0.0;
     for(int i = 0; i < KERNAL_SIZE; i++) {
         vec3 samplePos = TBN * ubo.samples[i];
-        samplePos = fragPos + samplePos * ubo.radius;
+        float depthScale = abs(fragPos.z) / 5.0; // 5 is arbitrary
+        float scaledRadius = ubo.radius * max(depthScale, 1.0);
+        samplePos = fragPos + samplePos * scaledRadius;
 
         vec4 offset = vec4(samplePos, 1.0);
         offset = ubo.projection * offset;
@@ -60,10 +66,8 @@ void main() {
         float sampleDepth = get_position_from_depth(offset.xy).z;
 
         float deltaDepth = abs(fragPos.z - sampleDepth);
-        if (deltaDepth < ubo.radius) {
-            float rangeCheck = smoothstep(0.0, 1.0, ubo.radius / deltaDepth);
-            occlusion += min((sampleDepth >= samplePos.z + 0.001 ? 1.0 : 0.0) * rangeCheck, 1.0);
-        }
+        float rangeCheck = smoothstep(scaledRadius, 0.0, deltaDepth);
+        occlusion += (sampleDepth >= samplePos.z + bias ? 1.0 : 0.0) * rangeCheck;
     }
 
     occlusion = 1.0 - ((occlusion) / KERNAL_SIZE);

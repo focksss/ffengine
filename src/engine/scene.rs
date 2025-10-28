@@ -16,9 +16,9 @@ use crate::render;
 use crate::render::render_engine::SHADOW_RES;
 
 // SHOULD DETECT MATH VS COLOR DATA TEXTURES, LOAD COLOR AS SRGB, MATH AS UNORM
-const MAX_VERTICES: u64 = 3 * 10u64.pow(6);
-const MAX_INDICES: u64 = 4 * 10u64.pow(5);
-const MAX_INSTANCES: u64 = 10u64 * 10u64.pow(4);
+const MAX_VERTICES: u64 = 3 * 10u64.pow(7);
+const MAX_INDICES: u64 = 4 * 10u64.pow(6);
+const MAX_INSTANCES: u64 = 10u64 * 10u64.pow(5);
 const MAX_MATERIALS: u64 = 10u64 * 10u64.pow(4);
 const MAX_JOINTS: u64 = 10u64 * 10u64.pow(4);
 const MAX_LIGHTS: u64 = 10u64 * 10u64.pow(3);

@@ -210,25 +210,22 @@ impl<'a> RenderEngine<'a> {
                 .normalize_3d() * rng.random::<f32>() * scale).to_array4();
         }
 
-        let mut noise_data = Vec::<[f32; 4]>::with_capacity(16);
+        let mut noise_data = Vec::<[f32; 2]>::with_capacity(16);
         for _ in 0..16 {
             noise_data.push([
                 rng.random_range(-1.0..1.0),
                 rng.random_range(-1.0..1.0),
-                0.0,
-                1.0,
             ]);
         }
         let ssao_noise_tex_info = TextureCreateInfo::new(base)
             .width(4)
             .height(4)
             .depth(1)
-            .format(Format::R32G32B32A32_SFLOAT)
+            .format(Format::R16G16_SFLOAT)
             .usage_flags(
                 vk::ImageUsageFlags::SAMPLED |
                     vk::ImageUsageFlags::TRANSFER_DST
-            )
-            .clear_value([0.0; 4]);
+            );
         let ssao_noise_texture = Texture::new(&ssao_noise_tex_info);
 
         let ((staging_buffer, staging_buffer_memory), _) = base.create_device_and_staging_buffer(
