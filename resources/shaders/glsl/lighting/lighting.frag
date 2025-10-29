@@ -67,7 +67,7 @@ float get_shadow(vec3 world_position, vec3 world_normal, float fragment_depth) {
     float closest_depth = texture(shadowmap, vec3(projected_lightspace_position.xy, layer)).r;
 
     vec3 light_direction = normalize(sun.vector);
-    float bias = max(0.0001 * (1.0 - dot(world_normal, -light_direction)), 0.0001);
+    float bias = max(0.05 * (1.0 - dot(world_normal, -light_direction)), 0.005) / (ubo2.cascade_plane_distances[layer]);
 
     float shadow = 0.0;
     vec2 texel_size = 1.0 / textureSize(shadowmap, 0).xy;

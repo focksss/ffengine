@@ -68,10 +68,10 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
     // world.models[1].animations[0].repeat = true;
     // world.models[1].animations[0].start();
 
-    world.preload_model(Model::new(&PathBuf::from("resources/models/shadowTest/shadowTest.gltf").to_str().unwrap()));
-    world.models[1].transform_roots(&Vector::new_vec3(0.0, 0.0, -5.0), &Vector::new_vec(0.0), &Vector::new_vec(1.0));
-    //world.preload_model(Model::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf"));
-    world.preload_model(Model::new("C:\\Graphics\\assets\\bistroGLTF\\untitled.gltf"));
+    //world.preload_model(Model::new(&PathBuf::from("resources/models/shadowTest/shadowTest.gltf").to_str().unwrap()));
+    //world.models[1].transform_roots(&Vector::new_vec3(0.0, 0.0, -5.0), &Vector::new_vec(0.0), &Vector::new_vec(1.0));
+    world.preload_model(Model::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf"));
+    //world.preload_model(Model::new("C:\\Graphics\\assets\\bistroGLTF\\untitled.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\asgard\\asgard.gltf"));
     //sa
     //world.preload_model(Model::new("C:\\Graphics\\assets\\helmet\\DamagedHelmet.gltf"));
@@ -298,7 +298,7 @@ unsafe fn run(base: &mut VkBase) -> Result<(), Box<dyn Error>> { unsafe {
 
                         text_renderer.render_text(current_frame, &fps_tex);
 
-                        render_engine.render_frame(current_frame, present_index, &world, &player_camera, &mut frametime_manager, &text_renderer);
+                        render_engine.render_frame(current_frame, &world, &player_camera, &mut frametime_manager, &text_renderer);
 
                         frametime_manager.record_gpu_action_end(frame_command_buffer, current_frame);
                     },

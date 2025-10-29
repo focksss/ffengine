@@ -78,6 +78,57 @@ impl Renderpass {
             scissor: create_info.scissor,
         }
     } }
+
+    pub fn get_pass_begin_info(&self, current_frame: usize) -> vk::RenderPassBeginInfo {
+        vk::RenderPassBeginInfo::default()
+            .render_pass(self.pass.renderpass)
+            .framebuffer(self.pass.framebuffers[current_frame])
+            .render_area(self.scissor)
+            .clear_values(&self.pass.clear_values)
+    }
+    /**
+    * Defaults to rendering a fullscreen quad with no push constant
+    */
+    pub unsafe fn do_renderpass<F1: FnOnce(), F2: FnOnce()>(
+        &self,
+        base: &VkBase,
+        current_frame: usize,
+        command_buffer: vk::CommandBuffer,
+        push_constant_action: Option<F1>,
+        draw_action: Option<F2>) { unsafe {
+        let device = &base.device;
+        self.begin_renderpass(base, current_frame, command_buffer);
+        if let Some(push_constant_action) = push_constant_action { push_constant_action() };
+        if let Some(draw_action) = draw_action { draw_action() } else {
+            device.cmd_draw(command_buffer, 6, 1, 0, 0);
+        };
+        device.cmd_end_render_pass(command_buffer);
+        self.pass.transition_to_readable(base, command_buffer, current_frame);
+    } }
+    pub unsafe fn begin_renderpass(&self, base: &VkBase, current_frame: usize, command_buffer: vk::CommandBuffer) { unsafe {
+        let device = &base.device;
+        device.cmd_begin_render_pass(
+            command_buffer,
+            &self.get_pass_begin_info(current_frame),
+            vk::SubpassContents::INLINE,
+        );
+        device.cmd_bind_pipeline(
+            command_buffer,
+            vk::PipelineBindPoint::GRAPHICS,
+            self.pipeline,
+        );
+        device.cmd_set_viewport(command_buffer, 0, &[self.viewport]);
+        device.cmd_set_scissor(command_buffer, 0, &[self.scissor]);
+        device.cmd_bind_descriptor_sets(
+            command_buffer,
+            vk::PipelineBindPoint::GRAPHICS,
+            self.pipeline_layout,
+            0,
+            &[self.descriptor_set.descriptor_sets[current_frame]],
+            &[],
+        );
+    }}
+
     pub unsafe fn destroy(&self, base: &VkBase) { unsafe {
         self.shader.destroy(base);
         self.pass.destroy(base);
@@ -495,7 +546,7 @@ impl<'a> PassCreateInfo<'a> {
     pub fn new(base: &'a VkBase) -> PassCreateInfo<'a> {
         PassCreateInfo {
             base,
-            frames_in_flight: 1,
+            frames_in_flight: MAX_FRAMES_IN_FLIGHT,
             color_attachment_create_infos: Vec::new(),
             depth_attachment_create_info: None,
             is_present_pass: false,
@@ -633,6 +684,7 @@ impl Texture {
             | Format::R32G32_SFLOAT
             | Format::R32G32B32A32_SFLOAT
             | Format::R8_UNORM
+            | Format::R16_UNORM
             | Format::R8G8B8A8_UNORM
             | Format::B8G8R8A8_UNORM => {
                 ClearValue {
@@ -901,7 +953,7 @@ impl DescriptorCreateInfo<'_> {
     pub fn new(base: &VkBase) -> DescriptorCreateInfo {
         DescriptorCreateInfo {
             base,
-            frames_in_flight: 1,
+            frames_in_flight: MAX_FRAMES_IN_FLIGHT,
             descriptor_type: DescriptorType::COMBINED_IMAGE_SAMPLER,
             size: None,
             shader_stages: ShaderStageFlags::FRAGMENT,
@@ -988,7 +1040,7 @@ impl DescriptorSet {
             s_type: vk::StructureType::DESCRIPTOR_POOL_CREATE_INFO,
             pool_size_count: descriptor_pool_sizes.len() as u32,
             p_pool_sizes: descriptor_pool_sizes.as_ptr(),
-            max_sets: MAX_FRAMES_IN_FLIGHT as u32,
+            max_sets: create_info.frames_in_flight as u32,
             flags: if has_dynamic || has_update_after_bind {DescriptorPoolCreateFlags::UPDATE_AFTER_BIND} else {DescriptorPoolCreateFlags::empty()},
             ..Default::default()
         };
@@ -1044,7 +1096,7 @@ impl DescriptorSet {
             s_type: vk::StructureType::DESCRIPTOR_SET_ALLOCATE_INFO,
             p_next: if has_dynamic {&variable_count_info as *const _ as *const c_void} else {std::ptr::null()},
             descriptor_pool: descriptor_pool,
-            descriptor_set_count: MAX_FRAMES_IN_FLIGHT as u32,
+            descriptor_set_count: create_info.frames_in_flight as u32,
             p_set_layouts: descriptor_set_layouts.as_ptr(),
             ..Default::default()
         };
@@ -1134,7 +1186,7 @@ impl DescriptorSetCreateInfo<'_> {
         DescriptorSetCreateInfo {
             base,
             descriptors: Vec::new(),
-            frames_in_flight: 1,
+            frames_in_flight: MAX_FRAMES_IN_FLIGHT,
         }
     }
     pub fn add_descriptor(mut self, descriptor: Descriptor) -> Self {
