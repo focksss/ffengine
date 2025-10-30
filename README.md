@@ -1,5 +1,5 @@
 # ffengine
-A W.I.P. game engine, with the goal of supporting basic features and allowing for extremely customizable rendering pipelines through high level abstractions.
+A W.I.P. game engine written in rust and using Vulkan through the Ash crate. Goal is support of basic features and allowing for extremely customizable rendering pipelines through high level abstractions.
 
 
 ## Current Target Features
