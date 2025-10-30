@@ -1,5 +1,5 @@
 # ffengine
-A W.I.P. game engine, with the goal of supporting basic features and a focus on allowing for extremely customizable rendering pipelines.
+A W.I.P. game engine, with the goal of supporting basic features and allowing for extremely customizable rendering pipelines through high level abstractions.
 
 
 ## Current Target Features
