@@ -7,7 +7,7 @@ A W.I.P. game engine written in rust and using Vulkan through the Ash crate. Goa
 - Full PBR rendering preset
 - Proper screenshotting support
 ## Current Features
-- Full vulkan abstractions, with builder options exposing all features
+- Full vulkan abstraction structs (limited builder options)
 - gLTF loader
 - Full Scene abstraction allowing for easy runtime loading of models, skeletal animation, and management of models.
 - MSDF text rendering, including efficiently updating text per frame.
