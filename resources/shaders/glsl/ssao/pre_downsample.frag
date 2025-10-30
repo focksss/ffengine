@@ -1,7 +1,6 @@
 #version 460
 
-layout(location = 0) out float depth_out;
-layout(location = 1) out vec3 normal_out;
+layout(location = 0) out vec4 info_out;
 
 layout(location = 0) in vec2 uv;
 
@@ -11,7 +10,7 @@ layout(set = 0, binding = 1) uniform sampler2D normal_in;
 void main() {
     ivec2 tex_size = textureSize(depth_in, 0) / 2;
     vec2 texel = 1.0 / vec2(tex_size);
-    vec2 base_uv = uv * 2.0;
+    vec2 base_uv = uv;
 
     vec3 best_normal = vec3(0.0);
     float best_depth = 1e9;
@@ -26,6 +25,5 @@ void main() {
             }
         }
 
-    normal_out = normalize(best_normal);
-    depth_out = best_depth;
+    info_out = vec4(normalize(best_normal), best_depth);
 }

@@ -9,11 +9,10 @@ layout (location = 0) out vec4 fragColor;
 
 layout (location = 0) in vec2 uv;
 
-layout(set = 0, binding = 0) uniform sampler2D g_depth;
-layout(set = 0, binding = 1) uniform sampler2D view_normal;
-layout(set = 0, binding = 2) uniform sampler2D tex_noise;
+layout(set = 0, binding = 0) uniform sampler2D g_info;
+layout(set = 0, binding = 1) uniform sampler2D tex_noise;
 
-layout(binding = 3) uniform UniformBuffer {
+layout(binding = 2) uniform UniformBuffer {
     vec3[KERNAL_SIZE] samples;
     mat4 projection;
     mat4 inverse_projection;
@@ -23,7 +22,7 @@ layout(binding = 3) uniform UniformBuffer {
 } ubo;
 
 vec3 get_position_from_depth(vec2 in_uv) {
-    float z = texture(g_depth, in_uv).r;
+    float z = texture(g_info, in_uv).a;
     float x = in_uv.x * 2.0 - 1.0;
     float y = in_uv.y * 2.0 - 1.0;
 
@@ -41,7 +40,7 @@ void main() {
 
     vec3 fragPos = get_position_from_depth(uv);
 
-    vec3 normal = normalize((texture(view_normal, uv).rgb - 0.5) * 2.0);
+    vec3 normal = normalize((texture(g_info, uv).rgb - 0.5) * 2.0);
 
     vec3 randomVec = vec3(texture(tex_noise, uv * noiseScale).xy, 0.0);
 

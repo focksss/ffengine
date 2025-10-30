@@ -95,7 +95,8 @@ impl Renderpass {
         current_frame: usize,
         command_buffer: vk::CommandBuffer,
         push_constant_action: Option<F1>,
-        draw_action: Option<F2>) { unsafe {
+        draw_action: Option<F2>)
+    { unsafe {
         let device = &base.device;
         self.begin_renderpass(base, current_frame, command_buffer);
         if let Some(push_constant_action) = push_constant_action { push_constant_action() };
@@ -161,7 +162,7 @@ pub struct RenderpassCreateInfo<'a> {
 }
 impl<'a> RenderpassCreateInfo<'a> {
     /**
-    * Defaults to pipeline create info intended for a fullscreen quad pass without blending or depth testing
+    * Defaults to pipeline create info intended for a fullscreen quad pass without blending or depth testing.
     */
     pub fn new(base: &'a VkBase) -> Self {
         let noop_stencil_state = StencilOpState {
@@ -240,6 +241,9 @@ impl<'a> RenderpassCreateInfo<'a> {
         self.pass_create_info = pass_create_info;
         self
     }
+    /**
+    * All descriptor set layouts must be identical per Renderpass
+    */
     pub fn descriptor_set_create_info(mut self, descriptor_set_create_info: DescriptorSetCreateInfo<'a>) -> Self {
         self.descriptor_set_create_info = descriptor_set_create_info;
         self
@@ -475,7 +479,8 @@ impl Pass {
     } }
 
     pub unsafe fn transition_to_readable(&self, base: &VkBase, command_buffer: vk::CommandBuffer, frame: usize) { unsafe {
-        for tex in &self.textures[frame] {
+        for tex_idx in 0..self.textures[frame].len() {
+            let tex = &self.textures[frame][tex_idx];
             let (old_layout, new_layout, src_access_mask, aspect_mask, stage) = if tex.is_depth {
                 (
                     vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,

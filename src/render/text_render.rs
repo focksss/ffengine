@@ -104,7 +104,6 @@ impl<'a> TextRenderer<'a> {
             .pipeline_color_blend_state_create_info(color_blend_state);
         let renderpass = Renderpass::new(renderpass_create_info);
 
-        println!("renderpass set handle: 0x{:x}", renderpass.descriptor_set.descriptor_sets[0].as_raw());
         //</editor-fold>
         let sampler = base.device.create_sampler(&vk::SamplerCreateInfo {
             mag_filter: vk::Filter::LINEAR,
