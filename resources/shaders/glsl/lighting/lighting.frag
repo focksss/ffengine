@@ -90,7 +90,7 @@ void main() {
         uFragColor = vec4(text.rgb, 1.0);
         return;
     }
-    uFragColor = vec4(vec3(texture(ssao_tex, uv).r), 1.0); return;
+    //uFragColor = vec4(vec3(texture(ssao_tex, uv).r), 1.0); return;
     //uFragColor = vec4(0.01 / texture(g_depth, uv).r, 0.0, 0.0, 1.0);
 
     mat4 inverse_view = ubo.inverse_view;

@@ -14,7 +14,6 @@ layout(set = 0, binding = 2) uniform sampler2D g_normal; // full res
 layout(set = 0, binding = 3) uniform sampler2D g_depth; // full res
 
 layout(push_constant) uniform constants {
-    int horizontal;
     int radius;
     float near;
     float sigma_spatial;
@@ -36,31 +35,39 @@ void main() {
     ivec2 full_size = textureSize(g_depth, 0);
     ivec2 low_size = textureSize(color, 0);
 
-    vec2 uv_low = uv * vec2(full_size) / vec2(low_size);
     vec2 texel_size_low = 1.0 / vec2(low_size);
 
     float center_depth = texture(g_depth, uv).r;
-    vec3 center_norm = normalize(texture(g_normal, uv).rgb);
+    vec3 center_norm = normalize(texture(g_normal, uv).rgb) * 2.0 - 1.0;
     float center_z = get_view_z(center_depth);
+
+    float normal_facing = abs(center_norm.z);
+    float depth_tolerance = 1.0 - abs(dot(vec3(0.0, 0.0, 1.0), center_norm));
 
     vec3 accum = vec3(0.0);
     float w_sum = 0.0;
 
-    // 2D kernel (e.g., 5x5)
     for (int y = -pc.radius; y <= pc.radius; ++y) {
         for (int x = -pc.radius; x <= pc.radius; ++x) {
             vec2 offset = vec2(x, y) * texel_size_low;
-            vec2 sample_uv_low = uv_low + offset;
-            vec2 sample_uv_full = sample_uv_low * vec2(low_size) / vec2(full_size);
+            vec2 sample_uv_low = uv + offset;
 
             vec4 sample_color = texture(color, sample_uv_low);
-            float sample_depth = texture(g_depth, sample_uv_full).r;
-            vec3 sample_norm = normalize(texture(g_normal, sample_uv_full).rgb);
+            float sample_depth = texture(g_depth, sample_uv_low).r;
+
+            if (pc.infinite_reverse_depth == 1) {
+                if (sample_depth == 0.0) continue;
+            } else if (sample_depth == 1.0) continue;
+
+            vec3 sample_norm = normalize(texture(g_normal, sample_uv_low).rgb) * 2.0 - 1.0;
             float sample_z = get_view_z(sample_depth);
 
             float dist = length(vec2(x, y));
             float w_spatial = gauss(dist, pc.sigma_spatial);
-            float w_depth = gauss(center_z - sample_z, pc.sigma_depth);
+
+            float adaptive_sigma_depth = pc.sigma_depth * depth_tolerance;
+            float w_depth = gauss(abs(center_z - sample_z), adaptive_sigma_depth);
+
             float w_normal = gauss(1.0 - dot(center_norm, sample_norm), pc.sigma_normal);
 
             float w = w_spatial * w_depth * w_normal;
@@ -69,5 +76,5 @@ void main() {
         }
     }
 
-    blurred = vec4(accum / w_sum, 1.0);
+    blurred = vec4(accum / max(w_sum, 1e-6), 1.0);
 }
