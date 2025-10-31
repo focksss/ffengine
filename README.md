@@ -4,6 +4,7 @@ A W.I.P. game engine written in rust and using Vulkan through the Ash crate. Goa
 
 ## Current Target Features
 - Full vulkan abstractions, with builder options exposing all features
+- Custom GUI
 - Full PBR rendering preset
 - Proper screenshotting support
 - Physics engine (auto-gen world hitboxes, player controller, other basic features)
