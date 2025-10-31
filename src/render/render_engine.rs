@@ -15,9 +15,7 @@ const SSAO_KERNAL_SIZE: usize = 16;
 const SSAO_RESOLUTION_MULTIPLIER: f32 = 0.5;
 pub const SHADOW_RES: u32 = 4096;
 
-pub struct RenderEngine<'a> {
-    base: &'a VkBase,
-
+pub struct RenderEngine {
     pub null_texture: Texture,
     pub null_tex_sampler: vk::Sampler,
 
@@ -37,8 +35,8 @@ pub struct RenderEngine<'a> {
     pub ssao_kernal: [[f32; 4]; SSAO_KERNAL_SIZE],
     pub ssao_noise_texture: Texture,
 }
-impl<'a> RenderEngine<'a> {
-    pub unsafe fn new(base: &'a VkBase, world: &Scene) -> RenderEngine<'a> { unsafe {
+impl RenderEngine {
+    pub unsafe fn new(base: &VkBase, world: &Scene) -> RenderEngine { unsafe {
         let null_tex_info = unsafe { base.create_2d_texture_image(&PathBuf::from("").join("resources\\null8x.png"), true) };
 
         let null_texture = Texture {
@@ -741,8 +739,6 @@ impl<'a> RenderEngine<'a> {
         //</editor-fold>
 
         RenderEngine {
-            base,
-
             null_texture,
             null_tex_sampler,
 
@@ -761,12 +757,12 @@ impl<'a> RenderEngine<'a> {
             ssao_noise_texture,
         }
     } }
-    pub fn update_world_textures_all_frames(&self, world: &Scene) {
+    pub fn update_world_textures_all_frames(&self, base: &VkBase, world: &Scene) {
         for frame in 0..MAX_FRAMES_IN_FLIGHT {
-            self.update_world_textures(world, frame);
+            self.update_world_textures(base, world, frame);
         }
     }
-    pub fn update_world_textures(&self, world: &Scene, frame: usize) { unsafe {
+    pub fn update_world_textures(&self, base: &VkBase, world: &Scene, frame: usize) { unsafe {
         let mut image_infos: Vec<vk::DescriptorImageInfo> = Vec::with_capacity(1024);
         for model in &world.models {
             for texture in &model.textures {
@@ -808,17 +804,17 @@ impl<'a> RenderEngine<'a> {
             p_image_info: image_infos,
             ..Default::default()
         };
-        self.base.device.update_descriptor_sets(&[descriptor_write], &[]);
+        base.device.update_descriptor_sets(&[descriptor_write], &[]);
     }}
 
     pub unsafe fn render_frame(
         &self,
+        base: &VkBase,
         current_frame: usize,
         world: &Scene, player_camera: &Camera,
         frametime_manager: &mut FrametimeManager,
         text_renderer: &TextRenderer
     ) { unsafe {
-        let base = self.base;
         let device = &base.device;
 
         let frame_command_buffer = base.draw_command_buffers[current_frame];
@@ -882,7 +878,7 @@ impl<'a> RenderEngine<'a> {
                 ));
             }),
             Some(|| {
-                world.draw(&frame_command_buffer, current_frame, Some(&player_camera.frustum));
+                world.draw(base, &frame_command_buffer, current_frame, Some(&player_camera.frustum));
             })
         );
 
@@ -892,7 +888,7 @@ impl<'a> RenderEngine<'a> {
             frame_command_buffer,
             None::<fn()>,
             Some(|| {
-                world.draw(&frame_command_buffer, current_frame, None);
+                world.draw(base, &frame_command_buffer, current_frame, None);
             })
         );
 
@@ -971,11 +967,8 @@ impl<'a> RenderEngine<'a> {
         device.cmd_end_render_pass(frame_command_buffer);
         //</editor-fold>
     } }
-}
-impl Drop for RenderEngine<'_> {
-    fn drop(&mut self) { unsafe {
-        let base = self.base;
 
+    pub unsafe fn destroy(&mut self, base: &VkBase) { unsafe {
         self.geometry_renderpass.destroy(base);
         self.shadow_renderpass.destroy(base);
         self.ssao_pre_downsample_renderpass.destroy(base);
@@ -993,6 +986,7 @@ impl Drop for RenderEngine<'_> {
         base.device.destroy_sampler(self.null_tex_sampler, None);
     } }
 }
+
 
 #[derive(Clone, Debug, Copy)]
 #[repr(C)]

@@ -15,12 +15,11 @@ use crate::render::*;
 
 const OUTPUT_DIR: &str = "resources\\fonts\\generated";
 
-pub struct TextRenderer<'a> {
-    base: &'a VkBase,
+pub struct TextRenderer {
     pub renderpass: Renderpass,
     sampler: Sampler,
 }
-impl<'a> TextRenderer<'a> {
+impl TextRenderer {
     pub unsafe fn new(base: &VkBase) -> TextRenderer { unsafe {
         //<editor-fold desc = "pass">
         let color_tex_create_info = TextureCreateInfo::new(base).format(Format::R8G8B8A8_UNORM);
@@ -115,19 +114,17 @@ impl<'a> TextRenderer<'a> {
             ..Default::default()
         }, None).unwrap();
         TextRenderer {
-            base,
             renderpass,
             sampler,
         }
     } }
-    pub unsafe fn destroy(self) { unsafe {
-        self.renderpass.destroy(self.base);
-        self.base.device.destroy_sampler(self.sampler, None);
+    pub unsafe fn destroy(&self, base: &VkBase) { unsafe {
+        self.renderpass.destroy(base);
+        base.device.destroy_sampler(self.sampler, None);
     } }
 
-    pub unsafe fn render_text(&self, frame: usize, text_info: &TextInformation) { unsafe {
+    pub unsafe fn render_text(&self, base: &VkBase, frame: usize, text_info: &TextInformation) { unsafe {
         let font = text_info.font;
-        let base = self.base;
         let frame_command_buffer = base.draw_command_buffers[frame];
         let device = &base.device;
         // <editor-fold desc = "descriptor updates">
@@ -211,7 +208,7 @@ impl<'a> TextRenderer<'a> {
     } }
 }
 pub struct TextInformation<'a> {
-    font: &'a Font<'a>,
+    font: &'a Font,
     text: String,
     position: Vector,
     font_size: f32,
@@ -221,7 +218,6 @@ pub struct TextInformation<'a> {
     bold: bool,
     italic: bool,
 
-    base: &'a VkBase,
     pub glyph_count: u32,
     pub vertex_buffer: Vec<(vk::Buffer, DeviceMemory)>,
     pub vertex_staging_buffer: (vk::Buffer, DeviceMemory, *mut c_void),
@@ -241,7 +237,6 @@ impl<'a> TextInformation<'a> {
             bold: false,
             italic: false,
 
-            base: font.base,
             glyph_count: 0,
             vertex_buffer: vec![(vk::Buffer::null(), DeviceMemory::null()); MAX_FRAMES_IN_FLIGHT],
             vertex_staging_buffer: (vk::Buffer::null(), DeviceMemory::null(), null_mut()),
@@ -249,8 +244,7 @@ impl<'a> TextInformation<'a> {
             index_staging_buffer: (vk::Buffer::null(), DeviceMemory::null(), null_mut()),
         }
     }
-    pub fn destroy(&mut self) { unsafe {
-        let base = self.base;
+    pub fn destroy(&mut self, base: &VkBase) { unsafe {
         for buffer in self.vertex_buffer.iter() {
             base.device.destroy_buffer(buffer.0, None);
             base.device.free_memory(buffer.1, None);
@@ -270,7 +264,7 @@ impl<'a> TextInformation<'a> {
           * Let max = P + glyph.plane_max(), with UV of glyph.uv_max()
           * Increase Σ(prior advances) by glyph.advance()
     */
-    fn get_vertex_and_index_data(&mut self) -> (Vec<GlyphQuadVertex>, Vec<u32>) {
+    fn get_vertex_and_index_data(&mut self, base: &VkBase) -> (Vec<GlyphQuadVertex>, Vec<u32>) {
         let font = &self.font;
         let per_line_shift = (font.ascent - font.descent) + font.line_gap;
         let scale_factor = self.scale_vector * self.font_size;
@@ -335,30 +329,30 @@ impl<'a> TextInformation<'a> {
         }
         (vertices, indices)
     }
-    pub fn set_buffers(mut self) -> Self {
-        let (vertices, indices) = self.get_vertex_and_index_data();
+    pub fn set_buffers(mut self, base: &VkBase) -> Self {
+        let (vertices, indices) = self.get_vertex_and_index_data(base);
         unsafe {
             for i in 0..MAX_FRAMES_IN_FLIGHT {
                 if i == 0 {
                     (self.vertex_buffer[i], self.vertex_staging_buffer) =
-                        self.base.create_device_and_staging_buffer(
+                        base.create_device_and_staging_buffer(
                             0 as vk::DeviceSize,
                             &vertices,
                             vk::BufferUsageFlags::VERTEX_BUFFER, false, true, true
                         );
                     (self.index_buffer[i], self.index_staging_buffer) =
-                        self.base.create_device_and_staging_buffer(
+                        base.create_device_and_staging_buffer(
                             0 as vk::DeviceSize,
                             &indices,
                             vk::BufferUsageFlags::INDEX_BUFFER, false, true, true
                         );
                 } else {
-                    self.vertex_buffer[i] = self.base.create_device_and_staging_buffer(
+                    self.vertex_buffer[i] = base.create_device_and_staging_buffer(
                         0 as vk::DeviceSize,
                         &vertices,
                         vk::BufferUsageFlags::VERTEX_BUFFER, true, false, true
                     ).0;
-                    self.index_buffer[i] = self.base.create_device_and_staging_buffer(
+                    self.index_buffer[i] = base.create_device_and_staging_buffer(
                         0 as vk::DeviceSize,
                         &indices,
                         vk::BufferUsageFlags::INDEX_BUFFER, true, false, true
@@ -368,20 +362,20 @@ impl<'a> TextInformation<'a> {
         }
         self
     }
-    pub fn update_buffers(&mut self, command_buffer: CommandBuffer, frame: usize) { unsafe {
-        let (vertices, indices) = self.get_vertex_and_index_data();
+    pub fn update_buffers(&mut self, base: &VkBase, command_buffer: CommandBuffer, frame: usize) { unsafe {
+        let (vertices, indices) = self.get_vertex_and_index_data(base);
         let vertex_buffer_size = size_of::<GlyphQuadVertex>() * vertices.len();
         let index_buffer_size = size_of::<u32>() * indices.len();
         copy_data_to_memory(self.vertex_staging_buffer.2, &vertices);
         copy_data_to_memory(self.index_staging_buffer.2, &indices);
-        self.base.copy_buffer_synchronous(
+        base.copy_buffer_synchronous(
             command_buffer,
             &self.vertex_staging_buffer.0,
             &self.vertex_buffer[frame].0,
             None,
             &(vertex_buffer_size as u64)
         );
-        self.base.copy_buffer_synchronous(
+        base.copy_buffer_synchronous(
             command_buffer,
             &self.index_staging_buffer.0,
             &self.index_buffer[frame].0,
@@ -389,9 +383,9 @@ impl<'a> TextInformation<'a> {
             &(index_buffer_size as u64)
         );
     } }
-    pub fn update_buffers_all_frames(&mut self, command_buffer: CommandBuffer) {
+    pub fn update_buffers_all_frames(&mut self, base: &VkBase, command_buffer: CommandBuffer) {
         for frame in 0..self.vertex_buffer.len() {
-            self.update_buffers(command_buffer, frame);
+            self.update_buffers(base, command_buffer, frame);
         }
     }
 
@@ -435,13 +429,7 @@ impl<'a> TextInformation<'a> {
         self
     }
 }
-impl Drop for TextInformation<'_> {
-    fn drop(&mut self) {
-        unsafe {
-            self.destroy()
-        }
-    }
-}
+
 #[repr(C)]
 #[derive(Copy, Clone)]
 struct GlyphQuadVertex {
@@ -469,8 +457,7 @@ struct TextPushConstants {
     _pad: [u32; 2],
 }
 
-pub struct Font<'a> {
-    pub base: &'a VkBase,
+pub struct Font {
     pub texture: Texture,
     pub sampler: Sampler,
     pub glyphs: HashMap<char, Glyph>,
@@ -481,8 +468,8 @@ pub struct Font<'a> {
     pub descent: f32,
     pub line_gap: f32,
 }
-impl<'a> Font<'a> {
-    pub fn new(base: &'a VkBase, path: &str, glyph_size: Option<u32>, distance_range: Option<f32>) -> Self { unsafe {
+impl Font {
+    pub fn new(base: &VkBase, path: &str, glyph_size: Option<u32>, distance_range: Option<f32>) -> Self { unsafe {
         let glyph_size_final = glyph_size.unwrap_or(64);
         let distance_range_final = distance_range.unwrap_or(2.0);
         let font_name = PathBuf::from(path).file_name()
@@ -563,7 +550,6 @@ impl<'a> Font<'a> {
         }
 
         Font {
-            base,
             texture: atlas_texture,
             sampler: atlas.0.1,
             glyphs,
@@ -575,9 +561,9 @@ impl<'a> Font<'a> {
             line_gap,
         }
     } }
-    pub unsafe fn destroy(&self) { unsafe {
-        self.texture.destroy(self.base);
-        self.base.device.destroy_sampler(self.sampler, None);
+    pub unsafe fn destroy(&self, base: &VkBase) { unsafe {
+        self.texture.destroy(base);
+        base.device.destroy_sampler(self.sampler, None);
     } }
 }
 

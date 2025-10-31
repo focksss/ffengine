@@ -122,6 +122,8 @@ pub fn find_memorytype_index(
 }
 
 pub struct VkBase {
+    pub needs_swapchain_recreate: bool,
+
     pub entry: Entry,
     pub instance: Instance,
     pub device: Device,
@@ -392,29 +394,6 @@ impl VkBase {
                 .expect("Create fence failed.");
             device.reset_fences(&[setup_commands_reuse_fence]).unwrap();
             //</editor-fold>
-
-            //<editor-fold desc = "swapchain"
-            let (surface_format, surface_resolution, swapchain) =
-                VkBase::create_swapchain(
-                    &surface_loader,
-                    &pdevice,
-                    &surface,
-                    &window,
-                    &instance,
-                    &device
-                );
-            //</editor-fold>
-            //<editor-fold desc = "present images">
-            let present_images_create_info = VkBase::create_present_images(
-                &swapchain,
-                &surface_format,
-                &device,
-                &instance,
-            );
-            let present_images = present_images_create_info.0;
-            let present_image_views = present_images_create_info.1;
-            //</editor-fold>
-
             //<editor-fold desc = "semaphores">
             let semaphore_create_info = vk::SemaphoreCreateInfo::default();
 
@@ -431,7 +410,32 @@ impl VkBase {
                 )
             }
             //</editor-fold>
+            //<editor-fold desc = "swapchain"
+            let (surface_format, surface_resolution, swapchain) =
+                VkBase::create_swapchain(
+                    &surface_loader,
+                    &pdevice,
+                    &surface,
+                    &window,
+                    &instance,
+                    &device
+                );
+            //</editor-fold>
+
+            //<editor-fold desc = "present images">
+            let present_images_create_info = VkBase::create_present_images(
+                &swapchain,
+                &surface_format,
+                &device,
+                &instance,
+            );
+            let present_images = present_images_create_info.0;
+            let present_image_views = present_images_create_info.1;
+            //</editor-fold>
+
             Ok(Self {
+                needs_swapchain_recreate: false,
+
                 event_loop: RefCell::new(event_loop),
                 entry,
                 instance,
@@ -463,6 +467,39 @@ impl VkBase {
                 debug_utils_loader,
             })
         }
+    }
+    pub unsafe fn set_surface_and_present_images(&mut self) {
+        self.device.device_wait_idle().unwrap();
+
+        self.swapchain_loader.destroy_swapchain(self.swapchain, None);
+
+        let (surface_format, surface_resolution, swapchain) =
+            VkBase::create_swapchain(
+                &self.surface_loader,
+                &self.pdevice,
+                &self.surface,
+                &self.window,
+                &self.instance,
+                &self.device
+            );
+
+        for present_image_view in self.present_image_views.iter() {
+            self.device.destroy_image_view(*present_image_view, None)
+        }
+        let present_images_create_info = VkBase::create_present_images(
+            &swapchain,
+            &surface_format,
+            &self.device,
+            &self.instance,
+        );
+        let present_images = present_images_create_info.0;
+        let present_image_views = present_images_create_info.1;
+
+        self.surface_format = surface_format;
+        self.surface_resolution = surface_resolution;
+        self.swapchain = swapchain;
+        self.present_images = present_images;
+        self.present_image_views = present_image_views;
     }
     pub unsafe fn resize_swapchain(&mut self)  {
         unsafe {

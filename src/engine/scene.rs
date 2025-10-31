@@ -22,8 +22,7 @@ const MAX_INSTANCES: u64 = 10u64 * 10u64.pow(4); // 5 for bistro
 const MAX_MATERIALS: u64 = 10u64 * 10u64.pow(4);
 const MAX_JOINTS: u64 = 10u64 * 10u64.pow(4);
 const MAX_LIGHTS: u64 = 10u64 * 10u64.pow(3);
-pub struct Scene<'a> {
-    base: &'a VkBase,
+pub struct Scene {
     pub models: Vec<Model>,
     pub lights: Vec<Light>,
     pub sun: Sun,
@@ -59,10 +58,9 @@ pub struct Scene<'a> {
     pub dirty_instances: Vec<usize>,
     pub primitive_count: usize,
 }
-impl<'a> Scene<'a> {
-    pub fn new(base: &'a VkBase) -> Self {
+impl Scene {
+    pub fn new() -> Self {
         Self {
-            base,
             models: Vec::new(),
             lights: Vec::new(),
             sun: Sun::new_sun(Vector::new_vec3(-1.0, -5.0, -1.0)),
@@ -111,8 +109,7 @@ impl<'a> Scene<'a> {
         self.lights.push(light);
     }
 
-    pub unsafe fn initialize(&mut self, frames_in_flight: usize, load_textures: bool) { unsafe {
-        let base = self.base;
+    pub unsafe fn initialize(&mut self, base: &VkBase, frames_in_flight: usize, load_textures: bool) { unsafe {
         let mut all_vertices: Vec<Vertex> = vec![];
         let mut all_indices: Vec<u32> = vec![];
         self.primitive_count = 0;
@@ -178,7 +175,7 @@ impl<'a> Scene<'a> {
             }
         }
 
-        self.update_instances_all_frames();
+        self.update_instances_all_frames(base);
         self.joints_buffers_size = size_of::<Matrix>() as u64 * MAX_JOINTS;
         let mut joints_send = Vec::new();
         for model in self.models.iter_mut() {
@@ -204,8 +201,7 @@ impl<'a> Scene<'a> {
             }
         }
     } }
-    pub unsafe fn add_model(&mut self, mut model: Model) { unsafe {
-        let base = self.base;
+    pub unsafe fn add_model(&mut self, base: &VkBase, mut model: Model) { unsafe {
         let mut new_vertices: Vec<Vertex> = vec![];
         let mut new_indices: Vec<u32> = vec![];
         let mut new_materials_send: Vec<MaterialSendable> = vec![];
@@ -303,8 +299,7 @@ impl<'a> Scene<'a> {
         model.construct_textures(base);
         self.models.push(model);
     } }
-    pub unsafe fn update_instances(&mut self, command_buffer: CommandBuffer, frame: usize) { unsafe {
-        let base = self.base;
+    pub unsafe fn update_instances(&mut self, base: &VkBase, command_buffer: CommandBuffer, frame: usize) { unsafe {
         if frame == 0 {
             self.dirty_instances.clear();
             for model in self.models.iter_mut() {
@@ -340,8 +335,7 @@ impl<'a> Scene<'a> {
         }
     } }
 
-    pub unsafe fn update_lights(&mut self, command_buffer: CommandBuffer, frame: usize) { unsafe {
-        let base = self.base;
+    pub unsafe fn update_lights(&mut self, base: &VkBase, command_buffer: CommandBuffer, frame: usize) { unsafe {
         let lights_send = self.lights.iter().map(|light| light.to_sendable()).collect::<Vec<_>>();
         copy_data_to_memory(self.lights_staging_buffer.2, &lights_send);
         base.copy_buffer_synchronous(command_buffer, &self.lights_staging_buffer.0, &self.lights_buffers[frame].0, None, &self.lights_buffers_size);
@@ -350,8 +344,7 @@ impl<'a> Scene<'a> {
         self.sun.update(primary_camera);
     }
 
-    pub unsafe fn update_instances_all_frames(&mut self) { unsafe {
-        let base = self.base;
+    pub unsafe fn update_instances_all_frames(&mut self, base: &VkBase) { unsafe {
         for model in self.models.iter_mut() {
             for node in &model.scene.nodes.clone() {
                 model.update_node(&mut self.instance_data, &mut self.dirty_instances, *node, &mut Matrix::new(), true);
@@ -371,18 +364,17 @@ impl<'a> Scene<'a> {
         base.end_single_time_commands(command_buffers);
     } }
 
-    pub unsafe fn update_nodes(&mut self, command_buffer: CommandBuffer, frame: usize) { unsafe {
+    pub unsafe fn update_nodes(&mut self, base: &VkBase, command_buffer: CommandBuffer, frame: usize) { unsafe {
         for model in self.models.iter_mut() {
             for animation in model.animations.iter_mut() {
                 animation.update(&mut model.nodes)
             }
         }
-        self.update_instances(command_buffer, frame);
-        self.update_joints(command_buffer, frame);
+        self.update_instances(base, command_buffer, frame);
+        self.update_joints(base, command_buffer, frame);
     } }
 
-    pub unsafe fn update_joints(&mut self, command_buffer: CommandBuffer, frame: usize) { unsafe {
-        let base = self.base;
+    pub unsafe fn update_joints(&mut self, base: &VkBase, command_buffer: CommandBuffer, frame: usize) { unsafe {
         let mut joints = Vec::new();
         let mut total_skins = 0f32;
         for model in self.models.iter_mut() {
@@ -409,8 +401,7 @@ impl<'a> Scene<'a> {
         base.copy_buffer_synchronous(command_buffer, &self.joints_staging_buffer.0, &self.joints_buffers[frame].0, None, &self.joints_buffers_size);
     }}
 
-    pub unsafe fn draw(&self, draw_command_buffer: &CommandBuffer, frame: usize, frustum: Option<&Frustum>) { unsafe {
-        let base = self.base;
+    pub unsafe fn draw(&self, base: &VkBase, draw_command_buffer: &CommandBuffer, frame: usize, frustum: Option<&Frustum>) { unsafe {
         base.device.cmd_bind_vertex_buffers(
             *draw_command_buffer,
             1,
@@ -434,9 +425,7 @@ impl<'a> Scene<'a> {
         }
     } }
 
-    pub unsafe fn destroy(&mut self) { unsafe {
-        let base = self.base;
-
+    pub unsafe fn destroy(&mut self, base: &VkBase) { unsafe {
         for instance_buffer in &self.instance_buffers {
             base.device.destroy_buffer(instance_buffer.0, None);
             base.device.free_memory(instance_buffer.1, None);
@@ -480,11 +469,6 @@ impl<'a> Scene<'a> {
             model.cleanup(base);
         }
     } }
-}
-impl Drop for Scene<'_> {
-    fn drop(&mut self) {
-        unsafe { self.destroy() }
-    }
 }
 
 #[derive(Clone)]
