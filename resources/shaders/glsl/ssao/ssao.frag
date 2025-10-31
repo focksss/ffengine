@@ -33,7 +33,15 @@ vec3 get_position_from_depth(vec2 in_uv) {
     return view_space_position.xyz / view_space_position.w;
 }
 
+vec2 rand2(vec2 co) {
+    float a = fract(sin(dot(co, vec2(12.9898, 78.233))) * 43758.5453);
+    float b = fract(sin(dot(co, vec2(39.3468, 11.1357))) * 96321.1974);
+    return vec2(a, b);
+}
+
 void main() {
+    // vec3 randomVec = vec3(2.0 * rand2(uv) - 1.0, 0.0);
+
     // fragColor = vec4(1.0, 0.0, 1.0, 1.0); return;
     vec2 noiseScale = vec2(float(ubo.width) / 4.0, float(ubo.height) / 4.0);
     float bias = 0.001;
@@ -42,7 +50,7 @@ void main() {
 
     vec3 normal = normalize((texture(g_info, uv).rgb - 0.5) * 2.0);
 
-    vec3 randomVec = vec3(texture(tex_noise, uv * noiseScale).xy, 0.0);
+    // vec3 randomVec = vec3(texture(tex_noise, uv * noiseScale).xy, 0.0);
 
     vec3 tangent = normalize(randomVec - normal * dot(randomVec, normal));
     vec3 bitangent = cross(normal, tangent);
