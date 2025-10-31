@@ -16,6 +16,8 @@ use crate::render::*;
 const OUTPUT_DIR: &str = "resources\\fonts\\generated";
 
 pub struct TextRenderer {
+    pub draw_command_buffers: Vec<CommandBuffer>,
+    pub device: ash::Device,
     pub renderpass: Renderpass,
     sampler: Sampler,
 }
@@ -114,20 +116,21 @@ impl TextRenderer {
             ..Default::default()
         }, None).unwrap();
         TextRenderer {
+            draw_command_buffers: base.draw_command_buffers.clone(),
+            device: base.device.clone(),
             renderpass,
             sampler,
         }
     } }
-    pub unsafe fn destroy(&self, base: &VkBase) { unsafe {
-        self.renderpass.destroy(base);
-        base.device.destroy_sampler(self.sampler, None);
+    pub unsafe fn destroy(&self) { unsafe {
+        self.renderpass.destroy();
+        self.device.destroy_sampler(self.sampler, None);
     } }
 
-    // TODO() store refs to base device and command buffers, instead of sending base ref in all method calls.
-    pub unsafe fn render_text(&self, base: &VkBase, frame: usize, text_info: &TextInformation) { unsafe {
+    pub unsafe fn render_text(&self, frame: usize, text_info: &TextInformation) { unsafe {
         let font = text_info.font;
-        let frame_command_buffer = base.draw_command_buffers[frame];
-        let device = &base.device;
+        let frame_command_buffer = self.draw_command_buffers[frame];
+        let device = &self.device;
         // <editor-fold desc = "descriptor updates">
         for current_frame in 0..MAX_FRAMES_IN_FLIGHT {
             let image_info = vk::DescriptorImageInfo {
@@ -140,17 +143,17 @@ impl TextRenderer {
                 .dst_binding(0u32)
                 .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
                 .image_info(slice::from_ref(&image_info));
-            base.device.update_descriptor_sets(&[descriptor_write], &[]);
+            self.device.update_descriptor_sets(&[descriptor_write], &[]);
         }
         //</editor-fold>
         
-        self.renderpass.do_renderpass(base, current_frame, frame_command_buffer, Some(|| {
+        self.renderpass.do_renderpass(frame, frame_command_buffer, Some(|| {
             device.cmd_push_constants(frame_command_buffer, self.renderpass.pipeline_layout, ShaderStageFlags::ALL_GRAPHICS, 0, slice::from_raw_parts(
                 &TextPushConstants {
                     clip_min: Vector::new_vec(0.0).to_array2(),
                     clip_max: Vector::new_vec(1.0).to_array2(),
                     position: text_info.position.to_array2(),
-                    resolution: [base.surface_resolution.width as i32, base.surface_resolution.height as i32],
+                    resolution: [self.renderpass.viewport.width as i32, self.renderpass.viewport.height as i32],
                     glyph_size: font.glyph_size,
                     distance_range: font.distance_range,
                     _pad: [0; 2]
@@ -178,7 +181,7 @@ impl TextRenderer {
                 0,
                 0,
             )
-        }))
+        }), None)
     } }
 }
 pub struct TextInformation<'a> {
@@ -238,7 +241,7 @@ impl<'a> TextInformation<'a> {
           * Let max = P + glyph.plane_max(), with UV of glyph.uv_max()
           * Increase Σ(prior advances) by glyph.advance()
     */
-    fn get_vertex_and_index_data(&mut self, base: &VkBase) -> (Vec<GlyphQuadVertex>, Vec<u32>) {
+    fn get_vertex_and_index_data(&mut self) -> (Vec<GlyphQuadVertex>, Vec<u32>) {
         let font = &self.font;
         let per_line_shift = (font.ascent - font.descent) + font.line_gap;
         let scale_factor = self.scale_vector * self.font_size;
@@ -304,7 +307,7 @@ impl<'a> TextInformation<'a> {
         (vertices, indices)
     }
     pub fn set_buffers(mut self, base: &VkBase) -> Self {
-        let (vertices, indices) = self.get_vertex_and_index_data(base);
+        let (vertices, indices) = self.get_vertex_and_index_data();
         unsafe {
             for i in 0..MAX_FRAMES_IN_FLIGHT {
                 if i == 0 {
@@ -337,7 +340,7 @@ impl<'a> TextInformation<'a> {
         self
     }
     pub fn update_buffers(&mut self, base: &VkBase, command_buffer: CommandBuffer, frame: usize) { unsafe {
-        let (vertices, indices) = self.get_vertex_and_index_data(base);
+        let (vertices, indices) = self.get_vertex_and_index_data();
         let vertex_buffer_size = size_of::<GlyphQuadVertex>() * vertices.len();
         let index_buffer_size = size_of::<u32>() * indices.len();
         copy_data_to_memory(self.vertex_staging_buffer.2, &vertices);
@@ -432,6 +435,8 @@ struct TextPushConstants {
 }
 
 pub struct Font {
+    pub device: ash::Device,
+
     pub texture: Texture,
     pub sampler: Sampler,
     pub glyphs: HashMap<char, Glyph>,
@@ -473,6 +478,7 @@ impl Font {
 
         let atlas = base.create_2d_texture_image(&PathBuf::from(atlas_path_str), false);
         let atlas_texture = Texture {
+            device: base.device.clone(),
             image: atlas.1.0,
             image_view: atlas.0.0,
             device_memory: atlas.1.1,
@@ -524,6 +530,8 @@ impl Font {
         }
 
         Font {
+            device: base.device.clone(),
+
             texture: atlas_texture,
             sampler: atlas.0.1,
             glyphs,
@@ -535,9 +543,9 @@ impl Font {
             line_gap,
         }
     } }
-    pub unsafe fn destroy(&self, base: &VkBase) { unsafe {
-        self.texture.destroy(base);
-        base.device.destroy_sampler(self.sampler, None);
+    pub unsafe fn destroy(&self) { unsafe {
+        self.texture.destroy();
+        self.device.destroy_sampler(self.sampler, None);
     } }
 }
 

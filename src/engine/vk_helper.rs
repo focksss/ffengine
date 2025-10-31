@@ -129,6 +129,7 @@ pub struct VkBase {
     pub device: Device,
     pub surface_loader: surface::Instance,
     pub swapchain_loader: swapchain::Device,
+    // pub swapchain_images_in_flight: Vec<vk::Fence>,
     pub debug_utils_loader: debug_utils::Instance,
     pub window: winit::window::Window,
     pub event_loop: RefCell<EventLoop<()>>,

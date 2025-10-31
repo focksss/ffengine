@@ -16,6 +16,9 @@ const SSAO_RESOLUTION_MULTIPLIER: f32 = 0.5;
 pub const SHADOW_RES: u32 = 4096;
 
 pub struct RenderEngine {
+    pub device: ash::Device,
+    pub draw_command_buffers: Vec<vk::CommandBuffer>,
+
     pub null_texture: Texture,
     pub null_tex_sampler: vk::Sampler,
 
@@ -40,6 +43,7 @@ impl RenderEngine {
         let null_tex_info = unsafe { base.create_2d_texture_image(&PathBuf::from("").join("resources\\null8x.png"), true) };
 
         let null_texture = Texture {
+            device: base.device.clone(),
             image: null_tex_info.1.0,
             image_view: null_tex_info.0.0,
             device_memory: null_tex_info.1.1,
@@ -739,6 +743,9 @@ impl RenderEngine {
         //</editor-fold>
 
         RenderEngine {
+            device: base.device.clone(),
+            draw_command_buffers: base.draw_command_buffers.clone(),
+
             null_texture,
             null_tex_sampler,
 
@@ -809,15 +816,15 @@ impl RenderEngine {
 
     pub unsafe fn render_frame(
         &self,
-        base: &VkBase,
         current_frame: usize,
         world: &Scene, player_camera: &Camera,
         frametime_manager: &mut FrametimeManager,
-        text_renderer: &TextRenderer
+        text_renderer: &TextRenderer,
+        present_index: usize,
     ) { unsafe {
-        let device = &base.device;
+        let device = &self.device;
 
-        let frame_command_buffer = base.draw_command_buffers[current_frame];
+        let frame_command_buffer = self.draw_command_buffers[current_frame];
 
         let image_info = vk::DescriptorImageInfo {
             sampler: self.sampler,
@@ -830,7 +837,7 @@ impl RenderEngine {
             .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
             .image_info(slice::from_ref(&image_info));
 
-        base.device.update_descriptor_sets(&[descriptor_write], &[]);
+        self.device.update_descriptor_sets(&[descriptor_write], &[]);
 
         let ubo = world.sun.to_sendable();
         copy_data_to_memory(self.lighting_renderpass.descriptor_set.descriptors[10].owned_buffers.2[current_frame], &[ubo]);
@@ -840,8 +847,8 @@ impl RenderEngine {
             projection: player_camera.projection_matrix.data,
             inverse_projection: player_camera.projection_matrix.inverse().data,
             radius: 1.5,
-            width: (base.surface_resolution.width as f32 * SSAO_RESOLUTION_MULTIPLIER) as i32,
-            height: (base.surface_resolution.height as f32 * SSAO_RESOLUTION_MULTIPLIER) as i32,
+            width: (self.ssao_renderpass.viewport.width * SSAO_RESOLUTION_MULTIPLIER) as i32,
+            height: (self.ssao_renderpass.viewport.height * SSAO_RESOLUTION_MULTIPLIER) as i32,
             _pad0: 0.0,
         };
         copy_data_to_memory(self.ssao_renderpass.descriptor_set.descriptors[2].owned_buffers.2[current_frame], &[ubo]);
@@ -861,14 +868,13 @@ impl RenderEngine {
         let ssao_blur_constants = BlurPassData {
             radius: 5,
             near: player_camera.near,
-            sigma_spatial: 2.5,
+            sigma_spatial: 10.0,
             sigma_depth: 0.25, // weighted within shader
             sigma_normal: 0.2,
             infinite_reverse_depth: 1
         };
 
         self.geometry_renderpass.do_renderpass(
-            base,
             current_frame,
             frame_command_buffer,
             Some(|| {
@@ -878,56 +884,58 @@ impl RenderEngine {
                 ));
             }),
             Some(|| {
-                world.draw(base, &frame_command_buffer, current_frame, Some(&player_camera.frustum));
-            })
+                world.draw(&frame_command_buffer, current_frame, Some(&player_camera.frustum));
+            }),
+            None
         );
 
         self.shadow_renderpass.do_renderpass(
-            base,
             current_frame,
             frame_command_buffer,
             None::<fn()>,
             Some(|| {
-                world.draw(base, &frame_command_buffer, current_frame, None);
-            })
+                world.draw(&frame_command_buffer, current_frame, None);
+            }),
+            None
         );
 
-        self.ssao_pre_downsample_renderpass.do_renderpass(base, current_frame, frame_command_buffer, None::<fn()>, None::<fn()>);
-        self.ssao_renderpass.do_renderpass(base, current_frame, frame_command_buffer, None::<fn()>, None::<fn()>);
-        self.ssao_blur_renderpass_upsample.do_renderpass(base, current_frame, frame_command_buffer, Some(|| {
+        self.ssao_pre_downsample_renderpass.do_renderpass(current_frame, frame_command_buffer, None::<fn()>, None::<fn()>, None);
+        self.ssao_renderpass.do_renderpass(current_frame, frame_command_buffer, None::<fn()>, None::<fn()>, None);
+        self.ssao_blur_renderpass_upsample.do_renderpass(current_frame, frame_command_buffer, Some(|| {
             device.cmd_push_constants(frame_command_buffer, self.ssao_blur_renderpass_upsample.pipeline_layout, ShaderStageFlags::FRAGMENT, 0, slice::from_raw_parts(
                 &ssao_blur_constants as *const BlurPassData as *const u8,
                 size_of::<BlurPassData>(),
             ));
-        }), None::<fn()>);
+        }), None::<fn()>, None);
 
-        self.lighting_renderpass.do_renderpass(base, current_frame, frame_command_buffer, Some(|| {
+        self.lighting_renderpass.do_renderpass(current_frame, frame_command_buffer, Some(|| {
             device.cmd_push_constants(frame_command_buffer, self.lighting_renderpass.pipeline_layout, ShaderStageFlags::FRAGMENT, 0, slice::from_raw_parts(
                 &camera_inverse_constants as *const CameraMatrixUniformData as *const u8,
                 size_of::<CameraMatrixUniformData>(),
             ))
-        }), None::<fn()>);
-    
-        self.present_renderpass.do_renderpass(base, current_frame, frame_command_buffer, None::<fn()>, None::<fn()>);
+        }), None::<fn()>, None);
 
+        self.present_renderpass.begin_renderpass(current_frame, frame_command_buffer, Some(present_index));
+        device.cmd_draw(frame_command_buffer, 6, 1, 0, 0);
+        device.cmd_end_render_pass(frame_command_buffer);
     } }
 
-    pub unsafe fn destroy(&mut self, base: &VkBase) { unsafe {
-        self.geometry_renderpass.destroy(base);
-        self.shadow_renderpass.destroy(base);
-        self.ssao_pre_downsample_renderpass.destroy(base);
-        self.ssao_renderpass.destroy(base);
-        self.ssao_blur_renderpass_upsample.destroy(base);
-        self.lighting_renderpass.destroy(base);
-        self.present_renderpass.destroy(base);
+    pub unsafe fn destroy(&mut self) { unsafe {
+        self.geometry_renderpass.destroy();
+        self.shadow_renderpass.destroy();
+        self.ssao_pre_downsample_renderpass.destroy();
+        self.ssao_renderpass.destroy();
+        self.ssao_blur_renderpass_upsample.destroy();
+        self.lighting_renderpass.destroy();
+        self.present_renderpass.destroy();
 
-        self.ssao_noise_texture.destroy(base);
+        self.ssao_noise_texture.destroy();
 
-        base.device.destroy_sampler(self.sampler, None);
-        base.device.destroy_sampler(self.nearest_sampler, None);
+        self.device.destroy_sampler(self.sampler, None);
+        self.device.destroy_sampler(self.nearest_sampler, None);
+        self.device.destroy_sampler(self.null_tex_sampler, None);
 
-        self.null_texture.destroy(base);
-        base.device.destroy_sampler(self.null_tex_sampler, None);
+        self.null_texture.destroy();
     } }
 }
 

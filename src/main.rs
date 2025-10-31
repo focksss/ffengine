@@ -49,7 +49,7 @@ fn main() { unsafe {
     let font = Font::new(&base, "resources\\fonts\\Oxygen-Regular.ttf", Some(32), Some(2.0));
     let mut text_renderer = TextRenderer::new(&base);
 
-    let mut world = Scene::new();
+    let mut world = Scene::new(&base);
 
     world.preload_model(Model::new(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources\\models\\ffocks\\untitled.gltf").to_str().unwrap()));
     world.models[0].transform_roots(&Vector::new_vec3(0.0, 0.0, -3.0), &Vector::new_vec(0.0), &Vector::new_vec(0.05));
@@ -202,15 +202,15 @@ fn main() { unsafe {
                 } else {
                     base.window.set_cursor_visible(true);
                 }
-                base.window.set_cursor_position(save_cursor_pos).expect("Cursor pos reset failed");
+                base.window.set_cursor_position(saved_cursor_pos).expect("Cursor pos reset failed");
             }
             //</editor-fold>
             Event::AboutToWait => {
                 if base.needs_swapchain_recreate {
                     base.set_surface_and_present_images();
-                    render_engine.destroy(&base);
+                    render_engine.destroy();
                     render_engine = RenderEngine::new(&base, &world);
-                    text_renderer.destroy(&base);
+                    text_renderer.destroy();
                     text_renderer = TextRenderer::new(&base);
 
                     render_engine.update_world_textures_all_frames(&base, &world);
@@ -302,9 +302,9 @@ fn main() { unsafe {
                             "frame ".to_owned() + current_frame.to_string().as_str())
                         );
 
-                        text_renderer.render_text(&base, current_frame, &fps_tex);
+                        text_renderer.render_text(current_frame, &fps_tex);
 
-                        render_engine.render_frame(&base, current_frame, &world, &player_camera, &mut frametime_manager, &text_renderer);
+                        render_engine.render_frame(current_frame, &world, &player_camera, &mut frametime_manager, &text_renderer, present_index as usize);
 
                         frametime_manager.record_gpu_action_end(&base, frame_command_buffer, current_frame);
                     },
@@ -358,10 +358,10 @@ fn main() { unsafe {
     //<editor-fold desc = "cleanup">
     base.device.device_wait_idle().unwrap();
 
-    font.destroy(&base);
-    text_renderer.destroy(&base);
+    font.destroy();
+    text_renderer.destroy();
     world.destroy(&base);
-    render_engine.destroy(&base);
+    render_engine.destroy();
     frametime_manager.destroy(&base);
     fps_tex.destroy(&base);
     //</editor-fold>

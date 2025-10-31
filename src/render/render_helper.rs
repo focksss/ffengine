@@ -11,6 +11,9 @@ use crate::render::*;
 const SHADER_PATH: &str = "resources\\shaders\\spv\\";
 
 pub struct Renderpass {
+    pub device: Device,
+    pub draw_command_buffers: Vec<vk::CommandBuffer>,
+
     pub pass: Pass,
     pub descriptor_set: DescriptorSet,
     pub shader: Shader,
@@ -69,6 +72,9 @@ impl Renderpass {
             None
         ).expect("Failed to create pipeline")[0];
         Renderpass {
+            device: base.device.clone(),
+            draw_command_buffers: base.draw_command_buffers.clone(),
+
             pass,
             descriptor_set,
             shader,
@@ -79,10 +85,10 @@ impl Renderpass {
         }
     } }
 
-    pub fn get_pass_begin_info(&self, current_frame: usize) -> vk::RenderPassBeginInfo {
+    pub fn get_pass_begin_info(&self, current_frame: usize, framebuffer_index: Option<usize>) -> vk::RenderPassBeginInfo {
         vk::RenderPassBeginInfo::default()
             .render_pass(self.pass.renderpass)
-            .framebuffer(self.pass.framebuffers[current_frame])
+            .framebuffer(self.pass.framebuffers[framebuffer_index.unwrap_or(current_frame)])
             .render_area(self.scissor)
             .clear_values(&self.pass.clear_values)
     }
@@ -91,26 +97,26 @@ impl Renderpass {
     */
     pub unsafe fn do_renderpass<F1: FnOnce(), F2: FnOnce()>(
         &self,
-        base: &VkBase,
         current_frame: usize,
         command_buffer: vk::CommandBuffer,
         push_constant_action: Option<F1>,
-        draw_action: Option<F2>)
+        draw_action: Option<F2>,
+        framebuffer_index: Option<usize>,)
     { unsafe {
-        let device = &base.device;
-        self.begin_renderpass(base, current_frame, command_buffer);
+        let device = &self.device;
+        self.begin_renderpass(current_frame, command_buffer, framebuffer_index);
         if let Some(push_constant_action) = push_constant_action { push_constant_action() };
         if let Some(draw_action) = draw_action { draw_action() } else {
             device.cmd_draw(command_buffer, 6, 1, 0, 0);
         };
         device.cmd_end_render_pass(command_buffer);
-        self.pass.transition_to_readable(base, command_buffer, current_frame);
+        self.pass.transition_to_readable(command_buffer, current_frame);
     } }
-    pub unsafe fn begin_renderpass(&self, base: &VkBase, current_frame: usize, command_buffer: vk::CommandBuffer) { unsafe {
-        let device = &base.device;
+    pub unsafe fn begin_renderpass(&self, current_frame: usize, command_buffer: vk::CommandBuffer, framebuffer_index: Option<usize>) { unsafe {
+        let device = &self.device;
         device.cmd_begin_render_pass(
             command_buffer,
-            &self.get_pass_begin_info(current_frame),
+            &self.get_pass_begin_info(current_frame, framebuffer_index),
             vk::SubpassContents::INLINE,
         );
         device.cmd_bind_pipeline(
@@ -130,12 +136,12 @@ impl Renderpass {
         );
     }}
 
-    pub unsafe fn destroy(&self, base: &VkBase) { unsafe {
-        self.shader.destroy(base);
-        self.pass.destroy(base);
-        base.device.destroy_pipeline_layout(self.pipeline_layout, None);
-        base.device.destroy_pipeline(self.pipeline, None);
-        self.descriptor_set.destroy(base);
+    pub unsafe fn destroy(&self) { unsafe {
+        self.shader.destroy();
+        self.pass.destroy();
+        self.device.destroy_pipeline_layout(self.pipeline_layout, None);
+        self.device.destroy_pipeline(self.pipeline, None);
+        self.descriptor_set.destroy();
     } }
 }
 pub struct RenderpassCreateInfo<'a> {
@@ -307,6 +313,8 @@ impl<'a> RenderpassCreateInfo<'a> {
 }
 
 pub struct Pass {
+    pub device: Device,
+
     pub renderpass: vk::RenderPass,
     pub textures: Vec<Vec<Texture>>,
     pub framebuffers: Vec<vk::Framebuffer>,
@@ -471,6 +479,8 @@ impl Pass {
         };
 
         Self {
+            device: base.device.clone(),
+
             renderpass,
             textures,
             framebuffers,
@@ -478,7 +488,7 @@ impl Pass {
         }
     } }
 
-    pub unsafe fn transition_to_readable(&self, base: &VkBase, command_buffer: vk::CommandBuffer, frame: usize) { unsafe {
+    pub unsafe fn transition_to_readable(&self, command_buffer: vk::CommandBuffer, frame: usize) { unsafe {
         for tex_idx in 0..self.textures[frame].len() {
             let tex = &self.textures[frame][tex_idx];
             let (old_layout, new_layout, src_access_mask, aspect_mask, stage) = if tex.is_depth {
@@ -518,7 +528,7 @@ impl Pass {
                 ..Default::default()
             };
 
-            base.device.cmd_pipeline_barrier(
+            self.device.cmd_pipeline_barrier(
                 command_buffer,
                 stage,
                 vk::PipelineStageFlags::FRAGMENT_SHADER,
@@ -530,14 +540,14 @@ impl Pass {
         }
     } }
 
-    pub unsafe fn destroy(&self, base: &VkBase) { unsafe {
+    pub unsafe fn destroy(&self) { unsafe {
         for framebuffer in &self.framebuffers {
-            base.device.destroy_framebuffer(*framebuffer, None);
+            self.device.destroy_framebuffer(*framebuffer, None);
         }
         for frame_textures in &self.textures { for texture in frame_textures {
-            texture.destroy(base);
+            texture.destroy();
         }}
-        base.device.destroy_render_pass(self.renderpass, None);
+        self.device.destroy_render_pass(self.renderpass, None);
     }}
 }
 pub struct PassCreateInfo<'a> {
@@ -576,6 +586,8 @@ impl<'a> PassCreateInfo<'a> {
 }
 
 pub struct Texture {
+    pub device: Device,
+
     pub image: vk::Image,
     pub image_view: vk::ImageView,
     pub device_memory: DeviceMemory,
@@ -648,6 +660,8 @@ impl Texture {
         };
 
         Self {
+            device: create_info.device.clone(),
+
             image,
             image_view: create_info.device.create_image_view(&image_view_info, None).expect("failed to create image view"),
             device_memory: image_memory,
@@ -660,10 +674,10 @@ impl Texture {
             is_depth: create_info.is_depth,
         }
     } }
-    pub unsafe fn destroy(&self, base: &VkBase) { unsafe {
-        base.device.destroy_image(self.image, None);
-        base.device.destroy_image_view(self.image_view, None);
-        base.device.free_memory(self.device_memory, None);
+    pub unsafe fn destroy(&self) { unsafe {
+        self.device.destroy_image(self.image, None);
+        self.device.destroy_image_view(self.image_view, None);
+        self.device.free_memory(self.device_memory, None);
     } }
 
     fn clear_value_for_format(format: Format, clear: [f32; 4]) -> ClearValue {
@@ -835,189 +849,8 @@ impl TextureCreateInfo<'_> {
     }
 }
 
-#[derive(Debug)]
-pub struct Descriptor {
-    pub descriptor_type: DescriptorType,
-    pub shader_stages: ShaderStageFlags,
-    pub is_dynamic: bool,
-    pub offset: Option<DeviceSize>,
-    pub range: Option<DeviceSize>,
-    pub owned_buffers: (Vec<Buffer>, Vec<DeviceMemory>, Vec<*mut c_void>),
-    pub buffer_refs: Vec<Buffer>,
-    pub image_infos: Option<*const DescriptorImageInfo>,
-    pub descriptor_count: u32,
-    pub binding_flags: Option<DescriptorBindingFlags>
-}
-impl Descriptor {
-    pub unsafe fn new(create_info: &DescriptorCreateInfo) -> Self { unsafe {
-        let base = create_info.base;
-        match create_info.descriptor_type {
-            DescriptorType::UNIFORM_BUFFER => {
-                let mut uniform_buffers = Vec::new();
-                let mut uniform_buffers_memory = Vec::new();
-                let mut uniform_buffers_mapped = Vec::new();
-                for i in 0..create_info.frames_in_flight {
-                    uniform_buffers.push(Buffer::null());
-                    uniform_buffers_memory.push(DeviceMemory::null());
-                    base.create_buffer(
-                        create_info.size.expect("DescriptorCreateInfo of type UNIFORM_BUFFER does not contain buffer size"),
-                        vk::BufferUsageFlags::UNIFORM_BUFFER,
-                        create_info.memory_property_flags,
-                        &mut uniform_buffers[i],
-                        &mut uniform_buffers_memory[i],
-                    );
-                    uniform_buffers_mapped.push(base.device.map_memory(
-                        uniform_buffers_memory[i],
-                        0,
-                        create_info.size.expect("DescriptorCreateInfo of type UNIFORM_BUFFER does not contain buffer size"),
-                        vk::MemoryMapFlags::empty()
-                    ).expect("failed to map uniform buffer"));
-                }
-                Descriptor {
-                    descriptor_type: DescriptorType::UNIFORM_BUFFER,
-                    shader_stages: create_info.shader_stages,
-                    is_dynamic: create_info.dynamic,
-                    offset: Some(create_info.offset),
-                    range: Some(create_info.range),
-                    descriptor_count: 1,
-                    owned_buffers: (uniform_buffers, uniform_buffers_memory, uniform_buffers_mapped),
-                    buffer_refs: Vec::new(),
-                    image_infos: None,
-                    binding_flags: create_info.binding_flags,
-                }
-            }
-            DescriptorType::STORAGE_BUFFER => {
-                Descriptor {
-                    descriptor_type: DescriptorType::STORAGE_BUFFER,
-                    shader_stages: create_info.shader_stages,
-                    is_dynamic: create_info.dynamic,
-                    offset: Some(create_info.offset),
-                    range: Some(create_info.range),
-                    descriptor_count: 1,
-                    owned_buffers: (Vec::new(), Vec::new(), Vec::new()),
-                    buffer_refs: create_info.buffers.clone().unwrap(),
-                    image_infos: None,
-                    binding_flags: create_info.binding_flags,
-                }
-            }
-            DescriptorType::COMBINED_IMAGE_SAMPLER => {
-                Descriptor {
-                    descriptor_type: DescriptorType::COMBINED_IMAGE_SAMPLER,
-                    shader_stages: create_info.shader_stages,
-                    is_dynamic: create_info.dynamic,
-                    offset: None,
-                    range: None,
-                    descriptor_count: create_info.image_infos.as_ref().map_or(1, |v| v.len()) as u32,
-                    owned_buffers: (Vec::new(), Vec::new(), Vec::new()),
-                    buffer_refs: create_info.buffers.clone().as_ref().map_or(Vec::new(), |v| v.to_vec()),
-                    image_infos: create_info.image_infos.as_ref().map_or(None, |i| Some(i.as_ptr())),
-                    binding_flags: create_info.binding_flags
-                }
-            }
-            _ => {
-                Descriptor {
-                    descriptor_type: DescriptorType::COMBINED_IMAGE_SAMPLER,
-                    shader_stages: ShaderStageFlags::FRAGMENT,
-                    is_dynamic: false,
-                    offset: None,
-                    range: None,
-                    owned_buffers: (Vec::new(), Vec::new(), Vec::new()),
-                    buffer_refs: Vec::new(),
-                    image_infos: None,
-                    descriptor_count: 0,
-                    binding_flags: None
-                }
-            }
-        }
-    } }
-
-    pub unsafe fn destroy(&self, base: &VkBase) { unsafe {
-         if self.descriptor_type == DescriptorType::UNIFORM_BUFFER || self.descriptor_type == DescriptorType::STORAGE_BUFFER {
-             for i in 0..self.owned_buffers.0.len() {
-                 base.device.destroy_buffer(self.owned_buffers.0[i], None);
-                 base.device.free_memory(self.owned_buffers.1[i], None);
-             }
-         }
-    } }
-}
-pub struct DescriptorCreateInfo<'a> {
-    pub base: &'a VkBase,
-    pub frames_in_flight: usize,
-    pub descriptor_type: DescriptorType,
-    pub size: Option<u64>,
-    pub shader_stages: ShaderStageFlags,
-    pub offset: DeviceSize,
-    pub range: DeviceSize,
-    pub buffers: Option<Vec<Buffer>>,
-    pub image_infos: Option<Vec<DescriptorImageInfo>>,
-    pub memory_property_flags: MemoryPropertyFlags,
-    pub dynamic: bool,
-    pub binding_flags: Option<DescriptorBindingFlags>,
-}
-impl DescriptorCreateInfo<'_> {
-    pub fn new(base: &VkBase) -> DescriptorCreateInfo {
-        DescriptorCreateInfo {
-            base,
-            frames_in_flight: MAX_FRAMES_IN_FLIGHT,
-            descriptor_type: DescriptorType::COMBINED_IMAGE_SAMPLER,
-            size: None,
-            shader_stages: ShaderStageFlags::FRAGMENT,
-            offset: 0,
-            range: vk::WHOLE_SIZE,
-            buffers: None,
-            image_infos: None,
-            memory_property_flags: MemoryPropertyFlags::HOST_VISIBLE | MemoryPropertyFlags::HOST_COHERENT,
-            dynamic: false,
-            binding_flags: None,
-        }
-    }
-    pub fn frames_in_flight(mut self, frames_in_flight: usize) -> Self {
-        self.frames_in_flight = frames_in_flight;
-        self
-    }
-    pub fn descriptor_type(mut self, descriptor_type: DescriptorType) -> Self {
-        self.descriptor_type = descriptor_type;
-        self
-    }
-    pub fn size(mut self, size: u64) -> Self {
-        self.size = Some(size);
-        self
-    }
-    pub fn shader_stages(mut self, shader_stages: ShaderStageFlags) -> Self {
-        self.shader_stages = shader_stages;
-        self
-    }
-    pub fn memory_property_flags(mut self, memory_property_flags: MemoryPropertyFlags) -> Self {
-        self.memory_property_flags = memory_property_flags;
-        self
-    }
-    pub fn offset(mut self, offset: u64) -> Self {
-        self.offset = offset;
-        self
-    }
-    pub fn range(mut self, range: DeviceSize) -> Self {
-        self.range = range;
-        self
-    }
-    pub fn buffers(mut self, buffers: Vec<Buffer>) -> Self {
-        self.buffers = Some(buffers);
-        self
-    }
-    pub fn image_infos(mut self, image_infos: Vec<DescriptorImageInfo>) -> Self {
-        self.image_infos = Some(image_infos);
-        self
-    }
-    pub fn dynamic(mut self, dynamic: bool) -> Self {
-        self.dynamic = dynamic;
-        self
-    }
-    pub fn binding_flags(mut self, binding_flags: DescriptorBindingFlags) -> Self {
-        self.binding_flags = Some(binding_flags);
-        self
-    }
-}
-
 pub struct DescriptorSet {
+    pub device: Device,
     pub descriptor_sets: Vec<vk::DescriptorSet>,
     pub descriptor_set_layout: DescriptorSetLayout,
     pub descriptor_pool: DescriptorPool,
@@ -1167,17 +1000,18 @@ impl DescriptorSet {
             base.device.update_descriptor_sets(&descriptor_writes, &[]);
         }
         DescriptorSet {
+            device: base.device.clone(),
             descriptor_sets,
             descriptor_set_layout,
             descriptor_pool,
             descriptors: create_info.descriptors,
         }
     } }
-    pub unsafe fn destroy(&self, base: &VkBase) { unsafe {
-        base.device.destroy_descriptor_set_layout(self.descriptor_set_layout, None);
-        base.device.destroy_descriptor_pool(self.descriptor_pool, None);
+    pub unsafe fn destroy(&self) { unsafe {
+        self.device.destroy_descriptor_set_layout(self.descriptor_set_layout, None);
+        self.device.destroy_descriptor_pool(self.descriptor_pool, None);
         for descriptor in &self.descriptors {
-            descriptor.destroy(base);
+            descriptor.destroy();
         }
     } }
 }
@@ -1204,13 +1038,307 @@ impl DescriptorSetCreateInfo<'_> {
     }
 }
 
+pub struct Descriptor {
+    pub device: Device,
+
+    pub descriptor_type: DescriptorType,
+    pub shader_stages: ShaderStageFlags,
+    pub is_dynamic: bool,
+    pub offset: Option<DeviceSize>,
+    pub range: Option<DeviceSize>,
+    pub owned_buffers: (Vec<Buffer>, Vec<DeviceMemory>, Vec<*mut c_void>),
+    pub buffer_refs: Vec<Buffer>,
+    pub image_infos: Option<*const DescriptorImageInfo>,
+    pub descriptor_count: u32,
+    pub binding_flags: Option<DescriptorBindingFlags>
+}
+impl Descriptor {
+    pub unsafe fn new(create_info: &DescriptorCreateInfo) -> Self { unsafe {
+        let base = create_info.base;
+        match create_info.descriptor_type {
+            DescriptorType::UNIFORM_BUFFER => {
+                let mut uniform_buffers = Vec::new();
+                let mut uniform_buffers_memory = Vec::new();
+                let mut uniform_buffers_mapped = Vec::new();
+                for i in 0..create_info.frames_in_flight {
+                    uniform_buffers.push(Buffer::null());
+                    uniform_buffers_memory.push(DeviceMemory::null());
+                    base.create_buffer(
+                        create_info.size.expect("DescriptorCreateInfo of type UNIFORM_BUFFER does not contain buffer size"),
+                        vk::BufferUsageFlags::UNIFORM_BUFFER,
+                        create_info.memory_property_flags,
+                        &mut uniform_buffers[i],
+                        &mut uniform_buffers_memory[i],
+                    );
+                    uniform_buffers_mapped.push(base.device.map_memory(
+                        uniform_buffers_memory[i],
+                        0,
+                        create_info.size.expect("DescriptorCreateInfo of type UNIFORM_BUFFER does not contain buffer size"),
+                        vk::MemoryMapFlags::empty()
+                    ).expect("failed to map uniform buffer"));
+                }
+                Descriptor {
+                    device: base.device.clone(),
+                    descriptor_type: DescriptorType::UNIFORM_BUFFER,
+                    shader_stages: create_info.shader_stages,
+                    is_dynamic: create_info.dynamic,
+                    offset: Some(create_info.offset),
+                    range: Some(create_info.range),
+                    descriptor_count: 1,
+                    owned_buffers: (uniform_buffers, uniform_buffers_memory, uniform_buffers_mapped),
+                    buffer_refs: Vec::new(),
+                    image_infos: None,
+                    binding_flags: create_info.binding_flags,
+                }
+            }
+            DescriptorType::STORAGE_BUFFER => {
+                Descriptor {
+                    device: base.device.clone(),
+                    descriptor_type: DescriptorType::STORAGE_BUFFER,
+                    shader_stages: create_info.shader_stages,
+                    is_dynamic: create_info.dynamic,
+                    offset: Some(create_info.offset),
+                    range: Some(create_info.range),
+                    descriptor_count: 1,
+                    owned_buffers: (Vec::new(), Vec::new(), Vec::new()),
+                    buffer_refs: create_info.buffers.clone().unwrap(),
+                    image_infos: None,
+                    binding_flags: create_info.binding_flags,
+                }
+            }
+            DescriptorType::COMBINED_IMAGE_SAMPLER => {
+                Descriptor {
+                    device: base.device.clone(),
+                    descriptor_type: DescriptorType::COMBINED_IMAGE_SAMPLER,
+                    shader_stages: create_info.shader_stages,
+                    is_dynamic: create_info.dynamic,
+                    offset: None,
+                    range: None,
+                    descriptor_count: create_info.image_infos.as_ref().map_or(1, |v| v.len()) as u32,
+                    owned_buffers: (Vec::new(), Vec::new(), Vec::new()),
+                    buffer_refs: create_info.buffers.clone().as_ref().map_or(Vec::new(), |v| v.to_vec()),
+                    image_infos: create_info.image_infos.as_ref().map_or(None, |i| Some(i.as_ptr())),
+                    binding_flags: create_info.binding_flags
+                }
+            }
+            _ => {
+                Descriptor {
+                    device: base.device.clone(),
+                    descriptor_type: DescriptorType::COMBINED_IMAGE_SAMPLER,
+                    shader_stages: ShaderStageFlags::FRAGMENT,
+                    is_dynamic: false,
+                    offset: None,
+                    range: None,
+                    owned_buffers: (Vec::new(), Vec::new(), Vec::new()),
+                    buffer_refs: Vec::new(),
+                    image_infos: None,
+                    descriptor_count: 0,
+                    binding_flags: None
+                }
+            }
+        }
+    } }
+
+    pub unsafe fn destroy(&self) { unsafe {
+        if self.descriptor_type == DescriptorType::UNIFORM_BUFFER || self.descriptor_type == DescriptorType::STORAGE_BUFFER {
+            for i in 0..self.owned_buffers.0.len() {
+                self.device.destroy_buffer(self.owned_buffers.0[i], None);
+                self.device.free_memory(self.owned_buffers.1[i], None);
+            }
+        }
+    } }
+}
+pub struct DescriptorCreateInfo<'a> {
+    pub base: &'a VkBase,
+    pub frames_in_flight: usize,
+    pub descriptor_type: DescriptorType,
+    pub size: Option<u64>,
+    pub shader_stages: ShaderStageFlags,
+    pub offset: DeviceSize,
+    pub range: DeviceSize,
+    pub buffers: Option<Vec<Buffer>>,
+    pub image_infos: Option<Vec<DescriptorImageInfo>>,
+    pub memory_property_flags: MemoryPropertyFlags,
+    pub dynamic: bool,
+    pub binding_flags: Option<DescriptorBindingFlags>,
+}
+impl DescriptorCreateInfo<'_> {
+    pub fn new(base: &VkBase) -> DescriptorCreateInfo {
+        DescriptorCreateInfo {
+            base,
+            frames_in_flight: MAX_FRAMES_IN_FLIGHT,
+            descriptor_type: DescriptorType::COMBINED_IMAGE_SAMPLER,
+            size: None,
+            shader_stages: ShaderStageFlags::FRAGMENT,
+            offset: 0,
+            range: vk::WHOLE_SIZE,
+            buffers: None,
+            image_infos: None,
+            memory_property_flags: MemoryPropertyFlags::HOST_VISIBLE | MemoryPropertyFlags::HOST_COHERENT,
+            dynamic: false,
+            binding_flags: None,
+        }
+    }
+    pub fn frames_in_flight(mut self, frames_in_flight: usize) -> Self {
+        self.frames_in_flight = frames_in_flight;
+        self
+    }
+    pub fn descriptor_type(mut self, descriptor_type: DescriptorType) -> Self {
+        self.descriptor_type = descriptor_type;
+        self
+    }
+    pub fn size(mut self, size: u64) -> Self {
+        self.size = Some(size);
+        self
+    }
+    pub fn shader_stages(mut self, shader_stages: ShaderStageFlags) -> Self {
+        self.shader_stages = shader_stages;
+        self
+    }
+    pub fn memory_property_flags(mut self, memory_property_flags: MemoryPropertyFlags) -> Self {
+        self.memory_property_flags = memory_property_flags;
+        self
+    }
+    pub fn offset(mut self, offset: u64) -> Self {
+        self.offset = offset;
+        self
+    }
+    pub fn range(mut self, range: DeviceSize) -> Self {
+        self.range = range;
+        self
+    }
+    pub fn buffers(mut self, buffers: Vec<Buffer>) -> Self {
+        self.buffers = Some(buffers);
+        self
+    }
+    pub fn image_infos(mut self, image_infos: Vec<DescriptorImageInfo>) -> Self {
+        self.image_infos = Some(image_infos);
+        self
+    }
+    pub fn dynamic(mut self, dynamic: bool) -> Self {
+        self.dynamic = dynamic;
+        self
+    }
+    pub fn binding_flags(mut self, binding_flags: DescriptorBindingFlags) -> Self {
+        self.binding_flags = Some(binding_flags);
+        self
+    }
+}
+
+pub struct Shader {
+    pub device: Device,
+
+    pub vertex_module: ShaderModule,
+    pub geometry_module: Option<ShaderModule>,
+    pub fragment_module: ShaderModule,
+}
+impl Shader {
+    pub unsafe fn new(base: &VkBase, vert_path: &str, frag_path: &str, geometry_path: Option<&str>) -> Self { unsafe {
+        let mut vertex_spv_file = Cursor::new(load_file(&(SHADER_PATH.to_owned() + vert_path)).unwrap());
+        let mut frag_spv_file = Cursor::new(load_file(&(SHADER_PATH.to_owned() + frag_path)).unwrap());
+        let geometry_spv_file: Option<Cursor<Vec<u8>>> = if geometry_path.is_some() {
+            Some(Cursor::new(load_file(&(SHADER_PATH.to_owned() + geometry_path.unwrap())).unwrap()))
+        } else {
+            None
+        };
+
+        let vertex_code = read_spv(&mut vertex_spv_file).expect("Failed to read vertex shader spv file");
+        let vertex_shader_info = ShaderModuleCreateInfo::default().code(&vertex_code);
+
+        let frag_code = read_spv(&mut frag_spv_file).expect("Failed to read fragment shader spv file");
+        let frag_shader_info = ShaderModuleCreateInfo::default().code(&frag_code);
+
+        let geometry_code: Option<Vec<u32>> = if let Some(mut geo_file) = geometry_spv_file {
+            Some(read_spv(&mut geo_file).expect("Failed to read geometry shader spv file"))
+        } else {
+            None
+        };
+        let geometry_shader_info: Option<ShaderModuleCreateInfo> = geometry_code
+            .as_ref()
+            .map(|code| ShaderModuleCreateInfo::default().code(code));
+
+        let vertex_shader_module = base
+            .device
+            .create_shader_module(&vertex_shader_info, None)
+            .expect("Vertex shader module error");
+        let geometry_shader_module: Option<ShaderModule> = if geometry_path.is_some() {
+            Some(base
+                .device
+                .create_shader_module(&geometry_shader_info.unwrap(), None)
+                .expect("Geometry shader module error"))
+        } else {
+            None
+        };
+        let fragment_shader_module = base
+            .device
+            .create_shader_module(&frag_shader_info, None)
+            .expect("Fragment shader module error");
+        Shader {
+            device: base.device.clone(),
+            vertex_module: vertex_shader_module,
+            geometry_module: geometry_shader_module,
+            fragment_module: fragment_shader_module,
+        }
+    } }
+
+    pub fn generate_shader_stage_create_infos(&self) -> Vec<PipelineShaderStageCreateInfo<'_>> {
+        let shader_entry_name = c"main";
+        if self.geometry_module.is_some() {
+            vec![
+                PipelineShaderStageCreateInfo {
+                    module: self.vertex_module,
+                    p_name: shader_entry_name.as_ptr(),
+                    stage: ShaderStageFlags::VERTEX,
+                    ..Default::default()
+                },
+                PipelineShaderStageCreateInfo {
+                    module: self.geometry_module.unwrap(),
+                    p_name: shader_entry_name.as_ptr(),
+                    stage: ShaderStageFlags::GEOMETRY,
+                    ..Default::default()
+                },
+                PipelineShaderStageCreateInfo {
+                    s_type: vk::StructureType::PIPELINE_SHADER_STAGE_CREATE_INFO,
+                    module: self.fragment_module,
+                    p_name: shader_entry_name.as_ptr(),
+                    stage: ShaderStageFlags::FRAGMENT,
+                    ..Default::default()
+                },
+            ]
+        } else {
+            vec![
+                PipelineShaderStageCreateInfo {
+                    module: self.vertex_module,
+                    p_name: shader_entry_name.as_ptr(),
+                    stage: ShaderStageFlags::VERTEX,
+                    ..Default::default()
+                },
+                PipelineShaderStageCreateInfo {
+                    s_type: vk::StructureType::PIPELINE_SHADER_STAGE_CREATE_INFO,
+                    module: self.fragment_module,
+                    p_name: shader_entry_name.as_ptr(),
+                    stage: ShaderStageFlags::FRAGMENT,
+                    ..Default::default()
+                },
+            ]
+        }
+    }
+
+    pub fn destroy(&self) { unsafe {
+        self.device.destroy_shader_module(self.vertex_module, None);
+        if self.geometry_module.is_some() {
+            self.device.destroy_shader_module(self.geometry_module.unwrap(), None);
+        }
+        self.device.destroy_shader_module(self.fragment_module, None);
+    } }
+}
+
 pub struct ScreenshotManager<'a> {
     base: &'a VkBase,
     texture: &'a Texture,
     screenshot_pending: bool,
     staging_buffer: (Buffer, DeviceMemory),
 }
-
 impl<'a> ScreenshotManager<'a> {
     pub unsafe fn new(base: &'a VkBase, texture: &'a Texture) -> ScreenshotManager<'a> {
         ScreenshotManager {
@@ -1430,110 +1558,5 @@ impl<'a> ScreenshotManager<'a> {
 
         self.screenshot_pending = false;
         println!("Screenshot saved!");
-    } }
-}
-
-pub struct Shader {
-    pub vertex_module: ShaderModule,
-    pub geometry_module: Option<ShaderModule>,
-    pub fragment_module: ShaderModule,
-}
-impl Shader {
-    pub unsafe fn new(base: &VkBase, vert_path: &str, frag_path: &str, geometry_path: Option<&str>) -> Self { unsafe {
-        let mut vertex_spv_file = Cursor::new(load_file(&(SHADER_PATH.to_owned() + vert_path)).unwrap());
-        let mut frag_spv_file = Cursor::new(load_file(&(SHADER_PATH.to_owned() + frag_path)).unwrap());
-        let geometry_spv_file: Option<Cursor<Vec<u8>>> = if geometry_path.is_some() {
-            Some(Cursor::new(load_file(&(SHADER_PATH.to_owned() + geometry_path.unwrap())).unwrap()))
-        } else {
-            None
-        };
-
-        let vertex_code = read_spv(&mut vertex_spv_file).expect("Failed to read vertex shader spv file");
-        let vertex_shader_info = ShaderModuleCreateInfo::default().code(&vertex_code);
-
-        let frag_code = read_spv(&mut frag_spv_file).expect("Failed to read fragment shader spv file");
-        let frag_shader_info = ShaderModuleCreateInfo::default().code(&frag_code);
-
-        let geometry_code: Option<Vec<u32>> = if let Some(mut geo_file) = geometry_spv_file {
-            Some(read_spv(&mut geo_file).expect("Failed to read geometry shader spv file"))
-        } else {
-            None
-        };
-        let geometry_shader_info: Option<ShaderModuleCreateInfo> = geometry_code
-            .as_ref()
-            .map(|code| ShaderModuleCreateInfo::default().code(code));
-
-        let vertex_shader_module = base
-            .device
-            .create_shader_module(&vertex_shader_info, None)
-            .expect("Vertex shader module error");
-        let geometry_shader_module: Option<ShaderModule> = if geometry_path.is_some() {
-            Some(base
-                .device
-                .create_shader_module(&geometry_shader_info.unwrap(), None)
-                .expect("Geometry shader module error"))
-        } else {
-            None
-        };
-        let fragment_shader_module = base
-            .device
-            .create_shader_module(&frag_shader_info, None)
-            .expect("Fragment shader module error");
-        Shader {
-            vertex_module: vertex_shader_module,
-            geometry_module: geometry_shader_module,
-            fragment_module: fragment_shader_module,
-        }
-    } }
-
-    pub fn generate_shader_stage_create_infos(&self) -> Vec<PipelineShaderStageCreateInfo<'_>> {
-        let shader_entry_name = c"main";
-        if self.geometry_module.is_some() {
-            vec![
-                PipelineShaderStageCreateInfo {
-                    module: self.vertex_module,
-                    p_name: shader_entry_name.as_ptr(),
-                    stage: ShaderStageFlags::VERTEX,
-                    ..Default::default()
-                },
-                PipelineShaderStageCreateInfo {
-                    module: self.geometry_module.unwrap(),
-                    p_name: shader_entry_name.as_ptr(),
-                    stage: ShaderStageFlags::GEOMETRY,
-                    ..Default::default()
-                },
-                PipelineShaderStageCreateInfo {
-                    s_type: vk::StructureType::PIPELINE_SHADER_STAGE_CREATE_INFO,
-                    module: self.fragment_module,
-                    p_name: shader_entry_name.as_ptr(),
-                    stage: ShaderStageFlags::FRAGMENT,
-                    ..Default::default()
-                },
-            ]
-        } else {
-            vec![
-                PipelineShaderStageCreateInfo {
-                    module: self.vertex_module,
-                    p_name: shader_entry_name.as_ptr(),
-                    stage: ShaderStageFlags::VERTEX,
-                    ..Default::default()
-                },
-                PipelineShaderStageCreateInfo {
-                    s_type: vk::StructureType::PIPELINE_SHADER_STAGE_CREATE_INFO,
-                    module: self.fragment_module,
-                    p_name: shader_entry_name.as_ptr(),
-                    stage: ShaderStageFlags::FRAGMENT,
-                    ..Default::default()
-                },
-            ]
-        }
-    }
-
-    pub fn destroy(&self, base: &VkBase) { unsafe {
-        base.device.destroy_shader_module(self.vertex_module, None);
-        if self.geometry_module.is_some() {
-            base.device.destroy_shader_module(self.geometry_module.unwrap(), None);
-        }
-        base.device.destroy_shader_module(self.fragment_module, None);
     } }
 }

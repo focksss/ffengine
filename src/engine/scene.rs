@@ -23,6 +23,8 @@ const MAX_MATERIALS: u64 = 10u64 * 10u64.pow(4);
 const MAX_JOINTS: u64 = 10u64 * 10u64.pow(4);
 const MAX_LIGHTS: u64 = 10u64 * 10u64.pow(3);
 pub struct Scene {
+    pub device: ash::Device,
+
     pub models: Vec<Model>,
     pub lights: Vec<Light>,
     pub sun: Sun,
@@ -59,8 +61,10 @@ pub struct Scene {
     pub primitive_count: usize,
 }
 impl Scene {
-    pub fn new() -> Self {
+    pub fn new(base: &VkBase) -> Self {
         Self {
+            device: base.device.clone(),
+
             models: Vec::new(),
             lights: Vec::new(),
             sun: Sun::new_sun(Vector::new_vec3(-1.0, -5.0, -1.0)),
@@ -401,27 +405,27 @@ impl Scene {
         base.copy_buffer_synchronous(command_buffer, &self.joints_staging_buffer.0, &self.joints_buffers[frame].0, None, &self.joints_buffers_size);
     }}
 
-    pub unsafe fn draw(&self, base: &VkBase, draw_command_buffer: &CommandBuffer, frame: usize, frustum: Option<&Frustum>) { unsafe {
-        base.device.cmd_bind_vertex_buffers(
+    pub unsafe fn draw(&self, draw_command_buffer: &CommandBuffer, frame: usize, frustum: Option<&Frustum>) { unsafe {
+        self.device.cmd_bind_vertex_buffers(
             *draw_command_buffer,
             1,
             &[self.instance_buffers[frame].0],
             &[0],
         );
-        base.device.cmd_bind_vertex_buffers(
+        self.device.cmd_bind_vertex_buffers(
             *draw_command_buffer,
             0,
             &[self.vertex_buffer.0],
             &[0],
         );
-        base.device.cmd_bind_index_buffer(
+        self.device.cmd_bind_index_buffer(
             *draw_command_buffer,
             self.index_buffer.0,
             0,
             vk::IndexType::UINT32,
         );
         for model in self.models.iter() {
-            model.draw(base, draw_command_buffer, frustum);
+            model.draw(&self.device, draw_command_buffer, frustum);
         }
     } }
 
@@ -1197,10 +1201,10 @@ impl Model {
         }
     }
 
-    pub unsafe fn draw(&self, base: &VkBase, draw_command_buffer: &CommandBuffer, frustum: Option<&Frustum>) { unsafe {
+    pub unsafe fn draw(&self, device: &ash::Device, draw_command_buffer: &CommandBuffer, frustum: Option<&Frustum>) { unsafe {
         for node_index in self.scene.nodes.iter() {
             let node = &self.nodes[*node_index];
-            node.draw(base, &self, &draw_command_buffer, frustum)
+            node.draw(device, &self, &draw_command_buffer, frustum)
         }
     } }
 
@@ -1699,7 +1703,7 @@ pub struct Node {
     pub children_indices: Vec<usize>,
 }
 impl Node {
-    pub unsafe fn draw(&self, base: &VkBase, owner: &Model, draw_command_buffer: &CommandBuffer, frustum: Option<&Frustum>) { unsafe {
+    pub unsafe fn draw(&self, device: &ash::Device, owner: &Model, draw_command_buffer: &CommandBuffer, frustum: Option<&Frustum>) { unsafe {
         if self.mesh.is_some() {
             for primitive in self.mesh.as_ref().unwrap().borrow().primitives.iter() {
                 let mut all_points_outside_of_same_plane = false;
@@ -1723,7 +1727,7 @@ impl Node {
                     }
                 }
                 if !all_points_outside_of_same_plane {
-                    base.device.cmd_draw_indexed(
+                    device.cmd_draw_indexed(
                         *draw_command_buffer,
                         primitive.indices.count as u32,
                         1,
@@ -1736,7 +1740,7 @@ impl Node {
         }
 
         for child in &self.children_indices {
-            owner.nodes[*child].draw(base, &owner, draw_command_buffer, frustum);
+            owner.nodes[*child].draw(device, &owner, draw_command_buffer, frustum);
         }
     } }
 
