@@ -892,12 +892,8 @@ impl RenderEngine {
             })
         );
 
-
-
         self.ssao_pre_downsample_renderpass.do_renderpass(base, current_frame, frame_command_buffer, None::<fn()>, None::<fn()>);
-
         self.ssao_renderpass.do_renderpass(base, current_frame, frame_command_buffer, None::<fn()>, None::<fn()>);
-
         self.ssao_blur_renderpass_upsample.do_renderpass(base, current_frame, frame_command_buffer, Some(|| {
             device.cmd_push_constants(frame_command_buffer, self.ssao_blur_renderpass_upsample.pipeline_layout, ShaderStageFlags::FRAGMENT, 0, slice::from_raw_parts(
                 &ssao_blur_constants as *const BlurPassData as *const u8,
@@ -905,67 +901,15 @@ impl RenderEngine {
             ));
         }), None::<fn()>);
 
+        self.lighting_renderpass.do_renderpass(base, current_frame, frame_command_buffer, Some(|| {
+            device.cmd_push_constants(frame_command_buffer, self.lighting_renderpass.pipeline_layout, ShaderStageFlags::FRAGMENT, 0, slice::from_raw_parts(
+                &camera_inverse_constants as *const CameraMatrixUniformData as *const u8,
+                size_of::<CameraMatrixUniformData>(),
+            ))
+        }), None::<fn()>);
+    
+        self.present_renderpass.do_renderpass(base, current_frame, frame_command_buffer, None::<fn()>, None::<fn()>);
 
-        //<editor-fold desc = "lighting pass">
-        device.cmd_begin_render_pass(
-            frame_command_buffer,
-            &self.lighting_renderpass.get_pass_begin_info(current_frame),
-            vk::SubpassContents::INLINE,
-        );
-        device.cmd_bind_pipeline(
-            frame_command_buffer,
-            vk::PipelineBindPoint::GRAPHICS,
-            self.lighting_renderpass.pipeline,
-        );
-        device.cmd_push_constants(frame_command_buffer, self.lighting_renderpass.pipeline_layout, ShaderStageFlags::FRAGMENT, 0, slice::from_raw_parts(
-            &camera_inverse_constants as *const CameraMatrixUniformData as *const u8,
-            size_of::<CameraMatrixUniformData>(),
-        ));
-
-        // draw quad
-        device.cmd_set_viewport(frame_command_buffer, 0, &[self.present_renderpass.viewport]);
-        device.cmd_set_scissor(frame_command_buffer, 0, &[self.present_renderpass.scissor]);
-        device.cmd_bind_descriptor_sets(
-            frame_command_buffer,
-            vk::PipelineBindPoint::GRAPHICS,
-            self.lighting_renderpass.pipeline_layout,
-            0,
-            &[self.lighting_renderpass.descriptor_set.descriptor_sets[current_frame]],
-            &[],
-        );
-        device.cmd_draw(frame_command_buffer, 6, 1, 0, 0);
-
-        device.cmd_end_render_pass(frame_command_buffer);
-        //</editor-fold>
-        self.lighting_renderpass.pass.transition_to_readable(base, frame_command_buffer, current_frame);
-
-        // <editor-fold desc = "present pass">
-        device.cmd_begin_render_pass(
-            frame_command_buffer,
-            &self.present_renderpass.get_pass_begin_info(current_frame),
-            vk::SubpassContents::INLINE,
-        );
-        device.cmd_bind_pipeline(
-            frame_command_buffer,
-            vk::PipelineBindPoint::GRAPHICS,
-            self.present_renderpass.pipeline,
-        );
-
-        // draw quad
-        device.cmd_set_viewport(frame_command_buffer, 0, &[self.present_renderpass.viewport]);
-        device.cmd_set_scissor(frame_command_buffer, 0, &[self.present_renderpass.scissor]);
-        device.cmd_bind_descriptor_sets(
-            frame_command_buffer,
-            vk::PipelineBindPoint::GRAPHICS,
-            self.present_renderpass.pipeline_layout,
-            0,
-            &[self.present_renderpass.descriptor_set.descriptor_sets[current_frame]],
-            &[],
-        );
-        device.cmd_draw(frame_command_buffer, 6, 1, 0, 0);
-
-        device.cmd_end_render_pass(frame_command_buffer);
-        //</editor-fold>
     } }
 
     pub unsafe fn destroy(&mut self, base: &VkBase) { unsafe {

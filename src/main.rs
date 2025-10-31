@@ -202,7 +202,7 @@ fn main() { unsafe {
                 } else {
                     base.window.set_cursor_visible(true);
                 }
-                base.window.set_cursor_position(saved_cursor_pos).expect("Cursor pos reset failed");
+                base.window.set_cursor_position(save_cursor_pos).expect("Cursor pos reset failed");
             }
             //</editor-fold>
             Event::AboutToWait => {

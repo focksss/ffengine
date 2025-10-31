@@ -123,6 +123,7 @@ impl TextRenderer {
         base.device.destroy_sampler(self.sampler, None);
     } }
 
+    // TODO() store refs to base device and command buffers, instead of sending base ref in all method calls.
     pub unsafe fn render_text(&self, base: &VkBase, frame: usize, text_info: &TextInformation) { unsafe {
         let font = text_info.font;
         let frame_command_buffer = base.draw_command_buffers[frame];
@@ -142,69 +143,42 @@ impl TextRenderer {
             base.device.update_descriptor_sets(&[descriptor_write], &[]);
         }
         //</editor-fold>
-        let pass_pass_begin_info = vk::RenderPassBeginInfo::default()
-            .render_pass(self.renderpass.pass.renderpass)
-            .framebuffer(self.renderpass.pass.framebuffers[frame])
-            .render_area(base.surface_resolution.into())
-            .clear_values(&self.renderpass.pass.clear_values);
-
-        device.cmd_begin_render_pass(
-            frame_command_buffer,
-            &pass_pass_begin_info,
-            vk::SubpassContents::INLINE,
-        );
-        device.cmd_bind_pipeline(
-            frame_command_buffer,
-            vk::PipelineBindPoint::GRAPHICS,
-            self.renderpass.pipeline,
-        );
-        device.cmd_set_viewport(frame_command_buffer, 0, &[self.renderpass.viewport]);
-        device.cmd_set_scissor(frame_command_buffer, 0, &[self.renderpass.scissor]);
-        device.cmd_bind_descriptor_sets(
-            frame_command_buffer,
-            vk::PipelineBindPoint::GRAPHICS,
-            self.renderpass.pipeline_layout,
-            0,
-            &[self.renderpass.descriptor_set.descriptor_sets[frame]],
-            &[],
-        );
-        device.cmd_push_constants(frame_command_buffer, self.renderpass.pipeline_layout, ShaderStageFlags::ALL_GRAPHICS, 0, slice::from_raw_parts(
-            &TextPushConstants {
-                clip_min: Vector::new_vec(0.0).to_array2(),
-                clip_max: Vector::new_vec(1.0).to_array2(),
-                position: text_info.position.to_array2(),
-                resolution: [base.surface_resolution.width as i32, base.surface_resolution.height as i32],
-                glyph_size: font.glyph_size,
-                distance_range: font.distance_range,
-                _pad: [0; 2]
-            } as *const TextPushConstants as *const u8,
-            size_of::<TextPushConstants>(),
-        ));
-        device.cmd_bind_vertex_buffers(
-            frame_command_buffer,
-            0,
-            &[text_info.vertex_buffer[frame].0],
-            &[0],
-        );
-        device.cmd_bind_index_buffer(
-            frame_command_buffer,
-            text_info.index_buffer[frame].0,
-            0,
-            vk::IndexType::UINT32,
-        );
-        device.cmd_draw_indexed(
-            frame_command_buffer,
-            text_info.glyph_count * 6u32,
-            1,
-            0u32,
-            0,
-            0,
-        );
-
-
-        device.cmd_end_render_pass(frame_command_buffer);
-        //</editor-fold>
-        self.renderpass.pass.transition_to_readable(base, frame_command_buffer, frame);
+        
+        self.renderpass.do_renderpass(base, current_frame, frame_command_buffer, Some(|| {
+            device.cmd_push_constants(frame_command_buffer, self.renderpass.pipeline_layout, ShaderStageFlags::ALL_GRAPHICS, 0, slice::from_raw_parts(
+                &TextPushConstants {
+                    clip_min: Vector::new_vec(0.0).to_array2(),
+                    clip_max: Vector::new_vec(1.0).to_array2(),
+                    position: text_info.position.to_array2(),
+                    resolution: [base.surface_resolution.width as i32, base.surface_resolution.height as i32],
+                    glyph_size: font.glyph_size,
+                    distance_range: font.distance_range,
+                    _pad: [0; 2]
+                } as *const TextPushConstants as *const u8,
+                size_of::<TextPushConstants>(),
+            ))
+        }), Some(|| {
+            device.cmd_bind_vertex_buffers(
+                frame_command_buffer,
+                0,
+                &[text_info.vertex_buffer[frame].0],
+                &[0],
+            );
+            device.cmd_bind_index_buffer(
+                frame_command_buffer,
+                text_info.index_buffer[frame].0,
+                0,
+                vk::IndexType::UINT32,
+            );
+            device.cmd_draw_indexed(
+                frame_command_buffer,
+                text_info.glyph_count * 6u32,
+                1,
+                0u32,
+                0,
+                0,
+            )
+        }))
     } }
 }
 pub struct TextInformation<'a> {
