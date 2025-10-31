@@ -1,11 +1,12 @@
 # ffengine
-A W.I.P. game engine written in rust and using Vulkan through the Ash crate. Goal is support of basic features and allowing for extremely customizable rendering pipelines through high level abstractions.
+A W.I.P. game engine written in rust and using Vulkan through the Ash crate. Goal is support of basic game engine features and allowing for extremely customizable rendering pipelines through high level abstractions.
 
 
 ## Current Target Features
 - Full vulkan abstractions, with builder options exposing all features
 - Full PBR rendering preset
 - Proper screenshotting support
+- Physics engine (auto-gen world hitboxes, player controller, other basic features)
 ## Current Features
 - Full vulkan abstraction structs (limited builder options)
 - gLTF loader
