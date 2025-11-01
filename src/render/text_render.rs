@@ -25,7 +25,28 @@ pub struct TextRenderer {
 }
 impl TextRenderer {
     pub unsafe fn new(base: &VkBase) -> TextRenderer { unsafe {
-        //<editor-fold desc = "pass">
+        let sampler = base.device.create_sampler(&vk::SamplerCreateInfo {
+            mag_filter: vk::Filter::LINEAR,
+            min_filter: vk::Filter::LINEAR,
+            address_mode_u: vk::SamplerAddressMode::CLAMP_TO_BORDER,
+            address_mode_v: vk::SamplerAddressMode::CLAMP_TO_BORDER,
+            address_mode_w: vk::SamplerAddressMode::CLAMP_TO_BORDER,
+            border_color: vk::BorderColor::FLOAT_OPAQUE_WHITE,
+            ..Default::default()
+        }, None).unwrap();
+        TextRenderer {
+            draw_command_buffers: base.draw_command_buffers.clone(),
+            device: base.device.clone(),
+            renderpass: Self::create_text_renderpass(base, None),
+            sampler,
+        }
+    } }
+    pub unsafe fn destroy(&self) { unsafe {
+        self.renderpass.destroy();
+        self.device.destroy_sampler(self.sampler, None);
+    } }
+
+    pub unsafe fn create_text_renderpass(base: &VkBase, pass_ref: Option<Arc<Pass>>) -> Renderpass { unsafe {
         let color_tex_create_info = TextureCreateInfo::new(base).format(Format::R8G8B8A8_UNORM);
         let pass_create_info = PassCreateInfo::new(base)
             .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
@@ -41,7 +62,7 @@ impl TextRenderer {
             .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
             .add_descriptor(Descriptor::new(&texture_sampler_create_info));
         //</editor-fold>
-        //<editor-fold desc = "graphics pipeline initiation">
+
         let push_constant_range = vk::PushConstantRange {
             stage_flags: ShaderStageFlags::ALL_GRAPHICS,
             offset: 0,
@@ -96,7 +117,7 @@ impl TextRenderer {
         let color_blend_state = vk::PipelineColorBlendStateCreateInfo::default()
             .attachments(&color_blend_attachment_states);
 
-        let renderpass_create_info = RenderpassCreateInfo::new(base)
+        let mut renderpass_create_info = RenderpassCreateInfo::new(base)
             .pass_create_info(pass_create_info)
             .descriptor_set_create_info(descriptor_set_create_info)
             .vertex_shader_uri(String::from("text\\text.vert.spv"))
@@ -105,28 +126,10 @@ impl TextRenderer {
             .pipeline_input_assembly_state(vertex_input_assembly_state_info)
             .pipeline_vertex_input_state(vertex_input_state_info)
             .pipeline_color_blend_state_create_info(color_blend_state);
-        let renderpass = Renderpass::new(renderpass_create_info);
-
-        //</editor-fold>
-        let sampler = base.device.create_sampler(&vk::SamplerCreateInfo {
-            mag_filter: vk::Filter::LINEAR,
-            min_filter: vk::Filter::LINEAR,
-            address_mode_u: vk::SamplerAddressMode::CLAMP_TO_BORDER,
-            address_mode_v: vk::SamplerAddressMode::CLAMP_TO_BORDER,
-            address_mode_w: vk::SamplerAddressMode::CLAMP_TO_BORDER,
-            border_color: vk::BorderColor::FLOAT_OPAQUE_WHITE,
-            ..Default::default()
-        }, None).unwrap();
-        TextRenderer {
-            draw_command_buffers: base.draw_command_buffers.clone(),
-            device: base.device.clone(),
-            renderpass,
-            sampler,
+        if pass_ref.is_some() {
+            renderpass_create_info = renderpass_create_info.pass_ref(pass_ref.unwrap());
         }
-    } }
-    pub unsafe fn destroy(&self) { unsafe {
-        self.renderpass.destroy();
-        self.device.destroy_sampler(self.sampler, None);
+        Renderpass::new(renderpass_create_info)
     } }
 
     pub unsafe fn render_text(&self, frame: usize, text_info: &TextInformation) { unsafe {
@@ -153,7 +156,7 @@ impl TextRenderer {
             device.cmd_push_constants(frame_command_buffer, self.renderpass.pipeline_layout, ShaderStageFlags::ALL_GRAPHICS, 0, slice::from_raw_parts(
                 &TextPushConstants {
                     clip_min: Vector::new_vec(0.0).to_array2(),
-                    clip_max: Vector::new_vec(1.0).to_array2(),
+                    clip_max: Vector::new_vec2(1920.0, 1080.0).to_array2(),
                     position: text_info.position.to_array2(),
                     resolution: [self.renderpass.viewport.width as i32, self.renderpass.viewport.height as i32],
                     glyph_size: font.glyph_size,

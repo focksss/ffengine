@@ -7,6 +7,7 @@ layout (location = 0) out vec4 frag_color;
 
 layout (location = 0) in vec2 uv;
 layout (location = 1) in vec4 color;
+layout (location = 2) in vec2 pos;
 layout(set = 0, binding = 0) uniform sampler2D atlas;
 
 layout(push_constant) uniform constants {
@@ -23,14 +24,24 @@ float median(float r, float g, float b) {
 }
 
 void main() {
-    vec3 msd = texture(atlas, uv).rgb;
-    float sd = median(msd.r, msd.g, msd.b);
+    vec2 frag_pos = vec2(ubo.resolution) * pos;
+    if (frag_pos.x < ubo.max.x && frag_pos.x > ubo.min.x) {
+        if (frag_pos.y < ubo.max.y && frag_pos.y > ubo.min.y) {
 
-    float screen_px_range = ubo.distance_range * float(ubo.resolution.y) / float(ubo.glyph_size);
-    float screen_px_distance = screen_px_range * (sd - 0.5);
+            vec3 msd = texture(atlas, uv).rgb;
+            float sd = median(msd.r, msd.g, msd.b);
 
-    float w = fwidth(screen_px_distance);
-    float opacity = smoothstep(-w, w, screen_px_distance);
+            float screen_px_range = ubo.distance_range * float(ubo.resolution.y) / float(ubo.glyph_size);
+            float screen_px_distance = screen_px_range * (sd - 0.5);
 
-    frag_color = mix(vec4(0.0), color, opacity);
+            float w = fwidth(screen_px_distance);
+            float opacity = smoothstep(-w, w, screen_px_distance);
+
+            frag_color = mix(vec4(0.0), color, opacity);
+        } else {
+            discard;
+        }
+    } else {
+        discard;
+    }
 }

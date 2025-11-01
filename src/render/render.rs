@@ -29,12 +29,13 @@ pub struct Renderer {
 impl Renderer {
     pub unsafe fn new(base: &VkBase, world: &Scene) -> Renderer { unsafe {
         Renderer::compile_shaders();
-
-        let present_pass_create_info = PassCreateInfo::new(base)
-            .set_is_present_pass(true);
+        
         let texture_sampler_create_info = DescriptorCreateInfo::new(base)
             .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
             .shader_stages(ShaderStageFlags::FRAGMENT);
+        
+        let present_pass_create_info = PassCreateInfo::new(base)
+            .set_is_present_pass(true);
         let present_descriptor_set_create_info = DescriptorSetCreateInfo::new(base)
             .add_descriptor(Descriptor::new(&texture_sampler_create_info));
         let present_renderpass_create_info = { RenderpassCreateInfo::new(base)

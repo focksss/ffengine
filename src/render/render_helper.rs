@@ -13,7 +13,6 @@ const SHADER_PATH: &str = "resources\\shaders\\spv\\";
 
 pub struct Renderpass {
     pub device: Device,
-    pub draw_command_buffers: Vec<vk::CommandBuffer>,
 
     pub pass: Arc<Pass>,
     pub descriptor_set: DescriptorSet,
@@ -78,7 +77,6 @@ impl Renderpass {
         ).expect("Failed to create pipeline")[0];
         Renderpass {
             device: base.device.clone(),
-            draw_command_buffers: base.draw_command_buffers.clone(),
 
             pass,
             descriptor_set,
@@ -255,7 +253,7 @@ impl<'a> RenderpassCreateInfo<'a> {
         self.pass_ref = None;
         self
     }
-    pub fn pass_ref(mut self, pass_ref: &Arc<Pass>) -> Self {
+    pub fn pass_ref(mut self, pass_ref: Arc<Pass>) -> Self {
         self.pass_ref = Some(pass_ref.clone());
         self.pass_create_info = None;
         self
