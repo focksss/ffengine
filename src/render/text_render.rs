@@ -184,7 +184,10 @@ impl TextRenderer {
         self.device.update_descriptor_sets(&[descriptor_write], &[]);
     }}
 
-    pub unsafe fn render_text(&self, frame: usize, text_info: &TextInformation) { unsafe {
+    /**
+    * (0, 0) = bottom left, implemented in vertex shader
+    */
+    pub unsafe fn render_text(&self, frame: usize, text_info: &TextInformation, position: Vector) { unsafe {
         let font = text_info.font.clone();
         let frame_command_buffer = self.draw_command_buffers[frame];
         let device = &self.device;
@@ -196,7 +199,7 @@ impl TextRenderer {
                 &TextPushConstants {
                     clip_min: Vector::new_vec(0.0).to_array2(),
                     clip_max: Vector::new_vec2(1920.0, 1080.0).to_array2(),
-                    position: text_info.position.to_array2(),
+                    position: position.to_array2(),
                     resolution: [self.renderpass.viewport.width as i32, self.renderpass.viewport.height as i32],
                     glyph_size: font.glyph_size,
                     distance_range: font.distance_range,
@@ -301,7 +304,6 @@ pub struct TextInformation {
     font: Arc<Font>,
     font_index: Option<u32>,
     text: String,
-    position: Vector,
     font_size: f32,
     scale_vector: Vector,
     color: Vector,
@@ -323,7 +325,6 @@ impl TextInformation {
             font_index: None,
 
             text: String::new(),
-            position: Vector::new_empty(),
             font_size: 0.1,
             scale_vector: Vector::new_vec(1.0),
             color: Vector::new_vec(1.0),
@@ -491,13 +492,6 @@ impl TextInformation {
 
     pub fn text(mut self, text: &str) -> Self {
         self.text = text.to_string();
-        self
-    }
-    /**
-     * (0, 0) = bottom left (implemented in vertex shader)
-     */
-    pub fn position(mut self, position: Vector) -> Self {
-        self.position = position;
         self
     }
     pub fn font_size(mut self, size: f32) -> Self {
