@@ -24,6 +24,20 @@ impl GUI {
             .add_color_attachment_info(TextureCreateInfo::new(base).format(Format::R16G16B16A16_SFLOAT).add_usage_flag(vk::ImageUsageFlags::TRANSFER_SRC));
         let pass_ref = Arc::new(RefCell::new(Pass::new(pass_create_info)));
 
+        let color_blend_attachment_states = [vk::PipelineColorBlendAttachmentState {
+            blend_enable: 0,
+            src_color_blend_factor: vk::BlendFactor::SRC_COLOR,
+            dst_color_blend_factor: vk::BlendFactor::ONE_MINUS_DST_COLOR,
+            color_blend_op: vk::BlendOp::ADD,
+            src_alpha_blend_factor: vk::BlendFactor::ZERO,
+            dst_alpha_blend_factor: vk::BlendFactor::ZERO,
+            alpha_blend_op: vk::BlendOp::ADD,
+            color_write_mask: vk::ColorComponentFlags::RGBA,
+        }];
+        let color_blend_state = vk::PipelineColorBlendStateCreateInfo::default()
+            .logic_op(vk::LogicOp::CLEAR)
+            .attachments(&color_blend_attachment_states);
+
         let texture_sampler_create_info = DescriptorCreateInfo::new(base)
             .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
             .shader_stages(ShaderStageFlags::FRAGMENT);
@@ -34,6 +48,7 @@ impl GUI {
             .descriptor_set_create_info(quad_descriptor_set_create_info)
             .vertex_shader_uri(String::from("gui\\quad\\quad.vert.spv"))
             .fragment_shader_uri(String::from("gui\\quad\\quad.frag.spv"))
+            .pipeline_color_blend_state_create_info(color_blend_state)
             .push_constant_range(vk::PushConstantRange {
                 stage_flags: ShaderStageFlags::ALL_GRAPHICS,
                 offset: 0,
@@ -91,7 +106,7 @@ impl GUI {
             self.draw_quad(quad, current_frame, command_buffer, position, scale);
         }
         if let Some(text) = &node.text {
-            self.text_renderer.draw_gui_texts(current_frame, vec![text]);
+            self.draw_text(text, current_frame, command_buffer, position, scale);
         }
 
         for child in &node.children_indices {
@@ -143,11 +158,26 @@ impl GUI {
         ));
         device.cmd_draw(command_buffer, 6, 1, 0, 0);
     } }
+    unsafe fn draw_text(
+        &self,
+        text: &GUIText,
+        current_frame: usize,
+        command_buffer: vk::CommandBuffer,
+        position: Vector,
+        scale: Vector,
+    ) { unsafe {
+        let clip_min = position + scale * text.clip_min; // + if quad.absolute_clip_min { quad.clip_min } else { scale * quad.clip_min }
+        let clip_max = position + scale * text.clip_max; // + if quad.absolute_clip_max { quad.clip_max } else { scale * quad.clip_max }
+        let position = position + if text.absolute_position { text.position } else { text.position * scale };
+        let scale = if text.absolute_scale { text.scale } else { scale * text.scale };
+
+        self.text_renderer.draw_gui_text(current_frame, &text.text_information, position, scale, clip_min, clip_max);
+    } }
 
     pub fn update_text_of_node(&mut self, node_index: usize, text: &str, command_buffer: vk::CommandBuffer) {
         let node_text = self.gui_nodes[node_index].text.as_mut().expect("node does not have text or index is out of bounds");
-        node_text.update_text(text);
-        node_text.update_buffers_all_frames(command_buffer);
+        node_text.text_information.update_text(text);
+        node_text.text_information.update_buffers_all_frames(command_buffer);
     }
 
     pub unsafe fn destroy(&mut self) { unsafe {
@@ -155,7 +185,7 @@ impl GUI {
         self.quad_renderpass.destroy();
         for node in &self.gui_nodes {
             if let Some(text) = &node.text {
-                text.destroy();
+                text.text_information.destroy();
             }
         }
     } }
@@ -172,7 +202,7 @@ pub struct GUINode {
     pub absolute_position: bool,
     pub absolute_scale: bool,
 
-    pub text: Option<TextInformation>,
+    pub text: Option<GUIText>,
     pub quad: Option<GUIQuad>
 }
 /**
