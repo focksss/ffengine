@@ -13,7 +13,7 @@ use crate::engine::camera::{Camera, Frustum};
 use crate::render::*;
 use crate::math::vector::Vector;
 use crate::render;
-use crate::render::render_engine::SHADOW_RES;
+use crate::render::scene_renderer::SHADOW_RES;
 
 // SHOULD DETECT MATH VS COLOR DATA TEXTURES, LOAD COLOR AS SRGB, MATH AS UNORM
 const MAX_VERTICES: u64 = 3 * 10u64.pow(6); // 7 for bistro
@@ -329,7 +329,7 @@ impl Scene {
                     size: size_of::<Instance>() as u64,
                 }
             }).collect();
-            base.copy_buffer_synchronous(
+            copy_buffer_synchronous(&self.device,
                 command_buffer,
                 &self.instance_staging_buffer.0,
                 &self.instance_buffers[frame].0,
@@ -342,7 +342,7 @@ impl Scene {
     pub unsafe fn update_lights(&mut self, base: &VkBase, command_buffer: CommandBuffer, frame: usize) { unsafe {
         let lights_send = self.lights.iter().map(|light| light.to_sendable()).collect::<Vec<_>>();
         copy_data_to_memory(self.lights_staging_buffer.2, &lights_send);
-        base.copy_buffer_synchronous(command_buffer, &self.lights_staging_buffer.0, &self.lights_buffers[frame].0, None, &self.lights_buffers_size);
+        copy_buffer_synchronous(&self.device, command_buffer, &self.lights_staging_buffer.0, &self.lights_buffers[frame].0, None, &self.lights_buffers_size);
     } }
     pub fn update_sun(&mut self, primary_camera: &Camera) {
         self.sun.update(primary_camera);
@@ -402,7 +402,7 @@ impl Scene {
             }
         }
         copy_data_to_memory(self.joints_staging_buffer.2, &joints);
-        base.copy_buffer_synchronous(command_buffer, &self.joints_staging_buffer.0, &self.joints_buffers[frame].0, None, &self.joints_buffers_size);
+        copy_buffer_synchronous(&self.device, command_buffer, &self.joints_staging_buffer.0, &self.joints_buffers[frame].0, None, &self.joints_buffers_size);
     }}
 
     pub unsafe fn draw(&self, draw_command_buffer: &CommandBuffer, frame: usize, frustum: Option<&Frustum>) { unsafe {

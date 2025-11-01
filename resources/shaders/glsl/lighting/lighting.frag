@@ -16,8 +16,6 @@ layout(set = 0, binding = 5) uniform sampler2D g_view_normal;
 layout(set = 0, binding = 6) uniform sampler2DArray shadowmap;
 layout(set = 0, binding = 7) uniform sampler2D ssao_tex;
 
-layout(set = 0, binding = 11) uniform sampler2D text_tex;
-
 layout(push_constant) uniform constants {
     mat4 inverse_view;
     mat4 inverse_projection;
@@ -85,11 +83,6 @@ float get_shadow(vec3 world_position, vec3 world_normal, float fragment_depth) {
 }
 
 void main() {
-    vec4 text = texture(text_tex, uv);
-    if (text.a > 0.0) {
-        uFragColor = vec4(text.rgb, 1.0);
-        return;
-    }
     //uFragColor = vec4(vec3(texture(ssao_tex, uv).r), 1.0); return;
     //uFragColor = vec4(0.01 / texture(g_depth, uv).r, 0.0, 0.0, 1.0);
 

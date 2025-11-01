@@ -674,15 +674,7 @@ impl VkBase {
         self.device.cmd_copy_buffer(command_buffers[0], *src_buffer, *dst_buffer, &copy_region);
         self.end_single_time_commands(command_buffers);
     } }
-    pub unsafe fn copy_buffer_synchronous(&self, command_buffer: CommandBuffer, src_buffer: &Buffer, dst_buffer: &Buffer, regions: Option<Vec<vk::BufferCopy>>, size: &vk::DeviceSize) { unsafe {
-        let copy_region = regions.unwrap_or(vec![vk::BufferCopy {
-            src_offset: 0,
-            dst_offset: 0,
-            size: *size,
-            ..Default::default()
-        }]);
-        self.device.cmd_copy_buffer(command_buffer, *src_buffer, *dst_buffer, &copy_region);
-    } }
+
     pub unsafe fn create_device_and_staging_buffer<T: Copy>(
         &self,
         buffer_size_in: u64,
@@ -1427,7 +1419,15 @@ impl Drop for VkBase {
         }
     }
 }
-
+pub unsafe fn copy_buffer_synchronous(device: &Device, command_buffer: CommandBuffer, src_buffer: &Buffer, dst_buffer: &Buffer, regions: Option<Vec<vk::BufferCopy>>, size: &vk::DeviceSize) { unsafe {
+    let copy_region = regions.unwrap_or(vec![vk::BufferCopy {
+        src_offset: 0,
+        dst_offset: 0,
+        size: *size,
+        ..Default::default()
+    }]);
+    device.cmd_copy_buffer(command_buffer, *src_buffer, *dst_buffer, &copy_region);
+} }
 pub unsafe fn copy_data_to_memory<T: Copy>(dst: *mut c_void, data: &[T]) { unsafe {
     assert!(!dst.is_null(), "copy_data_to_memory: destination pointer is null!");
     assert!(data.len() * size_of::<T>() <= isize::MAX as usize, "data size too big");

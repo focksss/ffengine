@@ -1,4 +1,4 @@
-use crate::{mem};
+use crate::mem;
 use std::collections::HashMap;
 use std::{fs, slice};
 use std::ffi::c_void;
@@ -7,11 +7,12 @@ use std::path::PathBuf;
 use std::process::Command;
 use ash::vk;
 use std::ptr::null_mut;
-use ash::vk::{CommandBuffer, DescriptorType, DeviceMemory, Format, Handle, SampleCountFlags, Sampler, ShaderStageFlags};
-use serde_json::{Value};
-use crate::{offset_of, MAX_FRAMES_IN_FLIGHT};
+use ash::vk::{CommandBuffer, DescriptorType, DeviceMemory, Format, SampleCountFlags, Sampler, ShaderStageFlags};
+use serde_json::Value;
+use crate::offset_of;
 use crate::math::Vector;
 use crate::render::*;
+use crate::render::render::MAX_FRAMES_IN_FLIGHT;
 
 const OUTPUT_DIR: &str = "resources\\fonts\\generated";
 
@@ -185,6 +186,8 @@ impl TextRenderer {
     } }
 }
 pub struct TextInformation<'a> {
+    device: ash::Device,
+
     font: &'a Font,
     text: String,
     position: Vector,
@@ -205,6 +208,8 @@ impl<'a> TextInformation<'a> {
     pub fn new(font: &'a Font) -> TextInformation<'a> {
         TextInformation {
             font,
+            device: font.device.clone(),
+
             text: String::new(),
             position: Vector::new_empty(),
             font_size: 0.1,
@@ -221,19 +226,19 @@ impl<'a> TextInformation<'a> {
             index_staging_buffer: (vk::Buffer::null(), DeviceMemory::null(), null_mut()),
         }
     }
-    pub fn destroy(&mut self, base: &VkBase) { unsafe {
+    pub fn destroy(&mut self) { unsafe {
         for buffer in self.vertex_buffer.iter() {
-            base.device.destroy_buffer(buffer.0, None);
-            base.device.free_memory(buffer.1, None);
+            self.device.destroy_buffer(buffer.0, None);
+            self.device.free_memory(buffer.1, None);
         }
         for buffer in self.index_buffer.iter() {
-            base.device.destroy_buffer(buffer.0, None);
-            base.device.free_memory(buffer.1, None);
+            self.device.destroy_buffer(buffer.0, None);
+            self.device.free_memory(buffer.1, None);
         }
-        base.device.destroy_buffer(self.index_staging_buffer.0, None);
-        base.device.free_memory(self.index_staging_buffer.1, None);
-        base.device.destroy_buffer(self.vertex_staging_buffer.0, None);
-        base.device.free_memory(self.vertex_staging_buffer.1, None);
+        self.device.destroy_buffer(self.index_staging_buffer.0, None);
+        self.device.free_memory(self.index_staging_buffer.1, None);
+        self.device.destroy_buffer(self.vertex_staging_buffer.0, None);
+        self.device.free_memory(self.vertex_staging_buffer.1, None);
     } }
     /** To get the quad for a glyph:
           * Let P = ( x: Σ(prior advances) + baseline x, y: baseline y )
@@ -339,20 +344,22 @@ impl<'a> TextInformation<'a> {
         }
         self
     }
-    pub fn update_buffers(&mut self, base: &VkBase, command_buffer: CommandBuffer, frame: usize) { unsafe {
+    pub fn update_buffers(&mut self, command_buffer: CommandBuffer, frame: usize) { unsafe {
         let (vertices, indices) = self.get_vertex_and_index_data();
         let vertex_buffer_size = size_of::<GlyphQuadVertex>() * vertices.len();
         let index_buffer_size = size_of::<u32>() * indices.len();
         copy_data_to_memory(self.vertex_staging_buffer.2, &vertices);
         copy_data_to_memory(self.index_staging_buffer.2, &indices);
-        base.copy_buffer_synchronous(
+        copy_buffer_synchronous(
+            &self.device,
             command_buffer,
             &self.vertex_staging_buffer.0,
             &self.vertex_buffer[frame].0,
             None,
             &(vertex_buffer_size as u64)
         );
-        base.copy_buffer_synchronous(
+        copy_buffer_synchronous(
+            &self.device,
             command_buffer,
             &self.index_staging_buffer.0,
             &self.index_buffer[frame].0,
@@ -360,9 +367,9 @@ impl<'a> TextInformation<'a> {
             &(index_buffer_size as u64)
         );
     } }
-    pub fn update_buffers_all_frames(&mut self, base: &VkBase, command_buffer: CommandBuffer) {
+    pub fn update_buffers_all_frames(&mut self, command_buffer: CommandBuffer) {
         for frame in 0..self.vertex_buffer.len() {
-            self.update_buffers(base, command_buffer, frame);
+            self.update_buffers(command_buffer, frame);
         }
     }
 

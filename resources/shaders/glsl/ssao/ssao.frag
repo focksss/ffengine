@@ -40,7 +40,7 @@ vec2 rand2(vec2 co) {
 }
 
 void main() {
-    // vec3 randomVec = vec3(2.0 * rand2(uv) - 1.0, 0.0);
+    vec3 randomVec = vec3(2.0 * rand2(uv) - 1.0, 0.0);
 
     // fragColor = vec4(1.0, 0.0, 1.0, 1.0); return;
     vec2 noiseScale = vec2(float(ubo.width) / 4.0, float(ubo.height) / 4.0);

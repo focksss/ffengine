@@ -1,21 +1,21 @@
-use crate::{mem, FrametimeManager};
-use std::path::PathBuf;
-use std::slice;
+use crate::engine::camera::Camera;
+use crate::math::*;
+use crate::offset_of;
+use crate::render::render::MAX_FRAMES_IN_FLIGHT;
+use crate::render::*;
+use crate::scene::*;
+use crate::mem;
 use ash::vk;
 use ash::vk::{DescriptorType, Format, ShaderStageFlags};
 use rand::{rng, Rng};
-use crate::{offset_of, render, MAX_FRAMES_IN_FLIGHT};
-use crate::engine::camera::Camera;
-use crate::engine::scene;
-use crate::math::*;
-use crate::render::*;
-use crate::scene::*;
+use std::path::PathBuf;
+use std::slice;
 
 const SSAO_KERNAL_SIZE: usize = 16;
 const SSAO_RESOLUTION_MULTIPLIER: f32 = 0.5;
 pub const SHADOW_RES: u32 = 4096;
 
-pub struct RenderEngine {
+pub struct SceneRenderer {
     pub device: ash::Device,
     pub draw_command_buffers: Vec<vk::CommandBuffer>,
 
@@ -31,16 +31,14 @@ pub struct RenderEngine {
 
     pub lighting_renderpass: Renderpass,
 
-    pub present_renderpass: Renderpass,
-
     pub sampler: vk::Sampler,
     pub nearest_sampler: vk::Sampler,
     pub ssao_kernal: [[f32; 4]; SSAO_KERNAL_SIZE],
     pub ssao_noise_texture: Texture,
 }
-impl RenderEngine {
-    pub unsafe fn new(base: &VkBase, world: &Scene) -> RenderEngine { unsafe {
-        let null_tex_info = unsafe { base.create_2d_texture_image(&PathBuf::from("").join("resources\\null8x.png"), true) };
+impl SceneRenderer {
+    pub unsafe fn new(base: &VkBase, world: &Scene) -> SceneRenderer { unsafe {
+        let null_tex_info = base.create_2d_texture_image(&PathBuf::from("").join("resources\\null8x.png"), true) ;
 
         let null_texture = Texture {
             device: base.device.clone(),
@@ -88,9 +86,6 @@ impl RenderEngine {
 
         let lighting_pass_create_info = PassCreateInfo::new(base)
             .add_color_attachment_info(TextureCreateInfo::new(base).format(Format::R16G16B16A16_SFLOAT).add_usage_flag(vk::ImageUsageFlags::TRANSFER_SRC));
-
-        let present_pass_create_info = PassCreateInfo::new(base)
-            .set_is_present_pass(true);
         //</editor-fold>
         //<editor-fold desc = "geometry + shadow descriptor sets"
         let sun_ubo_create_info = DescriptorCreateInfo::new(base)
@@ -170,10 +165,6 @@ impl RenderEngine {
                 .shader_stages(ShaderStageFlags::FRAGMENT)
                 .binding_flags(vk::DescriptorBindingFlags::UPDATE_AFTER_BIND))
             );
-        //</editor-fold>
-        // <editor-fold desc = "present descriptor set">
-        let present_descriptor_set_create_info = DescriptorSetCreateInfo::new(base)
-            .add_descriptor(Descriptor::new(&texture_sampler_create_info));
         //</editor-fold>
 
         //<editor-fold desc = "ssao sampling setup">
@@ -451,16 +442,6 @@ impl RenderEngine {
             max_depth_bounds: 1.0,
             ..Default::default()
         };
-        let color_blend_attachment_states = [vk::PipelineColorBlendAttachmentState {
-            blend_enable: 0,
-            src_color_blend_factor: vk::BlendFactor::SRC_COLOR,
-            dst_color_blend_factor: vk::BlendFactor::ONE_MINUS_DST_COLOR,
-            color_blend_op: vk::BlendOp::ADD,
-            src_alpha_blend_factor: vk::BlendFactor::ZERO,
-            dst_alpha_blend_factor: vk::BlendFactor::ZERO,
-            alpha_blend_op: vk::BlendOp::ADD,
-            color_write_mask: vk::ColorComponentFlags::RGBA,
-        }];
         let null_blend_attachment = vk::PipelineColorBlendAttachmentState {
             blend_enable: vk::FALSE,  // Disable blending
             src_color_blend_factor: vk::BlendFactor::ONE,
@@ -474,14 +455,7 @@ impl RenderEngine {
         let null_blend_states = [null_blend_attachment; 5];
         let null_blend_state = vk::PipelineColorBlendStateCreateInfo::default()
             .attachments(&null_blend_states);
-        let null_blend_states2 = [null_blend_attachment; 2];
-        let null_blend_state2 = vk::PipelineColorBlendStateCreateInfo::default()
-            .attachments(&null_blend_states2);
-        let color_blend_state = vk::PipelineColorBlendStateCreateInfo::default()
-            .logic_op(vk::LogicOp::CLEAR)
-            .attachments(&color_blend_attachment_states);
         //</editor-fold>
-
 
         let geometry_renderpass_create_info = { RenderpassCreateInfo::new(base)
             .pass_create_info(geometry_pass_create_info)
@@ -569,13 +543,6 @@ impl RenderEngine {
             .push_constant_range(camera_push_constant_range_fragment) };
         let lighting_renderpass = Renderpass::new(lighting_renderpass_create_info);
 
-        let present_renderpass_create_info = { RenderpassCreateInfo::new(base)
-            .pass_create_info(present_pass_create_info)
-            .descriptor_set_create_info(present_descriptor_set_create_info)
-            .vertex_shader_uri(String::from("quad\\quad.vert.spv"))
-            .fragment_shader_uri(String::from("quad\\quad.frag.spv")) };
-        let present_renderpass = Renderpass::new(present_renderpass_create_info);
-
         //<editor-fold desc = "descriptor updates">
         let sampler = base.device.create_sampler(&vk::SamplerCreateInfo {
             mag_filter: vk::Filter::LINEAR,
@@ -648,20 +615,6 @@ impl RenderEngine {
                     .image_info(slice::from_ref(info))
             }).collect();
             base.device.update_descriptor_sets(&lighting_descriptor_writes, &[]);
-            //</editor-fold>
-            //<editor-fold desc = "present">
-            let present_info = [vk::DescriptorImageInfo {
-                sampler,
-                image_view: lighting_renderpass.pass.textures[current_frame][0].image_view,
-                image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-            }];
-            let present_descriptor_writes: Vec<vk::WriteDescriptorSet> = vec![
-                vk::WriteDescriptorSet::default()
-                    .dst_set(present_renderpass.descriptor_set.descriptor_sets[current_frame])
-                    .dst_binding(0)
-                    .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
-                    .image_info(&present_info)];
-            base.device.update_descriptor_sets(&present_descriptor_writes, &[]);
             //</editor-fold>
             //<editor-fold desc = "ssao pre downsample">
             let image_infos = [
@@ -742,14 +695,12 @@ impl RenderEngine {
         }
         //</editor-fold>
 
-        RenderEngine {
+        SceneRenderer {
             device: base.device.clone(),
             draw_command_buffers: base.draw_command_buffers.clone(),
 
             null_texture,
             null_tex_sampler,
-
-            present_renderpass,
 
             geometry_renderpass,
             shadow_renderpass,
@@ -814,30 +765,14 @@ impl RenderEngine {
         base.device.update_descriptor_sets(&[descriptor_write], &[]);
     }}
 
-    pub unsafe fn render_frame(
+    pub unsafe fn render_world(
         &self,
         current_frame: usize,
         world: &Scene, player_camera: &Camera,
-        frametime_manager: &mut FrametimeManager,
-        text_renderer: &TextRenderer,
-        present_index: usize,
     ) { unsafe {
         let device = &self.device;
 
         let frame_command_buffer = self.draw_command_buffers[current_frame];
-
-        let image_info = vk::DescriptorImageInfo {
-            sampler: self.sampler,
-            image_view: text_renderer.renderpass.pass.textures[current_frame][0].image_view,
-            image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-        };
-        let descriptor_write = vk::WriteDescriptorSet::default()
-            .dst_set(self.lighting_renderpass.descriptor_set.descriptor_sets[current_frame])
-            .dst_binding(11u32)
-            .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
-            .image_info(slice::from_ref(&image_info));
-
-        self.device.update_descriptor_sets(&[descriptor_write], &[]);
 
         let ubo = world.sun.to_sendable();
         copy_data_to_memory(self.lighting_renderpass.descriptor_set.descriptors[10].owned_buffers.2[current_frame], &[ubo]);
@@ -914,10 +849,6 @@ impl RenderEngine {
                 size_of::<CameraMatrixUniformData>(),
             ))
         }), None::<fn()>, None);
-
-        self.present_renderpass.begin_renderpass(current_frame, frame_command_buffer, Some(present_index));
-        device.cmd_draw(frame_command_buffer, 6, 1, 0, 0);
-        device.cmd_end_render_pass(frame_command_buffer);
     } }
 
     pub unsafe fn destroy(&mut self) { unsafe {
@@ -927,7 +858,6 @@ impl RenderEngine {
         self.ssao_renderpass.destroy();
         self.ssao_blur_renderpass_upsample.destroy();
         self.lighting_renderpass.destroy();
-        self.present_renderpass.destroy();
 
         self.ssao_noise_texture.destroy();
 

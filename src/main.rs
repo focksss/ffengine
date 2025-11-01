@@ -2,6 +2,7 @@
 mod render;
 mod math;
 mod engine;
+mod gui;
 
 use std::default::Default;
 use std::error::Error;
@@ -22,32 +23,33 @@ use math::vector::*;
 use engine::scene::{Model, Scene};
 use engine::camera::Camera;
 use engine::scene;
-use render::render_engine::RenderEngine;
+use render::scene_renderer::SceneRenderer;
+use render::render::MAX_FRAMES_IN_FLIGHT;
 use crate::render::*;
+use crate::render::render::Renderer;
 
-const MAX_FRAMES_IN_FLIGHT: usize = 3;
 const PI: f32 = std::f32::consts::PI;
 
 fn main() { unsafe {
-        #[cfg(debug_assertions)] {
-            let mut shader_paths = Vec::new();
-            shader_paths.push("resources\\shaders\\glsl\\geometry");
-            shader_paths.push("resources\\shaders\\glsl\\shadow");
-            shader_paths.push("resources\\shaders\\glsl\\ssao");
-            shader_paths.push("resources\\shaders\\glsl\\bilateral_blur");
-            shader_paths.push("resources\\shaders\\glsl\\lighting");
-            shader_paths.push("resources\\shaders\\glsl\\quad");
-            shader_paths.push("resources\\shaders\\glsl\\text");
+    #[cfg(debug_assertions)] {
+        let mut shader_paths = Vec::new();
+        shader_paths.push("resources\\shaders\\glsl\\geometry");
+        shader_paths.push("resources\\shaders\\glsl\\shadow");
+        shader_paths.push("resources\\shaders\\glsl\\ssao");
+        shader_paths.push("resources\\shaders\\glsl\\bilateral_blur");
+        shader_paths.push("resources\\shaders\\glsl\\lighting");
+        shader_paths.push("resources\\shaders\\glsl\\quad");
+        shader_paths.push("resources\\shaders\\glsl\\text");
+        shader_paths.push("resources\\shaders\\glsl\\composite");
 
-            compile_shaders(shader_paths).expect("Failed to compile shaders");
-        }
+        compile_shaders(shader_paths).expect("Failed to compile shaders");
+    }
 
     let mut base = VkBase::new("ffengine".to_string(), 1920, 1080, MAX_FRAMES_IN_FLIGHT).unwrap();
 
     //let font = Font::new(base, "resources\\fonts\\JetBrainsMono-Bold.ttf", Some(64), Some(2.0));
     //let font = Font::new(base, "resources\\fonts\\MonsieurLaDoulaise-Regular.ttf", Some(128), Some(2.0));
     let font = Font::new(&base, "resources\\fonts\\Oxygen-Regular.ttf", Some(32), Some(2.0));
-    let mut text_renderer = TextRenderer::new(&base);
 
     let mut world = Scene::new(&base);
 
@@ -72,8 +74,8 @@ fn main() { unsafe {
     //world.add_model(Model::new("C:\\Graphics\\assets\\hydrant\\untitled.gltf"));
 
     world.initialize(&base, MAX_FRAMES_IN_FLIGHT, true);
-    let mut render_engine = RenderEngine::new(&base, &world);
-    render_engine.update_world_textures_all_frames(&base, &world);
+
+    let mut renderer = Renderer::new(&base, &world, &font);
 
     let mut player_camera = Camera::new_perspective_rotation(
         Vector::new_vec3(0.0, 0.0, 0.0),
@@ -106,14 +108,6 @@ fn main() { unsafe {
     let mut screenshot_pending = false;
 
     let mut frametime_manager = FrametimeManager::new(&base);
-
-    let mut last_fps_render = Instant::now();
-    let mut fps_tex = TextInformation::new(&font)
-        .text("making this text long is one way to force the buffers to be large enough...")
-        .position(Vector::new_vec2(100.0, 100.0))
-        .font_size(32.0)
-        .newline_distance(1720.0)
-        .set_buffers(&base);
 
     let mut last_resize = Instant::now();
     let event_loop_ptr = base.event_loop.as_ptr();
@@ -206,18 +200,19 @@ fn main() { unsafe {
             }
             //</editor-fold>
             Event::AboutToWait => {
+
                 if base.needs_swapchain_recreate {
                     base.set_surface_and_present_images();
-                    render_engine.destroy();
-                    render_engine = RenderEngine::new(&base, &world);
-                    text_renderer.destroy();
-                    text_renderer = TextRenderer::new(&base);
 
-                    render_engine.update_world_textures_all_frames(&base, &world);
+                    renderer.destroy();
+                    renderer = Renderer::new(&base, &world, &font);
+
                     base.needs_swapchain_recreate = false;
                     frametime_manager.reset();
                     return;
                 }
+
+
 
 
                 frametime_manager.record_cpu_action_start(String::from("deltatime setup"));
@@ -241,7 +236,7 @@ fn main() { unsafe {
                     &mut pause_frustum,
                     &mut screenshot_pending,
                     &mut world,
-                    &render_engine
+                    &renderer
                 );
 
                 frametime_manager.record_cpu_action_end();
@@ -292,21 +287,8 @@ fn main() { unsafe {
                     |device, frame_command_buffer| {
                         world.update_nodes(&base, frame_command_buffer, current_frame);
                         world.update_lights(&base, frame_command_buffer, current_frame);
-                        if last_fps_render.elapsed().as_secs_f32() > 0.1 {
-                            fps_tex.update_text(format!("FPS: {}", 1.0 / delta_time).as_str());
-                            fps_tex.update_buffers_all_frames(&base, frame_command_buffer);
-                            last_fps_render = Instant::now();
-                        }
 
-                        frametime_manager.record_gpu_action_start(&base, frame_command_buffer, current_frame, String::from(
-                            "frame ".to_owned() + current_frame.to_string().as_str())
-                        );
-
-                        text_renderer.render_text(current_frame, &fps_tex);
-
-                        render_engine.render_frame(current_frame, &world, &player_camera, &mut frametime_manager, &text_renderer, present_index as usize);
-
-                        frametime_manager.record_gpu_action_end(&base, frame_command_buffer, current_frame);
+                        renderer.render_frame(current_frame, present_index as usize, delta_time, &world, &player_camera);
                     },
                 );
 
@@ -321,7 +303,6 @@ fn main() { unsafe {
                     .swapchains(&swapchains)
                     .image_indices(&image_indices);
 
-                if last_resize.elapsed().as_secs_f32() > 0.1 {}
                 base.swapchain_loader
                     .queue_present(base.present_queue, &present_info)
                     .unwrap();
@@ -358,12 +339,11 @@ fn main() { unsafe {
     //<editor-fold desc = "cleanup">
     base.device.device_wait_idle().unwrap();
 
+    renderer.destroy();
+
     font.destroy();
-    text_renderer.destroy();
     world.destroy(&base);
-    render_engine.destroy();
     frametime_manager.destroy(&base);
-    fps_tex.destroy(&base);
     //</editor-fold>
 } }
 
@@ -379,7 +359,7 @@ unsafe fn do_controls(
     paused: &mut bool,
     screenshot_pending: &mut bool,
     world: &mut Scene,
-    render_engine: &RenderEngine
+    render_engine: &Renderer
 ) { unsafe {
     if pressed_keys.contains(&PhysicalKey::Code(KeyCode::KeyW)) {
         player_camera.position.x += player_camera.speed*delta_time * (player_camera.rotation.y + PI/2.0).cos();
@@ -452,7 +432,7 @@ unsafe fn do_controls(
         if models < 3 {
             world.add_model(base, Model::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf"));
             world.models[0.max(models)].transform_roots(&player_camera.position, &player_camera.rotation, &Vector::new_vec(1.0));
-            render_engine.update_world_textures_all_frames(base, world);
+            render_engine.scene_renderer.update_world_textures_all_frames(base, world);
         }
     }
     if new_pressed_keys.contains(&PhysicalKey::Code(KeyCode::F2)) {
