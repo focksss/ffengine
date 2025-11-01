@@ -9,6 +9,7 @@ use std::error::Error;
 use std::mem;
 use std::collections::HashSet;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use ash::vk;
@@ -20,35 +21,22 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
 use winit::window::CursorGrabMode;
 use math::vector::*;
-use engine::scene::{Model, Scene};
-use engine::camera::Camera;
-use engine::scene;
+use engine::*;
+use engine::world::camera::Camera;
+use engine::world;
 use render::render::MAX_FRAMES_IN_FLIGHT;
+use crate::engine::input::Controller;
+use crate::engine::world::scene::{Model, Scene};
 use crate::render::*;
 use crate::render::render::Renderer;
 
 const PI: f32 = std::f32::consts::PI;
 
 fn main() { unsafe {
-    #[cfg(debug_assertions)] {
-        let mut shader_paths = Vec::new();
-        shader_paths.push("resources\\shaders\\glsl\\geometry");
-        shader_paths.push("resources\\shaders\\glsl\\shadow");
-        shader_paths.push("resources\\shaders\\glsl\\ssao");
-        shader_paths.push("resources\\shaders\\glsl\\bilateral_blur");
-        shader_paths.push("resources\\shaders\\glsl\\lighting");
-        shader_paths.push("resources\\shaders\\glsl\\quad");
-        shader_paths.push("resources\\shaders\\glsl\\text");
-        shader_paths.push("resources\\shaders\\glsl\\composite");
-
-        compile_shaders(shader_paths).expect("Failed to compile shaders");
-    }
-
     let mut base = VkBase::new("ffengine".to_string(), 1920, 1080, MAX_FRAMES_IN_FLIGHT).unwrap();
 
     //let font = Font::new(base, "resources\\fonts\\JetBrainsMono-Bold.ttf", Some(64), Some(2.0));
     //let font = Font::new(base, "resources\\fonts\\MonsieurLaDoulaise-Regular.ttf", Some(128), Some(2.0));
-    let font = Font::new(&base, "resources\\fonts\\Oxygen-Regular.ttf", Some(32), Some(2.0));
 
     let mut world = Scene::new(&base);
 
@@ -57,7 +45,7 @@ fn main() { unsafe {
     world.models[0].animations[0].repeat = true;
     world.models[0].animations[0].start();
 
-    //world.add_model(Model::new("C:\\Graphics\\assets\\flower\\scene.gltf"));
+    //world.add_model(Model::new("C:\\Graphics\\assets\\flower\\world.gltf"));
     //world.models[0].transform_roots(&Vector::new_vec3(0.0, 1.0, 0.0), &Vector::new_vec(0.0), &Vector::new_vec(1.0));
     // world.preload_model(Model::new("C:\\Graphics\\assets\\rivals\\luna\\gltf\\luna.gltf"));
     // world.models[1].animations[0].repeat = true;
@@ -74,37 +62,13 @@ fn main() { unsafe {
 
     world.initialize(&base, MAX_FRAMES_IN_FLIGHT, true);
 
-    let mut renderer = Renderer::new(&base, &world, &font);
+    let mut renderer = Renderer::new(&base, &world);
 
-    let mut player_camera = Camera::new_perspective_rotation(
-        Vector::new_vec3(0.0, 0.0, 0.0),
-        Vector::new_empty(),
-        1.0,
-        0.001,
-        100.0,
-        base.window.inner_size().width as f32 / base.window.inner_size().height as f32,
-        0.001,
-        1000.0,
-        true,
-    );
+    let mut controller = Controller::new(&base.window);
 
     let mut current_frame = 0usize;
-    let mut pressed_keys = HashSet::new();
-    let mut new_pressed_keys = HashSet::new();
-    let mut mouse_delta = (0.0, 0.0);
     let mut last_frame_time = Instant::now();
-    let mut cursor_locked = false;
-    let mut saved_cursor_pos = PhysicalPosition::new(0.0, 0.0);
     let mut needs_resize = false;
-
-    let mut pause_frustum = false;
-    base.window.set_cursor_position(PhysicalPosition::new(
-        base.window.inner_size().width as f32 * 0.5,
-        base.window.inner_size().height as f32 * 0.5))
-        .expect("failed to reset mouse position");
-
-    //let mut screenshot_manager = ScreenshotManager::new(base, &render_engine.lighting_pass.textures[0][0]);
-    let mut screenshot_pending = false;
 
     let mut frametime_manager = FrametimeManager::new(&base);
 
@@ -113,98 +77,22 @@ fn main() { unsafe {
     (*event_loop_ptr).run_on_demand(|event, elwp| {
         elwp.set_control_flow(ControlFlow::Poll);
         match event {
-            //<editor-fold desc = "event handling">
             Event::WindowEvent {
-                event: WindowEvent::CloseRequested,
-                ..
-            } => {
-                elwp.exit();
-            }
-            Event::WindowEvent {
-                event: WindowEvent::Resized( _ ), // _ = new_size
+                event: WindowEvent::Resized( _ ),
                 ..
             } => {
                 base.needs_swapchain_recreate = true;
                 last_resize = Instant::now();
 
-                println!("{}, {}", base.surface_resolution.width, base.surface_resolution.height);
-
-                player_camera.aspect_ratio = base.window.inner_size().width as f32 / base.window.inner_size().height as f32;
+                controller.player_camera.aspect_ratio = base.window.inner_size().width as f32 / base.window.inner_size().height as f32;
                 needs_resize = true;
-            }
-            Event::WindowEvent {
-                event: WindowEvent::KeyboardInput {
-                    event: KeyEvent {
-                        state,
-                        physical_key,
-                        ..
-                    },
-                    ..
-                },
-                ..
-            } => {
-                match state {
-                    ElementState::Pressed => {
-                        if !pressed_keys.contains(&physical_key) { new_pressed_keys.insert(physical_key.clone()); }
-                        pressed_keys.insert(physical_key.clone());
-                    }
-                    ElementState::Released => {
-                        pressed_keys.remove(&physical_key);
-                        new_pressed_keys.remove(&physical_key);
-                    }
-                }
-            }
-            Event::WindowEvent {
-                event: WindowEvent::CursorMoved { position, .. },
-                ..
-            } => {
-                if base.window.has_focus() && cursor_locked {
-                    mouse_delta = (
-                        -position.x as f32 + 0.5 * base.window.inner_size().width as f32,
-                        position.y as f32 - 0.5 * base.window.inner_size().height as f32,
-                    );
-                    base.window.set_cursor_position(PhysicalPosition::new(
-                        base.window.inner_size().width as f32 * 0.5,
-                        base.window.inner_size().height as f32 * 0.5))
-                        .expect("failed to reset mouse position");
-                    do_mouse(&mut player_camera, mouse_delta, &mut cursor_locked);
-                } else {
-                    saved_cursor_pos = position;
-                }
-            }
-            Event::WindowEvent {
-                event: WindowEvent::Focused(true),
-                ..
-            } => {
-                if !cursor_locked {
-                    if let Err(err) = base.window.set_cursor_grab(CursorGrabMode::Confined) {
-                        eprintln!("Cursor lock failed: {:?}", err);
-                    } else {
-                        base.window.set_cursor_visible(false);
-                        cursor_locked = true;
-                    }
-                }
-            }
-            Event::WindowEvent {
-                event: WindowEvent::Focused(false),
-                ..
-            } => {
-                cursor_locked = false;
-                if let Err(err) = base.window.set_cursor_grab(CursorGrabMode::None) {
-                    eprintln!("Cursor unlock failed: {:?}", err);
-                } else {
-                    base.window.set_cursor_visible(true);
-                }
-                base.window.set_cursor_position(saved_cursor_pos).expect("Cursor pos reset failed");
-            }
-            //</editor-fold>
+            },
             Event::AboutToWait => {
-
                 if base.needs_swapchain_recreate {
                     base.set_surface_and_present_images();
 
                     renderer.destroy();
-                    renderer = Renderer::new(&base, &world, &font);
+                    renderer = Renderer::new(&base, &world);
 
                     base.needs_swapchain_recreate = false;
                     frametime_manager.reset();
@@ -213,47 +101,11 @@ fn main() { unsafe {
 
 
 
-
-                frametime_manager.record_cpu_action_start(String::from("deltatime setup"));
-                if !pause_frustum { world.update_sun(&player_camera) };
-                //<editor-fold desc = "frame setup">
                 let now = Instant::now();
                 let delta_time = now.duration_since(last_frame_time).as_secs_f32();
                 last_frame_time = now;
-
-                frametime_manager.record_cpu_action_end();
-                frametime_manager.record_cpu_action_start(String::from("controls"));
-
-                do_controls(
-                    &mut player_camera,
-                    &pressed_keys,
-                    &mut new_pressed_keys,
-                    delta_time,
-                    &mut cursor_locked,
-                    &base,
-                    &mut saved_cursor_pos,
-                    &mut pause_frustum,
-                    &mut screenshot_pending,
-                    &mut world,
-                    &renderer
-                );
-
-                frametime_manager.record_cpu_action_end();
-                frametime_manager.record_cpu_action_start(String::from("update player camera"));
-
-                player_camera.update_matrices();
-                if !pause_frustum {
-                    player_camera.update_frustum()
-                }
-
-                frametime_manager.record_cpu_action_end();
-                frametime_manager.record_cpu_action_start(String::from("update light matrices"));
-
-
-                //</editor-fold>
-
-                frametime_manager.record_cpu_action_end();
-                frametime_manager.record_cpu_action_start(String::from("wait for fence"));
+                
+                controller.do_controls(delta_time);
 
                 let current_fence = base.draw_commands_reuse_fences[current_frame];
                 base.device.wait_for_fences(&[current_fence], true, u64::MAX).expect("wait failed");
@@ -271,10 +123,9 @@ fn main() { unsafe {
                 let current_rendering_complete_semaphore = base.rendering_complete_semaphores[current_frame];
                 let current_draw_command_buffer = base.draw_command_buffers[current_frame];
                 let current_fence = base.draw_commands_reuse_fences[current_frame];
-
-                frametime_manager.record_cpu_action_end();
-                frametime_manager.record_cpu_action_start(String::from("commandbuffer"));
-
+                
+                if !controller.paused { world.update_sun(&controller.player_camera) };
+                
                 record_submit_commandbuffer(
                     &base.device,
                     current_draw_command_buffer,
@@ -287,12 +138,9 @@ fn main() { unsafe {
                         world.update_nodes(frame_command_buffer, current_frame);
                         world.update_lights(frame_command_buffer, current_frame);
 
-                        renderer.render_frame(current_frame, present_index as usize, delta_time, &world, &player_camera);
+                        renderer.render_frame(current_frame, present_index as usize, delta_time, &world, &controller.player_camera);
                     },
                 );
-
-                frametime_manager.record_cpu_action_end();
-                frametime_manager.record_cpu_action_start(String::from("post commandbuffer"));
 
                 let wait_semaphores = [current_rendering_complete_semaphore];
                 let swapchains = [base.swapchain];
@@ -306,44 +154,20 @@ fn main() { unsafe {
                     .queue_present(base.present_queue, &present_info)
                     .unwrap();
 
-                frametime_manager.record_cpu_action_end();
-                if screenshot_pending {
-
-                    frametime_manager.report(&base);
-
-                    /*
-                    base.device.queue_wait_idle(base.present_queue).unwrap();
-
-                    let timestamp = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap()
-                        .as_secs();
-                    let filename = format!("screenshots\\screenshot_{}.png", timestamp);
-
-                    screenshot_manager.save_screenshot(filename);
-                     */
-                    screenshot_pending = false;
-                }
-
                 frametime_manager.reset();
+
                 current_frame = (current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
             },
-            _ => (),
+            _ => controller.handle_event(event, elwp),
         }
     }).expect("Failed to initiate render loop");
 
-
-    println!("Render loop exited successfully, cleaning up");
-
-    //<editor-fold desc = "cleanup">
     base.device.device_wait_idle().unwrap();
 
     renderer.destroy();
 
-    font.destroy();
     world.destroy(&base);
     frametime_manager.destroy(&base);
-    //</editor-fold>
 } }
 
 
@@ -442,13 +266,6 @@ unsafe fn do_controls(
 
     new_pressed_keys.clear();
 } }
-fn do_mouse(player_camera: &mut Camera, mouse_delta: (f32, f32), cursor_locked: &mut bool) {
-    if *cursor_locked {
-        player_camera.rotation.y += player_camera.sensitivity * mouse_delta.0;
-        player_camera.rotation.x += player_camera.sensitivity * mouse_delta.1;
-        player_camera.rotation.x = player_camera.rotation.x.clamp(-PI * 0.5, PI * 0.5);
-    }
-}
 
 pub struct FrametimeManager {
     cpu_actions: Vec<(Instant, Duration, String)>, // Start time, duration, name

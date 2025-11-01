@@ -1,16 +1,17 @@
 use std::slice;
+use std::sync::Arc;
 use std::time::Instant;
 use ash::vk;
 use ash::vk::{DescriptorType, Format, Sampler, ShaderStageFlags};
-use crate::engine::camera::Camera;
-use crate::engine::scene::Scene;
+use crate::engine::world::camera::Camera;
+use crate::engine::world::scene::Scene;
 use crate::math::Vector;
 use crate::render::*;
 use crate::render::scene_renderer::SceneRenderer;
 
 pub const MAX_FRAMES_IN_FLIGHT: usize = 3;
 
-pub struct Renderer<'a> {
+pub struct Renderer {
     pub device: ash::Device,
     pub draw_command_buffers: Vec<vk::CommandBuffer>,
 
@@ -21,12 +22,14 @@ pub struct Renderer<'a> {
     pub text_renderer: TextRenderer,
 
     pub last_fps_render: Instant,
-    pub fps_tex: TextInformation<'a>,
+    pub fps_tex: TextInformation,
 
     pub present_sampler: Sampler,
 }
-impl Renderer<'_> {
-    pub unsafe fn new<'a>(base: &VkBase, world: &Scene, default_font: &'a Font) -> Renderer<'a> { unsafe {
+impl Renderer {
+    pub unsafe fn new(base: &VkBase, world: &Scene) -> Renderer { unsafe {
+        Renderer::compile_shaders();
+
         let present_pass_create_info = PassCreateInfo::new(base)
             .set_is_present_pass(true);
         let texture_sampler_create_info = DescriptorCreateInfo::new(base)
@@ -49,7 +52,9 @@ impl Renderer<'_> {
             .pass_create_info(compositing_pass_create_info)
             .descriptor_set_create_info(compositing_descriptor_set_create_info)
             .vertex_shader_uri(String::from("quad\\quad.vert.spv"))
-            .fragment_shader_uri(String::from("composite\\composite.frag.spv")) };
+            .fragment_shader_uri(String::from("composite.frag.spv")) };
+
+        let font = Font::new(&base, "resources\\fonts\\Oxygen-Regular.ttf", Some(32), Some(2.0));
 
         let renderer = Renderer {
             device: base.device.clone(),
@@ -62,7 +67,7 @@ impl Renderer<'_> {
             text_renderer: TextRenderer::new(base),
 
             last_fps_render: Instant::now(),
-            fps_tex: TextInformation::new(&default_font)
+            fps_tex: TextInformation::new(Arc::new(font))
                 .text("making this text long is one way to force the buffers to be large enough...")
                 .position(Vector::new_vec2(100.0, 100.0))
                 .font_size(32.0)
@@ -96,6 +101,12 @@ impl Renderer<'_> {
 
         renderer
     } }
+
+    pub unsafe fn compile_shaders() {
+        #[cfg(debug_assertions)] {
+            compile_shaders("resources\\shaders\\glsl").expect("Failed to compile shaders");
+        }
+    }
 
     pub unsafe fn set_present_textures(&self, texture_set: Vec<&Texture>) { unsafe {
         for current_frame in 0..MAX_FRAMES_IN_FLIGHT {
@@ -148,7 +159,6 @@ impl Renderer<'_> {
         self.scene_renderer.render_world(current_frame, &world, &player_camera);
 
         self.compositing_renderpass.do_renderpass(current_frame, frame_command_buffer, None::<fn()>, None::<fn()>, None);
-
         self.present_renderpass.begin_renderpass(current_frame, frame_command_buffer, Some(present_index));
         self.device.cmd_draw(frame_command_buffer, 6, 1, 0, 0);
         self.device.cmd_end_render_pass(frame_command_buffer);

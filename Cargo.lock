@@ -553,7 +553,7 @@ dependencies = [
  "rand 0.10.0-rc.0",
  "rayon",
  "serde_json",
- "ttf-parser",
+ "walkdir",
  "winit",
 ]
 

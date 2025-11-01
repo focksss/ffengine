@@ -4,5 +4,5 @@ pub mod scene_renderer;
 pub mod render;
 
 pub use render_helper::*;
-pub use crate::engine::vk_helper::*;
+pub use crate::engine::vulkan_base::*;
 pub use text_render::*;

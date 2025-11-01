@@ -9,7 +9,7 @@ use ash::vk;
 use ash::vk::{CommandBuffer, DeviceMemory, ImageView, Sampler};
 use json::JsonValue;
 use crate::math::matrix::Matrix;
-use crate::engine::camera::{Camera, Frustum};
+use crate::engine::world::camera::{Camera, Frustum};
 use crate::render::*;
 use crate::math::vector::Vector;
 use crate::render::scene_renderer::SHADOW_RES;
@@ -1108,7 +1108,7 @@ impl Model {
         let mut scenes = Vec::new();
         for scene in json["scenes"].members() {
             let name_maybe: Option<&str> = scene["name"].as_str();
-            let mut name = String::from("unnamed scene");
+            let mut name = String::from("unnamed world");
             match name_maybe {
                 Some(name_str) => name = String::from(name_str),
                 None => (),
@@ -1129,7 +1129,7 @@ impl Model {
             )
         }
 
-        let scene = scenes[json["scene"].as_usize().unwrap_or(0)].clone();
+        let scene = scenes[json["world"].as_usize().unwrap_or(0)].clone();
 
 
 

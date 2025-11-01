@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use std::process::Command;
 use ash::vk;
 use std::ptr::null_mut;
+use std::sync::Arc;
 use ash::vk::{CommandBuffer, DescriptorType, DeviceMemory, Format, SampleCountFlags, Sampler, ShaderStageFlags};
 use serde_json::Value;
 use crate::offset_of;
@@ -129,7 +130,7 @@ impl TextRenderer {
     } }
 
     pub unsafe fn render_text(&self, frame: usize, text_info: &TextInformation) { unsafe {
-        let font = text_info.font;
+        let font = text_info.font.clone();
         let frame_command_buffer = self.draw_command_buffers[frame];
         let device = &self.device;
         // <editor-fold desc = "descriptor updates">
@@ -185,10 +186,10 @@ impl TextRenderer {
         }), None)
     } }
 }
-pub struct TextInformation<'a> {
+pub struct TextInformation {
     device: ash::Device,
 
-    font: &'a Font,
+    font: Arc<Font>,
     text: String,
     position: Vector,
     font_size: f32,
@@ -204,11 +205,11 @@ pub struct TextInformation<'a> {
     pub index_buffer: Vec<(vk::Buffer, DeviceMemory)>,
     pub index_staging_buffer: (vk::Buffer, DeviceMemory, *mut c_void),
 }
-impl<'a> TextInformation<'a> {
-    pub fn new(font: &'a Font) -> TextInformation<'a> {
+impl TextInformation {
+    pub fn new(font: Arc<Font>) -> TextInformation {
         TextInformation {
-            font,
             device: font.device.clone(),
+            font,
 
             text: String::new(),
             position: Vector::new_empty(),
@@ -554,6 +555,11 @@ impl Font {
         self.texture.destroy();
         self.device.destroy_sampler(self.sampler, None);
     } }
+}
+impl Drop for Font {
+    fn drop(&mut self) {
+        unsafe { self.destroy() }
+    }
 }
 
 #[derive(Debug)]

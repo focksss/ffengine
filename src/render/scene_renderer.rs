@@ -1,15 +1,16 @@
-use crate::engine::camera::Camera;
+use crate::engine::world::camera::Camera;
 use crate::math::*;
 use crate::offset_of;
 use crate::render::render::MAX_FRAMES_IN_FLIGHT;
 use crate::render::*;
-use crate::scene::*;
+use crate::world::*;
 use crate::mem;
 use ash::vk;
 use ash::vk::{DescriptorType, Format, ShaderStageFlags};
 use rand::{rng, Rng};
 use std::path::PathBuf;
 use std::slice;
+use crate::engine::world::scene::{Instance, Scene, SunSendable, Vertex};
 
 const SSAO_KERNAL_SIZE: usize = 16;
 const SSAO_RESOLUTION_MULTIPLIER: f32 = 0.5;
@@ -539,7 +540,7 @@ impl SceneRenderer {
             .pass_create_info(lighting_pass_create_info)
             .descriptor_set_create_info(lighting_descriptor_set_create_info)
             .vertex_shader_uri(String::from("quad\\quad.vert.spv"))
-            .fragment_shader_uri(String::from("lighting\\lighting.frag.spv"))
+            .fragment_shader_uri(String::from("lighting.frag.spv"))
             .push_constant_range(camera_push_constant_range_fragment) };
         let lighting_renderpass = Renderpass::new(lighting_renderpass_create_info);
 

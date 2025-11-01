@@ -1,3 +1,3 @@
-pub mod camera;
-pub mod scene;
-pub mod vk_helper;
+pub mod world;
+pub mod vulkan_base;
+pub(crate) mod input;

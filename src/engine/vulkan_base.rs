@@ -12,6 +12,7 @@ use ash::{
     vk, Device, Entry, Instance,
 };
 use ash::vk::{Buffer, CommandBuffer, DeviceMemory, Extent3D, Format, Image, ImageAspectFlags, ImageSubresourceLayers, ImageSubresourceRange, ImageUsageFlags, ImageView, MemoryPropertyFlags, Offset3D, Sampler, SurfaceFormatKHR, SwapchainKHR};
+use walkdir::WalkDir;
 use winit::{event_loop::EventLoop, raw_window_handle::{HasDisplayHandle, HasWindowHandle}, window::WindowBuilder};
 
 // Simple offset_of macro akin to C++ offsetof
@@ -469,6 +470,36 @@ impl VkBase {
             })
         }
     }
+    pub fn destroy(&self) { unsafe {
+        self.device.device_wait_idle().unwrap();
+        for &present_complete_semaphore in &self.present_complete_semaphores {
+            self.device
+                .destroy_semaphore(present_complete_semaphore, None);
+        }
+        for &rendering_complete_semaphore in &self.rendering_complete_semaphores {
+            self.device
+                .destroy_semaphore(rendering_complete_semaphore, None);
+        }
+        for &draw_command_reuse_fence in &self.draw_commands_reuse_fences {
+            self.device
+                .destroy_fence(draw_command_reuse_fence, None);
+        }
+        self.device
+            .destroy_fence(self.setup_commands_reuse_fence, None);
+
+        for &image_view in self.present_image_views.iter() {
+            self.device.destroy_image_view(image_view, None);
+        }
+        self.device.destroy_command_pool(self.pool, None);
+        self.swapchain_loader
+            .destroy_swapchain(self.swapchain, None);
+        self.device.destroy_device(None);
+        self.surface_loader.destroy_surface(self.surface, None);
+        self.debug_utils_loader
+            .destroy_debug_utils_messenger(self.debug_call_back, None);
+        self.instance.destroy_instance(None);
+    } }
+
     pub unsafe fn set_surface_and_present_images(&mut self) {
         self.device.device_wait_idle().unwrap();
 
@@ -1442,73 +1473,49 @@ pub unsafe fn copy_data_to_memory<T: Copy>(dst: *mut c_void, data: &[T]) { unsaf
     );
 } }
 
-pub fn compile_shaders(shader_directories: Vec<&str>) -> io::Result<()> {
-    for shader_directory in shader_directories {
-        let shader_directory_path = Path::new(&shader_directory);
+pub fn compile_shaders(base_dir: &str) -> io::Result<()> {
+    let base_path = Path::new(base_dir);
 
-        let spv_dest_str = shader_directory.replace("shaders\\glsl", "shaders\\spv");
-        let spv_dest = Path::new(&spv_dest_str);
+    for entry in WalkDir::new(base_path)
+        .into_iter()
+        .filter_map(Result::ok)
+        .filter(|e| e.file_type().is_file())
+    {
+        let path = entry.path();
+        if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
+            if ext == "vert" || ext == "frag" || ext == "geom" {
+                let spv_path_str = path
+                    .to_string_lossy()
+                    .replace("shaders\\glsl", "shaders\\spv")
+                    .replace("shaders/glsl", "shaders/spv");
+                let spv_path = PathBuf::from(format!("{}.spv", spv_path_str));
 
-        if !spv_dest.exists() {
-            if shader_directory_path.is_dir() {
-                println!("Creating folder: {:?}", spv_dest);
-                fs::create_dir_all(&spv_dest)?;
-            } else if shader_directory_path.is_file() {
-                println!("Creating file: {:?}", spv_dest);
-            }
-        }
-        if shader_directory_path.is_dir() {
-            for shader in fs::read_dir(shader_directory_path)? {
-                let shader = shader?;
-                let path = shader.path();
-
-                if path.is_file() {
-                    if let Some(ext) = path.extension() {
-                        if ext == "vert" || ext == "frag" || ext == "geom" {
-                            let file_name = path.file_name().unwrap().to_string_lossy();
-                            let spv_file = spv_dest.join(format!("{}.spv", file_name));
-
-                            let glsl_modified = path.metadata()?.modified()?;
-                            let spv: Result<Metadata, _> = spv_file.metadata();
-                            if spv.is_err() || glsl_modified > spv?.modified()? {
-                                println!("RECOMPILING:\n    {}", spv_file.display());
-                                let compile_cmd = Command::new("glslc")
-                                    .arg(&path)
-                                    .arg("-o")
-                                    .arg(&spv_file)
-                                    .status()?;
-                                if !compile_cmd.success() {
-                                    println!("Shader compilation failed");
-                                }
-                            }
-                        }
-                    }
+                if let Some(parent) = spv_path.parent() {
+                    fs::create_dir_all(parent)?;
                 }
-            }
-        } else {
-            let path = PathBuf::from(shader_directory_path);
-            if path.is_file() {
-                if let Some(ext) = path.extension() {
-                    if ext == "vert" || ext == "frag" || ext == "geom" {
-                        let spv_file = PathBuf::from(format!("{}{}", spv_dest.to_string_lossy(), ".spv"));
-                        let glsl_modified = path.metadata()?.modified()?;
-                        let spv: Result<Metadata, _> = spv_file.metadata();
-                        if spv.is_err() || glsl_modified > spv?.modified()? {
-                            println!("RECOMPILING:\n    {}", spv_file.display());
-                            let compile_cmd = Command::new("glslc")
-                                .arg(&path)
-                                .arg("-o")
-                                .arg(&spv_file)
-                                .status()?;
-                            if !compile_cmd.success() {
-                                println!("Shader compilation failed");
-                            }
-                        }
+
+                let glsl_modified = path.metadata()?.modified()?;
+                let needs_recompile = match spv_path.metadata() {
+                    Ok(spv_meta) => glsl_modified > spv_meta.modified()?,
+                    Err(_) => true,
+                };
+
+                if needs_recompile {
+                    println!("RECOMPILING:\n    {}", spv_path.display());
+                    let status = Command::new("glslc")
+                        .arg(path)
+                        .arg("-o")
+                        .arg(&spv_path)
+                        .status()?;
+
+                    if !status.success() {
+                        eprintln!("Shader compilation failed: {}", path.display());
                     }
                 }
             }
         }
     }
+
     Ok(())
 }
 pub fn load_file(path: &str) -> io::Result<Vec<u8>> {
