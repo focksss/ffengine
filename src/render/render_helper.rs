@@ -88,13 +88,6 @@ impl Renderpass {
         }
     } }
 
-    pub fn get_pass_begin_info(&self, current_frame: usize, framebuffer_index: Option<usize>) -> vk::RenderPassBeginInfo {
-        vk::RenderPassBeginInfo::default()
-            .render_pass(self.pass.renderpass)
-            .framebuffer(self.pass.framebuffers[framebuffer_index.unwrap_or(current_frame)])
-            .render_area(self.scissor)
-            .clear_values(&self.pass.clear_values)
-    }
     /**
     * Defaults to rendering a fullscreen quad with no push constant
     */
@@ -119,7 +112,7 @@ impl Renderpass {
         let device = &self.device;
         device.cmd_begin_render_pass(
             command_buffer,
-            &self.get_pass_begin_info(current_frame, framebuffer_index),
+            &self.pass.get_pass_begin_info(current_frame, framebuffer_index, self.scissor),
             vk::SubpassContents::INLINE,
         );
         device.cmd_bind_pipeline(
@@ -498,6 +491,14 @@ impl Pass {
             clear_values
         }
     } }
+
+    pub fn get_pass_begin_info(&self, current_frame: usize, framebuffer_index: Option<usize>, scissor: vk::Rect2D) -> vk::RenderPassBeginInfo {
+        vk::RenderPassBeginInfo::default()
+            .render_pass(self.renderpass)
+            .framebuffer(self.framebuffers[framebuffer_index.unwrap_or(current_frame)])
+            .render_area(scissor)
+            .clear_values(&self.clear_values)
+    }
 
     pub unsafe fn transition_to_readable(&self, command_buffer: vk::CommandBuffer, frame: usize) { unsafe {
         for tex_idx in 0..self.textures[frame].len() {

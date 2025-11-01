@@ -10,6 +10,7 @@ use std::ptr::null_mut;
 use std::sync::Arc;
 use ash::vk::{CommandBuffer, DescriptorType, DeviceMemory, Format, SampleCountFlags, Sampler, ShaderStageFlags};
 use serde_json::Value;
+use crate::engine::world::scene::Scene;
 use crate::offset_of;
 use crate::math::Vector;
 use crate::render::*;
@@ -21,10 +22,12 @@ pub struct TextRenderer {
     pub draw_command_buffers: Vec<CommandBuffer>,
     pub device: ash::Device,
     pub renderpass: Renderpass,
+
+    pub default_font: Arc<Font>,
     sampler: Sampler,
 }
 impl TextRenderer {
-    pub unsafe fn new(base: &VkBase) -> TextRenderer { unsafe {
+    pub unsafe fn new(base: &VkBase, pass_ref: Option<Arc<Pass>>) -> TextRenderer { unsafe {
         let sampler = base.device.create_sampler(&vk::SamplerCreateInfo {
             mag_filter: vk::Filter::LINEAR,
             min_filter: vk::Filter::LINEAR,
@@ -34,10 +37,12 @@ impl TextRenderer {
             border_color: vk::BorderColor::FLOAT_OPAQUE_WHITE,
             ..Default::default()
         }, None).unwrap();
+        let default_font = Arc::new(Font::new(&base, "resources\\fonts\\Oxygen-Regular.ttf", Some(32), Some(2.0)));
         TextRenderer {
             draw_command_buffers: base.draw_command_buffers.clone(),
             device: base.device.clone(),
-            renderpass: Self::create_text_renderpass(base, None),
+            renderpass: Self::create_text_renderpass(base, default_font.clone(), pass_ref),
+            default_font: default_font.clone(),
             sampler,
         }
     } }
@@ -46,21 +51,27 @@ impl TextRenderer {
         self.device.destroy_sampler(self.sampler, None);
     } }
 
-    pub unsafe fn create_text_renderpass(base: &VkBase, pass_ref: Option<Arc<Pass>>) -> Renderpass { unsafe {
+    pub unsafe fn create_text_renderpass(base: &VkBase, default_font: Arc<Font>, pass_ref: Option<Arc<Pass>>) -> Renderpass { unsafe {
         let color_tex_create_info = TextureCreateInfo::new(base).format(Format::R8G8B8A8_UNORM);
         let pass_create_info = PassCreateInfo::new(base)
             .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
             .add_color_attachment_info(color_tex_create_info.add_usage_flag(vk::ImageUsageFlags::TRANSFER_SRC));
-        //</editor-fold>
         //<editor-fold desc = "descriptor set">
-        let texture_sampler_create_info = DescriptorCreateInfo::new(base)
-            .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
+        let image_infos: Vec<vk::DescriptorImageInfo> = vec![vk::DescriptorImageInfo {
+            image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            image_view: default_font.texture.image_view,
+            sampler: default_font.sampler,
+            ..Default::default()
+        }; 10];
+        let atlas_samplers_create_info = DescriptorCreateInfo::new(base)
             .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
             .shader_stages(ShaderStageFlags::FRAGMENT)
-            .binding_flags(vk::DescriptorBindingFlags::UPDATE_AFTER_BIND);
+            .dynamic(true)
+            .image_infos(image_infos.clone());
+
         let descriptor_set_create_info = DescriptorSetCreateInfo::new(base)
             .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
-            .add_descriptor(Descriptor::new(&texture_sampler_create_info));
+            .add_descriptor(Descriptor::new(&atlas_samplers_create_info));
         //</editor-fold>
 
         let push_constant_range = vk::PushConstantRange {
@@ -132,25 +143,51 @@ impl TextRenderer {
         Renderpass::new(renderpass_create_info)
     } }
 
+    pub fn update_font_atlases_all_frames(&self, fonts: Vec<Arc<Font>>) {
+        for frame in 0..MAX_FRAMES_IN_FLIGHT {
+            self.update_font_atlases(&fonts, frame);
+        }
+    }
+    pub fn update_font_atlases(&self, fonts: &Vec<Arc<Font>>, frame: usize) { unsafe {
+        let mut image_infos: Vec<vk::DescriptorImageInfo> = Vec::with_capacity(10);
+        for font in fonts {
+            image_infos.push(vk::DescriptorImageInfo {
+                image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                image_view: font.texture.image_view,
+                sampler: font.sampler,
+                ..Default::default()
+            });
+        }
+        let missing = 10 - image_infos.len();
+        for _ in 0..missing {
+            image_infos.push(vk::DescriptorImageInfo {
+                image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                image_view: self.default_font.texture.image_view,
+                sampler: self.default_font.sampler,
+                ..Default::default()
+            });
+        }
+        let image_infos = image_infos.as_slice().as_ptr();
+
+        let descriptor_write = vk::WriteDescriptorSet {
+            s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
+            dst_set: self.renderpass.descriptor_set.descriptor_sets[frame],
+            dst_binding: 0,
+            dst_array_element: 0,
+            descriptor_type: DescriptorType::COMBINED_IMAGE_SAMPLER,
+            descriptor_count: 10,
+            p_image_info: image_infos,
+            ..Default::default()
+        };
+        self.device.update_descriptor_sets(&[descriptor_write], &[]);
+    }}
+
     pub unsafe fn render_text(&self, frame: usize, text_info: &TextInformation) { unsafe {
         let font = text_info.font.clone();
         let frame_command_buffer = self.draw_command_buffers[frame];
         let device = &self.device;
-        // <editor-fold desc = "descriptor updates">
-        for current_frame in 0..MAX_FRAMES_IN_FLIGHT {
-            let image_info = vk::DescriptorImageInfo {
-                sampler: self.sampler,
-                image_view: font.texture.image_view,
-                image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-            };
-            let descriptor_write = vk::WriteDescriptorSet::default()
-                .dst_set(self.renderpass.descriptor_set.descriptor_sets[current_frame])
-                .dst_binding(0u32)
-                .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
-                .image_info(slice::from_ref(&image_info));
-            self.device.update_descriptor_sets(&[descriptor_write], &[]);
-        }
-        //</editor-fold>
+
+        self.update_font_atlases(&vec![font.clone()], frame);
         
         self.renderpass.do_renderpass(frame, frame_command_buffer, Some(|| {
             device.cmd_push_constants(frame_command_buffer, self.renderpass.pipeline_layout, ShaderStageFlags::ALL_GRAPHICS, 0, slice::from_raw_parts(
@@ -161,7 +198,8 @@ impl TextRenderer {
                     resolution: [self.renderpass.viewport.width as i32, self.renderpass.viewport.height as i32],
                     glyph_size: font.glyph_size,
                     distance_range: font.distance_range,
-                    _pad: [0; 2]
+                    font_index: 0,
+                    _pad: [0; 1]
                 } as *const TextPushConstants as *const u8,
                 size_of::<TextPushConstants>(),
             ))
@@ -188,11 +226,57 @@ impl TextRenderer {
             )
         }), None)
     } }
+    /**
+    * Font index of each TexInformation must be the index of the correct font in the most recently bound font_atlas vector.
+
+    * This function will not begin the renderpass, it assumes that the pass is already being recorded for.
+    */
+    pub unsafe fn draw_texts(&self, frame: usize, text_infos: Vec<&TextInformation>) { unsafe {
+        let frame_command_buffer = self.draw_command_buffers[frame];
+        let device = &self.device;
+
+        for text_info in text_infos {
+            device.cmd_push_constants(frame_command_buffer, self.renderpass.pipeline_layout, ShaderStageFlags::ALL_GRAPHICS, 0, slice::from_raw_parts(
+                &TextPushConstants {
+                    clip_min: Vector::new_vec(0.0).to_array2(),
+                    clip_max: Vector::new_vec2(1920.0, 1080.0).to_array2(),
+                    position: text_info.position.to_array2(),
+                    resolution: [self.renderpass.viewport.width as i32, self.renderpass.viewport.height as i32],
+                    glyph_size: text_info.font.glyph_size,
+                    distance_range: text_info.font.distance_range,
+                    font_index: text_info.font_index.unwrap_or(0),
+                    _pad: [0; 1]
+                } as *const TextPushConstants as *const u8,
+                size_of::<TextPushConstants>(),
+            ));
+            device.cmd_bind_vertex_buffers(
+                frame_command_buffer,
+                0,
+                &[text_info.vertex_buffer[frame].0],
+                &[0],
+            );
+            device.cmd_bind_index_buffer(
+                frame_command_buffer,
+                text_info.index_buffer[frame].0,
+                0,
+                vk::IndexType::UINT32,
+            );
+            device.cmd_draw_indexed(
+                frame_command_buffer,
+                text_info.glyph_count * 6u32,
+                1,
+                0u32,
+                0,
+                0,
+            )
+        }
+    } }
 }
 pub struct TextInformation {
     device: ash::Device,
 
     font: Arc<Font>,
+    font_index: Option<u32>,
     text: String,
     position: Vector,
     font_size: f32,
@@ -213,6 +297,7 @@ impl TextInformation {
         TextInformation {
             device: font.device.clone(),
             font,
+            font_index: None,
 
             text: String::new(),
             position: Vector::new_empty(),
@@ -442,7 +527,8 @@ struct TextPushConstants {
     resolution: [i32; 2],
     glyph_size: u32,
     distance_range: f32,
-    _pad: [u32; 2],
+    font_index: u32,
+    _pad: [u32; 1],
 }
 
 pub struct Font {

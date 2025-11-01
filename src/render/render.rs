@@ -65,7 +65,7 @@ impl Renderer {
             compositing_renderpass: Renderpass::new(compositing_renderpass_create_info),
 
             scene_renderer: SceneRenderer::new(base, world),
-            text_renderer: TextRenderer::new(base),
+            text_renderer: TextRenderer::new(base, None),
 
             last_fps_render: Instant::now(),
             fps_tex: TextInformation::new(Arc::new(font))

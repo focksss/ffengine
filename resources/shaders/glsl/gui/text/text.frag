@@ -8,7 +8,8 @@ layout (location = 0) out vec4 frag_color;
 layout (location = 0) in vec2 uv;
 layout (location = 1) in vec4 color;
 layout (location = 2) in vec2 pos;
-layout(set = 0, binding = 0) uniform sampler2D atlas;
+
+layout(set = 0, binding = 0) uniform sampler2D atlases[];
 
 layout(push_constant) uniform constants {
     vec2 min;
@@ -17,6 +18,7 @@ layout(push_constant) uniform constants {
     ivec2 resolution;
     int glyph_size;
     float distance_range;
+    uint font_index;
 } ubo;
 
 float median(float r, float g, float b) {
@@ -28,7 +30,7 @@ void main() {
     if (frag_pos.x < ubo.max.x && frag_pos.x > ubo.min.x) {
         if (frag_pos.y < ubo.max.y && frag_pos.y > ubo.min.y) {
 
-            vec3 msd = texture(atlas, uv).rgb;
+            vec3 msd = texture(atlases[font_index], uv).rgb;
             float sd = median(msd.r, msd.g, msd.b);
 
             float screen_px_range = ubo.distance_range * float(ubo.resolution.y) / float(ubo.glyph_size);

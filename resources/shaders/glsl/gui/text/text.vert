@@ -17,6 +17,7 @@ layout(push_constant) uniform constants {
     ivec2 resolution;
     int glyph_size;
     float distance_range;
+    uint font_index;
 } ubo;
 
 void main() {
