@@ -5,6 +5,7 @@ use ash::vk;
 use ash::vk::{DescriptorType, Format, Sampler, ShaderStageFlags};
 use crate::engine::world::camera::Camera;
 use crate::engine::world::scene::Scene;
+use crate::gui::gui::{GUINode, GUIQuad, GUIText, GUI};
 use crate::math::Vector;
 use crate::render::*;
 use crate::render::scene_renderer::SceneRenderer;
@@ -19,10 +20,9 @@ pub struct Renderer {
     pub compositing_renderpass: Renderpass,
 
     pub scene_renderer: SceneRenderer,
-    pub text_renderer: TextRenderer,
+    pub gui: GUI,
 
     pub last_fps_render: Instant,
-    pub fps_tex: TextInformation,
 
     pub present_sampler: Sampler,
 }
@@ -55,9 +55,7 @@ impl Renderer {
             .vertex_shader_uri(String::from("quad\\quad.vert.spv"))
             .fragment_shader_uri(String::from("composite.frag.spv")) };
 
-        let font = Font::new(&base, "resources\\fonts\\Oxygen-Regular.ttf", Some(32), Some(2.0));
-
-        let renderer = Renderer {
+        let mut renderer = Renderer {
             device: base.device.clone(),
             draw_command_buffers: base.draw_command_buffers.clone(),
 
@@ -65,15 +63,9 @@ impl Renderer {
             compositing_renderpass: Renderpass::new(compositing_renderpass_create_info),
 
             scene_renderer: SceneRenderer::new(base, world),
-            text_renderer: TextRenderer::new(base, None),
+            gui: GUI::new(base),
 
             last_fps_render: Instant::now(),
-            fps_tex: TextInformation::new(Arc::new(font))
-                .text("making this text long is one way to force the buffers to be large enough...")
-                .position(Vector::new_vec2(100.0, 100.0))
-                .font_size(32.0)
-                .newline_distance(1720.0)
-                .set_buffers(&base),
 
             present_sampler: base.device.create_sampler(&vk::SamplerCreateInfo {
                 mag_filter: vk::Filter::LINEAR,
@@ -86,19 +78,45 @@ impl Renderer {
             }, None).unwrap()
         };
 
-        renderer.set_present_textures(renderer.compositing_renderpass.pass.textures.iter().map(|frame_textures| {
+        renderer.set_present_textures(renderer.compositing_renderpass.pass.borrow().textures.iter().map(|frame_textures| {
             &frame_textures[0]
         }).collect::<Vec<&Texture>>());
 
         renderer.set_compositing_textures(vec![
-            renderer.scene_renderer.lighting_renderpass.pass.textures.iter().map(|frame_textures| {
+            renderer.scene_renderer.lighting_renderpass.pass.borrow().textures.iter().map(|frame_textures| {
                 &frame_textures[0]
             }).collect::<Vec<&Texture>>(),
-            renderer.text_renderer.renderpass.pass.textures.iter().map(|frame_textures| {
+            renderer.gui.pass.borrow().textures.iter().map(|frame_textures| {
                 &frame_textures[0]
             }).collect::<Vec<&Texture>>()
         ]);
         renderer.scene_renderer.update_world_textures_all_frames(&base, &world);
+
+        renderer.gui.gui_nodes.push(GUINode {
+            name: "fps tex".to_string(),
+            position: Vector::new_vec2(100.0, 100.0),
+            scale: Vector::new_vec2(500.0, 200.0),
+            children_indices: vec![],
+            absolute_position: true,
+            absolute_scale: true,
+            text: Some(TextInformation::new(renderer.gui.fonts[0].clone())
+                    .text("making this text long is one way to force the buffers to be large enough...")
+                    .position(Vector::new_vec2(100.0, 100.0))
+                    .font_size(32.0)
+                    .newline_distance(1720.0)
+                    .set_buffers(&base)
+            ),
+            quad: Some(GUIQuad {
+                position: Vector::new_vec(0.0),
+                scale: Vector::new_vec(1.0),
+                clip_min: Vector::new_vec(0.0),
+                clip_max: Vector::new_vec(1.0),
+                absolute_position: false,
+                absolute_scale: false,
+                color: Vector::new_vec(0.5),
+            }),
+        });
+        renderer.gui.gui_root_node_indices.push(0);
 
         renderer
     } }
@@ -150,12 +168,11 @@ impl Renderer {
         let frame_command_buffer = self.draw_command_buffers[current_frame];
 
         if self.last_fps_render.elapsed().as_secs_f32() > 0.1 {
-            self.fps_tex.update_text(format!("FPS: {}", 1.0 / delta_time).as_str());
-            self.fps_tex.update_buffers_all_frames(frame_command_buffer);
+            self.gui.update_text_of_node(0, format!("FPS: {}", 1.0 / delta_time).as_str(), frame_command_buffer);
             self.last_fps_render = Instant::now();
         }
 
-        self.text_renderer.render_text(current_frame, &self.fps_tex);
+        self.gui.draw(current_frame, frame_command_buffer);
 
         self.scene_renderer.render_world(current_frame, &world, &player_camera);
 
@@ -167,8 +184,7 @@ impl Renderer {
 
     pub unsafe fn destroy(&mut self) { unsafe {
         self.scene_renderer.destroy();
-        self.text_renderer.destroy();
-        self.fps_tex.destroy();
+        self.gui.destroy();
         self.compositing_renderpass.destroy();
         self.present_renderpass.destroy();
         self.device.destroy_sampler(self.present_sampler, None);

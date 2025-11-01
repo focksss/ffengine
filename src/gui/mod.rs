@@ -1,1 +1,1 @@
-mod gui;
+pub mod gui;

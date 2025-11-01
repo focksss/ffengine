@@ -30,7 +30,7 @@ void main() {
     if (frag_pos.x < ubo.max.x && frag_pos.x > ubo.min.x) {
         if (frag_pos.y < ubo.max.y && frag_pos.y > ubo.min.y) {
 
-            vec3 msd = texture(atlases[font_index], uv).rgb;
+            vec3 msd = texture(atlases[ubo.font_index], uv).rgb;
             float sd = median(msd.r, msd.g, msd.b);
 
             float screen_px_range = ubo.distance_range * float(ubo.resolution.y) / float(ubo.glyph_size);

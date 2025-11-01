@@ -569,42 +569,42 @@ impl SceneRenderer {
             let image_infos = [
                 vk::DescriptorImageInfo {
                     sampler,
-                    image_view: geometry_renderpass.pass.textures[current_frame][0].image_view,
+                    image_view: geometry_renderpass.pass.borrow().textures[current_frame][0].image_view,
                     image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                 }, // material
                 vk::DescriptorImageInfo {
                     sampler,
-                    image_view: geometry_renderpass.pass.textures[current_frame][1].image_view,
+                    image_view: geometry_renderpass.pass.borrow().textures[current_frame][1].image_view,
                     image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                 }, // albedo
                 vk::DescriptorImageInfo {
                     sampler,
-                    image_view: geometry_renderpass.pass.textures[current_frame][2].image_view,
+                    image_view: geometry_renderpass.pass.borrow().textures[current_frame][2].image_view,
                     image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                 }, // metallic roughness
                 vk::DescriptorImageInfo {
                     sampler,
-                    image_view: geometry_renderpass.pass.textures[current_frame][3].image_view,
+                    image_view: geometry_renderpass.pass.borrow().textures[current_frame][3].image_view,
                     image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                 }, // extra properties
                 vk::DescriptorImageInfo {
                     sampler,
-                    image_view: geometry_renderpass.pass.textures[current_frame][5].image_view,
+                    image_view: geometry_renderpass.pass.borrow().textures[current_frame][5].image_view,
                     image_layout: vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
                 }, // depth
                 vk::DescriptorImageInfo {
                     sampler,
-                    image_view: geometry_renderpass.pass.textures[current_frame][4].image_view,
+                    image_view: geometry_renderpass.pass.borrow().textures[current_frame][4].image_view,
                     image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                 }, // view normal
                 vk::DescriptorImageInfo {
                     sampler,
-                    image_view: shadow_renderpass.pass.textures[current_frame][0].image_view,
+                    image_view: shadow_renderpass.pass.borrow().textures[current_frame][0].image_view,
                     image_layout: vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
                 }, // shadow map
                 vk::DescriptorImageInfo {
                     sampler,
-                    image_view: ssao_blur_renderpass_upsample.pass.textures[current_frame][0].image_view,
+                    image_view: ssao_blur_renderpass_upsample.pass.borrow().textures[current_frame][0].image_view,
                     image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                 }, // ssao tex (final)
             ];
@@ -621,12 +621,12 @@ impl SceneRenderer {
             let image_infos = [
                 vk::DescriptorImageInfo {
                     sampler,
-                    image_view: geometry_renderpass.pass.textures[current_frame][5].image_view,
+                    image_view: geometry_renderpass.pass.borrow().textures[current_frame][5].image_view,
                     image_layout: vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
                 }, // geometry depth
                 vk::DescriptorImageInfo {
                     sampler,
-                    image_view: geometry_renderpass.pass.textures[current_frame][4].image_view,
+                    image_view: geometry_renderpass.pass.borrow().textures[current_frame][4].image_view,
                     image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                 }, // view normal
             ];
@@ -643,7 +643,7 @@ impl SceneRenderer {
             let image_infos = [
                 vk::DescriptorImageInfo {
                     sampler,
-                    image_view: ssao_pre_downsample_renderpass.pass.textures[current_frame][0].image_view,
+                    image_view: ssao_pre_downsample_renderpass.pass.borrow().textures[current_frame][0].image_view,
                     image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                 }, // downsampled normal + depth
                 vk::DescriptorImageInfo {
@@ -665,22 +665,22 @@ impl SceneRenderer {
             let image_infos = [
                 vk::DescriptorImageInfo {
                     sampler,
-                    image_view: ssao_renderpass.pass.textures[current_frame][0].image_view,
+                    image_view: ssao_renderpass.pass.borrow().textures[current_frame][0].image_view,
                     image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                 }, // ssao raw
                 vk::DescriptorImageInfo {
                     sampler,
-                    image_view: ssao_pre_downsample_renderpass.pass.textures[current_frame][0].image_view,
+                    image_view: ssao_pre_downsample_renderpass.pass.borrow().textures[current_frame][0].image_view,
                     image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                 }, // downsampled normal + depth
                 vk::DescriptorImageInfo {
                     sampler,
-                    image_view: geometry_renderpass.pass.textures[current_frame][4].image_view,
+                    image_view: geometry_renderpass.pass.borrow().textures[current_frame][4].image_view,
                     image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                 }, // view normal
                 vk::DescriptorImageInfo {
                     sampler,
-                    image_view: geometry_renderpass.pass.textures[current_frame][5].image_view,
+                    image_view: geometry_renderpass.pass.borrow().textures[current_frame][5].image_view,
                     image_layout: vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
                 }, // geometry depth
             ];

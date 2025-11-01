@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::ffi::c_void;
 use std::fs::File;
 use std::io::{BufWriter, Cursor};
@@ -14,7 +15,7 @@ const SHADER_PATH: &str = "resources\\shaders\\spv\\";
 pub struct Renderpass {
     pub device: Device,
 
-    pub pass: Arc<Pass>,
+    pub pass: Arc<RefCell<Pass>>,
     pub descriptor_set: DescriptorSet,
     pub shader: Shader,
     pub pipeline: vk::Pipeline,
@@ -26,7 +27,7 @@ impl Renderpass {
     pub unsafe fn new(create_info: RenderpassCreateInfo) -> Renderpass { unsafe {
         let base = create_info.base;
         let pass = if let Some(pass_create_info) = create_info.pass_create_info {
-            Arc::new(Pass::new(pass_create_info))
+            Arc::new(RefCell::new(Pass::new(pass_create_info)))
         } else {
             create_info.pass_ref.expect("Renderpass builder did not contain a pass_ref or a pass_create_info")
         };
@@ -69,7 +70,7 @@ impl Renderpass {
             .color_blend_state(&create_info.pipeline_color_blend_state_create_info)
             .dynamic_state(&dynamic_state_info)
             .layout(pipeline_layout)
-            .render_pass(pass.renderpass);
+            .render_pass(pass.borrow().renderpass);
         let pipeline = base.device.create_graphics_pipelines(
             vk::PipelineCache::null(),
             &[pipeline_create_info],
@@ -106,13 +107,13 @@ impl Renderpass {
             device.cmd_draw(command_buffer, 6, 1, 0, 0);
         };
         device.cmd_end_render_pass(command_buffer);
-        self.pass.transition_to_readable(command_buffer, current_frame);
+        self.pass.borrow().transition_to_readable(command_buffer, current_frame);
     } }
     pub unsafe fn begin_renderpass(&self, current_frame: usize, command_buffer: vk::CommandBuffer, framebuffer_index: Option<usize>) { unsafe {
         let device = &self.device;
         device.cmd_begin_render_pass(
             command_buffer,
-            &self.pass.get_pass_begin_info(current_frame, framebuffer_index, self.scissor),
+            &self.pass.borrow().get_pass_begin_info(current_frame, framebuffer_index, self.scissor),
             vk::SubpassContents::INLINE,
         );
         device.cmd_bind_pipeline(
@@ -132,9 +133,10 @@ impl Renderpass {
         );
     }}
 
-    pub unsafe fn destroy(&self) { unsafe {
+    pub unsafe fn destroy(&mut self) { unsafe {
         self.shader.destroy();
-        self.pass.destroy();
+        let mut pass = self.pass.borrow_mut();
+        if !pass.destroyed { pass.destroy() };
         self.device.destroy_pipeline_layout(self.pipeline_layout, None);
         self.device.destroy_pipeline(self.pipeline, None);
         self.descriptor_set.destroy();
@@ -143,7 +145,7 @@ impl Renderpass {
 pub struct RenderpassCreateInfo<'a> {
     pub base: &'a VkBase,
     pub pass_create_info: Option<PassCreateInfo<'a>>,
-    pub pass_ref: Option<Arc<Pass>>,
+    pub pass_ref: Option<Arc<RefCell<Pass>>>,
     pub descriptor_set_create_info: DescriptorSetCreateInfo<'a>,
     pub vertex_shader_uri: Option<String>,
     pub geometry_shader_uri: Option<String>,
@@ -246,7 +248,7 @@ impl<'a> RenderpassCreateInfo<'a> {
         self.pass_ref = None;
         self
     }
-    pub fn pass_ref(mut self, pass_ref: Arc<Pass>) -> Self {
+    pub fn pass_ref(mut self, pass_ref: Arc<RefCell<Pass>>) -> Self {
         self.pass_ref = Some(pass_ref.clone());
         self.pass_create_info = None;
         self
@@ -323,6 +325,8 @@ pub struct Pass {
     pub textures: Vec<Vec<Texture>>,
     pub framebuffers: Vec<vk::Framebuffer>,
     pub clear_values: Vec<ClearValue>,
+
+    pub destroyed: bool,
 }
 impl Pass {
     pub unsafe fn new(create_info: PassCreateInfo) -> Self { unsafe {
@@ -488,7 +492,9 @@ impl Pass {
             renderpass,
             textures,
             framebuffers,
-            clear_values
+            clear_values,
+
+            destroyed: false
         }
     } }
 
@@ -552,7 +558,7 @@ impl Pass {
         }
     } }
 
-    pub unsafe fn destroy(&self) { unsafe {
+    pub unsafe fn destroy(&mut self) { unsafe {
         for framebuffer in &self.framebuffers {
             self.device.destroy_framebuffer(*framebuffer, None);
         }
@@ -560,6 +566,7 @@ impl Pass {
             texture.destroy();
         }}
         self.device.destroy_render_pass(self.renderpass, None);
+        self.destroyed = true;
     }}
 }
 pub struct PassCreateInfo<'a> {

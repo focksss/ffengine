@@ -1,6 +1,7 @@
 use crate::mem;
 use std::collections::HashMap;
 use std::{fs, slice};
+use std::cell::RefCell;
 use std::ffi::c_void;
 use std::ops::Add;
 use std::path::PathBuf;
@@ -27,7 +28,7 @@ pub struct TextRenderer {
     sampler: Sampler,
 }
 impl TextRenderer {
-    pub unsafe fn new(base: &VkBase, pass_ref: Option<Arc<Pass>>) -> TextRenderer { unsafe {
+    pub unsafe fn new(base: &VkBase, pass_ref: Option<Arc<RefCell<Pass>>>) -> TextRenderer { unsafe {
         let sampler = base.device.create_sampler(&vk::SamplerCreateInfo {
             mag_filter: vk::Filter::LINEAR,
             min_filter: vk::Filter::LINEAR,
@@ -46,12 +47,12 @@ impl TextRenderer {
             sampler,
         }
     } }
-    pub unsafe fn destroy(&self) { unsafe {
+    pub unsafe fn destroy(&mut self) { unsafe {
         self.renderpass.destroy();
         self.device.destroy_sampler(self.sampler, None);
     } }
 
-    pub unsafe fn create_text_renderpass(base: &VkBase, default_font: Arc<Font>, pass_ref: Option<Arc<Pass>>) -> Renderpass { unsafe {
+    pub unsafe fn create_text_renderpass(base: &VkBase, default_font: Arc<Font>, pass_ref: Option<Arc<RefCell<Pass>>>) -> Renderpass { unsafe {
         let color_tex_create_info = TextureCreateInfo::new(base).format(Format::R8G8B8A8_UNORM);
         let pass_create_info = PassCreateInfo::new(base)
             .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
@@ -231,11 +232,26 @@ impl TextRenderer {
 
     * This function will not begin the renderpass, it assumes that the pass is already being recorded for.
     */
-    pub unsafe fn draw_texts(&self, frame: usize, text_infos: Vec<&TextInformation>) { unsafe {
+    pub unsafe fn draw_gui_texts(&self, frame: usize, text_infos: Vec<&TextInformation>) { unsafe {
         let frame_command_buffer = self.draw_command_buffers[frame];
         let device = &self.device;
 
         for text_info in text_infos {
+            device.cmd_bind_pipeline(
+                frame_command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.renderpass.pipeline,
+            );
+            device.cmd_set_viewport(frame_command_buffer, 0, &[self.renderpass.viewport]);
+            device.cmd_set_scissor(frame_command_buffer, 0, &[self.renderpass.scissor]);
+            device.cmd_bind_descriptor_sets(
+                frame_command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.renderpass.pipeline_layout,
+                0,
+                &[self.renderpass.descriptor_set.descriptor_sets[frame]],
+                &[],
+            );
             device.cmd_push_constants(frame_command_buffer, self.renderpass.pipeline_layout, ShaderStageFlags::ALL_GRAPHICS, 0, slice::from_raw_parts(
                 &TextPushConstants {
                     clip_min: Vector::new_vec(0.0).to_array2(),
@@ -315,7 +331,7 @@ impl TextInformation {
             index_staging_buffer: (vk::Buffer::null(), DeviceMemory::null(), null_mut()),
         }
     }
-    pub fn destroy(&mut self) { unsafe {
+    pub fn destroy(&self) { unsafe {
         for buffer in self.vertex_buffer.iter() {
             self.device.destroy_buffer(buffer.0, None);
             self.device.free_memory(buffer.1, None);
