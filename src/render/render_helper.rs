@@ -2,6 +2,7 @@ use std::ffi::c_void;
 use std::fs::File;
 use std::io::{BufWriter, Cursor};
 use std::path::Path;
+use std::sync::Arc;
 use ash::{vk, Device, Instance};
 use ash::util::read_spv;
 use ash::vk::{Buffer, ClearColorValue, ClearDepthStencilValue, ClearValue, DescriptorBindingFlags, DescriptorImageInfo, DescriptorPool, DescriptorPoolCreateFlags, DescriptorPoolSize, DescriptorSetLayout, DescriptorSetLayoutCreateFlags, DescriptorType, DeviceMemory, DeviceSize, DynamicState, Extent3D, Format, GraphicsPipelineCreateInfo, ImageAspectFlags, ImageSubresourceRange, ImageUsageFlags, MemoryPropertyFlags, PhysicalDevice, PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo, PipelineDepthStencilStateCreateInfo, PipelineInputAssemblyStateCreateInfo, PipelineMultisampleStateCreateInfo, PipelineRasterizationStateCreateInfo, PipelineShaderStageCreateInfo, PipelineTessellationStateCreateInfo, PipelineVertexInputStateCreateInfo, PushConstantRange, SampleCountFlags, ShaderModule, ShaderModuleCreateInfo, ShaderStageFlags, StencilOpState};
@@ -14,7 +15,7 @@ pub struct Renderpass {
     pub device: Device,
     pub draw_command_buffers: Vec<vk::CommandBuffer>,
 
-    pub pass: Pass,
+    pub pass: Arc<Pass>,
     pub descriptor_set: DescriptorSet,
     pub shader: Shader,
     pub pipeline: vk::Pipeline,
@@ -25,7 +26,11 @@ pub struct Renderpass {
 impl Renderpass {
     pub unsafe fn new(create_info: RenderpassCreateInfo) -> Renderpass { unsafe {
         let base = create_info.base;
-        let pass = Pass::new(create_info.pass_create_info);
+        let pass = if let Some(pass_create_info) = create_info.pass_create_info {
+            Arc::new(Pass::new(pass_create_info))
+        } else {
+            create_info.pass_ref.expect("Renderpass builder did not contain a pass_ref or a pass_create_info")
+        };
         let descriptor_set = DescriptorSet::new(create_info.descriptor_set_create_info);
         let shader = Shader::new(
             base,
@@ -146,7 +151,8 @@ impl Renderpass {
 }
 pub struct RenderpassCreateInfo<'a> {
     pub base: &'a VkBase,
-    pub pass_create_info: PassCreateInfo<'a>,
+    pub pass_create_info: Option<PassCreateInfo<'a>>,
+    pub pass_ref: Option<Arc<Pass>>,
     pub descriptor_set_create_info: DescriptorSetCreateInfo<'a>,
     pub vertex_shader_uri: Option<String>,
     pub geometry_shader_uri: Option<String>,
@@ -190,7 +196,8 @@ impl<'a> RenderpassCreateInfo<'a> {
         } as *const _ as *const _;
         RenderpassCreateInfo {
             base,
-            pass_create_info: PassCreateInfo::new(base),
+            pass_create_info: Some(PassCreateInfo::new(base)),
+            pass_ref: None,
             descriptor_set_create_info: DescriptorSetCreateInfo::new(base),
             vertex_shader_uri: None,
             geometry_shader_uri: None,
@@ -244,7 +251,13 @@ impl<'a> RenderpassCreateInfo<'a> {
     }
 
     pub fn pass_create_info(mut self, pass_create_info: PassCreateInfo<'a>) -> Self {
-        self.pass_create_info = pass_create_info;
+        self.pass_create_info = Some(pass_create_info);
+        self.pass_ref = None;
+        self
+    }
+    pub fn pass_ref(mut self, pass_ref: &Arc<Pass>) -> Self {
+        self.pass_ref = Some(pass_ref.clone());
+        self.pass_create_info = None;
         self
     }
     /**

@@ -104,7 +104,7 @@ fn main() { unsafe {
                 let now = Instant::now();
                 let delta_time = now.duration_since(last_frame_time).as_secs_f32();
                 last_frame_time = now;
-                
+
                 controller.do_controls(delta_time);
 
                 let current_fence = base.draw_commands_reuse_fences[current_frame];
@@ -123,9 +123,9 @@ fn main() { unsafe {
                 let current_rendering_complete_semaphore = base.rendering_complete_semaphores[current_frame];
                 let current_draw_command_buffer = base.draw_command_buffers[current_frame];
                 let current_fence = base.draw_commands_reuse_fences[current_frame];
-                
+
                 if !controller.paused { world.update_sun(&controller.player_camera) };
-                
+
                 record_submit_commandbuffer(
                     &base.device,
                     current_draw_command_buffer,
@@ -168,103 +168,6 @@ fn main() { unsafe {
 
     world.destroy(&base);
     frametime_manager.destroy(&base);
-} }
-
-
-unsafe fn do_controls(
-    player_camera: &mut Camera,
-    pressed_keys: &HashSet<PhysicalKey>,
-    new_pressed_keys: &mut HashSet<PhysicalKey>,
-    delta_time: f32,
-    cursor_locked: &mut bool,
-    base: &VkBase,
-    saved_cursor_pos: &mut PhysicalPosition<f64>,
-    paused: &mut bool,
-    screenshot_pending: &mut bool,
-    world: &mut Scene,
-    render_engine: &Renderer
-) { unsafe {
-    if pressed_keys.contains(&PhysicalKey::Code(KeyCode::KeyW)) {
-        player_camera.position.x += player_camera.speed*delta_time * (player_camera.rotation.y + PI/2.0).cos();
-        player_camera.position.z += player_camera.speed*delta_time * (player_camera.rotation.y + PI/2.0).sin();
-    }
-    if pressed_keys.contains(&PhysicalKey::Code(KeyCode::KeyA)) {
-        player_camera.position.x -= player_camera.speed*delta_time * player_camera.rotation.y.cos();
-        player_camera.position.z -= player_camera.speed*delta_time * player_camera.rotation.y.sin();
-    }
-    if pressed_keys.contains(&PhysicalKey::Code(KeyCode::KeyS)) {
-        player_camera.position.x -= player_camera.speed*delta_time * (player_camera.rotation.y + PI/2.0).cos();
-        player_camera.position.z -= player_camera.speed*delta_time * (player_camera.rotation.y + PI/2.0).sin();
-    }
-    if pressed_keys.contains(&PhysicalKey::Code(KeyCode::KeyD)) {
-        player_camera.position.x += player_camera.speed*delta_time * player_camera.rotation.y.cos();
-        player_camera.position.z += player_camera.speed*delta_time * player_camera.rotation.y.sin();
-    }
-    if pressed_keys.contains(&PhysicalKey::Code(KeyCode::Space)) {
-        player_camera.position.y += player_camera.speed*delta_time;
-    }
-    if pressed_keys.contains(&PhysicalKey::Code(KeyCode::ShiftLeft)) {
-        player_camera.position.y -= player_camera.speed*delta_time;
-    }
-    if pressed_keys.contains(&PhysicalKey::Code(KeyCode::ArrowUp)) {
-        player_camera.rotation.x += delta_time;
-    }
-    if pressed_keys.contains(&PhysicalKey::Code(KeyCode::ArrowDown)) {
-        player_camera.rotation.x -= delta_time;
-    }
-    if pressed_keys.contains(&PhysicalKey::Code(KeyCode::ArrowLeft)) {
-        player_camera.rotation.y += delta_time;
-    }
-    if pressed_keys.contains(&PhysicalKey::Code(KeyCode::ArrowRight)) {
-        player_camera.rotation.y -= delta_time;
-    }
-
-    if pressed_keys.contains(&PhysicalKey::Code(KeyCode::Equal)) {
-        player_camera.speed *= 1.0 + 1.0*delta_time;
-    }
-    if pressed_keys.contains(&PhysicalKey::Code(KeyCode::Minus)) {
-        player_camera.speed /= 1.0 + 1.0*delta_time;
-    }
-
-    if new_pressed_keys.contains(&PhysicalKey::Code(KeyCode::Escape)) {
-        *cursor_locked = !*cursor_locked;
-        if *cursor_locked {
-            if let Err(err) = base.window.set_cursor_grab(CursorGrabMode::Confined) {
-                eprintln!("Cursor lock failed: {:?}", err);
-            } else {
-                base.window.set_cursor_visible(false);
-            }
-            base.window.set_cursor_position(PhysicalPosition::new(
-                base.window.inner_size().width as f32 * 0.5,
-                base.window.inner_size().height as f32 * 0.5))
-                .expect("failed to reset mouse position");
-        } else {
-            if let Err(err) = base.window.set_cursor_grab(CursorGrabMode::None) {
-                eprintln!("Cursor unlock failed: {:?}", err);
-            } else {
-                base.window.set_cursor_visible(true);
-            }
-            base.window.set_cursor_position(*saved_cursor_pos).expect("Cursor pos reset failed");
-        }
-    }
-    if new_pressed_keys.contains(&PhysicalKey::Code(KeyCode::KeyP)) {
-        *paused = !*paused
-    }
-    if new_pressed_keys.contains(&PhysicalKey::Code(KeyCode::KeyM)) {
-        let models = world.models.len();
-        if models < 3 {
-            world.add_model(base, Model::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf"));
-            world.models[0.max(models)].transform_roots(&player_camera.position, &player_camera.rotation, &Vector::new_vec(1.0));
-            render_engine.scene_renderer.update_world_textures_all_frames(base, world);
-        }
-    }
-    if new_pressed_keys.contains(&PhysicalKey::Code(KeyCode::F2)) {
-        *screenshot_pending = true;
-    }
-
-    //player_camera.position.println();
-
-    new_pressed_keys.clear();
 } }
 
 pub struct FrametimeManager {
