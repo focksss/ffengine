@@ -92,38 +92,7 @@ impl Renderer {
         ]);
         renderer.scene_renderer.update_world_textures_all_frames(&base, &world);
 
-        renderer.gui.gui_nodes.push(GUINode {
-            name: "fps tex".to_string(),
-            position: Vector::new_vec2(100.0, 100.0),
-            scale: Vector::new_vec2(220.0, 40.0),
-            children_indices: vec![],
-            absolute_position: true,
-            absolute_scale: true,
-            text: Some(GUIText {
-                text_information: TextInformation::new(renderer.gui.fonts[0].clone())
-                    .text("making this text long is one way to force the buffers to be large enough...")
-                    .font_size(32.0)
-                    .newline_distance(1720.0)
-                    .set_buffers(&base),
-                position: Vector::new_vec2(0.01, 0.2),
-                scale: Vector::new_vec(1.0),
-                clip_min: Vector::new_vec(0.0),
-                clip_max: Vector::new_vec(1.0),
-                absolute_position: false,
-                absolute_scale: false,
-                color: Vector::new_vec(1.0),
-            }),
-            quad: Some(GUIQuad {
-                position: Vector::new_vec(0.0),
-                scale: Vector::new_vec(1.0),
-                clip_min: Vector::new_vec(0.0),
-                clip_max: Vector::new_vec(1.0),
-                absolute_position: false,
-                absolute_scale: false,
-                color: Vector::new_vec(0.5),
-            }),
-        });
-        renderer.gui.gui_root_node_indices.push(0);
+        renderer.gui.load_from_file(base, "resources\\gui\\default.gui");
 
         renderer
     } }
