@@ -10,13 +10,13 @@ use std::ptr::null_mut;
 use std::sync::Arc;
 use ash::vk::{CommandBuffer, DescriptorType, DeviceMemory, Format, SampleCountFlags, Sampler, ShaderStageFlags};
 use serde_json::Value;
-use crate::engine::world::scene::Scene;
 use crate::offset_of;
 use crate::math::Vector;
 use crate::render::*;
 use crate::render::render::MAX_FRAMES_IN_FLIGHT;
 
 const OUTPUT_DIR: &str = "resources\\fonts\\generated";
+const MAX_FONTS: usize = 10;
 
 pub struct TextRenderer {
     pub draw_command_buffers: Vec<CommandBuffer>,
@@ -62,7 +62,7 @@ impl TextRenderer {
             image_view: default_font.texture.image_view,
             sampler: default_font.sampler,
             ..Default::default()
-        }; 10];
+        }; MAX_FONTS];
         let atlas_samplers_create_info = DescriptorCreateInfo::new(base)
             .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
             .shader_stages(ShaderStageFlags::FRAGMENT)
@@ -149,7 +149,7 @@ impl TextRenderer {
         }
     }
     pub fn update_font_atlases(&self, fonts: &Vec<Arc<Font>>, frame: usize) { unsafe {
-        let mut image_infos: Vec<vk::DescriptorImageInfo> = Vec::with_capacity(10);
+        let mut image_infos: Vec<vk::DescriptorImageInfo> = Vec::with_capacity(MAX_FONTS);
         for font in fonts {
             image_infos.push(vk::DescriptorImageInfo {
                 image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
@@ -158,7 +158,7 @@ impl TextRenderer {
                 ..Default::default()
             });
         }
-        let missing = 10 - image_infos.len();
+        let missing = MAX_FONTS - image_infos.len();
         for _ in 0..missing {
             image_infos.push(vk::DescriptorImageInfo {
                 image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
@@ -175,7 +175,7 @@ impl TextRenderer {
             dst_binding: 0,
             dst_array_element: 0,
             descriptor_type: DescriptorType::COMBINED_IMAGE_SAMPLER,
-            descriptor_count: 10,
+            descriptor_count: MAX_FONTS as u32,
             p_image_info: image_infos,
             ..Default::default()
         };

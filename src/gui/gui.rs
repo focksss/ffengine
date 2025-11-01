@@ -63,6 +63,7 @@ impl GUI {
             &self.pass.get_pass_begin_info(current_frame, None, self.text_renderer.renderpass.scissor),
             vk::SubpassContents::INLINE,
         );
+        //TODO recursive drawing with relative position and scale
         for node in &self.gui_nodes {
 
         }
