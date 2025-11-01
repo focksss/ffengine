@@ -37,6 +37,8 @@ pub struct GUINode {
     pub name: String,
     pub position: Vector,
     pub scale: Vector,
+    pub clip_min: Vector,
+    pub clip_max: Vector,
     pub children_indices: Vec<usize>,
 
     pub text: Option<TextInformation>,
@@ -47,6 +49,24 @@ pub struct GUINode {
 pub struct GUIRectangle {
     pub position: Vector,
     pub scale: Vector,
+    pub clip_min: Vector,
+    pub clip_max: Vector,
 
     pub color: Vector,
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct GUIQuadSendable {
+    pub color: [f32; 4],
+
+    pub resolution: [i32; 2],
+
+    pub clip_min: [f32; 2],
+    pub clip_max: [f32; 2],
+
+    pub position: [f32; 2],
+
+    pub scale: [f32; 2],
+
+    pub _pad: [f32; 2],
 }
