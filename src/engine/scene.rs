@@ -12,7 +12,6 @@ use crate::math::matrix::Matrix;
 use crate::engine::camera::{Camera, Frustum};
 use crate::render::*;
 use crate::math::vector::Vector;
-use crate::render;
 use crate::render::scene_renderer::SHADOW_RES;
 
 // SHOULD DETECT MATH VS COLOR DATA TEXTURES, LOAD COLOR AS SRGB, MATH AS UNORM
@@ -303,7 +302,7 @@ impl Scene {
         model.construct_textures(base);
         self.models.push(model);
     } }
-    pub unsafe fn update_instances(&mut self, base: &VkBase, command_buffer: CommandBuffer, frame: usize) { unsafe {
+    pub unsafe fn update_instances(&mut self, command_buffer: CommandBuffer, frame: usize) { unsafe {
         if frame == 0 {
             self.dirty_instances.clear();
             for model in self.models.iter_mut() {
@@ -339,7 +338,7 @@ impl Scene {
         }
     } }
 
-    pub unsafe fn update_lights(&mut self, base: &VkBase, command_buffer: CommandBuffer, frame: usize) { unsafe {
+    pub unsafe fn update_lights(&mut self, command_buffer: CommandBuffer, frame: usize) { unsafe {
         let lights_send = self.lights.iter().map(|light| light.to_sendable()).collect::<Vec<_>>();
         copy_data_to_memory(self.lights_staging_buffer.2, &lights_send);
         copy_buffer_synchronous(&self.device, command_buffer, &self.lights_staging_buffer.0, &self.lights_buffers[frame].0, None, &self.lights_buffers_size);
@@ -368,17 +367,17 @@ impl Scene {
         base.end_single_time_commands(command_buffers);
     } }
 
-    pub unsafe fn update_nodes(&mut self, base: &VkBase, command_buffer: CommandBuffer, frame: usize) { unsafe {
+    pub unsafe fn update_nodes(&mut self, command_buffer: CommandBuffer, frame: usize) { unsafe {
         for model in self.models.iter_mut() {
             for animation in model.animations.iter_mut() {
                 animation.update(&mut model.nodes)
             }
         }
-        self.update_instances(base, command_buffer, frame);
-        self.update_joints(base, command_buffer, frame);
+        self.update_instances(command_buffer, frame);
+        self.update_joints(command_buffer, frame);
     } }
 
-    pub unsafe fn update_joints(&mut self, base: &VkBase, command_buffer: CommandBuffer, frame: usize) { unsafe {
+    pub unsafe fn update_joints(&mut self, command_buffer: CommandBuffer, frame: usize) { unsafe {
         let mut joints = Vec::new();
         let mut total_skins = 0f32;
         for model in self.models.iter_mut() {

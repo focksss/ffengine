@@ -23,7 +23,6 @@ use math::vector::*;
 use engine::scene::{Model, Scene};
 use engine::camera::Camera;
 use engine::scene;
-use render::scene_renderer::SceneRenderer;
 use render::render::MAX_FRAMES_IN_FLIGHT;
 use crate::render::*;
 use crate::render::render::Renderer;
@@ -285,8 +284,8 @@ fn main() { unsafe {
                     &[base.present_complete_semaphores[current_frame]],
                     &[current_rendering_complete_semaphore],
                     |device, frame_command_buffer| {
-                        world.update_nodes(&base, frame_command_buffer, current_frame);
-                        world.update_lights(&base, frame_command_buffer, current_frame);
+                        world.update_nodes(frame_command_buffer, current_frame);
+                        world.update_lights(frame_command_buffer, current_frame);
 
                         renderer.render_frame(current_frame, present_index as usize, delta_time, &world, &player_camera);
                     },
