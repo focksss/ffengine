@@ -75,6 +75,14 @@ impl GUI {
         self.text_renderer.update_font_atlases_all_frames(fonts.clone());
     }
 
+    /**
+    * Uses custom JSON .gui files
+    * * Refer to default.gui in resources/gui
+    */
+    pub fn load_from_file(&mut self, path: &str) {
+
+    }
+
     pub unsafe fn draw(&self, current_frame: usize, command_buffer: vk::CommandBuffer,) { unsafe {
         let device = &self.device;
         device.cmd_begin_render_pass(

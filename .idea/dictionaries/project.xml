@@ -11,6 +11,7 @@
       <w>imgs</w>
       <w>lerp</w>
       <w>memorytype</w>
+      <w>msdf</w>
       <w>ortho</w>
       <w>pdevice</w>
       <w>renderpass</w>
