@@ -259,7 +259,6 @@ impl Controller {
                 } else {
                     self.window().set_cursor_visible(true);
                 }
-                self.window().set_cursor_position(self.saved_cursor_pos).expect("Cursor pos reset failed");
             }
             _ => {}
         }
