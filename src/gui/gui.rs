@@ -223,11 +223,9 @@ impl GUI {
                 }
                 match &text_information_json["text"] {
                     JsonValue::String(s) => {
-                        println!("Text: {:?}", s);
                         text_text = s.as_str();
                     }
                     JsonValue::Short(s) => {
-                        println!("Text: {:?}", s);
                         text_text = s.as_str();
                     }
                     _ => {}
