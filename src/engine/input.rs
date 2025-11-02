@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 use std::time::Instant;
+use ash::vk;
 use winit::dpi::PhysicalPosition;
 use winit::event::{ElementState, Event, KeyEvent, MouseButton, WindowEvent};
 use winit::event_loop::EventLoopWindowTarget;
@@ -10,6 +11,8 @@ use crate::engine::world::camera::Camera;
 use crate::gui::gui::{GUIInteractableInformation, GUINode, GUIQuad};
 use crate::math::Vector;
 use crate::PI;
+use crate::render::render::{screenshot_texture, Renderer};
+use crate::render::VkBase;
 
 pub struct Controller {
     pub window_ptr: *const winit::window::Window,
@@ -65,7 +68,29 @@ impl Controller {
     pub unsafe fn do_controls(
         &mut self,
         delta_time: f32,
+        base: &VkBase,
+        renderer: &Renderer,
+        frame: usize,
     ) { unsafe {
+        if self.queue_flags.screenshot_queued {
+            self.queue_flags.screenshot_queued = false;
+            let timestamp = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
+            screenshot_texture(
+                &base,
+                &renderer.compositing_renderpass.pass.borrow().textures[frame][0],
+                vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                format!("screenshots\\screenshot_{}.png", timestamp).as_str()
+            );
+        }
+        if self.queue_flags.reload_shaders_queued {
+            self.queue_flags.reload_shaders_queued = false;
+            Renderer::compile_shaders()
+            
+        }
+
         self.player_camera.update_matrices();
         if !self.paused {
             self.player_camera.update_frustum()

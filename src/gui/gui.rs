@@ -94,6 +94,30 @@ impl GUI {
     }
 
     pub unsafe fn new(base: &VkBase, controller: Arc<RefCell<Controller>>) -> GUI { unsafe {
+        let (pass_ref, quad_renderpass, text_renderer) = GUI::create_rendering_objects(base);
+
+        let default_font = Arc::new(Font::new(&base, "resources\\fonts\\Oxygen-Regular.ttf", Some(32), Some(2.0)));
+        GUI {
+            device: base.device.clone(),
+            window_ptr: &base.window as *const _,
+            controller,
+
+            pass: pass_ref.clone(),
+            text_renderer,
+            quad_renderpass,
+
+            gui_nodes: Vec::new(),
+            gui_root_node_indices: Vec::new(),
+
+            gui_quads: Vec::new(),
+            gui_texts: Vec::new(),
+
+            interactable_node_indices: Vec::new(),
+
+            fonts: vec![default_font.clone()],
+        }
+    } }
+    pub unsafe fn create_rendering_objects(base: &VkBase) -> (Arc<RefCell<Pass>>, Renderpass, TextRenderer) { unsafe {
         let pass_create_info = PassCreateInfo::new(base)
             .add_color_attachment_info(TextureCreateInfo::new(base).format(Format::R16G16B16A16_SFLOAT).add_usage_flag(vk::ImageUsageFlags::TRANSFER_SRC));
         let pass_ref = Arc::new(RefCell::new(Pass::new(pass_create_info)));
@@ -130,26 +154,7 @@ impl GUI {
             }) };
         let quad_renderpass = Renderpass::new(quad_renderpass_create_info);
 
-        let default_font = Arc::new(Font::new(&base, "resources\\fonts\\Oxygen-Regular.ttf", Some(32), Some(2.0)));
-        GUI {
-            device: base.device.clone(),
-            window_ptr: &base.window as *const _,
-            controller,
-
-            pass: pass_ref.clone(),
-            text_renderer: TextRenderer::new(base, Some(pass_ref.clone())),
-            quad_renderpass,
-
-            gui_nodes: Vec::new(),
-            gui_root_node_indices: Vec::new(),
-
-            gui_quads: Vec::new(),
-            gui_texts: Vec::new(),
-
-            interactable_node_indices: Vec::new(),
-
-            fonts: vec![default_font.clone()],
-        }
+        (pass_ref.clone(), quad_renderpass, TextRenderer::new(base, Some(pass_ref.clone())))
     } }
     fn window(&self) -> &winit::window::Window {
         unsafe { &*self.window_ptr }
@@ -158,6 +163,11 @@ impl GUI {
         self.fonts = fonts.clone();
         self.text_renderer.update_font_atlases_all_frames(fonts.clone());
     }
+    pub unsafe fn reload_rendering(&mut self, base: &VkBase) { unsafe {
+        self.text_renderer.destroy();
+        self.quad_renderpass.destroy();
+        (self.pass, self.quad_renderpass, self.text_renderer) = GUI::create_rendering_objects(base);
+    } }
 
     /**
     * Uses custom JSON .gui files

@@ -33,39 +33,16 @@ impl Renderer {
     pub unsafe fn new(base: &VkBase, world: &Scene, controller: Arc<RefCell<Controller>>) -> Renderer { unsafe {
         Renderer::compile_shaders();
         
-        let texture_sampler_create_info = DescriptorCreateInfo::new(base)
-            .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
-            .shader_stages(ShaderStageFlags::FRAGMENT);
-        
-        let present_pass_create_info = PassCreateInfo::new(base)
-            .set_is_present_pass(true);
-        let present_descriptor_set_create_info = DescriptorSetCreateInfo::new(base)
-            .add_descriptor(Descriptor::new(&texture_sampler_create_info));
-        let present_renderpass_create_info = { RenderpassCreateInfo::new(base)
-            .pass_create_info(present_pass_create_info)
-            .descriptor_set_create_info(present_descriptor_set_create_info)
-            .vertex_shader_uri(String::from("quad\\quad.vert.spv"))
-            .fragment_shader_uri(String::from("quad\\quad.frag.spv")) };
-
-        let compositing_pass_create_info = PassCreateInfo::new(base)
-            .add_color_attachment_info(TextureCreateInfo::new(base).format(Format::R16G16B16A16_SFLOAT).add_usage_flag(vk::ImageUsageFlags::TRANSFER_SRC));
-        let compositing_descriptor_set_create_info = DescriptorSetCreateInfo::new(base)
-            .add_descriptor(Descriptor::new(&texture_sampler_create_info))
-            .add_descriptor(Descriptor::new(&texture_sampler_create_info));
-        let compositing_renderpass_create_info = { RenderpassCreateInfo::new(base)
-            .pass_create_info(compositing_pass_create_info)
-            .descriptor_set_create_info(compositing_descriptor_set_create_info)
-            .vertex_shader_uri(String::from("quad\\quad.vert.spv"))
-            .fragment_shader_uri(String::from("composite.frag.spv")) };
+        let (scene_renderer, compositing_renderpass, present_renderpass) = Renderer::create_rendering_objects(base, world);
 
         let mut renderer = Renderer {
             device: base.device.clone(),
             draw_command_buffers: base.draw_command_buffers.clone(),
 
-            present_renderpass: Renderpass::new(present_renderpass_create_info),
-            compositing_renderpass: Renderpass::new(compositing_renderpass_create_info),
+            present_renderpass,
+            compositing_renderpass,
 
-            scene_renderer: SceneRenderer::new(base, world),
+            scene_renderer,
             gui: GUI::new(base, controller),
 
             last_fps_render: Instant::now(),
@@ -98,6 +75,54 @@ impl Renderer {
         renderer.gui.load_from_file(base, "resources\\gui\\default.gui");
 
         renderer
+    } }
+    unsafe fn create_rendering_objects(base: &VkBase, world: &Scene) -> (SceneRenderer, Renderpass, Renderpass) { unsafe {
+        let texture_sampler_create_info = DescriptorCreateInfo::new(base)
+            .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
+            .shader_stages(ShaderStageFlags::FRAGMENT);
+
+        let present_pass_create_info = PassCreateInfo::new(base)
+            .set_is_present_pass(true);
+        let present_descriptor_set_create_info = DescriptorSetCreateInfo::new(base)
+            .add_descriptor(Descriptor::new(&texture_sampler_create_info));
+        let present_renderpass_create_info = { RenderpassCreateInfo::new(base)
+            .pass_create_info(present_pass_create_info)
+            .descriptor_set_create_info(present_descriptor_set_create_info)
+            .vertex_shader_uri(String::from("quad\\quad.vert.spv"))
+            .fragment_shader_uri(String::from("quad\\quad.frag.spv")) };
+
+        let compositing_pass_create_info = PassCreateInfo::new(base)
+            .add_color_attachment_info(TextureCreateInfo::new(base).format(Format::R16G16B16A16_SFLOAT).add_usage_flag(vk::ImageUsageFlags::TRANSFER_SRC));
+        let compositing_descriptor_set_create_info = DescriptorSetCreateInfo::new(base)
+            .add_descriptor(Descriptor::new(&texture_sampler_create_info))
+            .add_descriptor(Descriptor::new(&texture_sampler_create_info));
+        let compositing_renderpass_create_info = { RenderpassCreateInfo::new(base)
+            .pass_create_info(compositing_pass_create_info)
+            .descriptor_set_create_info(compositing_descriptor_set_create_info)
+            .vertex_shader_uri(String::from("quad\\quad.vert.spv"))
+            .fragment_shader_uri(String::from("composite.frag.spv")) };
+        (SceneRenderer::new(base, world), Renderpass::new(compositing_renderpass_create_info), Renderpass::new(present_renderpass_create_info))
+    } }
+    pub unsafe fn reload(&mut self, base: &VkBase, world: &Scene) { unsafe {
+        self.gui.reload_rendering(base);
+
+        self.scene_renderer.destroy();
+        self.compositing_renderpass.destroy();
+        self.present_renderpass.destroy();
+        (self.scene_renderer, self.compositing_renderpass, self.present_renderpass) = Renderer::create_rendering_objects(base, world);
+
+        self.set_present_textures(self.compositing_renderpass.pass.borrow().textures.iter().map(|frame_textures| {
+            &frame_textures[0]
+        }).collect::<Vec<&Texture>>());
+        self.set_compositing_textures(vec![
+            self.scene_renderer.lighting_renderpass.pass.borrow().textures.iter().map(|frame_textures| {
+                &frame_textures[0]
+            }).collect::<Vec<&Texture>>(),
+            self.gui.pass.borrow().textures.iter().map(|frame_textures| {
+                &frame_textures[0]
+            }).collect::<Vec<&Texture>>()
+        ]);
+        self.scene_renderer.update_world_textures_all_frames(&base, &world);
     } }
 
     pub unsafe fn compile_shaders() {

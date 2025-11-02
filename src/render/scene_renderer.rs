@@ -55,10 +55,267 @@ impl SceneRenderer {
         };
         let null_tex_sampler = null_tex_info.0.1;
 
+        let (
+            geometry_renderpass,
+            shadow_renderpass,
+            ssao_pre_downsample_renderpass,
+            ssao_renderpass,
+            ssao_blur_renderpass_upsample,
+            lighting_renderpass
+        ) = SceneRenderer::create_rendering_objects(base, &null_texture, &null_tex_sampler, world);
+
+        //<editor-fold desc = "ssao sampling setup">
+        let mut rng = rng();
+        let mut ssao_kernal= [[0.0; 4]; SSAO_KERNAL_SIZE];
+        for i in 0..SSAO_KERNAL_SIZE {
+            let mut scale = i as f32 / SSAO_KERNAL_SIZE as f32;
+            scale = 0.1 + ((scale * scale) * (1.0 - 0.1));
+            ssao_kernal[i] = (Vector::new_from_array(&[rng.random::<f32>() * 2.0 - 1.0, rng.random::<f32>() * 2.0 - 1.0, rng.random::<f32>()])
+                .normalize_3d() * rng.random::<f32>() * scale).to_array4();
+        }
+
+        let mut noise_data = Vec::<[f32; 2]>::with_capacity(16);
+        for _ in 0..16 {
+            noise_data.push([
+                rng.random_range(-1.0..1.0),
+                rng.random_range(-1.0..1.0),
+            ]);
+        }
+        let ssao_noise_tex_info = TextureCreateInfo::new(base)
+            .width(4)
+            .height(4)
+            .depth(1)
+            .format(Format::R16G16_SFLOAT)
+            .usage_flags(
+                vk::ImageUsageFlags::SAMPLED |
+                    vk::ImageUsageFlags::TRANSFER_DST
+            );
+        let ssao_noise_texture = Texture::new(&ssao_noise_tex_info);
+
+        let ((staging_buffer, staging_buffer_memory), _) = base.create_device_and_staging_buffer(
+            0,
+            &noise_data,
+            vk::BufferUsageFlags::TRANSFER_SRC,
+            true,
+            false,
+            true,
+        );
+        base.transition_image_layout(
+            ssao_noise_texture.image,
+            vk::ImageSubresourceRange {
+                aspect_mask: vk::ImageAspectFlags::COLOR,
+                base_mip_level: 0,
+                level_count: 1,
+                base_array_layer: 0,
+                layer_count: 1,
+                ..Default::default()
+            },
+            vk::ImageLayout::UNDEFINED,
+            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+        );
+        base.copy_buffer_to_image(
+            staging_buffer,
+            ssao_noise_texture.image,
+            vk::Extent3D { width: 4, height: 4, depth: 1 },
+        );
+        base.transition_image_layout(
+            ssao_noise_texture.image,
+            vk::ImageSubresourceRange {
+                aspect_mask: vk::ImageAspectFlags::COLOR,
+                base_mip_level: 0,
+                level_count: 1,
+                base_array_layer: 0,
+                layer_count: 1,
+                ..Default::default()
+            },
+            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+            vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+        );
+        base.device.destroy_buffer(staging_buffer, None);
+        base.device.free_memory(staging_buffer_memory, None);
+        //</editor-fold>
+        //<editor-fold desc = "descriptor updates">
+        let sampler = base.device.create_sampler(&vk::SamplerCreateInfo {
+            mag_filter: vk::Filter::LINEAR,
+            min_filter: vk::Filter::LINEAR,
+            address_mode_u: vk::SamplerAddressMode::CLAMP_TO_BORDER,
+            address_mode_v: vk::SamplerAddressMode::CLAMP_TO_BORDER,
+            address_mode_w: vk::SamplerAddressMode::CLAMP_TO_BORDER,
+            border_color: vk::BorderColor::FLOAT_OPAQUE_WHITE,
+            ..Default::default()
+        }, None).unwrap();
+        let nearest_sampler = base.device.create_sampler(&vk::SamplerCreateInfo {
+            mag_filter: vk::Filter::NEAREST,
+            min_filter: vk::Filter::NEAREST,
+            address_mode_u: vk::SamplerAddressMode::REPEAT,
+            address_mode_v: vk::SamplerAddressMode::REPEAT,
+            address_mode_w: vk::SamplerAddressMode::REPEAT,
+            border_color: vk::BorderColor::FLOAT_OPAQUE_WHITE,
+            ..Default::default()
+        }, None).unwrap();
+
+        for current_frame in 0..MAX_FRAMES_IN_FLIGHT {
+            //<editor-fold desc = "lighting">
+            let image_infos = [
+                vk::DescriptorImageInfo {
+                    sampler,
+                    image_view: geometry_renderpass.pass.borrow().textures[current_frame][0].image_view,
+                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                }, // material
+                vk::DescriptorImageInfo {
+                    sampler,
+                    image_view: geometry_renderpass.pass.borrow().textures[current_frame][1].image_view,
+                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                }, // albedo
+                vk::DescriptorImageInfo {
+                    sampler,
+                    image_view: geometry_renderpass.pass.borrow().textures[current_frame][2].image_view,
+                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                }, // metallic roughness
+                vk::DescriptorImageInfo {
+                    sampler,
+                    image_view: geometry_renderpass.pass.borrow().textures[current_frame][3].image_view,
+                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                }, // extra properties
+                vk::DescriptorImageInfo {
+                    sampler,
+                    image_view: geometry_renderpass.pass.borrow().textures[current_frame][5].image_view,
+                    image_layout: vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
+                }, // depth
+                vk::DescriptorImageInfo {
+                    sampler,
+                    image_view: geometry_renderpass.pass.borrow().textures[current_frame][4].image_view,
+                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                }, // view normal
+                vk::DescriptorImageInfo {
+                    sampler,
+                    image_view: shadow_renderpass.pass.borrow().textures[current_frame][0].image_view,
+                    image_layout: vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
+                }, // shadow map
+                vk::DescriptorImageInfo {
+                    sampler,
+                    image_view: ssao_blur_renderpass_upsample.pass.borrow().textures[current_frame][0].image_view,
+                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                }, // ssao tex (final)
+            ];
+            let lighting_descriptor_writes: Vec<vk::WriteDescriptorSet> = image_infos.iter().enumerate().map(|(i, info)| {
+                vk::WriteDescriptorSet::default()
+                    .dst_set(lighting_renderpass.descriptor_set.descriptor_sets[current_frame])
+                    .dst_binding(i as u32)
+                    .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
+                    .image_info(slice::from_ref(info))
+            }).collect();
+            base.device.update_descriptor_sets(&lighting_descriptor_writes, &[]);
+            //</editor-fold>
+            //<editor-fold desc = "ssao pre downsample">
+            let image_infos = [
+                vk::DescriptorImageInfo {
+                    sampler,
+                    image_view: geometry_renderpass.pass.borrow().textures[current_frame][5].image_view,
+                    image_layout: vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
+                }, // geometry depth
+                vk::DescriptorImageInfo {
+                    sampler,
+                    image_view: geometry_renderpass.pass.borrow().textures[current_frame][4].image_view,
+                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                }, // view normal
+            ];
+            let ssao_pre_downsample_descriptor_writes: Vec<vk::WriteDescriptorSet> = image_infos.iter().enumerate().map(|(i, info)| {
+                vk::WriteDescriptorSet::default()
+                    .dst_set(ssao_pre_downsample_renderpass.descriptor_set.descriptor_sets[current_frame])
+                    .dst_binding(i as u32)
+                    .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
+                    .image_info(slice::from_ref(info))
+            }).collect();
+            base.device.update_descriptor_sets(&ssao_pre_downsample_descriptor_writes, &[]);
+            //</editor-fold>
+            //<editor-fold desc = "ssao gen">
+            let image_infos = [
+                vk::DescriptorImageInfo {
+                    sampler,
+                    image_view: ssao_pre_downsample_renderpass.pass.borrow().textures[current_frame][0].image_view,
+                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                }, // downsampled normal + depth
+                vk::DescriptorImageInfo {
+                    sampler: nearest_sampler,
+                    image_view: ssao_noise_texture.image_view,
+                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                }, // noise tex
+            ];
+            let ssao_descriptor_writes: Vec<vk::WriteDescriptorSet> = image_infos.iter().enumerate().map(|(i, info)| {
+                vk::WriteDescriptorSet::default()
+                    .dst_set(ssao_renderpass.descriptor_set.descriptor_sets[current_frame])
+                    .dst_binding(i as u32)
+                    .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
+                    .image_info(slice::from_ref(info))
+            }).collect();
+            base.device.update_descriptor_sets(&ssao_descriptor_writes, &[]);
+            //</editor-fold>
+            //<editor-fold desc = "ssao blur">
+            let image_infos = [
+                vk::DescriptorImageInfo {
+                    sampler,
+                    image_view: ssao_renderpass.pass.borrow().textures[current_frame][0].image_view,
+                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                }, // ssao raw
+                vk::DescriptorImageInfo {
+                    sampler,
+                    image_view: ssao_pre_downsample_renderpass.pass.borrow().textures[current_frame][0].image_view,
+                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                }, // downsampled normal + depth
+                vk::DescriptorImageInfo {
+                    sampler,
+                    image_view: geometry_renderpass.pass.borrow().textures[current_frame][4].image_view,
+                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                }, // view normal
+                vk::DescriptorImageInfo {
+                    sampler,
+                    image_view: geometry_renderpass.pass.borrow().textures[current_frame][5].image_view,
+                    image_layout: vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
+                }, // geometry depth
+            ];
+            let descriptor_writes: Vec<vk::WriteDescriptorSet> = image_infos.iter().enumerate().map(|(i, info)| {
+                vk::WriteDescriptorSet::default()
+                    .dst_set(ssao_blur_renderpass_upsample.descriptor_set.descriptor_sets[current_frame])
+                    .dst_binding(i as u32)
+                    .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
+                    .image_info(slice::from_ref(info))
+            }).collect();
+            base.device.update_descriptor_sets(&descriptor_writes, &[]);
+            //</editor-fold>
+        }
+        //</editor-fold>
+
+        SceneRenderer {
+            device: base.device.clone(),
+            draw_command_buffers: base.draw_command_buffers.clone(),
+
+            null_texture,
+            null_tex_sampler,
+
+            geometry_renderpass,
+            shadow_renderpass,
+            ssao_pre_downsample_renderpass,
+            ssao_renderpass,
+            ssao_blur_renderpass_upsample,
+            lighting_renderpass,
+
+            sampler,
+            nearest_sampler,
+            ssao_kernal,
+            ssao_noise_texture,
+        }
+    } }
+    pub unsafe fn create_rendering_objects(
+        base: &VkBase,
+        null_tex: &Texture,
+        null_tex_sampler: &vk::Sampler,
+        world: &Scene
+    ) -> (Renderpass, Renderpass, Renderpass, Renderpass, Renderpass, Renderpass) { unsafe {
         let image_infos: Vec<vk::DescriptorImageInfo> = vec![vk::DescriptorImageInfo {
             image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-            image_view: null_texture.image_view,
-            sampler: null_tex_sampler,
+            image_view: null_tex.image_view,
+            sampler: *null_tex_sampler,
             ..Default::default()
         }; 1024];
 
@@ -166,77 +423,6 @@ impl SceneRenderer {
                 .shader_stages(ShaderStageFlags::FRAGMENT)
                 .binding_flags(vk::DescriptorBindingFlags::UPDATE_AFTER_BIND))
             );
-        //</editor-fold>
-
-        //<editor-fold desc = "ssao sampling setup">
-        let mut rng = rng();
-        let mut ssao_kernal= [[0.0; 4]; SSAO_KERNAL_SIZE];
-        for i in 0..SSAO_KERNAL_SIZE {
-            let mut scale = i as f32 / SSAO_KERNAL_SIZE as f32;
-            scale = 0.1 + ((scale * scale) * (1.0 - 0.1));
-            ssao_kernal[i] = (Vector::new_from_array(&[rng.random::<f32>() * 2.0 - 1.0, rng.random::<f32>() * 2.0 - 1.0, rng.random::<f32>()])
-                .normalize_3d() * rng.random::<f32>() * scale).to_array4();
-        }
-
-        let mut noise_data = Vec::<[f32; 2]>::with_capacity(16);
-        for _ in 0..16 {
-            noise_data.push([
-                rng.random_range(-1.0..1.0),
-                rng.random_range(-1.0..1.0),
-            ]);
-        }
-        let ssao_noise_tex_info = TextureCreateInfo::new(base)
-            .width(4)
-            .height(4)
-            .depth(1)
-            .format(Format::R16G16_SFLOAT)
-            .usage_flags(
-                vk::ImageUsageFlags::SAMPLED |
-                    vk::ImageUsageFlags::TRANSFER_DST
-            );
-        let ssao_noise_texture = Texture::new(&ssao_noise_tex_info);
-
-        let ((staging_buffer, staging_buffer_memory), _) = base.create_device_and_staging_buffer(
-            0,
-            &noise_data,
-            vk::BufferUsageFlags::TRANSFER_SRC,
-            true,
-            false,
-            true,
-        );
-        base.transition_image_layout(
-            ssao_noise_texture.image,
-            vk::ImageSubresourceRange {
-                aspect_mask: vk::ImageAspectFlags::COLOR,
-                base_mip_level: 0,
-                level_count: 1,
-                base_array_layer: 0,
-                layer_count: 1,
-                ..Default::default()
-            },
-            vk::ImageLayout::UNDEFINED,
-            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-        );
-        base.copy_buffer_to_image(
-            staging_buffer,
-            ssao_noise_texture.image,
-            vk::Extent3D { width: 4, height: 4, depth: 1 },
-        );
-        base.transition_image_layout(
-            ssao_noise_texture.image,
-            vk::ImageSubresourceRange {
-                aspect_mask: vk::ImageAspectFlags::COLOR,
-                base_mip_level: 0,
-                level_count: 1,
-                base_array_layer: 0,
-                layer_count: 1,
-                ..Default::default()
-            },
-            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-            vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-        );
-        base.device.destroy_buffer(staging_buffer, None);
-        base.device.free_memory(staging_buffer_memory, None);
         //</editor-fold>
 
         let camera_push_constant_range_vertex = vk::PushConstantRange {
@@ -543,178 +729,8 @@ impl SceneRenderer {
             .fragment_shader_uri(String::from("lighting.frag.spv"))
             .push_constant_range(camera_push_constant_range_fragment) };
         let lighting_renderpass = Renderpass::new(lighting_renderpass_create_info);
-
-        //<editor-fold desc = "descriptor updates">
-        let sampler = base.device.create_sampler(&vk::SamplerCreateInfo {
-            mag_filter: vk::Filter::LINEAR,
-            min_filter: vk::Filter::LINEAR,
-            address_mode_u: vk::SamplerAddressMode::CLAMP_TO_BORDER,
-            address_mode_v: vk::SamplerAddressMode::CLAMP_TO_BORDER,
-            address_mode_w: vk::SamplerAddressMode::CLAMP_TO_BORDER,
-            border_color: vk::BorderColor::FLOAT_OPAQUE_WHITE,
-            ..Default::default()
-        }, None).unwrap();
-        let nearest_sampler = base.device.create_sampler(&vk::SamplerCreateInfo {
-            mag_filter: vk::Filter::NEAREST,
-            min_filter: vk::Filter::NEAREST,
-            address_mode_u: vk::SamplerAddressMode::REPEAT,
-            address_mode_v: vk::SamplerAddressMode::REPEAT,
-            address_mode_w: vk::SamplerAddressMode::REPEAT,
-            border_color: vk::BorderColor::FLOAT_OPAQUE_WHITE,
-            ..Default::default()
-        }, None).unwrap();
-
-        for current_frame in 0..MAX_FRAMES_IN_FLIGHT {
-            //<editor-fold desc = "lighting">
-            let image_infos = [
-                vk::DescriptorImageInfo {
-                    sampler,
-                    image_view: geometry_renderpass.pass.borrow().textures[current_frame][0].image_view,
-                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                }, // material
-                vk::DescriptorImageInfo {
-                    sampler,
-                    image_view: geometry_renderpass.pass.borrow().textures[current_frame][1].image_view,
-                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                }, // albedo
-                vk::DescriptorImageInfo {
-                    sampler,
-                    image_view: geometry_renderpass.pass.borrow().textures[current_frame][2].image_view,
-                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                }, // metallic roughness
-                vk::DescriptorImageInfo {
-                    sampler,
-                    image_view: geometry_renderpass.pass.borrow().textures[current_frame][3].image_view,
-                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                }, // extra properties
-                vk::DescriptorImageInfo {
-                    sampler,
-                    image_view: geometry_renderpass.pass.borrow().textures[current_frame][5].image_view,
-                    image_layout: vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
-                }, // depth
-                vk::DescriptorImageInfo {
-                    sampler,
-                    image_view: geometry_renderpass.pass.borrow().textures[current_frame][4].image_view,
-                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                }, // view normal
-                vk::DescriptorImageInfo {
-                    sampler,
-                    image_view: shadow_renderpass.pass.borrow().textures[current_frame][0].image_view,
-                    image_layout: vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
-                }, // shadow map
-                vk::DescriptorImageInfo {
-                    sampler,
-                    image_view: ssao_blur_renderpass_upsample.pass.borrow().textures[current_frame][0].image_view,
-                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                }, // ssao tex (final)
-            ];
-            let lighting_descriptor_writes: Vec<vk::WriteDescriptorSet> = image_infos.iter().enumerate().map(|(i, info)| {
-                vk::WriteDescriptorSet::default()
-                    .dst_set(lighting_renderpass.descriptor_set.descriptor_sets[current_frame])
-                    .dst_binding(i as u32)
-                    .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
-                    .image_info(slice::from_ref(info))
-            }).collect();
-            base.device.update_descriptor_sets(&lighting_descriptor_writes, &[]);
-            //</editor-fold>
-            //<editor-fold desc = "ssao pre downsample">
-            let image_infos = [
-                vk::DescriptorImageInfo {
-                    sampler,
-                    image_view: geometry_renderpass.pass.borrow().textures[current_frame][5].image_view,
-                    image_layout: vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
-                }, // geometry depth
-                vk::DescriptorImageInfo {
-                    sampler,
-                    image_view: geometry_renderpass.pass.borrow().textures[current_frame][4].image_view,
-                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                }, // view normal
-            ];
-            let ssao_pre_downsample_descriptor_writes: Vec<vk::WriteDescriptorSet> = image_infos.iter().enumerate().map(|(i, info)| {
-                vk::WriteDescriptorSet::default()
-                    .dst_set(ssao_pre_downsample_renderpass.descriptor_set.descriptor_sets[current_frame])
-                    .dst_binding(i as u32)
-                    .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
-                    .image_info(slice::from_ref(info))
-            }).collect();
-            base.device.update_descriptor_sets(&ssao_pre_downsample_descriptor_writes, &[]);
-            //</editor-fold>
-            //<editor-fold desc = "ssao gen">
-            let image_infos = [
-                vk::DescriptorImageInfo {
-                    sampler,
-                    image_view: ssao_pre_downsample_renderpass.pass.borrow().textures[current_frame][0].image_view,
-                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                }, // downsampled normal + depth
-                vk::DescriptorImageInfo {
-                    sampler: nearest_sampler,
-                    image_view: ssao_noise_texture.image_view,
-                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                }, // noise tex
-            ];
-            let ssao_descriptor_writes: Vec<vk::WriteDescriptorSet> = image_infos.iter().enumerate().map(|(i, info)| {
-                vk::WriteDescriptorSet::default()
-                    .dst_set(ssao_renderpass.descriptor_set.descriptor_sets[current_frame])
-                    .dst_binding(i as u32)
-                    .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
-                    .image_info(slice::from_ref(info))
-            }).collect();
-            base.device.update_descriptor_sets(&ssao_descriptor_writes, &[]);
-            //</editor-fold>
-            //<editor-fold desc = "ssao blur">
-            let image_infos = [
-                vk::DescriptorImageInfo {
-                    sampler,
-                    image_view: ssao_renderpass.pass.borrow().textures[current_frame][0].image_view,
-                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                }, // ssao raw
-                vk::DescriptorImageInfo {
-                    sampler,
-                    image_view: ssao_pre_downsample_renderpass.pass.borrow().textures[current_frame][0].image_view,
-                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                }, // downsampled normal + depth
-                vk::DescriptorImageInfo {
-                    sampler,
-                    image_view: geometry_renderpass.pass.borrow().textures[current_frame][4].image_view,
-                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                }, // view normal
-                vk::DescriptorImageInfo {
-                    sampler,
-                    image_view: geometry_renderpass.pass.borrow().textures[current_frame][5].image_view,
-                    image_layout: vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
-                }, // geometry depth
-            ];
-            let descriptor_writes: Vec<vk::WriteDescriptorSet> = image_infos.iter().enumerate().map(|(i, info)| {
-                vk::WriteDescriptorSet::default()
-                    .dst_set(ssao_blur_renderpass_upsample.descriptor_set.descriptor_sets[current_frame])
-                    .dst_binding(i as u32)
-                    .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
-                    .image_info(slice::from_ref(info))
-            }).collect();
-            base.device.update_descriptor_sets(&descriptor_writes, &[]);
-            //</editor-fold>
-        }
-        //</editor-fold>
-
-        SceneRenderer {
-            device: base.device.clone(),
-            draw_command_buffers: base.draw_command_buffers.clone(),
-
-            null_texture,
-            null_tex_sampler,
-
-            geometry_renderpass,
-            shadow_renderpass,
-            ssao_pre_downsample_renderpass,
-            ssao_renderpass,
-            ssao_blur_renderpass_upsample,
-            lighting_renderpass,
-
-            sampler,
-            nearest_sampler,
-            ssao_kernal,
-            ssao_noise_texture,
-        }
+        
+        (geometry_renderpass, shadow_renderpass, ssao_pre_downsample_renderpass, ssao_renderpass, ssao_blur_renderpass_upsample, lighting_renderpass)
     } }
     pub fn update_world_textures_all_frames(&self, base: &VkBase, world: &Scene) {
         for frame in 0..MAX_FRAMES_IN_FLIGHT {

@@ -85,40 +85,22 @@ fn main() { unsafe {
                 needs_resize = true;
             },
             Event::AboutToWait => {
-                if controller.borrow().queue_flags.screenshot_queued {
-                    controller.borrow_mut().queue_flags.screenshot_queued = false;
-                    let timestamp = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap()
-                        .as_secs();
-                    screenshot_texture(
-                        &base,
-                        &renderer.compositing_renderpass.pass.borrow().textures[current_frame][0],
-                        vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                        format!("screenshots\\screenshot_{}.png", timestamp).as_str()
-                    );
-                }
-
-
                 if base.needs_swapchain_recreate {
                     base.set_surface_and_present_images();
 
-                    renderer.destroy();
-                    renderer = Renderer::new(&base, &world, controller.clone());
+                    renderer.reload(&base, &world);
 
                     base.needs_swapchain_recreate = false;
                     frametime_manager.reset();
                     return;
                 }
 
-
-
                 let now = Instant::now();
                 let delta_time = now.duration_since(last_frame_time).as_secs_f32();
                 last_frame_time = now;
 
                 { // kill mutable ref once done
-                    controller.borrow_mut().do_controls(delta_time);
+                    controller.borrow_mut().do_controls(delta_time, &base, &renderer, current_frame);
                 }
 
                 let current_fence = base.draw_commands_reuse_fences[current_frame];

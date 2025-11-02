@@ -559,14 +559,18 @@ impl Pass {
     } }
 
     pub unsafe fn destroy(&mut self) { unsafe {
-        for framebuffer in &self.framebuffers {
-            self.device.destroy_framebuffer(*framebuffer, None);
+        if !self.destroyed {
+            for framebuffer in &self.framebuffers {
+                self.device.destroy_framebuffer(*framebuffer, None);
+            }
+            for frame_textures in &self.textures {
+                for texture in frame_textures {
+                    texture.destroy();
+                }
+            }
+            self.device.destroy_render_pass(self.renderpass, None);
+            self.destroyed = true;
         }
-        for frame_textures in &self.textures { for texture in frame_textures {
-            texture.destroy();
-        }}
-        self.device.destroy_render_pass(self.renderpass, None);
-        self.destroyed = true;
     }}
 }
 pub struct PassCreateInfo<'a> {
