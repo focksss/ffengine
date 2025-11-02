@@ -8,6 +8,7 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::CursorGrabMode;
 use crate::engine::input;
 use crate::engine::world::camera::Camera;
+use crate::engine::world::scene::Scene;
 use crate::gui::gui::{GUIInteractableInformation, GUINode, GUIQuad};
 use crate::math::Vector;
 use crate::PI;
@@ -69,7 +70,8 @@ impl Controller {
         &mut self,
         delta_time: f32,
         base: &VkBase,
-        renderer: &Renderer,
+        renderer: &mut Renderer,
+        world: &Scene,
         frame: usize,
     ) { unsafe {
         if self.queue_flags.screenshot_queued {
@@ -87,8 +89,12 @@ impl Controller {
         }
         if self.queue_flags.reload_shaders_queued {
             self.queue_flags.reload_shaders_queued = false;
-            Renderer::compile_shaders()
-            
+            Renderer::compile_shaders();
+            renderer.reload(base, world);
+        }
+        if self.queue_flags.reload_gui_queued {
+            self.queue_flags.reload_gui_queued = false;
+            renderer.gui.load_from_file(base, "resources\\gui\\default.gui");
         }
 
         self.player_camera.update_matrices();

@@ -104,6 +104,8 @@ impl Renderer {
         (SceneRenderer::new(base, world), Renderpass::new(compositing_renderpass_create_info), Renderpass::new(present_renderpass_create_info))
     } }
     pub unsafe fn reload(&mut self, base: &VkBase, world: &Scene) { unsafe {
+        self.device.device_wait_idle().unwrap();
+        
         self.gui.reload_rendering(base);
 
         self.scene_renderer.destroy();
@@ -196,6 +198,8 @@ impl Renderer {
 }
 
 pub unsafe fn screenshot_texture(base: &VkBase, texture: &Texture, layout: vk::ImageLayout, path: &str) {
+    unsafe { base.device.device_wait_idle().unwrap(); }
+    
     let bytes_per_pixel = match texture.format {
         Format::R8G8B8A8_SRGB | Format::R8G8B8A8_UNORM |
         Format::B8G8R8A8_SRGB | Format::B8G8R8A8_UNORM => 4,

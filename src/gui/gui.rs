@@ -68,6 +68,7 @@ impl GUI {
         }
 
         let interactable_information = self.gui_nodes[node_index].interactable_information.as_mut().unwrap();
+        if !left_pressed { interactable_information.was_pressed_last_frame = false; }
         if !interactable_information.was_pressed_last_frame && left_pressed {
             interactable_information.was_pressed_last_frame = true;
             let node_left_tap_action = &node.interactable_information.as_ref().unwrap().left_tap_action;
@@ -76,7 +77,6 @@ impl GUI {
                 match left_tap_action {
                     "reload_shaders" => {
                         self.controller.borrow_mut().queue_flags.reload_shaders_queued = true;
-                        println!("Reloading shaders");
                     }
                     "reload_gui" => {
                         self.controller.borrow_mut().queue_flags.reload_gui_queued = true;
@@ -175,6 +175,11 @@ impl GUI {
     * * Nodes are drawn recursively and without depth testing. To make a node appear in front of another, define it after another.
     */
     pub fn load_from_file(&mut self, base: &VkBase, path: &str) {
+        unsafe { base.device.device_wait_idle().unwrap(); }
+        for text in self.gui_texts.iter() {
+            text.text_information.destroy();
+        }
+
         let json = json::parse(fs::read_to_string(path).expect("failed to load json file").as_str()).expect("json parse error");
 
         let mut fonts = Vec::new();
@@ -278,7 +283,7 @@ impl GUI {
                 }
                 match &interactable_information_json["right_hold_action"] {
                     JsonValue::String(s) => {
-                        interactable_right_hold_action = Some(s.to_string());;
+                        interactable_right_hold_action = Some(s.to_string());
                     }
                     JsonValue::Short(s) => {
                         interactable_right_hold_action = Some(s.to_string());
@@ -604,7 +609,7 @@ impl GUI {
             self.draw_quad(*quad_index, current_frame, command_buffer, position, scale);
         }
         if let Some(text_index) = &node.text {
-            self.draw_text(*text_index, current_frame, command_buffer, position, scale);
+            self.draw_text(*text_index, current_frame, position, scale);
         }
 
         for child in &node.children_indices.clone() {
@@ -665,7 +670,6 @@ impl GUI {
         &self,
         text_index: usize,
         current_frame: usize,
-        command_buffer: vk::CommandBuffer,
         position: Vector,
         scale: Vector,
     ) { unsafe {

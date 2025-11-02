@@ -86,6 +86,8 @@ fn main() { unsafe {
             },
             Event::AboutToWait => {
                 if base.needs_swapchain_recreate {
+                    base.device.device_wait_idle().unwrap();
+                    
                     base.set_surface_and_present_images();
 
                     renderer.reload(&base, &world);
@@ -100,7 +102,7 @@ fn main() { unsafe {
                 last_frame_time = now;
 
                 { // kill mutable ref once done
-                    controller.borrow_mut().do_controls(delta_time, &base, &renderer, current_frame);
+                    controller.borrow_mut().do_controls(delta_time, &base, &mut renderer, &world, current_frame);
                 }
 
                 let current_fence = base.draw_commands_reuse_fences[current_frame];
