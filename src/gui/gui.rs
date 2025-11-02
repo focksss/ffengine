@@ -9,6 +9,7 @@ use crate::render::{Descriptor, DescriptorCreateInfo, DescriptorSetCreateInfo, F
 
 pub struct GUI {
     device: ash::Device,
+    window_ptr: *const winit::window::Window,
 
     pub pass: Arc<RefCell<Pass>>,
     pub text_renderer: TextRenderer,
@@ -63,6 +64,7 @@ impl GUI {
         let default_font = Arc::new(Font::new(&base, "resources\\fonts\\Oxygen-Regular.ttf", Some(32), Some(2.0)));
         GUI {
             device: base.device.clone(),
+            window_ptr: &base.window as *const _,
 
             pass: pass_ref.clone(),
             text_renderer: TextRenderer::new(base, Some(pass_ref.clone())),
@@ -77,6 +79,9 @@ impl GUI {
             fonts: vec![default_font.clone()],
         }
     } }
+    fn window(&self) -> &winit::window::Window {
+        unsafe { &*self.window_ptr }
+    }
     pub unsafe fn set_fonts(&mut self, fonts: &Vec<Arc<Font>>) {
         self.fonts = fonts.clone();
         self.text_renderer.update_font_atlases_all_frames(fonts.clone());
@@ -85,6 +90,7 @@ impl GUI {
     /**
     * Uses custom JSON .gui files
     * * Refer to default.gui in resources/gui
+    * * Nodes are drawn recursively and without depth testing. To make a node appear in front of another, define it after another.
     */
     pub fn load_from_file(&mut self, base: &VkBase, path: &str) {
         let json = json::parse(fs::read_to_string(path).expect("failed to load json file").as_str()).expect("json parse error");
@@ -131,6 +137,11 @@ impl GUI {
             let mut name = String::from("unnamed node");
             if let JsonValue::String(ref name_json) = node["name"] {
                 name = (*name_json).parse().expect("node name parse error");
+            }
+
+            let mut hidden = false;
+            if let JsonValue::Boolean(ref hidden_json) = node["hidden"] {
+                hidden = *hidden_json;
             }
 
             let mut children_indices = Vec::new();
@@ -186,6 +197,7 @@ impl GUI {
 
             nodes.push(GUINode {
                 name,
+                hidden,
                 position,
                 scale,
                 children_indices,
@@ -209,8 +221,16 @@ impl GUI {
                         text_font = v;
                     }
                 }
-                if let JsonValue::String(ref text_information_text_json) = text_information_json["text"] {
-                    text_text = (*text_information_text_json).as_str();
+                match &text_information_json["text"] {
+                    JsonValue::String(s) => {
+                        println!("Text: {:?}", s);
+                        text_text = s.as_str();
+                    }
+                    JsonValue::Short(s) => {
+                        println!("Text: {:?}", s);
+                        text_text = s.as_str();
+                    }
+                    _ => {}
                 }
                 if let JsonValue::Number(ref text_information_font_size_json) = text_information_json["font_size"] {
                     if let Ok(v) = text_information_font_size_json.to_string().parse::<f32>() {
@@ -389,7 +409,13 @@ impl GUI {
         );
 
         for node_index in &self.gui_root_node_indices {
-            self.draw_node(*node_index, current_frame, command_buffer, Vector::new_vec(0.0), Vector::new_vec2(1920.0, 1080.0));
+            self.draw_node(
+                *node_index,
+                current_frame,
+                command_buffer,
+                Vector::new_vec(0.0),
+                Vector::new_vec2(self.window().inner_size().width as f32, self.window().inner_size().height as f32)
+            );
         }
 
         device.cmd_end_render_pass(command_buffer);
@@ -505,6 +531,7 @@ impl GUI {
 */
 pub struct GUINode {
     pub name: String,
+    pub hidden: bool,
     pub position: Vector,
     pub scale: Vector,
     pub children_indices: Vec<usize>,

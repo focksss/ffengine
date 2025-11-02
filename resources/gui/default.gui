@@ -2,19 +2,14 @@
 	"guis": [
 	    {
 	        "name": "default1",
-	        "nodes": [
-	            0
-	        ]
+	        "nodes": [0, 1]
 	    }
 	],
 	"nodes": [
 		{
 			"name": "fps_display",
 			"children": [],
-			"position": [
-				100.0,
-				100.0
-			],
+			"position": [100.0, 100.0],
 			"scale": [
 				220.0,
 				40.0
@@ -23,6 +18,25 @@
 			"absolute_scale": true,
 			"text": 0,
 			"quad": 0
+		},
+		{
+			"name": "settings",
+			"children": [2],
+			"position": [0.8, 0.0],
+			"scale": [0.2, 1.0],
+			"absolute_position": false,
+			"absolute_scale": false,
+			"quad": 0,
+			"text": 1
+		},
+		{
+			"name": "reload button",
+			"children": [],
+			"position": [0.1, 0.8],
+			"scale": [0.8, 0.1],
+			"absolute_position": false,
+			"absolute_scale": false,
+			"quad": 2
 		}
 	],
 	"fonts": [
@@ -40,58 +54,58 @@
 				"font_size": 32.0,
 				"newline_distance": 1720.0
 			},
-			"position": [
-				0.01,
-				0.2
-			],
-			"scale": [
-				1.0,
-				1.0
-			],
-			"clip_min": [
-				0.0,
-				0.0
-			],
-			"clip_max": [
-				1.0,
-				1.0
-			],
+			"position": [0.01, 0.2],
+			"scale": [1.0, 1.0],
+			"clip_min": [0.0, 0.0],
+			"clip_max": [1.0, 1.0],
 			"absolute_position": false,
 			"absolute_scale": false,
-			"color": [
-				1.0,
-				1.0,
-				1.0,
-				1.0
-			]
+			"color": [1.0, 1.0, 1.0, 1.0]
+		},
+		{
+			"text_information": {
+				"font": 0,
+				"text": "Settings",
+				"font_size": 52.0,
+				"newline_distance": 1720.0
+			},
+			"position": [0.01, 0.95],
+			"scale": [1.0, 1.0],
+			"clip_min": [0.0, 0.0],
+			"clip_max": [
+				1.0, 1.0],
+			"absolute_position": false,
+			"absolute_scale": false,
+			"color": [1.0, 1.0, 1.0, 1.0]
 		}
 	],
 	"quads": [
 		{
-			"position": [
-				0.0,
-				0.0
-			],
-			"scale": [
-				1.0,
-				1.0
-			],
-			"clip_min": [
-				0.0,
-				0.0
-			],
-			"clip_max": [
-				1.0,
-				1.0
-			],
+			"position": [0.0, 0.0],
+			"scale": [1.0, 1.0],
+			"clip_min": [0.0, 0.0],
+			"clip_max": [1.0, 1.0],
 			"absolute_position": false,
 			"absolute_scale": false,
-			"color": [
-				0.5,
-				0.5,
-				0.5,
-				0.5
-			]
+			"color": [0.5, 0.5, 0.5, 0.5]
+		},
+		{
+			"position": [0.0, 0.0],
+			"scale": [1.0, 1.0],
+			"clip_min": [0.0, 0.0],
+			"clip_max": [1.0, 1.0],
+			"absolute_position": false,
+			"absolute_scale": false,
+			"color": [0.5, 0.5, 0.5, 1.0]
+		},
+		{
+			"position": [0.0, 0.0],
+			"scale": [1.0, 1.0],
+			"clip_min": [0.0, 0.0],
+			"clip_max": [1.0, 1.0],
+			"absolute_position": false,
+			"absolute_scale": false,
+			"color": [0.5, 0.5, 0.5, 1.0]
 		}
 	]
 }
