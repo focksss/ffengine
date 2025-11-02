@@ -1,15 +1,17 @@
-use std::fs::File;
-use std::io::BufWriter;
-use std::path::Path;
-use std::slice;
-use std::time::Instant;
-use ash::vk;
-use ash::vk::{Buffer, DescriptorType, DeviceMemory, DeviceSize, Format, ImageAspectFlags, ImageSubresourceRange, MemoryPropertyFlags, Sampler, ShaderStageFlags};
+use crate::engine::input::Controller;
 use crate::engine::world::camera::Camera;
 use crate::engine::world::scene::Scene;
-use crate::gui::gui::{GUINode, GUIQuad, GUIText, GUI};
-use crate::render::*;
+use crate::gui::gui::GUI;
 use crate::render::scene_renderer::SceneRenderer;
+use crate::render::*;
+use ash::vk;
+use ash::vk::{DescriptorType, DeviceSize, Format, ImageAspectFlags, ImageSubresourceRange, MemoryPropertyFlags, Sampler, ShaderStageFlags};
+use std::cell::RefCell;
+use std::fs::File;
+use std::io::BufWriter;
+use std::slice;
+use std::sync::Arc;
+use std::time::Instant;
 
 pub const MAX_FRAMES_IN_FLIGHT: usize = 3;
 
@@ -28,7 +30,7 @@ pub struct Renderer {
     pub present_sampler: Sampler,
 }
 impl Renderer {
-    pub unsafe fn new(base: &VkBase, world: &Scene) -> Renderer { unsafe {
+    pub unsafe fn new(base: &VkBase, world: &Scene, controller: Arc<RefCell<Controller>>) -> Renderer { unsafe {
         Renderer::compile_shaders();
         
         let texture_sampler_create_info = DescriptorCreateInfo::new(base)
@@ -64,7 +66,7 @@ impl Renderer {
             compositing_renderpass: Renderpass::new(compositing_renderpass_create_info),
 
             scene_renderer: SceneRenderer::new(base, world),
-            gui: GUI::new(base),
+            gui: GUI::new(base, controller),
 
             last_fps_render: Instant::now(),
 
@@ -168,127 +170,109 @@ impl Renderer {
     } }
 }
 
-pub struct ScreenshotManager<'a> {
-    base: &'a VkBase,
-    texture: &'a Texture,
-    screenshot_pending: bool,
-    staging_buffer: (Buffer, DeviceMemory),
-}
-impl<'a> ScreenshotManager<'a> {
-    pub unsafe fn new(base: &'a VkBase, texture: &'a Texture) -> ScreenshotManager<'a> {
-        ScreenshotManager {
-            base,
-            texture,
-            screenshot_pending: false,
-            staging_buffer: (Buffer::null(), DeviceMemory::null()),
-        }
-    }
-    pub unsafe fn screenshot_queue(&mut self, texture: &'a Texture, layout: vk::ImageLayout, command_buffer: vk::CommandBuffer) { unsafe {
-        let base = self.base;
+pub unsafe fn screenshot_texture(base: &VkBase, texture: &Texture, layout: vk::ImageLayout, path: &str) {
+    let bytes_per_pixel = match texture.format {
+        Format::R8G8B8A8_SRGB | Format::R8G8B8A8_UNORM |
+        Format::B8G8R8A8_SRGB | Format::B8G8R8A8_UNORM => 4,
+        Format::R16G16B16A16_SFLOAT | Format::R16G16B16A16_UNORM => 8,
+        Format::R32G32B32A32_SFLOAT => 16,
+        _ => panic!("Unsupported format for screenshot"),
+    };
 
-        let bytes_per_pixel = match texture.format {
-            Format::R8G8B8A8_SRGB | Format::R8G8B8A8_UNORM |
-            Format::B8G8R8A8_SRGB | Format::B8G8R8A8_UNORM => 4,
-            Format::R16G16B16A16_SFLOAT | Format::R16G16B16A16_UNORM => 8,
-            Format::R32G32B32A32_SFLOAT => 16,
-            _ => {
-                eprintln!("Unsupported format for screenshot: {:?}", texture.format);
-                return;
-            }
-        };
+    let buffer_size = (texture.resolution.width * texture.resolution.height * bytes_per_pixel) as DeviceSize;
 
-        let buffer_size = (texture.resolution.width * texture.resolution.height * bytes_per_pixel) as DeviceSize;
+    let buffer_info = vk::BufferCreateInfo::default()
+        .size(buffer_size)
+        .usage(vk::BufferUsageFlags::TRANSFER_DST)
+        .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
-        let buffer_info = vk::BufferCreateInfo::default()
-            .size(buffer_size)
-            .usage(vk::BufferUsageFlags::TRANSFER_DST)
-            .sharing_mode(vk::SharingMode::EXCLUSIVE);
+    let staging_buffer = base.device.create_buffer(&buffer_info, None).expect("Failed to create buffer");
+    let mem_req = base.device.get_buffer_memory_requirements(staging_buffer);
+    let mem_type_index = find_memorytype_index(
+        &mem_req,
+        &base.device_memory_properties,
+        MemoryPropertyFlags::HOST_VISIBLE | MemoryPropertyFlags::HOST_COHERENT,
+    ).unwrap();
 
-        let staging_buffer = base.device.create_buffer(&buffer_info, None)
-            .expect("Failed to create screenshot staging buffer");
+    let alloc_info = vk::MemoryAllocateInfo::default()
+        .allocation_size(mem_req.size)
+        .memory_type_index(mem_type_index);
 
-        let mem_requirements = base.device.get_buffer_memory_requirements(staging_buffer);
-        let memory_type_index = find_memorytype_index(
-            &mem_requirements,
-            &base.device_memory_properties,
-            MemoryPropertyFlags::HOST_VISIBLE | MemoryPropertyFlags::HOST_COHERENT,
-        );
+    let staging_mem = base.device.allocate_memory(&alloc_info, None).expect("Failed to allocate memory");
+    base.device.bind_buffer_memory(staging_buffer, staging_mem, 0).unwrap();
 
-        let alloc_info = vk::MemoryAllocateInfo::default()
-            .allocation_size(mem_requirements.size)
-            .memory_type_index(memory_type_index.unwrap());
+    let alloc_info = vk::CommandBufferAllocateInfo::default()
+        .command_pool(base.pool)
+        .level(vk::CommandBufferLevel::PRIMARY)
+        .command_buffer_count(1);
 
-        let staging_memory = base.device.allocate_memory(&alloc_info, None)
-            .expect("Failed to allocate screenshot staging memory");
+    let cmd_buffer = base.device.allocate_command_buffers(&alloc_info).unwrap()[0];
 
-        base.device.bind_buffer_memory(staging_buffer, staging_memory, 0)
-            .expect("Failed to bind screenshot staging buffer memory");
+    let begin_info = vk::CommandBufferBeginInfo::default()
+        .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
 
-        let barrier = vk::ImageMemoryBarrier::default()
-            .old_layout(layout)
-            .new_layout(vk::ImageLayout::TRANSFER_SRC_OPTIMAL)
-            .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-            .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-            .image(texture.image)
-            .subresource_range(ImageSubresourceRange {
-                aspect_mask: ImageAspectFlags::COLOR,
-                base_mip_level: 0,
-                level_count: 1,
-                base_array_layer: 0,
-                layer_count: 1,
-            })
-            .src_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
-            .dst_access_mask(vk::AccessFlags::TRANSFER_READ);
+    base.device.begin_command_buffer(cmd_buffer, &begin_info).unwrap();
 
+    let barrier = vk::ImageMemoryBarrier::default()
+        .old_layout(layout)
+        .new_layout(vk::ImageLayout::TRANSFER_SRC_OPTIMAL)
+        .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+        .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+        .image(texture.image)
+        .subresource_range(ImageSubresourceRange {
+            aspect_mask: if texture.is_depth { ImageAspectFlags::DEPTH } else { ImageAspectFlags::COLOR },
+            base_mip_level: 0,
+            level_count: 1,
+            base_array_layer: 0,
+            layer_count: texture.array_layers,
+        })
+        .src_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
+        .dst_access_mask(vk::AccessFlags::TRANSFER_READ);
+
+    unsafe { base.device.cmd_pipeline_barrier(
+        cmd_buffer,
+        vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+        vk::PipelineStageFlags::TRANSFER,
+        vk::DependencyFlags::empty(),
+        &[],
+        &[],
+        &[barrier],
+    ); }
+
+    let copy = vk::BufferImageCopy::default()
+        .buffer_offset(0)
+        .buffer_row_length(0)
+        .buffer_image_height(0)
+        .image_subresource(vk::ImageSubresourceLayers {
+            aspect_mask: if texture.is_depth { ImageAspectFlags::DEPTH } else { ImageAspectFlags::COLOR },
+            mip_level: 0,
+            base_array_layer: 0,
+            layer_count: texture.array_layers,
+        })
+        .image_offset(vk::Offset3D { x: 0, y: 0, z: 0 })
+        .image_extent(texture.resolution);
+
+    unsafe {base.device.cmd_copy_image_to_buffer(cmd_buffer, texture.image, vk::ImageLayout::TRANSFER_SRC_OPTIMAL, staging_buffer, &[copy]); }
+
+    let barrier_back = vk::ImageMemoryBarrier::default()
+        .old_layout(vk::ImageLayout::TRANSFER_SRC_OPTIMAL)
+        .new_layout(layout)
+        .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+        .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+        .image(texture.image)
+        .subresource_range(ImageSubresourceRange {
+            aspect_mask: if texture.is_depth { ImageAspectFlags::DEPTH } else { ImageAspectFlags::COLOR },
+            base_mip_level: 0,
+            level_count: 1,
+            base_array_layer: 0,
+            layer_count: texture.array_layers,
+        })
+        .src_access_mask(vk::AccessFlags::TRANSFER_READ)
+        .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE);
+
+    unsafe {
         base.device.cmd_pipeline_barrier(
-            command_buffer,
-            vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-            vk::PipelineStageFlags::TRANSFER,
-            vk::DependencyFlags::empty(),
-            &[],
-            &[],
-            &[barrier],
-        );
-
-        let buffer_image_copy = vk::BufferImageCopy::default()
-            .buffer_offset(0)
-            .buffer_row_length(0)
-            .buffer_image_height(0)
-            .image_subresource(vk::ImageSubresourceLayers {
-                aspect_mask: ImageAspectFlags::COLOR,
-                mip_level: 0,
-                base_array_layer: 0,
-                layer_count: 1,
-            })
-            .image_offset(vk::Offset3D { x: 0, y: 0, z: 0 })
-            .image_extent(texture.resolution);
-
-        base.device.cmd_copy_image_to_buffer(
-            command_buffer,
-            texture.image,
-            vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
-            staging_buffer,
-            &[buffer_image_copy],
-        );
-
-        let barrier_back = vk::ImageMemoryBarrier::default()
-            .old_layout(vk::ImageLayout::TRANSFER_SRC_OPTIMAL)
-            .new_layout(layout)
-            .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-            .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-            .image(texture.image)
-            .subresource_range(ImageSubresourceRange {
-                aspect_mask: ImageAspectFlags::COLOR,
-                base_mip_level: 0,
-                level_count: 1,
-                base_array_layer: 0,
-                layer_count: 1,
-            })
-            .src_access_mask(vk::AccessFlags::TRANSFER_READ)
-            .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE);
-
-        base.device.cmd_pipeline_barrier(
-            command_buffer,
+            cmd_buffer,
             vk::PipelineStageFlags::TRANSFER,
             vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
             vk::DependencyFlags::empty(),
@@ -297,101 +281,72 @@ impl<'a> ScreenshotManager<'a> {
             &[barrier_back],
         );
 
-        self.texture = texture;
-        self.screenshot_pending = true;
-        self.staging_buffer = (staging_buffer, staging_memory);
-    } }
+        base.device.end_command_buffer(cmd_buffer.clone()).unwrap();
 
-    pub unsafe fn save_screenshot<P: AsRef<Path>>(&mut self, path: P) { unsafe {
-        if !self.screenshot_pending {
-            return;
-        }
+        let command_buffers = &[cmd_buffer];
+        let submit_info = vk::SubmitInfo::default()
+            .command_buffers(command_buffers);
 
-        let base = self.base;
-        let texture = self.texture;
+        base.device.queue_submit(base.graphics_queue, &[submit_info], vk::Fence::null()).unwrap();
+        base.device.queue_wait_idle(base.graphics_queue).unwrap();
 
-        let bytes_per_pixel = match texture.format {
-            Format::R8G8B8A8_SRGB | Format::R8G8B8A8_UNORM |
-            Format::B8G8R8A8_SRGB | Format::B8G8R8A8_UNORM => 4,
-            Format::R16G16B16A16_SFLOAT | Format::R16G16B16A16_UNORM => 8,
-            Format::R32G32B32A32_SFLOAT => 16,
-            _ => {
-                eprintln!("Unsupported format for screenshot save");
-                return;
+        base.device.free_command_buffers(base.pool, &[cmd_buffer]);
+
+        let data_ptr = base.device.map_memory(staging_mem, 0, buffer_size, vk::MemoryMapFlags::empty()).unwrap();
+        let data_slice = slice::from_raw_parts(data_ptr as *const u8, buffer_size as usize);
+
+        let mut rgba_data = Vec::with_capacity((texture.resolution.width * texture.resolution.height * 4) as usize);
+
+        match texture.format {
+            Format::R8G8B8A8_UNORM | Format::R8G8B8A8_SRGB => {
+                rgba_data.extend_from_slice(data_slice);
             }
-        };
-
-        let buffer_size = (texture.resolution.width * texture.resolution.height * bytes_per_pixel) as usize;
-
-        let data_ptr = base.device.map_memory(
-            self.staging_buffer.1,
-            0,
-            buffer_size as DeviceSize,
-            vk::MemoryMapFlags::empty(),
-        ).unwrap();
-
-        let data_slice = slice::from_raw_parts(data_ptr as *const u8, buffer_size);
-
-        let rgba_data = match texture.format {
-            Format::R8G8B8A8_SRGB | Format::R8G8B8A8_UNORM => {
-                data_slice.to_vec()
-            }
-            Format::B8G8R8A8_SRGB | Format::B8G8R8A8_UNORM => {
-                let mut rgba = Vec::with_capacity(buffer_size);
+            Format::B8G8R8A8_UNORM | Format::B8G8R8A8_SRGB => {
                 for chunk in data_slice.chunks_exact(4) {
-                    rgba.push(chunk[2]); // R
-                    rgba.push(chunk[1]); // G
-                    rgba.push(chunk[0]); // B
-                    rgba.push(chunk[3]); // A
+                    rgba_data.push(chunk[2]); // R
+                    rgba_data.push(chunk[1]); // G
+                    rgba_data.push(chunk[0]); // B
+                    rgba_data.push(chunk[3]); // A
                 }
-                rgba
-            }
-            Format::R16G16B16A16_SFLOAT => {
-                let mut rgba = Vec::with_capacity((texture.resolution.width * texture.resolution.height * 4) as usize);
-                for chunk in data_slice.chunks_exact(8) {
-                    for i in 0..4 {
-                        let bits = u16::from_le_bytes([chunk[i*2], chunk[i*2+1]]);
-                        let value = half::f16::from_bits(bits).to_f32();
-                        let byte = (value.clamp(0.0, 1.0) * 255.0) as u8;
-                        rgba.push(byte);
-                    }
-                }
-                rgba
             }
             Format::R16G16B16A16_UNORM => {
-                let mut rgba = Vec::with_capacity((texture.resolution.width * texture.resolution.height * 4) as usize);
                 for chunk in data_slice.chunks_exact(8) {
                     for i in 0..4 {
                         let value = u16::from_le_bytes([chunk[i*2], chunk[i*2+1]]);
-                        rgba.push((value >> 8) as u8); // high byte
+                        rgba_data.push((value >> 8) as u8);
                     }
                 }
-                rgba
             }
-            _ => {
-                eprintln!("Unsupported format conversion");
-                base.device.unmap_memory(self.staging_buffer.1);
-                return;
+            Format::R16G16B16A16_SFLOAT => {
+                for chunk in data_slice.chunks_exact(8) {
+                    for i in 0..4 {
+                        let bits = u16::from_le_bytes([chunk[i*2], chunk[i*2+1]]);
+                        let f = half::f16::from_bits(bits).to_f32();
+                        rgba_data.push((f.clamp(0.0, 1.0) * 255.0) as u8);
+                    }
+                }
             }
-        };
+            _ => panic!("Unsupported format for screenshot"),
+        }
+        if texture.format == Format::B8G8R8A8_UNORM || texture.format == Format::B8G8R8A8_SRGB {
+            for chunk in rgba_data.chunks_exact_mut(4) {
+                chunk.swap(0, 2);
+            }
+        }
 
-        base.device.unmap_memory(self.staging_buffer.1);
-        base.device.destroy_buffer(self.staging_buffer.0, None);
-        base.device.free_memory(self.staging_buffer.1, None);
-        self.staging_buffer = (Buffer::null(), DeviceMemory::null());
+        base.device.unmap_memory(staging_mem);
+        base.device.destroy_buffer(staging_buffer, None);
+        base.device.free_memory(staging_mem, None);
 
         let file = File::create(path).unwrap();
         let w = BufWriter::new(file);
-
         let mut encoder = png::Encoder::new(w, texture.resolution.width, texture.resolution.height);
         encoder.set_color(png::ColorType::Rgba);
         encoder.set_depth(png::BitDepth::Eight);
+        let mut writer = encoder.write_header().unwrap();
+        writer.write_image_data(&rgba_data).unwrap();
+        writer.finish().unwrap();
+    }
 
-        let mut writer = encoder.write_header().expect("Failed to write PNG header");
-        writer.write_image_data(&rgba_data).expect("Failed to write PNG data");
-        writer.finish().expect("Failed to finish PNG");
-
-        self.screenshot_pending = false;
-        println!("Screenshot saved!");
-    } }
+    println!("Screenshot saved to {}", path);
 }

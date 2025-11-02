@@ -44,14 +44,6 @@
 | absolute_scale    | Common | Common      |
 | color             | Common | Common      |
 
-#### TextInformation Structure
-| Key              | Type      | Description                                         |
-|------------------|-----------|-----------------------------------------------------|
-| font             | `integer` | Index of the font to be used by the text            |
-| text             | `String`  | Text to be displayed                                |
-| font_size        | `float`   | Font size of the text, always in pixels             |
-| newline_distance | `float`   | Distance in pixels before the text should auto wrap |
-
 ### Text Structure
 | Key               | Type              | Description                        |
 |-------------------|-------------------|------------------------------------|
@@ -64,19 +56,33 @@
 | absolute_scale    | Common            | Common                             |
 | color             | Common            | Common                             |
 
-#### Interactable Structure
-| Key              | Type      | Description                                                                                       |
-|------------------|-----------|---------------------------------------------------------------------------------------------------|
-| action           | `String`  | Name of the function to be executed upon interaction. Functions to be defined in `src\gui\gui.rs` |
-| hitbox_diversion | `integer` | Index of child node for the interactable hitbox to be diverted to                                 |
+#### TextInformation Structure
+| Key              | Type      | Description                                         |
+|------------------|-----------|-----------------------------------------------------|
+| font             | `integer` | Index of the font to be used by the text            |
+| text             | `String`  | Text to be displayed                                |
+| font_size        | `float`   | Font size of the text, always in pixels             |
+| newline_distance | `float`   | Distance in pixels before the text should auto wrap |
 
-### Node Structure
-| Key               | Type           | Description                     |
-|-------------------|----------------|---------------------------------|
-| name              | `String`       | Name of the node                |
-| interactable      | `Interactable` | Refer to Interactable Structure |
-| children          | `[integer]`    | Array of children indices       |
-| position          | Common         | Common                          |
-| scale             | Common         | Common                          |
-| absolute_position | Common         | Common                          |
-| absolute_scale    | Common         | Common                          |
+## Node Structure
+| Key                      | Type                      | Description                                |
+|--------------------------|---------------------------|--------------------------------------------|
+| name                     | `String`                  | Name of the node                           |
+| interactable_information | `InteractableInformation` | Refer to InteractableInformation Structure |
+| children                 | `[integer]`               | Array of children indices                  |
+| position                 | Common                    | Common                                     |
+| scale                    | Common                    | Common                                     |
+| absolute_position        | Common                    | Common                                     |
+| absolute_scale           | Common                    | Common                                     |
+
+#### InteractableInformation Structure
+
+| Key               | Type      | Description                                                                                                                                                         |
+|-------------------|-----------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| hover_action      | `String`  | Name of the function to be executed when the mouse is hovering over the hitbox. Functions to be defined in `src\gui\gui.rs`                                         |
+| unhover_action    | `String`  | Name of the function to be executed when the mouse is not hovering over the hitbox (intended to undo the hover action). Functions to be defined in `src\gui\gui.rs` |
+| left_tap_action   | `String`  | Name of the function to be executed upon a single left click of the hitbox. Functions to be defined in `src\gui\gui.rs`                                             |
+| right_tap_action  | `String`  | Name of the function to be executed upon a single right click of the hitbox. Functions to be defined in `src\gui\gui.rs`                                            |
+| left_hold_action  | `String`  | Name of the function to be executed whenever the left mouse button is pressed and hovering over the hitbox. Functions to be defined in `src\gui\gui.rs`             |
+| right_hold_action | `String`  | Name of the function to be executed whenever the right mouse button is pressed and hovering over the hitbox. Functions to be defined in `src\gui\gui.rs`            |
+| hitbox_diversion  | `integer` | Index of child node for the interactable hitbox to be diverted to                                                                                                   |

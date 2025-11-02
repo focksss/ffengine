@@ -4,12 +4,15 @@ use std::sync::Arc;
 use ash::vk;
 use ash::vk::{DescriptorType, Format, ShaderStageFlags};
 use json::JsonValue;
+use winit::event::MouseButton;
+use crate::engine::input::Controller;
 use crate::math::Vector;
 use crate::render::{Descriptor, DescriptorCreateInfo, DescriptorSetCreateInfo, Font, Pass, PassCreateInfo, Renderpass, RenderpassCreateInfo, TextInformation, TextRenderer, TextureCreateInfo, VkBase};
 
 pub struct GUI {
     device: ash::Device,
     window_ptr: *const winit::window::Window,
+    controller: Arc<RefCell<Controller>>,
 
     pub pass: Arc<RefCell<Pass>>,
     pub text_renderer: TextRenderer,
@@ -21,10 +24,76 @@ pub struct GUI {
     pub gui_quads: Vec<GUIQuad>,
     pub gui_texts: Vec<GUIText>,
 
+    pub interactable_node_indices: Vec<usize>,
+
     pub fonts: Vec<Arc<Font>>,
 }
 impl GUI {
-    pub unsafe fn new(base: &VkBase) -> GUI { unsafe {
+    pub fn handle_gui_interaction(&mut self, node: GUINode, node_index: usize, min: Vector, max: Vector) {
+        let (x, y, left_pressed) = {
+            let controller = self.controller.borrow();
+            let x = controller.cursor_position.x as f32;
+            let y = self.window().inner_size().height as f32 - controller.cursor_position.y as f32;
+            let left_pressed = controller.pressed_mouse_buttons.contains(&MouseButton::Left);
+            (x, y, left_pressed)
+        };
+
+        let hovered = if
+                x > min.x && x < max.x &&
+                y > min.y && y < max.y
+            { true } else { false };
+        let node_unhover_action = &node.interactable_information.as_ref().unwrap().unhover_action;
+        if !hovered {
+            if let Some(potential_unhover_action) = &node_unhover_action {
+                let unhover_action = potential_unhover_action.as_str();
+                match unhover_action {
+                    "color_quad_normal" => {
+                        self.gui_quads[node.quad.expect("GUINode with 'color_quad_normal' does not have quad'")].color = Vector::new_vec4(0.5, 0.5, 0.5, 1.0);
+                    }
+                    _ => ()
+                }
+            }
+            return;
+        };
+
+        let node_hover_action = &node.interactable_information.as_ref().unwrap().hover_action;
+        if let Some(potential_hover_action) = &node_hover_action {
+            let hover_action = potential_hover_action.as_str();
+            match hover_action {
+                "color_quad_bright" => {
+                    self.gui_quads[node.quad.expect("GUINode with 'color_quad_bright' does not have quad'")].color = Vector::new_vec4(0.7, 0.7, 0.7, 1.0);
+                }
+                _ => ()
+            }
+        }
+
+        let interactable_information = self.gui_nodes[node_index].interactable_information.as_mut().unwrap();
+        if !interactable_information.was_pressed_last_frame && left_pressed {
+            interactable_information.was_pressed_last_frame = true;
+            let node_left_tap_action = &node.interactable_information.as_ref().unwrap().left_tap_action;
+            if let Some(potential_left_tap_action) = &node_left_tap_action {
+                let left_tap_action = potential_left_tap_action.as_str();
+                match left_tap_action {
+                    "reload_shaders" => {
+                        self.controller.borrow_mut().queue_flags.reload_shaders_queued = true;
+                        println!("Reloading shaders");
+                    }
+                    "reload_gui" => {
+                        self.controller.borrow_mut().queue_flags.reload_gui_queued = true;
+                    }
+                    "pause_rendering" => {
+                        self.controller.borrow_mut().queue_flags.pause_rendering = true;
+                    }
+                    "screenshot" => {
+                        self.controller.borrow_mut().queue_flags.screenshot_queued = true;
+                    }
+                    _ => ()
+                }
+            }
+        }
+    }
+
+    pub unsafe fn new(base: &VkBase, controller: Arc<RefCell<Controller>>) -> GUI { unsafe {
         let pass_create_info = PassCreateInfo::new(base)
             .add_color_attachment_info(TextureCreateInfo::new(base).format(Format::R16G16B16A16_SFLOAT).add_usage_flag(vk::ImageUsageFlags::TRANSFER_SRC));
         let pass_ref = Arc::new(RefCell::new(Pass::new(pass_create_info)));
@@ -65,6 +134,7 @@ impl GUI {
         GUI {
             device: base.device.clone(),
             window_ptr: &base.window as *const _,
+            controller,
 
             pass: pass_ref.clone(),
             text_renderer: TextRenderer::new(base, Some(pass_ref.clone())),
@@ -75,6 +145,8 @@ impl GUI {
 
             gui_quads: Vec::new(),
             gui_texts: Vec::new(),
+
+            interactable_node_indices: Vec::new(),
 
             fonts: vec![default_font.clone()],
         }
@@ -139,6 +211,90 @@ impl GUI {
                 name = (*name_json).parse().expect("node name parse error");
             }
 
+            let mut interactable_information = None;
+            if let JsonValue::Object(ref interactable_information_json) = node["interactable_information"] {
+                let mut interactable_hover_action = None;
+                let mut interactable_unhover_action = None;
+                let mut interactable_left_tap_action = None;
+                let mut interactable_right_tap_action = None;
+                let mut interactable_left_hold_action = None;
+                let mut interactable_right_hold_action = None;
+                let mut interactable_hitbox_diversion = None;
+
+                match &interactable_information_json["hover_action"] {
+                    JsonValue::String(s) => {
+                        interactable_hover_action = Some(s.to_string());
+                    }
+                    JsonValue::Short(s) => {
+                        interactable_hover_action = Some(s.to_string());
+                    }
+                    _ => {}
+                }
+                match &interactable_information_json["unhover_action"] {
+                    JsonValue::String(s) => {
+                        interactable_unhover_action = Some(s.to_string());
+                    }
+                    JsonValue::Short(s) => {
+                        interactable_unhover_action = Some(s.to_string());
+                    }
+                    _ => {}
+                }
+                match &interactable_information_json["left_tap_action"] {
+                    JsonValue::String(s) => {
+                        interactable_left_tap_action = Some(s.to_string());
+                    }
+                    JsonValue::Short(s) => {
+                        interactable_left_tap_action = Some(s.to_string());
+                    }
+                    _ => {}
+                }
+                match &interactable_information_json["right_tap_action"] {
+                    JsonValue::String(s) => {
+                        interactable_right_tap_action = Some(s.to_string());
+                    }
+                    JsonValue::Short(s) => {
+                        interactable_right_tap_action = Some(s.to_string());
+                    }
+                    _ => {}
+                }
+                match &interactable_information_json["left_hold_action"] {
+                    JsonValue::String(s) => {
+                        interactable_left_hold_action = Some(s.to_string());
+                    }
+                    JsonValue::Short(s) => {
+                        interactable_left_hold_action = Some(s.to_string());
+                    }
+                    _ => {}
+                }
+                match &interactable_information_json["right_hold_action"] {
+                    JsonValue::String(s) => {
+                        interactable_right_hold_action = Some(s.to_string());;
+                    }
+                    JsonValue::Short(s) => {
+                        interactable_right_hold_action = Some(s.to_string());
+                    }
+                    _ => {}
+                }
+                if let JsonValue::Number(ref interactable_information_json) = interactable_information_json["hitbox_diversion"] {
+                    if let Ok(v) = interactable_information_json.to_string().parse::<usize>() {
+                        interactable_hitbox_diversion = Some(v);
+                    }
+                }
+
+                let temp = GUIInteractableInformation {
+                    was_pressed_last_frame: false,
+
+                    hover_action: interactable_hover_action,
+                    unhover_action: interactable_unhover_action,
+                    left_tap_action: interactable_left_tap_action,
+                    left_hold_action: interactable_left_hold_action,
+                    right_tap_action: interactable_right_tap_action,
+                    right_hold_action: interactable_right_hold_action,
+                    hitbox_diversion: interactable_hitbox_diversion,
+                };
+                interactable_information = Some(temp);
+            }
+
             let mut hidden = false;
             if let JsonValue::Boolean(ref hidden_json) = node["hidden"] {
                 hidden = *hidden_json;
@@ -196,7 +352,9 @@ impl GUI {
             }
 
             nodes.push(GUINode {
+                index: nodes.len(),
                 name,
+                interactable_information,
                 hidden,
                 position,
                 scale,
@@ -398,15 +556,14 @@ impl GUI {
         self.gui_quads = gui_quads;
     }
 
-    pub unsafe fn draw(&self, current_frame: usize, command_buffer: vk::CommandBuffer,) { unsafe {
-        let device = &self.device;
-        device.cmd_begin_render_pass(
+    pub unsafe fn draw(&mut self, current_frame: usize, command_buffer: vk::CommandBuffer,) { unsafe {
+        self.device.cmd_begin_render_pass(
             command_buffer,
             &self.pass.borrow().get_pass_begin_info(current_frame, None, self.text_renderer.renderpass.scissor),
             vk::SubpassContents::INLINE,
         );
 
-        for node_index in &self.gui_root_node_indices {
+        for node_index in &self.gui_root_node_indices.clone() {
             self.draw_node(
                 *node_index,
                 current_frame,
@@ -416,21 +573,23 @@ impl GUI {
             );
         }
 
-        device.cmd_end_render_pass(command_buffer);
+        self.device.cmd_end_render_pass(command_buffer);
         self.pass.borrow().transition_to_readable(command_buffer, current_frame);
     } }
     unsafe fn draw_node(
-        &self,
+        &mut self,
         node_index: usize,
         current_frame: usize,
         command_buffer: vk::CommandBuffer,
         parent_position: Vector,
         parent_scale: Vector,
     ) { unsafe {
-        let node = &self.gui_nodes[node_index];
+        let node = self.gui_nodes[node_index].clone();
+        if node.hidden { return };
+
         let position = parent_position + if node.absolute_position { node.position } else { node.position * parent_scale };
         let scale = if node.absolute_scale { node.scale } else { parent_scale * node.scale };
-        
+
         if let Some(quad_index) = &node.quad {
             self.draw_quad(*quad_index, current_frame, command_buffer, position, scale);
         }
@@ -438,8 +597,12 @@ impl GUI {
             self.draw_text(*text_index, current_frame, command_buffer, position, scale);
         }
 
-        for child in &node.children_indices {
+        for child in &node.children_indices.clone() {
             self.draw_node(*child, current_frame, command_buffer, position, scale);
+        }
+
+        if node.interactable_information.is_some() {
+            self.handle_gui_interaction(node, node_index, position, position + scale)
         }
     } }
     unsafe fn draw_quad(
@@ -527,8 +690,11 @@ impl GUI {
 /**
 * Position and scale are relative and normalized.
 */
+#[derive(Clone)]
 pub struct GUINode {
+    pub index: usize,
     pub name: String,
+    pub interactable_information: Option<GUIInteractableInformation>,
     pub hidden: bool,
     pub position: Vector,
     pub scale: Vector,
@@ -538,6 +704,18 @@ pub struct GUINode {
 
     pub text: Option<usize>,
     pub quad: Option<usize>
+}
+#[derive(Clone)]
+pub struct GUIInteractableInformation {
+    pub was_pressed_last_frame: bool,
+
+    pub hover_action: Option<String>,
+    pub unhover_action: Option<String>,
+    pub left_tap_action: Option<String>,
+    pub left_hold_action: Option<String>,
+    pub right_tap_action: Option<String>,
+    pub right_hold_action: Option<String>,
+    pub hitbox_diversion: Option<usize>,
 }
 /**
 * Position and scale are relative and normalized.
@@ -553,15 +731,14 @@ pub struct GUIQuad {
     pub color: Vector,
 }
 pub struct GUIText {
+    pub text_information: TextInformation,
+
     pub position: Vector,
     pub scale: Vector,
     pub clip_min: Vector,
     pub clip_max: Vector,
     pub absolute_position: bool,
     pub absolute_scale: bool,
-
-    pub text_information: TextInformation,
-
     pub color: Vector,
 }
 #[repr(C)]

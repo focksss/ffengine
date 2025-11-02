@@ -4,10 +4,12 @@ mod math;
 mod engine;
 mod gui;
 
+use std::cell::RefCell;
 use std::default::Default;
 use std::error::Error;
 use std::mem;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use ash::vk;
@@ -22,7 +24,7 @@ use render::render::MAX_FRAMES_IN_FLIGHT;
 use crate::engine::input::Controller;
 use crate::engine::world::scene::{Model, Scene};
 use crate::render::*;
-use crate::render::render::Renderer;
+use crate::render::render::{screenshot_texture, Renderer};
 
 const PI: f32 = std::f32::consts::PI;
 
@@ -56,9 +58,10 @@ fn main() { unsafe {
 
     world.initialize(&base, MAX_FRAMES_IN_FLIGHT, true);
 
-    let mut renderer = Renderer::new(&base, &world);
+    let mut controller = Arc::new(RefCell::new(Controller::new(&base.window)));
 
-    let mut controller = Controller::new(&base.window);
+    let mut renderer = Renderer::new(&base, &world, controller.clone());
+
 
     let mut current_frame = 0usize;
     let mut last_frame_time = Instant::now();
@@ -78,15 +81,30 @@ fn main() { unsafe {
                 base.needs_swapchain_recreate = true;
                 last_resize = Instant::now();
 
-                controller.player_camera.aspect_ratio = base.window.inner_size().width as f32 / base.window.inner_size().height as f32;
+                controller.borrow_mut().player_camera.aspect_ratio = base.window.inner_size().width as f32 / base.window.inner_size().height as f32;
                 needs_resize = true;
             },
             Event::AboutToWait => {
+                if controller.borrow().queue_flags.screenshot_queued {
+                    controller.borrow_mut().queue_flags.screenshot_queued = false;
+                    let timestamp = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs();
+                    screenshot_texture(
+                        &base,
+                        &renderer.compositing_renderpass.pass.borrow().textures[current_frame][0],
+                        vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                        format!("screenshots\\screenshot_{}.png", timestamp).as_str()
+                    );
+                }
+
+
                 if base.needs_swapchain_recreate {
                     base.set_surface_and_present_images();
 
                     renderer.destroy();
-                    renderer = Renderer::new(&base, &world);
+                    renderer = Renderer::new(&base, &world, controller.clone());
 
                     base.needs_swapchain_recreate = false;
                     frametime_manager.reset();
@@ -99,7 +117,9 @@ fn main() { unsafe {
                 let delta_time = now.duration_since(last_frame_time).as_secs_f32();
                 last_frame_time = now;
 
-                controller.do_controls(delta_time);
+                { // kill mutable ref once done
+                    controller.borrow_mut().do_controls(delta_time);
+                }
 
                 let current_fence = base.draw_commands_reuse_fences[current_frame];
                 base.device.wait_for_fences(&[current_fence], true, u64::MAX).expect("wait failed");
@@ -118,7 +138,7 @@ fn main() { unsafe {
                 let current_draw_command_buffer = base.draw_command_buffers[current_frame];
                 let current_fence = base.draw_commands_reuse_fences[current_frame];
 
-                if !controller.paused { world.update_sun(&controller.player_camera) };
+                { if !controller.borrow().paused { world.update_sun(&controller.borrow().player_camera) }; };
 
                 record_submit_commandbuffer(
                     &base.device,
@@ -132,7 +152,9 @@ fn main() { unsafe {
                         world.update_nodes(frame_command_buffer, current_frame);
                         world.update_lights(frame_command_buffer, current_frame);
 
-                        renderer.render_frame(current_frame, present_index as usize, delta_time, &world, &controller.player_camera);
+                        let camera_data = { &controller.borrow().player_camera.clone() };
+
+                        renderer.render_frame(current_frame, present_index as usize, delta_time, &world, camera_data);
                     },
                 );
 
@@ -152,7 +174,7 @@ fn main() { unsafe {
 
                 current_frame = (current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
             },
-            _ => controller.handle_event(event, elwp),
+            _ => { controller.borrow_mut().handle_event(event, elwp) },
         }
     }).expect("Failed to initiate render loop");
 

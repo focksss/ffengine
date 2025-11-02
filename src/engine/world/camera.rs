@@ -2,6 +2,7 @@ use crate::math::matrix::Matrix;
 use crate::math::vector::Vector;
 
 const PI: f32 = std::f32::consts::PI;
+#[derive(Clone)]
 pub struct Camera {
     pub view_matrix: Matrix,
     pub projection_matrix: Matrix,
@@ -136,6 +137,7 @@ impl Plane {
         center.sub_vec(&self.point).dot(&self.normal) > -radius
     }
 }
+#[derive(Clone)]
 pub struct Frustum {
     pub planes: [Plane; 6],
 }

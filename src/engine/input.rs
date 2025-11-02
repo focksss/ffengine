@@ -1,12 +1,13 @@
 use std::collections::HashSet;
 use std::time::Instant;
 use winit::dpi::PhysicalPosition;
-use winit::event::{ElementState, Event, KeyEvent, WindowEvent};
+use winit::event::{ElementState, Event, KeyEvent, MouseButton, WindowEvent};
 use winit::event_loop::EventLoopWindowTarget;
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::CursorGrabMode;
 use crate::engine::input;
 use crate::engine::world::camera::Camera;
+use crate::gui::gui::{GUIInteractableInformation, GUINode, GUIQuad};
 use crate::math::Vector;
 use crate::PI;
 
@@ -14,8 +15,14 @@ pub struct Controller {
     pub window_ptr: *const winit::window::Window,
     pub player_camera: Camera,
 
+    pub cursor_position: PhysicalPosition<f64>,
+    pub queue_flags: Flags,
+
     pub pressed_keys: HashSet<PhysicalKey>,
     pub new_pressed_keys: HashSet<PhysicalKey>,
+
+    pub pressed_mouse_buttons: HashSet<MouseButton>,
+
     pub mouse_delta: (f32, f32),
     pub cursor_locked: bool,
     pub saved_cursor_pos: PhysicalPosition<f64>,
@@ -29,6 +36,8 @@ impl Controller {
             .expect("failed to reset mouse position");
         Controller {
             window_ptr: window as *const _,
+            cursor_position: Default::default(),
+            queue_flags: Default::default(),
             player_camera: Camera::new_perspective_rotation(
                 Vector::new_vec3(0.0, 0.0, 0.0),
                 Vector::new_empty(),
@@ -42,6 +51,7 @@ impl Controller {
             ),
             pressed_keys: Default::default(),
             new_pressed_keys: Default::default(),
+            pressed_mouse_buttons: Default::default(),
             mouse_delta: (0.0, 0.0),
             cursor_locked: false,
             saved_cursor_pos: Default::default(),
@@ -160,6 +170,23 @@ impl Controller {
                 }
             }
             Event::WindowEvent {
+                event: WindowEvent::MouseInput {
+                    state,
+                    button,
+                    ..
+                },
+                ..
+            } => {
+                match state {
+                    ElementState::Pressed => {
+                        if !self.pressed_mouse_buttons.contains(&button) { self.pressed_mouse_buttons.insert(button.clone()); }
+                    }
+                    ElementState::Released => {
+                        if self.pressed_mouse_buttons.contains(&button) { self.pressed_mouse_buttons.remove(&button); }
+                    }
+                }
+            }
+            Event::WindowEvent {
                 event: WindowEvent::CursorMoved { position, .. },
                 ..
             } => {
@@ -176,6 +203,7 @@ impl Controller {
                 } else {
                     self.saved_cursor_pos = position;
                 }
+                self.cursor_position = position;
             }
             Event::WindowEvent {
                 event: WindowEvent::Focused(true),
@@ -213,4 +241,12 @@ impl Controller {
             self.player_camera.rotation.x = self.player_camera.rotation.x.clamp(-PI * 0.5, PI * 0.5);
         }
     }
+}
+
+#[derive(Default)]
+pub struct Flags {
+    pub reload_gui_queued: bool,
+    pub reload_shaders_queued: bool,
+    pub pause_rendering: bool,
+    pub screenshot_queued: bool,
 }
