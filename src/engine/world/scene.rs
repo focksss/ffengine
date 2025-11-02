@@ -1560,51 +1560,99 @@ impl Primitive {
     }
 
     fn construct_tangents<T: AsUsize>(vertices: &mut Vec<RefCell<Vertex>>, index_data: &Vec<T>) {
+        for vertex in vertices.iter() {
+            let mut v = vertex.borrow_mut();
+            v.tangent = [0.0, 0.0, 0.0];
+            v.bitangent = [0.0, 0.0, 0.0];
+        }
+
         for i in (0..index_data.len()).step_by(3) {
             let i0 = index_data[i].as_usize();
             let i1 = index_data[i + 1].as_usize();
             let i2 = index_data[i + 2].as_usize();
-            let v1 = &mut vertices[i0].borrow_mut();
-            let v2 = &mut vertices[i1].borrow_mut();
-            let v3 = &mut vertices[i2].borrow_mut();
 
-            let e1 = (
-                v2.position[0] - v1.position[0],
-                v2.position[1] - v1.position[1],
-                v2.position[2] - v1.position[2]
-            );
-            let e2 = (
-                v3.position[0] - v1.position[0],
-                v3.position[1] - v1.position[1],
-                v3.position[2] - v1.position[2]
-            );
-            let delta_uv1 = (
-                v2.uv[0] - v1.uv[0],
-                v2.uv[1] - v1.uv[1],
-            );
-            let delta_uv2 = (
-                v3.uv[0] - v1.uv[0],
-                v3.uv[1] - v1.uv[1],
-            );
-            let f = 1.0 / (delta_uv1.0 * delta_uv2.1 - delta_uv2.0 * delta_uv1.1);
-            let tangent = Vector::new_vec3(
+            let (e1, e2, delta_uv1, delta_uv2) = {
+                let v1 = vertices[i0].borrow();
+                let v2 = vertices[i1].borrow();
+                let v3 = vertices[i2].borrow();
+
+                let e1 = (
+                    v2.position[0] - v1.position[0],
+                    v2.position[1] - v1.position[1],
+                    v2.position[2] - v1.position[2]
+                );
+                let e2 = (
+                    v3.position[0] - v1.position[0],
+                    v3.position[1] - v1.position[1],
+                    v3.position[2] - v1.position[2]
+                );
+                let delta_uv1 = (
+                    v2.uv[0] - v1.uv[0],
+                    v2.uv[1] - v1.uv[1],
+                );
+                let delta_uv2 = (
+                    v3.uv[0] - v1.uv[0],
+                    v3.uv[1] - v1.uv[1],
+                );
+                (e1, e2, delta_uv1, delta_uv2)
+            };
+
+            let denom = delta_uv1.0 * delta_uv2.1 - delta_uv2.0 * delta_uv1.1;
+
+            // skip degen
+            if denom.abs() < 1e-6 {
+                continue;
+            }
+
+            let f = 1.0 / denom;
+
+            let tangent = (
                 f * (delta_uv2.1 * e1.0 - delta_uv1.1 * e2.0),
                 f * (delta_uv2.1 * e1.1 - delta_uv1.1 * e2.1),
                 f * (delta_uv2.1 * e1.2 - delta_uv1.1 * e2.2),
-            ).normalize_3d();
-            let bitangent = Vector::new_vec3(
+            );
+            let bitangent = (
                 f * (-delta_uv2.0 * e1.0 + delta_uv1.0 * e2.0),
                 f * (-delta_uv2.0 * e1.1 + delta_uv1.0 * e2.1),
                 f * (-delta_uv2.0 * e1.2 + delta_uv1.0 * e2.2),
-            ).normalize_3d();
+            );
 
-            v1.tangent = tangent.to_array3();
-            v2.tangent = tangent.to_array3();
-            v3.tangent = tangent.to_array3();
+            // accumulate
+            for idx in [i0, i1, i2] {
+                let mut v = vertices[idx].borrow_mut();
+                v.tangent[0] += tangent.0;
+                v.tangent[1] += tangent.1;
+                v.tangent[2] += tangent.2;
+                v.bitangent[0] += bitangent.0;
+                v.bitangent[1] += bitangent.1;
+                v.bitangent[2] += bitangent.2;
+            }
+        }
 
-            v1.bitangent = bitangent.to_array3();
-            v2.bitangent = bitangent.to_array3();
-            v3.bitangent = bitangent.to_array3();
+        for vertex in vertices.iter() {
+            let mut v = vertex.borrow_mut();
+
+            let tangent_vec = Vector::new_vec3(v.tangent[0], v.tangent[1], v.tangent[2]);
+            let bitangent_vec = Vector::new_vec3(v.bitangent[0], v.bitangent[1], v.bitangent[2]);
+            
+            let tangent_len_sq = v.tangent[0] * v.tangent[0] +
+                v.tangent[1] * v.tangent[1] +
+                v.tangent[2] * v.tangent[2];
+            let bitangent_len_sq = v.bitangent[0] * v.bitangent[0] +
+                v.bitangent[1] * v.bitangent[1] +
+                v.bitangent[2] * v.bitangent[2];
+
+            if tangent_len_sq > 1e-6 {
+                v.tangent = tangent_vec.normalize_3d().to_array3();
+            } else {
+                v.tangent = [1.0, 0.0, 0.0];
+            }
+
+            if bitangent_len_sq > 1e-6 {
+                v.bitangent = bitangent_vec.normalize_3d().to_array3();
+            } else {
+                v.bitangent = [0.0, 1.0, 0.0];
+            }
         }
     }
 

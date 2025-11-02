@@ -104,4 +104,8 @@ void main() {
         * max(0.2, get_shadow(world_position, world_normal, -view_position.z)
         * max(0.0, dot(world_normal, -normalize(sun.vector))))
     , 1.0);
+
+    float gamma = 1.0;
+    float exposure = 2.0;
+    uFragColor = vec4(pow(vec3(1.0) - exp(-uFragColor.rgb * exposure), vec3(1.0 / gamma)).rgb, 1.0);
 }
