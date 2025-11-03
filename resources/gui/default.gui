@@ -57,15 +57,6 @@
 			"absolute_position": false,
 			"absolute_scale": false,
 			"color": [0.5, 0.5, 0.5, 1.0]
-		},
-		{
-			"position": [0.0, 0.0],
-			"scale": [1.0, 1.0],
-			"clip_min": [0.0, 0.0],
-			"clip_max": [1.0, 1.0],
-			"absolute_position": false,
-			"absolute_scale": false,
-			"color": [0.5, 0.5, 0.5, 1.0]
 		}
 	],
 	"texts": [
@@ -165,7 +156,7 @@
 		},
 		{
 			"name": "settings",
-			"children": [2, 3, 4, 5],
+			"children": [2, 3, 4],
 			"position": [0.8, 0.0],
 			"scale": [0.2, 1.0],
 			"absolute_position": false,
@@ -189,20 +180,6 @@
 			"text": 2
 		},
 		{
-			"name": "pause rendering button",
-			"interactable_information": {
-				"hover_action": "color_quad_bright",
-				"unhover_action": "color_quad_normal",
-				"left_tap_action": "pause_rendering"
-			},
-			"children": [],
-			"position": [0.85, 0.95],
-			"scale": [40, 40],
-			"absolute_position": false,
-			"absolute_scale": true,
-			"quad": 3
-		},
-		{
 			"name": "reload gui button",
 			"interactable_information": {
 				"hover_action": "color_quad_bright",
@@ -214,7 +191,7 @@
 			"scale": [0.8, 0.05],
 			"absolute_position": false,
 			"absolute_scale": false,
-			"quad": 4,
+			"quad": 3,
 			"text": 3
 		},
 		{
@@ -229,7 +206,7 @@
 			"scale": [0.8, 0.05],
 			"absolute_position": false,
 			"absolute_scale": false,
-			"quad": 5,
+			"quad": 4,
 			"text": 4
 		}
 	]

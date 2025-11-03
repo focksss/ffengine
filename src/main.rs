@@ -24,7 +24,7 @@ use render::render::MAX_FRAMES_IN_FLIGHT;
 use crate::engine::input::Controller;
 use crate::engine::world::scene::{Model, Scene};
 use crate::render::*;
-use crate::render::render::{screenshot_texture, Renderer};
+use crate::render::render::Renderer;
 
 const PI: f32 = std::f32::consts::PI;
 
@@ -49,10 +49,9 @@ fn main() { unsafe {
 
     //world.preload_model(Model::new(&PathBuf::from("resources/models/shadowTest/shadowTest.gltf").to_str().unwrap()));
     //world.models[1].transform_roots(&Vector::new_vec3(0.0, 0.0, -5.0), &Vector::new_vec(0.0), &Vector::new_vec(1.0));
-    world.preload_model(Model::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf"));
-    //world.preload_model(Model::new("C:\\Graphics\\assets\\bistroGLTF\\untitled.gltf"));
+    //world.preload_model(Model::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf"));
+    world.preload_model(Model::new("C:\\Graphics\\assets\\bistroGLTF\\untitled.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\asgard\\asgard.gltf"));
-    //sa
     //world.preload_model(Model::new("C:\\Graphics\\assets\\helmet\\DamagedHelmet.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\hydrant\\untitled.gltf"));
 

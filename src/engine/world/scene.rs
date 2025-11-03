@@ -15,9 +15,9 @@ use crate::math::vector::Vector;
 use crate::render::scene_renderer::SHADOW_RES;
 
 // SHOULD DETECT MATH VS COLOR DATA TEXTURES, LOAD COLOR AS SRGB, MATH AS UNORM
-const MAX_VERTICES: u64 = 3 * 10u64.pow(6); // 7 for bistro
-const MAX_INDICES: u64 = 4 * 10u64.pow(5); // 6 for bistro
-const MAX_INSTANCES: u64 = 10u64 * 10u64.pow(4); // 5 for bistro
+const MAX_VERTICES: u64 = 3 * 10u64.pow(7); // 7 for bistro
+const MAX_INDICES: u64 = 4 * 10u64.pow(6); // 6 for bistro
+const MAX_INSTANCES: u64 = 10u64 * 10u64.pow(5); // 5 for bistro
 const MAX_MATERIALS: u64 = 10u64 * 10u64.pow(4);
 const MAX_JOINTS: u64 = 10u64 * 10u64.pow(4);
 const MAX_LIGHTS: u64 = 10u64 * 10u64.pow(3);
@@ -476,38 +476,50 @@ impl Scene {
 
 #[derive(Clone)]
 pub struct Light {
-    pub vector: Vector,
-    pub projection: Matrix,
-    pub view: Matrix,
+    pub position: Vector,
+    pub direction: Vector,
     pub light_type: u32,
+    pub quadratic_falloff: f32,
+    pub linear_falloff: f32,
+    pub constant_falloff: f32,
+    pub inner_cutoff: f32,
+    pub outer_cutoff: f32,
 }
 impl Light {
-    pub fn new(vector: Vector) -> Light {
+    pub fn new(position: Vector, direction: Vector) -> Light {
         Light {
-            vector: Vector::new_vec4(vector.x, vector.y, vector.z, 1.0),
-            projection: Matrix::new_ortho(-10.0, 10.0, -10.0, 10.0, 0.01, 1000.0),
-            view: Matrix::new_look_at(
-                &Vector::new_vec3(vector.x * -100.0, vector.y * -100.0, vector.z * -100.0),
-                &Vector::new_vec3(0.0, 0.0, 0.0),
-                &Vector::new_vec3(0.0, 1.0, 0.0),
-            ),
+            position,
+            direction,
             light_type: 0,
+            quadratic_falloff: 0.1,
+            linear_falloff: 0.1,
+            constant_falloff: 0.1,
+            inner_cutoff: 0.0,
+            outer_cutoff: 0.0,
         }
     }
     pub fn to_sendable(&self) -> LightSendable {
         LightSendable {
-            matrix: (self.projection * self.view).data,
-            vector: self.vector.to_array3(),
-            _pad0: 0u32
+            position: self.position.to_array3(),
+            _pad0: 0u32,
+            direction: self.direction.to_array3(),
+            light_type: self.light_type,
+            attenuation_values:
+                if self.light_type == 0 { [self.quadratic_falloff, self.linear_falloff, self.constant_falloff] }
+                    else { [self.inner_cutoff, self.outer_cutoff, 0.0] },
+            _pad1: 0u32
         }
     }
 }
 #[derive(Copy)]
 #[derive(Clone)]
 pub struct LightSendable {
-    pub matrix: [f32; 16],
-    pub vector: [f32; 3],
+    pub position: [f32; 3],
     pub _pad0: u32,
+    pub direction: [f32; 3],
+    pub light_type: u32,
+    pub attenuation_values: [f32; 3],
+    pub _pad1: u32,
 }
 #[derive(Clone)]
 pub struct Sun {
@@ -1634,7 +1646,7 @@ impl Primitive {
 
             let tangent_vec = Vector::new_vec3(v.tangent[0], v.tangent[1], v.tangent[2]);
             let bitangent_vec = Vector::new_vec3(v.bitangent[0], v.bitangent[1], v.bitangent[2]);
-            
+
             let tangent_len_sq = v.tangent[0] * v.tangent[0] +
                 v.tangent[1] * v.tangent[1] +
                 v.tangent[2] * v.tangent[2];

@@ -22,8 +22,10 @@ layout(push_constant) uniform constants {
 } ubo;
 
 struct Light {
-    mat4 matrix;
-    vec3 vector;
+    vec3 position;
+    vec3 direction;
+    uint type; // 0 = point, 1 = directional, 2 = spotlight
+    vec3 falloffs; // x = quadratic, y = linear, z = constant. For spotlights, x = inner cutoff, y = cutoff
 };
 
 layout(set = 0, binding = 8, std430) readonly buffer LightsSSBO {
@@ -49,6 +51,30 @@ vec3 get_position_from_depth() {
     vec4 view_space_position = ubo.inverse_projection * projected_position;
 
     return view_space_position.xyz / view_space_position.w;
+}
+
+float attenuation(vec3 l_pos, vec3 pos, float constant, float linear, float quadratic) {
+    float distance = length(l_pos - pos);
+    return 1 / (constant + linear*distance + quadratic*(distance*distance));
+}
+vec4 get_lighting(Light l, vec3 pos) {
+    vec4 ret;
+    if (l.type == 0) {
+        ret.w = attenuation(l.position, pos, l.falloffs.z, l.falloffs.y, l.falloffs.x);
+        ret.xyz = normalize(l.position - pos);
+    } else if (l.type == 1) {
+        ret.w = 1;
+        ret.xyz = -normalize(l.direction);
+    } else if (l.type == 2) {
+        float theta = dot(normalize(pos - l.position), normalize(l.direction));
+        float epsilon = l.falloffs.y - l.falloffs.x;
+        float intensity = clamp((l.falloffs.x - theta) / epsilon, 0, 1);
+        if (theta > l.falloffs.y) {
+            ret.w = intensity;
+            ret.xyz = normalize(l.position - pos);
+        }
+    }
+    return ret;
 }
 
 float get_shadow(vec3 world_position, vec3 world_normal, float fragment_depth) {
