@@ -805,7 +805,8 @@ impl SceneRenderer {
         };
         copy_data_to_memory(self.ssao_renderpass.descriptor_set.descriptors[2].owned_buffers.2[current_frame], &[ubo]);
         let ubo = LightingUniformData {
-            shadow_cascade_distances: [player_camera.far * 0.005, player_camera.far * 0.015, player_camera.far * 0.045, player_camera.far * 0.15]
+            shadow_cascade_distances: [player_camera.far * 0.005, player_camera.far * 0.015, player_camera.far * 0.045, player_camera.far * 0.15],
+            num_lights: world.lights.len() as u32,
         };
         copy_data_to_memory(self.lighting_renderpass.descriptor_set.descriptors[9].owned_buffers.2[current_frame], &[ubo]);
         let camera_constants = CameraMatrixUniformData {
@@ -897,6 +898,7 @@ struct CameraMatrixUniformData {
 #[repr(C)]
 struct LightingUniformData {
     shadow_cascade_distances: [f32; 4],
+    num_lights: u32,
 }
 #[derive(Clone, Debug, Copy)]
 #[repr(C)]

@@ -58,10 +58,11 @@ fn main() { unsafe {
     world.add_light(Light {
         position: Vector::new_vec3(0.0, 3.0, 0.0),
         direction: Default::default(),
+        color: Vector::new_vec3(1.0, 0.0, 1.0),
         light_type: 0,
-        quadratic_falloff: 0.5,
-        linear_falloff: 0.5,
-        constant_falloff: 0.5,
+        quadratic_falloff: 0.1,
+        linear_falloff: 0.1,
+        constant_falloff: 0.1,
         inner_cutoff: 0.0,
         outer_cutoff: 0.0,
     });

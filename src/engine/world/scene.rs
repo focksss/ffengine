@@ -478,6 +478,7 @@ impl Scene {
 pub struct Light {
     pub position: Vector,
     pub direction: Vector,
+    pub color: Vector,
     pub light_type: u32,
     pub quadratic_falloff: f32,
     pub linear_falloff: f32,
@@ -486,10 +487,11 @@ pub struct Light {
     pub outer_cutoff: f32,
 }
 impl Light {
-    pub fn new(position: Vector, direction: Vector) -> Light {
+    pub fn new(position: Vector, direction: Vector, color: Vector) -> Light {
         Light {
             position,
             direction,
+            color,
             light_type: 0,
             quadratic_falloff: 0.1,
             linear_falloff: 0.1,
@@ -507,7 +509,9 @@ impl Light {
             attenuation_values:
                 if self.light_type == 0 { [self.quadratic_falloff, self.linear_falloff, self.constant_falloff] }
                     else { [self.inner_cutoff, self.outer_cutoff, 0.0] },
-            _pad1: 0u32
+            _pad1: 0u32,
+            color: self.color.to_array3(),
+            _pad2: 0u32,
         }
     }
 }
@@ -520,6 +524,8 @@ pub struct LightSendable {
     pub light_type: u32,
     pub attenuation_values: [f32; 3],
     pub _pad1: u32,
+    pub color: [f32; 3],
+    pub _pad2: u32,
 }
 #[derive(Clone)]
 pub struct Sun {

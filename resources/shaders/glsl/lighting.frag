@@ -28,6 +28,7 @@ struct Light {
     vec3 direction;
     uint type; // 0 = point, 1 = directional, 2 = spotlight
     vec3 falloffs; // x = quadratic, y = linear, z = constant. For spotlights, x = inner cutoff, y = cutoff
+    vec3 color;
 };
 
 layout(set = 0, binding = 8, std430) readonly buffer LightsSSBO {
@@ -42,6 +43,7 @@ layout(binding = 10) uniform SunUBO {
 
 layout(binding = 9) uniform UniformBuffer {
     vec4 cascade_plane_distances;
+    int num_lights;
 } ubo;
 
 vec3 get_position_from_depth() {
@@ -150,6 +152,9 @@ float geometry_smith(vec3 N, vec3 V, vec3 L, float roughness) {
 
 
 void main() {
+    vec4 sampled_albedo = texture(g_albedo, uv);
+    if (sampled_albedo.a == 0) { uFragColor = vec4(0.0); return; }
+    vec3 albedo = sampled_albedo.rgb;
     // uFragColor = vec4(vec3(texture(ssao_tex, uv).r), 1.0); return;
 
     //uFragColor = vec4(0.01 / texture(g_depth, uv).r, 0.0, 0.0, 1.0);
@@ -173,8 +178,6 @@ void main() {
     vec4 metallic_roughness = texture(g_metallic_roughness, uv);
     float metallic = metallic_roughness.r;
     float roughness = metallic_roughness.g;
-
-    vec3 albedo = texture(g_albedo, uv).rgb;
 
     // uFragColor = vec4(albedo, 1.0); return;
 
@@ -211,6 +214,28 @@ void main() {
         vec3 specular = numerator / denominator;
         vec3 k_d_light = (1.0 - F) * (1.0 - metallic);
         frag_radiance += (k_d_light * albedo / PI + specular) * sun.color * cos_theta_light * get_shadow(world_position, N, -view_position.z);
+    }
+    for (int i = 0; i < ubo.num_lights; i++) {
+        Light l = lights_SSBO.lights[i];
+
+        vec4 lighting_info = get_lighting(l, world_position);
+        float atten = lighting_info.w;
+        if (atten < 0.001) continue;
+        vec3 Wi = lighting_info.xyz;
+        float cos_theta_light = max(dot(N, Wi), 0.001);
+        vec3 radiance = l.color * atten;
+
+        vec3 H = normalize(V + Wi);
+        float cos_theta_halfway = max(dot(H, V), 0.001);
+        vec3 F = fresnel_schlick_roughness(cos_theta_halfway, F0, roughness);
+        float NDF = distribution_GGX(N, H, roughness);
+        float G = geometry_smith(N, V, Wi, roughness);
+        vec3 numerator = NDF * G * F;
+        float denominator = 4.0 * cos_theta * cos_theta_light;
+        vec3 specular = numerator / denominator;
+        vec3 k_d_light = (1.0 - F) * (1.0 - metallic);
+
+        frag_radiance += (k_d_light * albedo / PI + specular) * radiance * cos_theta_light;
     }
 
     float gamma = 1.0;
