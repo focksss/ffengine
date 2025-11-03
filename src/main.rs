@@ -22,7 +22,7 @@ use engine::*;
 use engine::world;
 use render::render::MAX_FRAMES_IN_FLIGHT;
 use crate::engine::input::Controller;
-use crate::engine::world::scene::{Model, Scene};
+use crate::engine::world::scene::{Light, Model, Scene};
 use crate::render::*;
 use crate::render::render::Renderer;
 
@@ -47,17 +47,28 @@ fn main() { unsafe {
     // world.models[1].animations[0].repeat = true;
     // world.models[1].animations[0].start();
 
-    //world.preload_model(Model::new(&PathBuf::from("resources/models/shadowTest/shadowTest.gltf").to_str().unwrap()));
+    world.preload_model(Model::new(&PathBuf::from("resources/models/shadowTest/shadowTest.gltf").to_str().unwrap()));
     //world.models[1].transform_roots(&Vector::new_vec3(0.0, 0.0, -5.0), &Vector::new_vec(0.0), &Vector::new_vec(1.0));
     //world.preload_model(Model::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf"));
-    world.preload_model(Model::new("C:\\Graphics\\assets\\bistroGLTF\\untitled.gltf"));
+    //world.preload_model(Model::new("C:\\Graphics\\assets\\bistroGLTF\\untitled.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\asgard\\asgard.gltf"));
     //world.preload_model(Model::new("C:\\Graphics\\assets\\helmet\\DamagedHelmet.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\hydrant\\untitled.gltf"));
 
+    world.add_light(Light {
+        position: Vector::new_vec3(0.0, 3.0, 0.0),
+        direction: Default::default(),
+        light_type: 0,
+        quadratic_falloff: 0.5,
+        linear_falloff: 0.5,
+        constant_falloff: 0.5,
+        inner_cutoff: 0.0,
+        outer_cutoff: 0.0,
+    });
+
     world.initialize(&base, MAX_FRAMES_IN_FLIGHT, true);
 
-    let mut controller = Arc::new(RefCell::new(Controller::new(&base.window)));
+    let controller = Arc::new(RefCell::new(Controller::new(&base.window)));
 
     let mut renderer = Renderer::new(&base, &world, controller.clone());
 

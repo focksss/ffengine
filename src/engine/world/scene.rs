@@ -15,9 +15,9 @@ use crate::math::vector::Vector;
 use crate::render::scene_renderer::SHADOW_RES;
 
 // SHOULD DETECT MATH VS COLOR DATA TEXTURES, LOAD COLOR AS SRGB, MATH AS UNORM
-const MAX_VERTICES: u64 = 3 * 10u64.pow(7); // 7 for bistro
-const MAX_INDICES: u64 = 4 * 10u64.pow(6); // 6 for bistro
-const MAX_INSTANCES: u64 = 10u64 * 10u64.pow(5); // 5 for bistro
+const MAX_VERTICES: u64 = 3 * 10u64.pow(6); // 7 for bistro
+const MAX_INDICES: u64 = 4 * 10u64.pow(5); // 6 for bistro
+const MAX_INSTANCES: u64 = 10u64 * 10u64.pow(4); // 5 for bistro
 const MAX_MATERIALS: u64 = 10u64 * 10u64.pow(4);
 const MAX_JOINTS: u64 = 10u64 * 10u64.pow(4);
 const MAX_LIGHTS: u64 = 10u64 * 10u64.pow(3);
@@ -66,7 +66,7 @@ impl Scene {
 
             models: Vec::new(),
             lights: Vec::new(),
-            sun: Sun::new_sun(Vector::new_vec3(-1.0, -5.0, -1.0)),
+            sun: Sun::new_sun(Vector::new_vec3(-1.0, -5.0, -1.0), Vector::new_vec3(0.98, 0.84, 0.64)),
 
             texture_count: 0,
             index_buffer: (vk::Buffer::null(), DeviceMemory::null()),
@@ -524,13 +524,15 @@ pub struct LightSendable {
 #[derive(Clone)]
 pub struct Sun {
     pub vector: Vector,
+    pub color: Vector,
     pub projections: [Matrix; 5],
     pub views: [Matrix; 5],
 }
 impl Sun {
-    pub fn new_sun(vector: Vector) -> Sun {
+    pub fn new_sun(vector: Vector, color: Vector) -> Sun {
         Sun {
             vector: Vector::new_vec4(vector.x, vector.y, vector.z, 1.0).normalize_3d(),
+            color,
             projections: [Matrix::new_ortho(-10.0, 10.0, -10.0, 10.0, 0.01, 1000.0); 5],
             views: [Matrix::new_look_at(
                 &Vector::new_vec3(vector.x * -100.0, vector.y * -100.0, vector.z * -100.0),
@@ -547,7 +549,9 @@ impl Sun {
         SunSendable {
             matrices: <[[f32; 16]; 5]>::try_from(matrices.as_slice()).unwrap(),
             vector: self.vector.to_array3(),
-            _pad0: 0u32
+            _pad0: 0u32,
+            color: self.color.to_array3(),
+            _pad1: 0u32,
         }
     }
 
@@ -629,6 +633,8 @@ pub struct SunSendable {
     pub matrices: [[f32; 16]; 5],
     pub vector: [f32; 3],
     pub _pad0: u32,
+    pub color: [f32; 3],
+    pub _pad1: u32,
 }
 
 pub struct Model {
@@ -755,7 +761,7 @@ impl Model {
             metallic_texture: None,
             roughness_factor: 0.5,
             roughness_texture: None,
-            emissive_factor: [1.0; 3],
+            emissive_factor: [0.0; 3],
             emissive_texture: None,
             emissive_strength: 1.0,
         });

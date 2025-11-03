@@ -47,6 +47,7 @@ void main() {
     } else {
         view_normal = o_view_normal;
     }
+
     vec4 base_color;
     if (mat.base_color_tex > -1) {
         base_color = texture(textures[mat.base_color_tex], o_uv);
@@ -56,9 +57,17 @@ void main() {
     if (base_color.a < mat.alpha_cutoff) {
         discard;
     }
+
+    vec3 emission;
+    if (mat.emissive_texture > -1) {
+        emission = texture(textures[mat.emissive_texture], o_uv).rgb;
+    } else {
+        emission = mat.emissive_color.rgb;
+    }
+
     frag_material = ivec4(material);
     frag_albedo = vec4(base_color);
     frag_metallic_roughness = vec4(mat.metallic, mat.roughness, 1.0, 1.0);
-    frag_extra_material_properties = vec4(1.0);
+    frag_extra_material_properties = vec4(emission, mat.emissive_strength);
     frag_view_normal = vec4(view_normal * 0.5 + 0.5, 1.0); // convert normal to 0-1 scale
 }

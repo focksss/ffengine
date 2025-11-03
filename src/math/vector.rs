@@ -3,6 +3,7 @@
 use std::ops::{Add, Div, Mul, Sub};
 
 #[derive(Clone, Debug, Copy)]
+#[derive(Default)]
 pub struct Vector {
     pub x: f32,
     pub y: f32,
