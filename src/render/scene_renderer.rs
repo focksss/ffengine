@@ -28,7 +28,9 @@ pub struct SceneRenderer {
 
     pub ssao_pre_downsample_renderpass: Renderpass,
     pub ssao_renderpass: Renderpass,
-    pub ssao_blur_renderpass_upsample: Renderpass,
+    pub ssao_blur_horizontal_renderpass: Renderpass,
+    pub ssao_blur_vertical_renderpass: Renderpass,
+    pub ssao_upsample_renderpass: Renderpass,
 
     pub lighting_renderpass: Renderpass,
 
@@ -60,7 +62,9 @@ impl SceneRenderer {
             shadow_renderpass,
             ssao_pre_downsample_renderpass,
             ssao_renderpass,
-            ssao_blur_renderpass_upsample,
+            ssao_blur_horizontal_renderpass,
+            ssao_blur_vertical_renderpass,
+            ssao_upsample_renderpass,
             lighting_renderpass
         ) = SceneRenderer::create_rendering_objects(base, &null_texture, &null_tex_sampler, world);
 
@@ -194,7 +198,7 @@ impl SceneRenderer {
                 }, // shadow map
                 vk::DescriptorImageInfo {
                     sampler,
-                    image_view: ssao_blur_renderpass_upsample.pass.borrow().textures[current_frame][0].image_view,
+                    image_view: ssao_upsample_renderpass.pass.borrow().textures[current_frame][0].image_view,
                     image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                 }, // ssao tex (final)
             ];
@@ -263,11 +267,53 @@ impl SceneRenderer {
                     image_view: ssao_pre_downsample_renderpass.pass.borrow().textures[current_frame][0].image_view,
                     image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                 }, // downsampled normal + depth
+            ];
+            let descriptor_writes: Vec<vk::WriteDescriptorSet> = image_infos.iter().enumerate().map(|(i, info)| {
+                vk::WriteDescriptorSet::default()
+                    .dst_set(ssao_blur_horizontal_renderpass.descriptor_set.descriptor_sets[current_frame])
+                    .dst_binding(i as u32)
+                    .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
+                    .image_info(slice::from_ref(info))
+            }).collect();
+            base.device.update_descriptor_sets(&descriptor_writes, &[]);
+
+            let image_infos = [
+                vk::DescriptorImageInfo {
+                    sampler,
+                    image_view: ssao_blur_horizontal_renderpass.pass.borrow().textures[current_frame][0].image_view,
+                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                }, // ssao blurred horizontal
+                vk::DescriptorImageInfo {
+                    sampler,
+                    image_view: ssao_pre_downsample_renderpass.pass.borrow().textures[current_frame][0].image_view,
+                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                }, // downsampled normal + depth
+            ];
+            let descriptor_writes: Vec<vk::WriteDescriptorSet> = image_infos.iter().enumerate().map(|(i, info)| {
+                vk::WriteDescriptorSet::default()
+                    .dst_set(ssao_blur_vertical_renderpass.descriptor_set.descriptor_sets[current_frame])
+                    .dst_binding(i as u32)
+                    .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
+                    .image_info(slice::from_ref(info))
+            }).collect();
+            base.device.update_descriptor_sets(&descriptor_writes, &[]);
+
+            let image_infos = [
+                vk::DescriptorImageInfo {
+                    sampler,
+                    image_view: ssao_blur_vertical_renderpass.pass.borrow().textures[current_frame][0].image_view,
+                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                }, // ssao blurred
+                vk::DescriptorImageInfo {
+                    sampler,
+                    image_view: ssao_pre_downsample_renderpass.pass.borrow().textures[current_frame][0].image_view,
+                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                }, // downsampled normal + depth
                 vk::DescriptorImageInfo {
                     sampler,
                     image_view: geometry_renderpass.pass.borrow().textures[current_frame][4].image_view,
                     image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                }, // view normal
+                }, // g_normal
                 vk::DescriptorImageInfo {
                     sampler,
                     image_view: geometry_renderpass.pass.borrow().textures[current_frame][5].image_view,
@@ -276,7 +322,7 @@ impl SceneRenderer {
             ];
             let descriptor_writes: Vec<vk::WriteDescriptorSet> = image_infos.iter().enumerate().map(|(i, info)| {
                 vk::WriteDescriptorSet::default()
-                    .dst_set(ssao_blur_renderpass_upsample.descriptor_set.descriptor_sets[current_frame])
+                    .dst_set(ssao_upsample_renderpass.descriptor_set.descriptor_sets[current_frame])
                     .dst_binding(i as u32)
                     .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
                     .image_info(slice::from_ref(info))
@@ -297,7 +343,9 @@ impl SceneRenderer {
             shadow_renderpass,
             ssao_pre_downsample_renderpass,
             ssao_renderpass,
-            ssao_blur_renderpass_upsample,
+            ssao_blur_horizontal_renderpass,
+            ssao_blur_vertical_renderpass,
+            ssao_upsample_renderpass,
             lighting_renderpass,
 
             sampler,
@@ -311,7 +359,7 @@ impl SceneRenderer {
         null_tex: &Texture,
         null_tex_sampler: &vk::Sampler,
         world: &Scene
-    ) -> (Renderpass, Renderpass, Renderpass, Renderpass, Renderpass, Renderpass) { unsafe {
+    ) -> (Renderpass, Renderpass, Renderpass, Renderpass, Renderpass, Renderpass, Renderpass, Renderpass) { unsafe {
         let image_infos: Vec<vk::DescriptorImageInfo> = vec![vk::DescriptorImageInfo {
             image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
             image_view: null_tex.image_view,
@@ -339,7 +387,11 @@ impl SceneRenderer {
             .add_color_attachment_info(TextureCreateInfo::new(base).format(Format::R16G16B16A16_SFLOAT).resolution_denominator((1.0 / SSAO_RESOLUTION_MULTIPLIER) as u32));
         let ssao_pass_create_info = PassCreateInfo::new(base)
             .add_color_attachment_info(ssao_res_color_tex_create_info);
-        let ssao_blur_pass_create_info_upsample = PassCreateInfo::new(base)
+        let ssao_blur_horizontal_pass_create_info = PassCreateInfo::new(base)
+            .add_color_attachment_info(ssao_res_color_tex_create_info);
+        let ssao_blur_vertical_pass_create_info = PassCreateInfo::new(base)
+            .add_color_attachment_info(ssao_res_color_tex_create_info);
+        let ssao_upsample_pass_create_info = PassCreateInfo::new(base)
             .add_color_attachment_info(TextureCreateInfo::new(base).format(Format::R8_UNORM));
 
         let lighting_pass_create_info = PassCreateInfo::new(base)
@@ -387,11 +439,17 @@ impl SceneRenderer {
             .add_descriptor(Descriptor::new(&texture_sampler_create_info))
             .add_descriptor(Descriptor::new(&texture_sampler_create_info))
             .add_descriptor(Descriptor::new(&ssbo_ubo_create_info));
-        let ssao_blur_descriptor_set_create_info_upsample_horiz = DescriptorSetCreateInfo::new(base)
+        let ssao_blur_horizontal_descriptor_set_create_info = DescriptorSetCreateInfo::new(base)
             .add_descriptor(Descriptor::new(&texture_sampler_create_info)) // input (ssao)
-            .add_descriptor(Descriptor::new(&texture_sampler_create_info)) // g_info (ssao res)
-            .add_descriptor(Descriptor::new(&texture_sampler_create_info)) // normal (full res)
-            .add_descriptor(Descriptor::new(&texture_sampler_create_info)); // depth (full res)
+            .add_descriptor(Descriptor::new(&texture_sampler_create_info)); // g_info (ssao res)
+        let ssao_blur_vertical_descriptor_set_create_info = DescriptorSetCreateInfo::new(base)
+            .add_descriptor(Descriptor::new(&texture_sampler_create_info)) // input (ssao)
+            .add_descriptor(Descriptor::new(&texture_sampler_create_info)); // g_info (ssao res)
+        let ssao_upsample_descriptor_set_create_info = DescriptorSetCreateInfo::new(base)
+            .add_descriptor(Descriptor::new(&texture_sampler_create_info)) // input (low res)
+            .add_descriptor(Descriptor::new(&texture_sampler_create_info)) // g_info (low res)
+            .add_descriptor(Descriptor::new(&texture_sampler_create_info)) // normal (full_res)
+            .add_descriptor(Descriptor::new(&texture_sampler_create_info)); // depth (full_res)
         //</editor-fold>
         //<editor-fold desc = "lighting descriptor set">
         let lights_ssbo_create_info = DescriptorCreateInfo::new(base)
@@ -710,17 +768,62 @@ impl SceneRenderer {
                 height: (base.surface_resolution.height as f32 * SSAO_RESOLUTION_MULTIPLIER) as u32
             } }) };
         let ssao_renderpass = Renderpass::new(ssao_renderpass_create_info);
-        let ssao_blur_renderpass_create_info_upsample = { RenderpassCreateInfo::new(base)
-            .pass_create_info(ssao_blur_pass_create_info_upsample)
-            .descriptor_set_create_info(ssao_blur_descriptor_set_create_info_upsample_horiz)
+        let ssao_blur_horizontal_renderpass_create_info = { RenderpassCreateInfo::new(base)
+            .pass_create_info(ssao_blur_horizontal_pass_create_info)
+            .descriptor_set_create_info(ssao_blur_horizontal_descriptor_set_create_info)
             .vertex_shader_uri(String::from("quad\\quad.vert.spv"))
-            .fragment_shader_uri(String::from("bilateral_blur\\bilateral_blur_upsample.frag.spv"))
+            .fragment_shader_uri(String::from("bilateral_blur\\bilateral_blur.frag.spv"))
             .push_constant_range(vk::PushConstantRange {
                 stage_flags: ShaderStageFlags::FRAGMENT,
                 offset: 0,
                 size: size_of::<BlurPassData>() as _,
-            }) };
-        let ssao_blur_renderpass_upsample = Renderpass::new(ssao_blur_renderpass_create_info_upsample);
+            })
+            .viewport(vk::Viewport {
+                x: 0.0,
+                y: 0.0,
+                width: base.surface_resolution.width as f32 * SSAO_RESOLUTION_MULTIPLIER,
+                height: base.surface_resolution.height as f32 * SSAO_RESOLUTION_MULTIPLIER,
+                min_depth: 0.0,
+                max_depth: 1.0,
+            })
+            .scissor(vk::Rect2D { offset: vk::Offset2D { x: 0, y: 0 }, extent: vk::Extent2D { width: (base.surface_resolution.width as f32 * SSAO_RESOLUTION_MULTIPLIER) as u32,
+                height: (base.surface_resolution.height as f32 * SSAO_RESOLUTION_MULTIPLIER) as u32
+            } })};
+        let ssao_blur_horizontal_renderpass = Renderpass::new(ssao_blur_horizontal_renderpass_create_info);
+        let ssao_blur_vertical_renderpass_create_info = { RenderpassCreateInfo::new(base)
+            .pass_create_info(ssao_blur_vertical_pass_create_info)
+            .descriptor_set_create_info(ssao_blur_vertical_descriptor_set_create_info)
+            .vertex_shader_uri(String::from("quad\\quad.vert.spv"))
+            .fragment_shader_uri(String::from("bilateral_blur\\bilateral_blur.frag.spv"))
+            .push_constant_range(vk::PushConstantRange {
+                stage_flags: ShaderStageFlags::FRAGMENT,
+                offset: 0,
+                size: size_of::<BlurPassData>() as _,
+            })
+            .viewport(vk::Viewport {
+                x: 0.0,
+                y: 0.0,
+                width: base.surface_resolution.width as f32 * SSAO_RESOLUTION_MULTIPLIER,
+                height: base.surface_resolution.height as f32 * SSAO_RESOLUTION_MULTIPLIER,
+                min_depth: 0.0,
+                max_depth: 1.0,
+            })
+            .scissor(vk::Rect2D { offset: vk::Offset2D { x: 0, y: 0 }, extent: vk::Extent2D { width: (base.surface_resolution.width as f32 * SSAO_RESOLUTION_MULTIPLIER) as u32,
+                height: (base.surface_resolution.height as f32 * SSAO_RESOLUTION_MULTIPLIER) as u32
+            } })};
+        let ssao_blur_vertical_renderpass = Renderpass::new(ssao_blur_vertical_renderpass_create_info);
+        let ssao_upsample_renderpass_create_info = { RenderpassCreateInfo::new(base)
+            .pass_create_info(ssao_upsample_pass_create_info)
+            .descriptor_set_create_info(ssao_upsample_descriptor_set_create_info)
+            .vertex_shader_uri(String::from("quad\\quad.vert.spv"))
+            .fragment_shader_uri(String::from("depth_aware_upsample.frag.spv"))
+            .push_constant_range(vk::PushConstantRange {
+                stage_flags: ShaderStageFlags::FRAGMENT,
+                offset: 0,
+                size: size_of::<DepthAwareUpsamplePassData>() as _,
+            })
+        };
+        let ssao_upsample_renderpass = Renderpass::new(ssao_upsample_renderpass_create_info);
 
         let lighting_renderpass_create_info = { RenderpassCreateInfo::new(base)
             .pass_create_info(lighting_pass_create_info)
@@ -730,7 +833,16 @@ impl SceneRenderer {
             .push_constant_range(camera_push_constant_range_fragment) };
         let lighting_renderpass = Renderpass::new(lighting_renderpass_create_info);
         
-        (geometry_renderpass, shadow_renderpass, ssao_pre_downsample_renderpass, ssao_renderpass, ssao_blur_renderpass_upsample, lighting_renderpass)
+        (
+            geometry_renderpass,
+            shadow_renderpass,
+            ssao_pre_downsample_renderpass,
+            ssao_renderpass,
+            ssao_blur_horizontal_renderpass,
+            ssao_blur_vertical_renderpass,
+            ssao_upsample_renderpass,
+            lighting_renderpass
+        )
     } }
     pub fn update_world_textures_all_frames(&self, base: &VkBase, world: &Scene) {
         for frame in 0..MAX_FRAMES_IN_FLIGHT {
@@ -818,12 +930,29 @@ impl SceneRenderer {
             projection: player_camera.projection_matrix.inverse().data,
         };
 
-        let ssao_blur_constants = BlurPassData {
+        let ssao_blur_constants_horizontal = BlurPassData {
+            horizontal: 1,
             radius: 5,
             near: player_camera.near,
             sigma_spatial: 10.0,
             sigma_depth: 0.25, // weighted within shader
             sigma_normal: 0.2,
+            infinite_reverse_depth: 1
+        };
+        let ssao_blur_constants_vertical = BlurPassData {
+            horizontal: 0,
+            radius: 5,
+            near: player_camera.near,
+            sigma_spatial: 10.0,
+            sigma_depth: 0.25, // weighted within shader
+            sigma_normal: 0.2,
+            infinite_reverse_depth: 1
+        };
+        let ssao_upsample_constants = DepthAwareUpsamplePassData {
+            near: player_camera.near,
+            depth_threshold: 0.01,
+            normal_threshold: 0.9,
+            sharpness: 8.0,
             infinite_reverse_depth: 1
         };
 
@@ -854,10 +983,22 @@ impl SceneRenderer {
 
         self.ssao_pre_downsample_renderpass.do_renderpass(current_frame, frame_command_buffer, None::<fn()>, None::<fn()>, None);
         self.ssao_renderpass.do_renderpass(current_frame, frame_command_buffer, None::<fn()>, None::<fn()>, None);
-        self.ssao_blur_renderpass_upsample.do_renderpass(current_frame, frame_command_buffer, Some(|| {
-            device.cmd_push_constants(frame_command_buffer, self.ssao_blur_renderpass_upsample.pipeline_layout, ShaderStageFlags::FRAGMENT, 0, slice::from_raw_parts(
-                &ssao_blur_constants as *const BlurPassData as *const u8,
+        self.ssao_blur_horizontal_renderpass.do_renderpass(current_frame, frame_command_buffer, Some(|| {
+            device.cmd_push_constants(frame_command_buffer, self.ssao_blur_horizontal_renderpass.pipeline_layout, ShaderStageFlags::FRAGMENT, 0, slice::from_raw_parts(
+                &ssao_blur_constants_horizontal as *const BlurPassData as *const u8,
                 size_of::<BlurPassData>(),
+            ));
+        }), None::<fn()>, None);
+        self.ssao_blur_vertical_renderpass.do_renderpass(current_frame, frame_command_buffer, Some(|| {
+            device.cmd_push_constants(frame_command_buffer, self.ssao_blur_vertical_renderpass.pipeline_layout, ShaderStageFlags::FRAGMENT, 0, slice::from_raw_parts(
+                &ssao_blur_constants_vertical as *const BlurPassData as *const u8,
+                size_of::<BlurPassData>(),
+            ));
+        }), None::<fn()>, None);
+        self.ssao_upsample_renderpass.do_renderpass(current_frame, frame_command_buffer, Some(|| {
+            device.cmd_push_constants(frame_command_buffer, self.ssao_upsample_renderpass.pipeline_layout, ShaderStageFlags::FRAGMENT, 0, slice::from_raw_parts(
+                &ssao_upsample_constants as *const DepthAwareUpsamplePassData as *const u8,
+                size_of::<DepthAwareUpsamplePassData>(),
             ));
         }), None::<fn()>, None);
 
@@ -874,7 +1015,9 @@ impl SceneRenderer {
         self.shadow_renderpass.destroy();
         self.ssao_pre_downsample_renderpass.destroy();
         self.ssao_renderpass.destroy();
-        self.ssao_blur_renderpass_upsample.destroy();
+        self.ssao_blur_horizontal_renderpass.destroy();
+        self.ssao_blur_vertical_renderpass.destroy();
+        self.ssao_upsample_renderpass.destroy();
         self.lighting_renderpass.destroy();
 
         self.ssao_noise_texture.destroy();
@@ -914,10 +1057,20 @@ struct SSAOPassUniformData {
 #[derive(Clone, Debug, Copy)]
 #[repr(C)]
 struct BlurPassData {
+    horizontal: i32,
     radius: i32,
     near: f32,
     sigma_spatial: f32, // texel-space sigma
     sigma_depth: f32, // view-space sigma
     sigma_normal: f32, // normal dot sigma
     infinite_reverse_depth: i32,
+}
+#[derive(Clone, Debug, Copy)]
+#[repr(C)]
+struct DepthAwareUpsamplePassData {
+    near: f32,
+    depth_threshold: f32, // sensitivity for depth edges (e.g., 0.01-0.1)
+    normal_threshold: f32, // sensitivity for normal edges (e.g., 0.9)
+    sharpness: f32, // edge sharpness multiplier (e.g., 8.0)
+    infinite_reverse_depth: i32
 }

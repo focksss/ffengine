@@ -40,17 +40,16 @@ vec2 rand2(vec2 co) {
 }
 
 void main() {
-    vec3 randomVec = vec3(2.0 * rand2(uv) - 1.0, 0.0);
-
     // fragColor = vec4(1.0, 0.0, 1.0, 1.0); return;
+    vec3 normal = normalize((texture(g_info, uv).rgb - 0.5) * 2.0);
+
     vec2 noiseScale = vec2(float(ubo.width) / 4.0, float(ubo.height) / 4.0);
     float bias = 0.001;
 
     vec3 fragPos = get_position_from_depth(uv);
 
-    vec3 normal = normalize((texture(g_info, uv).rgb - 0.5) * 2.0);
-
     // vec3 randomVec = vec3(texture(tex_noise, uv * noiseScale).xy, 0.0);
+    vec3 randomVec = vec3(2.0 * rand2(uv) - 1.0, 0.0);
 
     vec3 tangent = normalize(randomVec - normal * dot(randomVec, normal));
     vec3 bitangent = cross(normal, tangent);
