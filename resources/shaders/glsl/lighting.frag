@@ -170,7 +170,7 @@ void main() {
     vec3 R = reflect(-V, N);
 
     float ao = texture(ssao_tex, uv).r;
-    uFragColor = vec4(vec3(ao), 1.0); return;
+    // uFragColor = vec4(vec3(ao), 1.0); return;
 
     vec4 extra_properties = texture(g_extra_properties, uv);
     vec3 emission_color = extra_properties.rgb;

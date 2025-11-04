@@ -816,7 +816,7 @@ impl SceneRenderer {
             .pass_create_info(ssao_upsample_pass_create_info)
             .descriptor_set_create_info(ssao_upsample_descriptor_set_create_info)
             .vertex_shader_uri(String::from("quad\\quad.vert.spv"))
-            .fragment_shader_uri(String::from("depth_aware_upsample.frag.spv"))
+            .fragment_shader_uri(String::from("geometry_aware_upsample.frag.spv"))
             .push_constant_range(vk::PushConstantRange {
                 stage_flags: ShaderStageFlags::FRAGMENT,
                 offset: 0,

@@ -7,7 +7,7 @@ layout (location = 0) out vec4 upsampled;
 layout (location = 0) in vec2 uv;
 
 layout(set = 0, binding = 0) uniform sampler2D color;      // low res input (pre-blurred)
-layout(set = 0, binding = 1) uniform sampler2D g_depth_low; // low res depth
+layout(set = 0, binding = 1) uniform sampler2D g_info; // low res normal + depth
 layout(set = 0, binding = 2) uniform sampler2D g_normal;   // full res normal
 layout(set = 0, binding = 3) uniform sampler2D g_depth;    // full res depth
 
@@ -52,7 +52,7 @@ void main() {
             vec2 sample_uv = uv + offset;
 
             vec3 sample_color = texture(color, sample_uv).rgb;
-            float sample_depth = texture(g_depth_low, sample_uv).r;
+            float sample_depth = texture(g_info, sample_uv).a;
 
             if ((pc.infinite_reverse_depth == 1 && sample_depth == 0.0) ||
             (pc.infinite_reverse_depth == 0 && sample_depth == 1.0)) {
