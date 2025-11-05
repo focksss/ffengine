@@ -113,6 +113,62 @@ impl Matrix {
             - sub[1] * (sub[3] * sub[8] - sub[5] * sub[6])
             + sub[2] * (sub[3] * sub[7] - sub[4] * sub[6])
     }
+
+    pub fn transpose(&self) -> Matrix {
+        let mut result = Matrix::new_empty();
+        for i in 0..4 {
+            for j in 0..4 {
+                result.data[i * 4 + j] = self.data[j * 4 + i];
+            }
+        }
+        result
+    }
+
+    pub fn extract_quaternion(&self) -> Vector {
+        let m = &self.data;
+        let mut r = [
+            [m[0], m[4], m[8]],
+            [m[1], m[5], m[9]],
+            [m[2], m[6], m[10]],
+        ];
+        for i in 0..3 {
+            let len = (r[0][i] * r[0][i] + r[1][i] * r[1][i] + r[2][i] * r[2][i]).sqrt();
+            if len > f32::EPSILON {
+                r[0][i] /= len;
+                r[1][i] /= len;
+                r[2][i] /= len;
+            }
+        }
+        let trace = r[0][0] + r[1][1] + r[2][2];
+        let (x, y, z, w);
+        if trace > 0.0 {
+            let s = 0.5 / (trace + 1.0).sqrt();
+            w = 0.25 / s;
+            x = (r[2][1] - r[1][2]) * s;
+            y = (r[0][2] - r[2][0]) * s;
+            z = (r[1][0] - r[0][1]) * s;
+        } else if r[0][0] > r[1][1] && r[0][0] > r[2][2] {
+            let s = 2.0 * (1.0 + r[0][0] - r[1][1] - r[2][2]).sqrt();
+            w = (r[2][1] - r[1][2]) / s;
+            x = 0.25 * s;
+            y = (r[0][1] + r[1][0]) / s;
+            z = (r[0][2] + r[2][0]) / s;
+        } else if r[1][1] > r[2][2] {
+            let s = 2.0 * (1.0 + r[1][1] - r[0][0] - r[2][2]).sqrt();
+            w = (r[0][2] - r[2][0]) / s;
+            x = (r[0][1] + r[1][0]) / s;
+            y = 0.25 * s;
+            z = (r[1][2] + r[2][1]) / s;
+        } else {
+            let s = 2.0 * (1.0 + r[2][2] - r[0][0] - r[1][1]).sqrt();
+            w = (r[1][0] - r[0][1]) / s;
+            x = (r[0][2] + r[2][0]) / s;
+            y = (r[1][2] + r[2][1]) / s;
+            z = 0.25 * s;
+        }
+        let len = (x * x + y * y + z * z + w * w).sqrt();
+        Vector::new_vec4(x / len, y / len, z / len, w / len)
+    }
     //</editor-fold>
 
     //<editor-fold desc = "matrix matrix operations">

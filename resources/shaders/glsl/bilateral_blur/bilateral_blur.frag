@@ -43,7 +43,7 @@ void main() {
     vec3 accum = vec3(0.0);
     float w_sum = 0.0;
 
-    for (int i = -10; i <= 10; ++i) {
+    for (int i = -pc.radius; i <= pc.radius; ++i) {
         vec2 offset_pixels = (pc.horizontal == 1 ? vec2(i, 0) : vec2(0, i));
         vec2 offset = offset_pixels * texel_size;
         vec2 sample_uv = uv + offset;

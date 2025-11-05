@@ -16,6 +16,8 @@ const SSAO_KERNAL_SIZE: usize = 16;
 const SSAO_RESOLUTION_MULTIPLIER: f32 = 0.5;
 pub const SHADOW_RES: u32 = 4096;
 
+
+//TODO() FIX SSAO UPSAMPLING
 pub struct SceneRenderer {
     pub device: ash::Device,
     pub draw_command_buffers: Vec<vk::CommandBuffer>,
@@ -930,20 +932,21 @@ impl SceneRenderer {
             projection: player_camera.projection_matrix.inverse().data,
         };
 
+        let radius = 20;
         let ssao_blur_constants_horizontal = BlurPassData {
             horizontal: 1,
-            radius: 5,
+            radius,
             near: player_camera.near,
-            sigma_spatial: 10.0,
+            sigma_spatial: 20.0,
             sigma_depth: 0.25, // weighted within shader
             sigma_normal: 0.2,
             infinite_reverse_depth: 1
         };
         let ssao_blur_constants_vertical = BlurPassData {
             horizontal: 0,
-            radius: 5,
+            radius,
             near: player_camera.near,
-            sigma_spatial: 10.0,
+            sigma_spatial: 20.0,
             sigma_depth: 0.25, // weighted within shader
             sigma_normal: 0.2,
             infinite_reverse_depth: 1

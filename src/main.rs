@@ -25,6 +25,7 @@ use crate::engine::input::Controller;
 use crate::engine::world::scene::{Light, Model, Scene};
 use crate::render::*;
 use crate::render::render::Renderer;
+use crate::engine::physics::physics_engine::PhysicsEngine;
 
 const PI: f32 = std::f32::consts::PI;
 
@@ -36,10 +37,10 @@ fn main() { unsafe {
 
     let mut world = Scene::new(&base);
 
-    world.preload_model(Model::new(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources\\models\\ffocks\\untitled.gltf").to_str().unwrap()));
-    world.models[0].transform_roots(&Vector::new_vec3(0.0, 0.0, -3.0), &Vector::new_vec(0.0), &Vector::new_vec(0.05));
-    world.models[0].animations[0].repeat = true;
-    world.models[0].animations[0].start();
+    //world.preload_model(Model::new(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources\\models\\ffocks\\untitled.gltf").to_str().unwrap()));
+    //world.models[0].transform_roots(&Vector::new_vec3(0.0, 0.0, -3.0), &Vector::new_vec(0.0), &Vector::new_vec(0.05));
+    //world.models[0].animations[0].repeat = true;
+    //world.models[0].animations[0].start();
 
     //world.add_model(Model::new("C:\\Graphics\\assets\\flower\\world.gltf"));
     //world.models[0].transform_roots(&Vector::new_vec3(0.0, 1.0, 0.0), &Vector::new_vec(0.0), &Vector::new_vec(1.0));
@@ -47,13 +48,13 @@ fn main() { unsafe {
     // world.models[1].animations[0].repeat = true;
     // world.models[1].animations[0].start();
 
-    //world.preload_model(Model::new(&PathBuf::from("resources/models/shadowTest/shadowTest.gltf").to_str().unwrap()));
+    world.preload_model(Model::new(&PathBuf::from("resources/models/shadowTest/shadowTest.gltf").to_str().unwrap()));
     //world.models[1].transform_roots(&Vector::new_vec3(0.0, 0.0, -5.0), &Vector::new_vec(0.0), &Vector::new_vec(1.0));
-    world.preload_model(Model::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf"));
+    //world.preload_model(Model::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf"));
     //world.preload_model(Model::new("C:\\Graphics\\assets\\bistroGLTF\\untitled.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\asgard\\asgard.gltf"));
     //world.preload_model(Model::new("C:\\Graphics\\assets\\helmet\\DamagedHelmet.gltf"));
-    //world.add_model(Model::new("C:\\Graphics\\assets\\hydrant\\untitled.gltf"));
+    //world.preload_model(Model::new("C:\\Graphics\\assets\\grassblockGLTF\\grassblock.gltf"));
 
     world.add_light(Light {
         position: Vector::new_vec3(0.0, 3.0, 0.0),
@@ -69,7 +70,9 @@ fn main() { unsafe {
 
     world.initialize(&base, MAX_FRAMES_IN_FLIGHT, true);
 
+    let mut physics_engine = PhysicsEngine::new(&world, Vector::new_vec3(0.0, -9.8, 0.0));
     let controller = Arc::new(RefCell::new(Controller::new(&base.window)));
+    physics_engine.add_player(controller.borrow().player.clone());
 
     let mut renderer = Renderer::new(&base, &world, controller.clone());
 
@@ -92,7 +95,7 @@ fn main() { unsafe {
                 base.needs_swapchain_recreate = true;
                 last_resize = Instant::now();
 
-                controller.borrow_mut().player_camera.aspect_ratio = base.window.inner_size().width as f32 / base.window.inner_size().height as f32;
+                controller.borrow_mut().player.borrow_mut().camera.aspect_ratio = base.window.inner_size().width as f32 / base.window.inner_size().height as f32;
                 needs_resize = true;
             },
             Event::AboutToWait => {
@@ -113,8 +116,17 @@ fn main() { unsafe {
                 last_frame_time = now;
 
                 { // kill mutable ref once done
-                    controller.borrow_mut().do_controls(delta_time, &base, &mut renderer, &world, current_frame);
+                    let mut controller_mut = controller.borrow_mut();
+                    controller_mut.do_controls(delta_time, &base, &mut renderer, &world, current_frame);
+                    // for rigid_body in &mut physics_engine.rigid_bodies {
+                    //     if rigid_body.colliding_with(&controller_mut.player.borrow().rigid_body) {
+                    //         println!("COLLISION {}", delta_time) ;
+                    //     }
+                    // }
+                    controller_mut.update_camera();
                 }
+
+
 
                 let current_fence = base.draw_commands_reuse_fences[current_frame];
                 base.device.wait_for_fences(&[current_fence], true, u64::MAX).expect("wait failed");
@@ -133,7 +145,7 @@ fn main() { unsafe {
                 let current_draw_command_buffer = base.draw_command_buffers[current_frame];
                 let current_fence = base.draw_commands_reuse_fences[current_frame];
 
-                { if !controller.borrow().paused { world.update_sun(&controller.borrow().player_camera) }; };
+                { if !controller.borrow().paused { world.update_sun(&controller.borrow().player.borrow().camera) }; };
 
                 record_submit_commandbuffer(
                     &base.device,
@@ -147,9 +159,9 @@ fn main() { unsafe {
                         world.update_nodes(frame_command_buffer, current_frame);
                         world.update_lights(frame_command_buffer, current_frame);
 
-                        let camera_data = { &controller.borrow().player_camera.clone() };
+                        let player =  { controller.borrow().player.clone() };
 
-                        renderer.render_frame(current_frame, present_index as usize, delta_time, &world, camera_data);
+                        renderer.render_frame(current_frame, present_index as usize, &world, player, true, &physics_engine);
                     },
                 );
 

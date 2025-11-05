@@ -17,6 +17,15 @@ impl Vector {
     pub fn new_vec4(x: f32, y: f32, z: f32, w: f32) -> Self {
         Self { x, y, z, w, null: false }
     }
+    pub fn new_empty_quat() -> Self {
+        Vector {
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+            w: 1.0,
+            null: false,
+        }
+    }
     pub fn new_vec3(x: f32, y: f32, z: f32) -> Self {
         Self { x, y, z, w: 1.0, null: false }
     }
@@ -219,7 +228,7 @@ impl Vector {
         (a * w1 + b * w2).normalize_4d()
     }
 
-    pub fn rotate(&self, rot: &Vector) -> Vector {
+    pub fn rotate_by_euler(&self, rot: &Vector) -> Vector {
         let rx = rot.x;
         let ry = rot.y;
         let rz = rot.z;
@@ -242,6 +251,27 @@ impl Vector {
         new_x = cos_z * x - sin_z * y;
         new_y = sin_z * x + cos_z * y;
     
+        Vector::new_vec3(new_x, new_y, new_z)
+    }
+    pub fn rotate_by_quat(&self, rot: &Vector) -> Vector {
+        let qw = rot.w;
+        let qx = rot.x;
+        let qy = rot.y;
+        let qz = rot.z;
+
+        let vx = self.x;
+        let vy = self.y;
+        let vz = self.z;
+
+        let ix =  qw * vx + qy * vz - qz * vy;
+        let iy =  qw * vy + qz * vx - qx * vz;
+        let iz =  qw * vz + qx * vy - qy * vx;
+        let iw = -qx * vx - qy * vy - qz * vz;
+
+        let new_x = ix * qw + iw * -qx + iy * -qz - iz * -qy;
+        let new_y = iy * qw + iw * -qy + iz * -qx - ix * -qz;
+        let new_z = iz * qw + iw * -qz + ix * -qy - iy * -qx;
+
         Vector::new_vec3(new_x, new_y, new_z)
     }
     //</editor-fold>

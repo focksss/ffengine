@@ -1750,6 +1750,21 @@ pub struct Mesh {
     pub name: String,
     pub primitives: Vec<Primitive>
 }
+impl Mesh {
+    pub fn get_min_max(&self) -> (Vector, Vector) {
+        let mut min = Vector::new_vec(f32::MAX);
+        let mut max = Vector::new_vec(f32::MIN);
+        for primitive in self.primitives.iter() {
+            if primitive.max.x > max.x { max.x = primitive.max.x; }
+            if primitive.max.y > max.y { max.y = primitive.max.y; }
+            if primitive.max.z > max.z { max.z = primitive.max.z; }
+            if primitive.min.x < min.x { min.x = primitive.min.x; }
+            if primitive.min.y < min.y { min.y = primitive.min.y; }
+            if primitive.min.z < min.z { min.z = primitive.min.z; }
+        }
+        (min, max)
+    }
+}
 
 pub struct Node {
     pub mesh: Option<Rc<RefCell<Mesh>>>,

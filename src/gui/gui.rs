@@ -48,6 +48,19 @@ impl GUI {
                     }
                     let info_ref_mut = self.gui_nodes[node_index].interactable_information.as_mut().unwrap();
                     info_ref_mut.storage_value1 += 1.0;
+                },
+                "set_position" => {
+                    let info_ref = self.gui_nodes[node_index].interactable_information.as_ref().unwrap();
+                    if info_ref.storage_time.elapsed().as_secs_f32() > 0.1 {
+                        let pos = self.controller.borrow().player.borrow().camera.position;
+                        self.update_text_of_node(
+                            node_index,
+                            format!("Cam pos: X: {}, Y: {}, Z {}", pos.x, pos.y, pos.z).as_str(),
+                            frame_command_buffer
+                        );
+                        let info_ref_mut = self.gui_nodes[node_index].interactable_information.as_mut().unwrap();
+                        info_ref_mut.storage_time = Instant::now();
+                    }
                 }
                 _ => ()
             }
@@ -271,10 +284,10 @@ impl GUI {
                 }
                 match &interactable_information_json["hover_action"] {
                     JsonValue::String(s) => {
-                        interactable_passive_action = Some(s.to_string());
+                        interactable_hover_action = Some(s.to_string());
                     }
                     JsonValue::Short(s) => {
-                        interactable_passive_action = Some(s.to_string());
+                        interactable_hover_action = Some(s.to_string());
                     }
                     _ => {}
                 }
@@ -619,22 +632,21 @@ impl GUI {
         );
 
         for node_index in &self.gui_root_node_indices.clone() {
-            interactable_action_parameter_sets.push(self.draw_node(
+            self.draw_node(
                 *node_index,
                 current_frame,
                 command_buffer,
                 Vector::new_vec(0.0),
-                Vector::new_vec2(self.window().inner_size().width as f32, self.window().inner_size().height as f32)
-            ));
+                Vector::new_vec2(self.window().inner_size().width as f32, self.window().inner_size().height as f32),
+                &mut interactable_action_parameter_sets,
+            );
         }
 
         self.device.cmd_end_render_pass(command_buffer);
         self.pass.borrow().transition_to_readable(command_buffer, current_frame);
 
-        for interactable_action_parameter_set in interactable_action_parameter_sets {
-            if let Some(parameter_set) = interactable_action_parameter_set {
-                self.handle_gui_interaction(parameter_set.0, parameter_set.1, parameter_set.2, parameter_set.3, command_buffer)
-            }
+        for parameter_set in interactable_action_parameter_sets {
+            self.handle_gui_interaction(parameter_set.0, parameter_set.1, parameter_set.2, parameter_set.3, command_buffer)
         }
     } }
     unsafe fn draw_node(
@@ -644,9 +656,10 @@ impl GUI {
         command_buffer: CommandBuffer,
         parent_position: Vector,
         parent_scale: Vector,
-    ) -> Option<(GUINode, usize, Vector, Vector)> { unsafe {
+        interactable_parameter_sets: &mut Vec<(GUINode, usize, Vector, Vector)>
+    ) { unsafe {
         let node = self.gui_nodes[node_index].clone();
-        if node.hidden { return None };
+        if node.hidden { return };
 
         let position = parent_position + if node.absolute_position { node.position } else { node.position * parent_scale };
         let scale = if node.absolute_scale { node.scale } else { parent_scale * node.scale };
@@ -659,13 +672,12 @@ impl GUI {
         }
 
         for child in &node.children_indices.clone() {
-            self.draw_node(*child, current_frame, command_buffer, position, scale);
+            self.draw_node(*child, current_frame, command_buffer, position, scale, interactable_parameter_sets);
         }
 
         if node.interactable_information.is_some() {
-            return Some((node, node_index, position, position + scale));
+            interactable_parameter_sets.push((node, node_index, position, position + scale));
         }
-        None
     } }
     unsafe fn draw_quad(
         &self,

@@ -12,6 +12,9 @@ use std::io::BufWriter;
 use std::slice;
 use std::sync::Arc;
 use std::time::Instant;
+use crate::engine::physics::physics_engine::PhysicsEngine;
+use crate::engine::physics::player::Player;
+use crate::math::Vector;
 
 pub const MAX_FRAMES_IN_FLIGHT: usize = 3;
 
@@ -25,7 +28,7 @@ pub struct Renderer {
     pub scene_renderer: SceneRenderer,
     pub gui: GUI,
 
-    pub last_fps_render: Instant,
+    pub hitbox_renderpass: Renderpass,
 
     pub present_sampler: Sampler,
 }
@@ -33,7 +36,7 @@ impl Renderer {
     pub unsafe fn new(base: &VkBase, world: &Scene, controller: Arc<RefCell<Controller>>) -> Renderer { unsafe {
         Renderer::compile_shaders();
         
-        let (scene_renderer, compositing_renderpass, present_renderpass) = Renderer::create_rendering_objects(base, world);
+        let (scene_renderer, compositing_renderpass, present_renderpass, hitbox_renderpass) = Renderer::create_rendering_objects(base, world);
 
         let mut renderer = Renderer {
             device: base.device.clone(),
@@ -45,7 +48,7 @@ impl Renderer {
             scene_renderer,
             gui: GUI::new(base, controller),
 
-            last_fps_render: Instant::now(),
+            hitbox_renderpass,
 
             present_sampler: base.device.create_sampler(&vk::SamplerCreateInfo {
                 mag_filter: vk::Filter::LINEAR,
@@ -66,6 +69,9 @@ impl Renderer {
             renderer.scene_renderer.lighting_renderpass.pass.borrow().textures.iter().map(|frame_textures| {
                 &frame_textures[0]
             }).collect::<Vec<&Texture>>(),
+            renderer.hitbox_renderpass.pass.borrow().textures.iter().map(|frame_textures| {
+                &frame_textures[0]
+            }).collect::<Vec<&Texture>>(),
             renderer.gui.pass.borrow().textures.iter().map(|frame_textures| {
                 &frame_textures[0]
             }).collect::<Vec<&Texture>>()
@@ -76,10 +82,40 @@ impl Renderer {
 
         renderer
     } }
-    unsafe fn create_rendering_objects(base: &VkBase, world: &Scene) -> (SceneRenderer, Renderpass, Renderpass) { unsafe {
+    unsafe fn create_rendering_objects(base: &VkBase, world: &Scene) -> (SceneRenderer, Renderpass, Renderpass, Renderpass) { unsafe {
         let texture_sampler_create_info = DescriptorCreateInfo::new(base)
             .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
             .shader_stages(ShaderStageFlags::FRAGMENT);
+
+        let color_blend_attachment_states = [vk::PipelineColorBlendAttachmentState {
+            blend_enable: vk::TRUE,
+            src_color_blend_factor: vk::BlendFactor::SRC_ALPHA,
+            dst_color_blend_factor: vk::BlendFactor::ONE_MINUS_SRC_ALPHA,
+            color_blend_op: vk::BlendOp::ADD,
+            src_alpha_blend_factor: vk::BlendFactor::ONE,
+            dst_alpha_blend_factor: vk::BlendFactor::ONE_MINUS_SRC_ALPHA,
+            alpha_blend_op: vk::BlendOp::ADD,
+            color_write_mask: vk::ColorComponentFlags::RGBA,
+        }];
+        let color_blend_state = vk::PipelineColorBlendStateCreateInfo::default()
+            .logic_op(vk::LogicOp::CLEAR)
+            .attachments(&color_blend_attachment_states);
+
+        let hitbox_pass_create_info = PassCreateInfo::new(base)
+            .add_color_attachment_info(TextureCreateInfo::new(base).format(Format::R8G8B8A8_UNORM).add_usage_flag(vk::ImageUsageFlags::TRANSFER_SRC));
+        let hitbox_descriptor_set_create_info = DescriptorSetCreateInfo::new(base);
+        let hitbox_renderpass_create_info = RenderpassCreateInfo::new(base)
+            .pass_create_info(hitbox_pass_create_info)
+            .descriptor_set_create_info(hitbox_descriptor_set_create_info)
+            .vertex_shader_uri(String::from("hitbox_display\\cube.vert.spv"))
+            .fragment_shader_uri(String::from("hitbox_display\\hitbox.frag.spv"))
+            .pipeline_color_blend_state_create_info(color_blend_state)
+            .push_constant_range(vk::PushConstantRange {
+                stage_flags: ShaderStageFlags::VERTEX,
+                offset: 0,
+                size: size_of::<HitboxPushConstantSendable>() as u32,
+            });
+        let hitbox_renderpass = Renderpass::new(hitbox_renderpass_create_info);
 
         let present_pass_create_info = PassCreateInfo::new(base)
             .set_is_present_pass(true);
@@ -95,13 +131,14 @@ impl Renderer {
             .add_color_attachment_info(TextureCreateInfo::new(base).format(Format::R16G16B16A16_SFLOAT).add_usage_flag(vk::ImageUsageFlags::TRANSFER_SRC));
         let compositing_descriptor_set_create_info = DescriptorSetCreateInfo::new(base)
             .add_descriptor(Descriptor::new(&texture_sampler_create_info))
+            .add_descriptor(Descriptor::new(&texture_sampler_create_info))
             .add_descriptor(Descriptor::new(&texture_sampler_create_info));
         let compositing_renderpass_create_info = { RenderpassCreateInfo::new(base)
             .pass_create_info(compositing_pass_create_info)
             .descriptor_set_create_info(compositing_descriptor_set_create_info)
             .vertex_shader_uri(String::from("quad\\quad.vert.spv"))
             .fragment_shader_uri(String::from("composite.frag.spv")) };
-        (SceneRenderer::new(base, world), Renderpass::new(compositing_renderpass_create_info), Renderpass::new(present_renderpass_create_info))
+        (SceneRenderer::new(base, world), Renderpass::new(compositing_renderpass_create_info), Renderpass::new(present_renderpass_create_info), hitbox_renderpass)
     } }
     pub unsafe fn reload(&mut self, base: &VkBase, world: &Scene) { unsafe {
         self.device.device_wait_idle().unwrap();
@@ -111,13 +148,17 @@ impl Renderer {
         self.scene_renderer.destroy();
         self.compositing_renderpass.destroy();
         self.present_renderpass.destroy();
-        (self.scene_renderer, self.compositing_renderpass, self.present_renderpass) = Renderer::create_rendering_objects(base, world);
+        self.hitbox_renderpass.destroy();
+        (self.scene_renderer, self.compositing_renderpass, self.present_renderpass, self.hitbox_renderpass) = Renderer::create_rendering_objects(base, world);
 
         self.set_present_textures(self.compositing_renderpass.pass.borrow().textures.iter().map(|frame_textures| {
             &frame_textures[0]
         }).collect::<Vec<&Texture>>());
         self.set_compositing_textures(vec![
             self.scene_renderer.lighting_renderpass.pass.borrow().textures.iter().map(|frame_textures| {
+                &frame_textures[0]
+            }).collect::<Vec<&Texture>>(),
+            self.hitbox_renderpass.pass.borrow().textures.iter().map(|frame_textures| {
                 &frame_textures[0]
             }).collect::<Vec<&Texture>>(),
             self.gui.pass.borrow().textures.iter().map(|frame_textures| {
@@ -170,17 +211,48 @@ impl Renderer {
         }
     } }
 
-    pub unsafe fn render_frame(&mut self, current_frame: usize, present_index: usize, delta_time: f32, world: &Scene, player_camera: &Camera) { unsafe {
+    pub unsafe fn render_frame(
+        &mut self,
+        current_frame: usize,
+        present_index: usize,
+        world: &Scene,
+        player: Arc<RefCell<Player>>,
+        render_hitboxes: bool,
+        physics_engine: &PhysicsEngine
+    ) { unsafe {
         let frame_command_buffer = self.draw_command_buffers[current_frame];
 
-        if self.last_fps_render.elapsed().as_secs_f32() > 0.1 {
-            self.gui.update_text_of_node(0, format!("FPS: {}", 1.0 / delta_time).as_str(), frame_command_buffer);
-            self.last_fps_render = Instant::now();
+        { self.gui.draw(current_frame, frame_command_buffer); }
+
+        self.scene_renderer.render_world(current_frame, &world, &player.borrow().camera.clone());
+
+        if render_hitboxes {
+            self.hitbox_renderpass.begin_renderpass(current_frame, frame_command_buffer, Some(present_index));
+            for rigid_body in physics_engine.rigid_bodies.iter() {
+                let constants = HitboxPushConstantSendable {
+                    view_proj: (&player.borrow().camera.projection_matrix * &player.borrow().camera.view_matrix).data,
+                    min: rigid_body.get_min_max().0.to_array4(),
+                    max: rigid_body.get_min_max().1.to_array4(),
+                };
+                self.device.cmd_push_constants(frame_command_buffer, self.hitbox_renderpass.pipeline_layout, ShaderStageFlags::VERTEX, 0, slice::from_raw_parts(
+                    &constants as *const HitboxPushConstantSendable as *const u8,
+                    size_of::<HitboxPushConstantSendable>(),
+                ));
+                self.device.cmd_draw(frame_command_buffer, 36, 1, 0, 0);
+            }
+            let constants = HitboxPushConstantSendable {
+                view_proj: (&player.borrow().camera.projection_matrix * &player.borrow().camera.view_matrix).data,
+                min: player.borrow().rigid_body.get_min_max().0.to_array4(),
+                max: player.borrow().rigid_body.get_min_max().1.to_array4(),
+            };
+            self.device.cmd_push_constants(frame_command_buffer, self.hitbox_renderpass.pipeline_layout, ShaderStageFlags::VERTEX, 0, slice::from_raw_parts(
+                &constants as *const HitboxPushConstantSendable as *const u8,
+                size_of::<HitboxPushConstantSendable>(),
+            ));
+            self.device.cmd_draw(frame_command_buffer, 36, 1, 0, 0);
+            self.device.cmd_end_render_pass(frame_command_buffer);
         }
-
-        self.gui.draw(current_frame, frame_command_buffer);
-
-        self.scene_renderer.render_world(current_frame, &world, &player_camera);
+        { self.hitbox_renderpass.pass.borrow().transition_to_readable(frame_command_buffer, current_frame); }
 
         self.compositing_renderpass.do_renderpass(current_frame, frame_command_buffer, None::<fn()>, None::<fn()>, None);
         self.present_renderpass.begin_renderpass(current_frame, frame_command_buffer, Some(present_index));
@@ -193,13 +265,14 @@ impl Renderer {
         self.gui.destroy();
         self.compositing_renderpass.destroy();
         self.present_renderpass.destroy();
+        self.hitbox_renderpass.destroy();
         self.device.destroy_sampler(self.present_sampler, None);
     } }
 }
 
 pub unsafe fn screenshot_texture(base: &VkBase, texture: &Texture, layout: vk::ImageLayout, path: &str) {
     unsafe { base.device.device_wait_idle().unwrap(); }
-    
+
     let bytes_per_pixel = match texture.format {
         Format::R8G8B8A8_SRGB | Format::R8G8B8A8_UNORM |
         Format::B8G8R8A8_SRGB | Format::B8G8R8A8_UNORM => 4,
@@ -378,4 +451,10 @@ pub unsafe fn screenshot_texture(base: &VkBase, texture: &Texture, layout: vk::I
     }
 
     println!("Screenshot saved to {}", path);
+}
+
+struct HitboxPushConstantSendable {
+    view_proj: [f32; 16],
+    min: [f32; 4],
+    max: [f32; 4],
 }

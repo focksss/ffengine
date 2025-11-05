@@ -1,4 +1,6 @@
+use std::cell::RefCell;
 use std::collections::HashSet;
+use std::sync::Arc;
 use std::time::Instant;
 use ash::vk;
 use winit::dpi::PhysicalPosition;
@@ -7,6 +9,7 @@ use winit::event_loop::EventLoopWindowTarget;
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::CursorGrabMode;
 use crate::engine::input;
+use crate::engine::physics::player::Player;
 use crate::engine::world::camera::Camera;
 use crate::engine::world::scene::Scene;
 use crate::gui::gui::{GUIInteractableInformation, GUINode, GUIQuad};
@@ -17,7 +20,7 @@ use crate::render::VkBase;
 
 pub struct Controller {
     pub window_ptr: *const winit::window::Window,
-    pub player_camera: Camera,
+    pub player: Arc<RefCell<Player>>,
 
     pub cursor_position: PhysicalPosition<f64>,
     pub queue_flags: Flags,
@@ -42,17 +45,21 @@ impl Controller {
             window_ptr: window as *const _,
             cursor_position: Default::default(),
             queue_flags: Default::default(),
-            player_camera: Camera::new_perspective_rotation(
-                Vector::new_vec3(0.0, 0.0, 0.0),
-                Vector::new_empty(),
-                1.0,
-                0.001,
-                100.0,
-                window.inner_size().width as f32 / window.inner_size().height as f32,
-                0.001,
-                1000.0,
-                true,
-            ),
+            player: Arc::new(RefCell::new(Player::new(
+                Camera::new_perspective_rotation(
+                    Vector::new_vec3(0.0, 0.0, 0.0),
+                    Vector::new_empty(),
+                    1.0,
+                    0.001,
+                    100.0,
+                    window.inner_size().width as f32 / window.inner_size().height as f32,
+                    0.001,
+                    1000.0,
+                    true,
+                ),
+                Vector::new_vec3(-0.1, -0.5, -0.1),
+                Vector::new_vec3(0.1, 0.1, 0.1))
+            )),
             pressed_keys: Default::default(),
             new_pressed_keys: Default::default(),
             pressed_mouse_buttons: Default::default(),
@@ -97,51 +104,36 @@ impl Controller {
             renderer.gui.load_from_file(base, "resources\\gui\\default.gui");
         }
 
-        self.player_camera.update_matrices();
-        if !self.paused {
-            self.player_camera.update_frustum()
-        }
-
+        let mut move_direction= Vector::new_vec(0.0);
+        let camera_rotation = self.player.borrow().camera.rotation;
         if self.pressed_keys.contains(&PhysicalKey::Code(KeyCode::KeyW)) {
-            self.player_camera.position.x += self.player_camera.speed*delta_time * (self.player_camera.rotation.y + PI/2.0).cos();
-            self.player_camera.position.z += self.player_camera.speed*delta_time * (self.player_camera.rotation.y + PI/2.0).sin();
+            move_direction.x += (camera_rotation.y + PI/2.0).cos();
+            move_direction.z += (camera_rotation.y + PI/2.0).sin();
         }
         if self.pressed_keys.contains(&PhysicalKey::Code(KeyCode::KeyA)) {
-            self.player_camera.position.x -= self.player_camera.speed*delta_time * self.player_camera.rotation.y.cos();
-            self.player_camera.position.z -= self.player_camera.speed*delta_time * self.player_camera.rotation.y.sin();
+            move_direction.x -= camera_rotation.y.cos();
+            move_direction.z -= camera_rotation.y.sin();
         }
         if self.pressed_keys.contains(&PhysicalKey::Code(KeyCode::KeyS)) {
-            self.player_camera.position.x -= self.player_camera.speed*delta_time * (self.player_camera.rotation.y + PI/2.0).cos();
-            self.player_camera.position.z -= self.player_camera.speed*delta_time * (self.player_camera.rotation.y + PI/2.0).sin();
+            move_direction.x -= (camera_rotation.y + PI/2.0).cos();
+            move_direction.z -= (camera_rotation.y + PI/2.0).sin();
         }
         if self.pressed_keys.contains(&PhysicalKey::Code(KeyCode::KeyD)) {
-            self.player_camera.position.x += self.player_camera.speed*delta_time * self.player_camera.rotation.y.cos();
-            self.player_camera.position.z += self.player_camera.speed*delta_time * self.player_camera.rotation.y.sin();
+            move_direction.x += camera_rotation.y.cos();
+            move_direction.z += camera_rotation.y.sin();
         }
         if self.pressed_keys.contains(&PhysicalKey::Code(KeyCode::Space)) {
-            self.player_camera.position.y += self.player_camera.speed*delta_time;
+            move_direction.y += 1.0;
         }
         if self.pressed_keys.contains(&PhysicalKey::Code(KeyCode::ShiftLeft)) {
-            self.player_camera.position.y -= self.player_camera.speed*delta_time;
-        }
-        if self.pressed_keys.contains(&PhysicalKey::Code(KeyCode::ArrowUp)) {
-            self.player_camera.rotation.x += delta_time;
-        }
-        if self.pressed_keys.contains(&PhysicalKey::Code(KeyCode::ArrowDown)) {
-            self.player_camera.rotation.x -= delta_time;
-        }
-        if self.pressed_keys.contains(&PhysicalKey::Code(KeyCode::ArrowLeft)) {
-            self.player_camera.rotation.y += delta_time;
-        }
-        if self.pressed_keys.contains(&PhysicalKey::Code(KeyCode::ArrowRight)) {
-            self.player_camera.rotation.y -= delta_time;
+            move_direction.y -= 1.0;
         }
 
         if self.pressed_keys.contains(&PhysicalKey::Code(KeyCode::Equal)) {
-            self.player_camera.speed *= 1.0 + 1.0*delta_time;
+            self.player.borrow_mut().camera.speed *= 1.0 + 1.0*delta_time;
         }
         if self.pressed_keys.contains(&PhysicalKey::Code(KeyCode::Minus)) {
-            self.player_camera.speed /= 1.0 + 1.0*delta_time;
+            self.player.borrow_mut().camera.speed /= 1.0 + 1.0*delta_time;
         }
 
         if self.new_pressed_keys.contains(&PhysicalKey::Code(KeyCode::Escape)) {
@@ -167,8 +159,19 @@ impl Controller {
             self.paused = !self.paused
         }
 
+        let speed = { self.player.borrow().camera.speed };
+
+        self.player.borrow_mut().step(move_direction * (delta_time * speed));
+
         self.new_pressed_keys.clear();
     } }
+    
+    pub fn update_camera(&mut self) {
+        self.player.borrow_mut().camera.update_matrices();
+        if !self.paused {
+            self.player.borrow_mut().camera.update_frustum()
+        }
+    }
 
     pub fn handle_event<T>(&mut self, event: Event<T>, elwp: &EventLoopWindowTarget<T>) {
         match event {
@@ -266,9 +269,13 @@ impl Controller {
 
     fn do_mouse(&mut self) {
         if self.cursor_locked {
-            self.player_camera.rotation.y += self.player_camera.sensitivity * self.mouse_delta.0;
-            self.player_camera.rotation.x += self.player_camera.sensitivity * self.mouse_delta.1;
-            self.player_camera.rotation.x = self.player_camera.rotation.x.clamp(-PI * 0.5, PI * 0.5);
+            let rotation_x_delta = self.mouse_delta.1;
+            let rotation_y_delta = self.mouse_delta.0;
+            let sense = { self.player.borrow().camera.sensitivity };
+            { self.player.borrow_mut().camera.rotation.y += rotation_y_delta * sense; }
+            { self.player.borrow_mut().camera.rotation.x += rotation_x_delta * sense; }
+            let new_rotation_x = { self.player.borrow().camera.rotation.x };
+            self.player.borrow_mut().camera.rotation.x = new_rotation_x.clamp(-PI * 0.5, PI * 0.5);
         }
     }
 }

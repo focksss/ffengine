@@ -2,7 +2,7 @@
 	"guis": [
 	    {
 	        "name": "default1",
-	        "nodes": [0, 1]
+	        "nodes": [0, 1, 5]
 	    }
 	],
 	"fonts": [
@@ -138,6 +138,21 @@
 		"absolute_position": false,
 		"absolute_scale": false,
 		"color": [1.0, 1.0, 1.0, 1.0]
+	},
+	{
+		"text_information": {
+			"font": 0,
+			"text": "EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE",
+			"font_size": 20.0,
+			"newline_distance": 1720.0
+		},
+		"position": [0.01, 0.2],
+		"scale": [1.0, 1.0],
+		"clip_min": [0.0, 0.0],
+		"clip_max": [1.0, 1.0],
+		"absolute_position": false,
+		"absolute_scale": false,
+		"color": [1.0, 1.0, 1.0, 1.0]
 	}
 ],
 	"nodes": [
@@ -211,6 +226,22 @@
 			"absolute_scale": false,
 			"quad": 4,
 			"text": 4
+		},
+		{
+			"name": "position display",
+			"interactable_information": {
+				"passive_action": "set_position"
+			},
+			"children": [],
+			"position": [100.0, 140.0],
+			"scale": [
+				660.0,
+				30.0
+			],
+			"absolute_position": true,
+			"absolute_scale": true,
+			"text": 5,
+			"quad": 0
 		}
 	]
 }
