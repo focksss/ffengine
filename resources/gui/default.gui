@@ -143,6 +143,9 @@
 	"nodes": [
 		{
 			"name": "fps_display",
+			"interactable_information": {
+				"passive_action": "set_fps"
+			},
 			"children": [],
 			"position": [100.0, 100.0],
 			"scale": [

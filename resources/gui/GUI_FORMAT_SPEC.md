@@ -79,6 +79,7 @@
 
 | Key               | Type      | Description                                                                                                                                                         |
 |-------------------|-----------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| passive_action    | `String`  | Name of the function to be executed constantly by the node. Functions to be defined in `src\gui\gui.rs`                                                             |
 | hover_action      | `String`  | Name of the function to be executed when the mouse is hovering over the hitbox. Functions to be defined in `src\gui\gui.rs`                                         |
 | unhover_action    | `String`  | Name of the function to be executed when the mouse is not hovering over the hitbox (intended to undo the hover action). Functions to be defined in `src\gui\gui.rs` |
 | left_tap_action   | `String`  | Name of the function to be executed upon a single left click of the hitbox. Functions to be defined in `src\gui\gui.rs`                                             |

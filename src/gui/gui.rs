@@ -1,8 +1,9 @@
 use std::cell::RefCell;
 use std::{fs, slice};
 use std::sync::Arc;
+use std::time::Instant;
 use ash::vk;
-use ash::vk::{DescriptorType, Format, ShaderStageFlags};
+use ash::vk::{CommandBuffer, DescriptorType, Format, ShaderStageFlags};
 use json::JsonValue;
 use winit::event::MouseButton;
 use crate::engine::input::Controller;
@@ -29,7 +30,29 @@ pub struct GUI {
     pub fonts: Vec<Arc<Font>>,
 }
 impl GUI {
-    pub fn handle_gui_interaction(&mut self, node: GUINode, node_index: usize, min: Vector, max: Vector) {
+    pub fn handle_gui_interaction(&mut self, node: GUINode, node_index: usize, min: Vector, max: Vector, frame_command_buffer: CommandBuffer) {
+        if let Some(passive_action) = &node.interactable_information.as_ref().unwrap().passive_action {
+            let passive_action = passive_action.as_str();
+            match passive_action {
+                "set_fps" => {
+                    let info_ref = self.gui_nodes[node_index].interactable_information.as_ref().unwrap();
+                    if info_ref.storage_time.elapsed().as_secs_f32() > 0.1 {
+                        self.update_text_of_node(
+                            node_index,
+                            format!("FPS: {:?}", info_ref.storage_value1 / info_ref.storage_time.elapsed().as_secs_f32()).as_str(),
+                            frame_command_buffer
+                        );
+                        let info_ref_mut = self.gui_nodes[node_index].interactable_information.as_mut().unwrap();
+                        info_ref_mut.storage_time = Instant::now();
+                        info_ref_mut.storage_value1 = 0.0;
+                    }
+                    let info_ref_mut = self.gui_nodes[node_index].interactable_information.as_mut().unwrap();
+                    info_ref_mut.storage_value1 += 1.0;
+                }
+                _ => ()
+            }
+        }
+
         let (x, y, left_pressed) = {
             let controller = self.controller.borrow();
             let x = controller.cursor_position.x as f32;
@@ -228,6 +251,7 @@ impl GUI {
 
             let mut interactable_information = None;
             if let JsonValue::Object(ref interactable_information_json) = node["interactable_information"] {
+                let mut interactable_passive_action = None;
                 let mut interactable_hover_action = None;
                 let mut interactable_unhover_action = None;
                 let mut interactable_left_tap_action = None;
@@ -236,12 +260,21 @@ impl GUI {
                 let mut interactable_right_hold_action = None;
                 let mut interactable_hitbox_diversion = None;
 
-                match &interactable_information_json["hover_action"] {
+                match &interactable_information_json["passive_action"] {
                     JsonValue::String(s) => {
-                        interactable_hover_action = Some(s.to_string());
+                        interactable_passive_action = Some(s.to_string());
                     }
                     JsonValue::Short(s) => {
-                        interactable_hover_action = Some(s.to_string());
+                        interactable_passive_action = Some(s.to_string());
+                    }
+                    _ => {}
+                }
+                match &interactable_information_json["hover_action"] {
+                    JsonValue::String(s) => {
+                        interactable_passive_action = Some(s.to_string());
+                    }
+                    JsonValue::Short(s) => {
+                        interactable_passive_action = Some(s.to_string());
                     }
                     _ => {}
                 }
@@ -299,6 +332,7 @@ impl GUI {
                 let temp = GUIInteractableInformation {
                     was_pressed_last_frame: false,
 
+                    passive_action: interactable_passive_action,
                     hover_action: interactable_hover_action,
                     unhover_action: interactable_unhover_action,
                     left_tap_action: interactable_left_tap_action,
@@ -306,6 +340,10 @@ impl GUI {
                     right_tap_action: interactable_right_tap_action,
                     right_hold_action: interactable_right_hold_action,
                     hitbox_diversion: interactable_hitbox_diversion,
+
+                    storage_time: Instant::now(),
+                    storage_value1: 0.0,
+                    storage_value2: 0.0,
                 };
                 interactable_information = Some(temp);
             }
@@ -572,6 +610,8 @@ impl GUI {
     }
 
     pub unsafe fn draw(&mut self, current_frame: usize, command_buffer: vk::CommandBuffer,) { unsafe {
+        let mut interactable_action_parameter_sets = Vec::new();
+
         self.device.cmd_begin_render_pass(
             command_buffer,
             &self.pass.borrow().get_pass_begin_info(current_frame, None, self.text_renderer.renderpass.scissor),
@@ -579,28 +619,34 @@ impl GUI {
         );
 
         for node_index in &self.gui_root_node_indices.clone() {
-            self.draw_node(
+            interactable_action_parameter_sets.push(self.draw_node(
                 *node_index,
                 current_frame,
                 command_buffer,
                 Vector::new_vec(0.0),
                 Vector::new_vec2(self.window().inner_size().width as f32, self.window().inner_size().height as f32)
-            );
+            ));
         }
 
         self.device.cmd_end_render_pass(command_buffer);
         self.pass.borrow().transition_to_readable(command_buffer, current_frame);
+
+        for interactable_action_parameter_set in interactable_action_parameter_sets {
+            if let Some(parameter_set) = interactable_action_parameter_set {
+                self.handle_gui_interaction(parameter_set.0, parameter_set.1, parameter_set.2, parameter_set.3, command_buffer)
+            }
+        }
     } }
     unsafe fn draw_node(
         &mut self,
         node_index: usize,
         current_frame: usize,
-        command_buffer: vk::CommandBuffer,
+        command_buffer: CommandBuffer,
         parent_position: Vector,
         parent_scale: Vector,
-    ) { unsafe {
+    ) -> Option<(GUINode, usize, Vector, Vector)> { unsafe {
         let node = self.gui_nodes[node_index].clone();
-        if node.hidden { return };
+        if node.hidden { return None };
 
         let position = parent_position + if node.absolute_position { node.position } else { node.position * parent_scale };
         let scale = if node.absolute_scale { node.scale } else { parent_scale * node.scale };
@@ -617,8 +663,9 @@ impl GUI {
         }
 
         if node.interactable_information.is_some() {
-            self.handle_gui_interaction(node, node_index, position, position + scale)
+            return Some((node, node_index, position, position + scale));
         }
+        None
     } }
     unsafe fn draw_quad(
         &self,
@@ -723,6 +770,7 @@ pub struct GUINode {
 pub struct GUIInteractableInformation {
     pub was_pressed_last_frame: bool,
 
+    pub passive_action: Option<String>,
     pub hover_action: Option<String>,
     pub unhover_action: Option<String>,
     pub left_tap_action: Option<String>,
@@ -730,6 +778,10 @@ pub struct GUIInteractableInformation {
     pub right_tap_action: Option<String>,
     pub right_hold_action: Option<String>,
     pub hitbox_diversion: Option<usize>,
+
+    pub storage_time: Instant,
+    pub storage_value1: f32,
+    pub storage_value2: f32,
 }
 /**
 * Position and scale are relative and normalized.
