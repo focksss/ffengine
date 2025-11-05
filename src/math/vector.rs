@@ -120,6 +120,8 @@ impl Vector {
             cr * cp * cy + sr * sp * sy
         )
     }
+    
+    
     //</editor-fold>
 
     //<editor-fold desc = "vector vector operations">

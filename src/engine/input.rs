@@ -47,7 +47,7 @@ impl Controller {
             queue_flags: Default::default(),
             player: Arc::new(RefCell::new(Player::new(
                 Camera::new_perspective_rotation(
-                    Vector::new_vec3(0.0, 0.0, 0.0),
+                    Vector::new_vec3(0.0, 10.0, 0.0),
                     Vector::new_empty(),
                     1.0,
                     0.001,

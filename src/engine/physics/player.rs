@@ -15,7 +15,7 @@ impl Player {
         rigid_body.hitbox = Hitbox::OBB(Obb {
             half_extents: (max - min) * 0.5,
             orientation: Vector::new_empty_quat(),
-            center: Vector::new_vec3(camera.position.x, camera.position.y - hitbox_height * 0.5 + eye_to_head.y, camera.position.z),
+            center: Vector::new_vec3(0.0, -hitbox_height * 0.5 + eye_to_head.y, 0.0),
         });
         rigid_body.position = camera.position;
 

@@ -48,13 +48,13 @@ fn main() { unsafe {
     // world.models[1].animations[0].repeat = true;
     // world.models[1].animations[0].start();
 
-    world.preload_model(Model::new(&PathBuf::from("resources/models/shadowTest/shadowTest.gltf").to_str().unwrap()));
+    //world.preload_model(Model::new(&PathBuf::from("resources/models/shadowTest/shadowTest.gltf").to_str().unwrap()));
     //world.models[1].transform_roots(&Vector::new_vec3(0.0, 0.0, -5.0), &Vector::new_vec(0.0), &Vector::new_vec(1.0));
     //world.preload_model(Model::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf"));
     //world.preload_model(Model::new("C:\\Graphics\\assets\\bistroGLTF\\untitled.gltf"));
     //world.add_model(Model::new("C:\\Graphics\\assets\\asgard\\asgard.gltf"));
     //world.preload_model(Model::new("C:\\Graphics\\assets\\helmet\\DamagedHelmet.gltf"));
-    //world.preload_model(Model::new("C:\\Graphics\\assets\\grassblockGLTF\\grassblock.gltf"));
+    world.preload_model(Model::new(&PathBuf::from("resources/models/coordinateSpace/coordinateSpace.gltf").to_str().unwrap()));
 
     world.add_light(Light {
         position: Vector::new_vec3(0.0, 3.0, 0.0),
@@ -115,15 +115,19 @@ fn main() { unsafe {
                 let delta_time = now.duration_since(last_frame_time).as_secs_f32();
                 last_frame_time = now;
 
-                { // kill mutable ref once done
-                    let mut controller_mut = controller.borrow_mut();
-                    controller_mut.do_controls(delta_time, &base, &mut renderer, &world, current_frame);
-                    // for rigid_body in &mut physics_engine.rigid_bodies {
-                    //     if rigid_body.colliding_with(&controller_mut.player.borrow().rigid_body) {
-                    //         println!("COLLISION {}", delta_time) ;
-                    //     }
-                    // }
-                    controller_mut.update_camera();
+                { // kill refs once done
+                    { let mut controller_mut = controller.borrow_mut();
+                      controller_mut.do_controls(delta_time, &base, &mut renderer, &world, current_frame) };
+                    //physics_engine.tick(delta_time);
+
+                    for rigid_body in physics_engine.rigid_bodies.iter() {
+                        let int_info = controller.borrow().player.borrow().rigid_body.obb_intersects_obb(rigid_body);
+                        if int_info.is_some() {
+                            println!("{:?}", int_info.unwrap());
+                        }
+                    }
+                    { let mut controller_mut = controller.borrow_mut();
+                      controller_mut.update_camera(); }
                 }
 
 
