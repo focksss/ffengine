@@ -48,7 +48,7 @@ impl Camera {
             far,
             frustum: Frustum::null(),
             infinite_reverse,
-            third_person: true,
+            third_person: false,
             third_person_vector
         }
     }
