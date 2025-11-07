@@ -47,7 +47,7 @@ impl Controller {
             queue_flags: Default::default(),
             player: Arc::new(RefCell::new(Player::new(
                 Camera::new_perspective_rotation(
-                    Vector::new_vec3(0.0, 10.0, 0.0),
+                    Vector::new_vec3(0.0, 1.0, 0.0),
                     Vector::new_empty(),
                     1.0,
                     0.001,
@@ -56,6 +56,7 @@ impl Controller {
                     0.001,
                     1000.0,
                     true,
+                    Vector::new_vec3(0.0, 0.0, -1.0),
                 ),
                 Vector::new_vec3(-0.1, -0.5, -0.1),
                 Vector::new_vec3(0.1, 0.1, 0.1))
@@ -108,19 +109,19 @@ impl Controller {
         let camera_rotation = self.player.borrow().camera.rotation;
         if self.pressed_keys.contains(&PhysicalKey::Code(KeyCode::KeyW)) {
             move_direction.x += (camera_rotation.y + PI/2.0).cos();
-            move_direction.z += (camera_rotation.y + PI/2.0).sin();
+            move_direction.z -= (camera_rotation.y + PI/2.0).sin();
         }
         if self.pressed_keys.contains(&PhysicalKey::Code(KeyCode::KeyA)) {
             move_direction.x -= camera_rotation.y.cos();
-            move_direction.z -= camera_rotation.y.sin();
+            move_direction.z += camera_rotation.y.sin();
         }
         if self.pressed_keys.contains(&PhysicalKey::Code(KeyCode::KeyS)) {
             move_direction.x -= (camera_rotation.y + PI/2.0).cos();
-            move_direction.z -= (camera_rotation.y + PI/2.0).sin();
+            move_direction.z += (camera_rotation.y + PI/2.0).sin();
         }
         if self.pressed_keys.contains(&PhysicalKey::Code(KeyCode::KeyD)) {
             move_direction.x += camera_rotation.y.cos();
-            move_direction.z += camera_rotation.y.sin();
+            move_direction.z -= camera_rotation.y.sin();
         }
         if self.pressed_keys.contains(&PhysicalKey::Code(KeyCode::Space)) {
             move_direction.y += 1.0;
@@ -273,7 +274,7 @@ impl Controller {
             let rotation_y_delta = self.mouse_delta.0;
             let sense = { self.player.borrow().camera.sensitivity };
             { self.player.borrow_mut().camera.rotation.y += rotation_y_delta * sense; }
-            { self.player.borrow_mut().camera.rotation.x += rotation_x_delta * sense; }
+            { self.player.borrow_mut().camera.rotation.x -= rotation_x_delta * sense; }
             let new_rotation_x = { self.player.borrow().camera.rotation.x };
             self.player.borrow_mut().camera.rotation.x = new_rotation_x.clamp(-PI * 0.5, PI * 0.5);
         }

@@ -17,9 +17,12 @@ pub struct Camera {
     pub far: f32,
     pub frustum: Frustum,
     pub infinite_reverse: bool,
+
+    pub third_person: bool,
+    pub third_person_vector: Vector, // to be rotated by the cameras rotation and added to the position when creating the view matrix, if in third person
 }
 impl Camera {
-    pub fn new_perspective_rotation(position: Vector, rotation: Vector, speed: f32, sensitivity: f32, fov_y: f32, aspect_ratio: f32, near: f32, far: f32, infinite_reverse: bool) -> Self {
+    pub fn new_perspective_rotation(position: Vector, rotation: Vector, speed: f32, sensitivity: f32, fov_y: f32, aspect_ratio: f32, near: f32, far: f32, infinite_reverse: bool, third_person_vector: Vector) -> Self {
         Self {
             view_matrix: Matrix::new(),
             projection_matrix: Matrix::new(),
@@ -34,11 +37,19 @@ impl Camera {
             far,
             frustum: Frustum::null(),
             infinite_reverse,
+            third_person: false,
+            third_person_vector
         }
     }
 
     pub fn update_matrices(&mut self) {
-        self.view_matrix = Matrix::new_view(&self.position, &self.rotation);
+        self.view_matrix = Matrix::new_view(
+            if self.third_person {
+                let third_person_position = &self.position + self.third_person_vector.rotate_by_euler(&self.rotation);
+                third_person_position
+            } else { self.position.clone() },
+            &self.rotation
+        );
         self.projection_matrix = if self.infinite_reverse { Matrix::new_infinite_reverse_projection(
             self.fov_y.to_radians(), 
             self.aspect_ratio,
@@ -52,7 +63,7 @@ impl Camera {
     }
 
     pub fn update_frustum(&mut self) {
-        let rotation = &self.rotation.mul_by_vec(&Vector::new_vec3(1.0, 1.0, 1.0)) + Vector::new_vec3(0.0,-PI,0.0);
+        let rotation = &self.rotation.mul_by_vec(&Vector::new_vec3(-1.0, 1.0, 1.0)) + Vector::new_vec3(0.0,-PI,0.0);
         let cam_front = Vector::new_vec3(0.0,0.0,1.0).rotate_by_euler(&rotation);
         let cam_up = Vector::new_vec3(0.0,1.0,0.0).rotate_by_euler(&rotation);
         let cam_right = cam_up.cross(&cam_front).normalize_3d();
@@ -62,7 +73,7 @@ impl Camera {
 
         let front_by_far = cam_front * self.far;
 
-        let position = self.position * Vector::new_vec3(1.0,1.0,-1.0);
+        let position = self.position;
 
         self.frustum = Frustum {
             planes: [

@@ -350,9 +350,9 @@ impl Matrix {
         result
     }
 
-    pub fn new_view(pos: &Vector, rot: &Vector) -> Self {
-        let t = Matrix::new_translation_vec3(&pos.mul_by_vec(&Vector::new_vec3(-1.0, -1.0, 1.0)));
-        let r = Matrix::new_rotate_euler_vec3(&rot.mul_by_vec(&Vector::new_vec3(-1.0,1.0,-1.0)));
+    pub fn new_view(pos: Vector, rot: &Vector) -> Self {
+        let t = Matrix::new_translation_vec3(&(pos * -1.0));
+        let r = Matrix::new_rotate_euler_vec3(&rot);
 
         let result = r * t;
 
