@@ -163,6 +163,9 @@ impl Vector {
         Vector::new_vec4(self.x / vec.x, self.y / vec.y, self.z / vec.z, self.w / vec.w)
     }
 
+    /**
+    *
+     */
     pub fn combine(&self, other: &Vector) -> Vector {
         Vector::new_vec4(
             self.w * other.x + self.x * other.w + self.y * other.z - self.z * other.y,

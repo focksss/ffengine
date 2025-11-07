@@ -36,7 +36,7 @@ impl GUI {
             match passive_action {
                 "set_fps" => {
                     let info_ref = self.gui_nodes[node_index].interactable_information.as_ref().unwrap();
-                    if info_ref.storage_time.elapsed().as_secs_f32() > 0.1 {
+                    if info_ref.storage_time.elapsed().as_secs_f32() > 1.0 {
                         self.update_text_of_node(
                             node_index,
                             format!("FPS: {:?}", info_ref.storage_value1 / info_ref.storage_time.elapsed().as_secs_f32()).as_str(),

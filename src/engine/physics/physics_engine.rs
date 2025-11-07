@@ -47,6 +47,7 @@ impl PhysicsEngine {
         }
         for player_ref in &self.players {
             let mut player = player_ref.borrow_mut();
+            player.rigid_body.position = player.camera.position;
 
             player.rigid_body.velocity = player.rigid_body.velocity + self.gravity * delta_time;
 
@@ -76,9 +77,7 @@ impl PhysicsEngine {
         let mut iteration = 0;
 
         while iteration < MAX_ITERATIONS && remaining_step.magnitude_3d() > COLLISION_EPSILON {
-            player.rigid_body.position = player.camera.position;
-
-            let test_position = player.camera.position + remaining_step;
+            let test_position = player.rigid_body.position + remaining_step;
             player.rigid_body.position = test_position;
 
             let mut closest_collision: Option<(ContactInformation, usize)> = None;
@@ -214,8 +213,8 @@ impl RigidBody {
         let b_center = b.center.rotate_by_quat(&b.orientation) + other.position;
 
         // net quaternions
-        let a_quat = a.orientation.combine(&other.orientation);
-        let b_quat = b.orientation.combine(&self.orientation);
+        let a_quat = a.orientation;
+        let b_quat = b.orientation;
 
         // local axes
         let a_axes = [
@@ -282,15 +281,13 @@ impl RigidBody {
         }
 
         // bad normal?
-        if collision_normal.dot3(&t) < 0.0 {
-            collision_normal = collision_normal * -1.0;
-        }
+
 
         let contact_point = a_center + collision_normal * (min_penetration * 0.5);
 
         Some(ContactInformation {
             point: contact_point,
-            normal: collision_normal,
+            normal: -1.0 * collision_normal,
             penetration_depth: min_penetration,
         })
     }

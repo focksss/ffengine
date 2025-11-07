@@ -36,7 +36,7 @@ pub struct Controller {
     pub paused: bool,
 }
 impl Controller {
-    pub fn new(window: &winit::window::Window) -> Controller {
+    pub fn new(window: &winit::window::Window, start_pos: Vector) -> Controller {
         window.set_cursor_position(PhysicalPosition::new(
             window.inner_size().width as f32 * 0.5,
             window.inner_size().height as f32 * 0.5))
@@ -47,7 +47,7 @@ impl Controller {
             queue_flags: Default::default(),
             player: Arc::new(RefCell::new(Player::new(
                 Camera::new_perspective_rotation(
-                    Vector::new_vec3(0.0, 1.0, 0.0),
+                    start_pos,
                     Vector::new_empty(),
                     1.0,
                     0.001,
