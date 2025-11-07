@@ -56,7 +56,7 @@ impl Controller {
                     0.001,
                     1000.0,
                     true,
-                    Vector::new_vec3(0.0, 0.0, -1.0),
+                    Vector::new_vec3(0.0, 0.0, 1.0),
                 ),
                 Vector::new_vec3(-0.1, -0.5, -0.1),
                 Vector::new_vec3(0.1, 0.1, 0.1))
@@ -158,6 +158,14 @@ impl Controller {
         }
         if self.new_pressed_keys.contains(&PhysicalKey::Code(KeyCode::KeyP)) {
             self.paused = !self.paused
+        }
+
+        if self.new_pressed_keys.contains(&PhysicalKey::Code(KeyCode::F2)) {
+            self.queue_flags.screenshot_queued = true;
+        }
+        if self.new_pressed_keys.contains(&PhysicalKey::Code(KeyCode::F5)) {
+            let last_third_person_state = self.player.borrow().camera.third_person;
+            self.player.borrow_mut().camera.third_person = !last_third_person_state;
         }
 
         let speed = { self.player.borrow().camera.speed };

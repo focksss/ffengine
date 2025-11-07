@@ -22,7 +22,18 @@ pub struct Camera {
     pub third_person_vector: Vector, // to be rotated by the cameras rotation and added to the position when creating the view matrix, if in third person
 }
 impl Camera {
-    pub fn new_perspective_rotation(position: Vector, rotation: Vector, speed: f32, sensitivity: f32, fov_y: f32, aspect_ratio: f32, near: f32, far: f32, infinite_reverse: bool, third_person_vector: Vector) -> Self {
+    pub fn new_perspective_rotation(
+        position: Vector,
+        rotation: Vector,
+        speed: f32,
+        sensitivity: f32,
+        fov_y: f32,
+        aspect_ratio: f32,
+        near: f32,
+        far: f32,
+        infinite_reverse: bool,
+        third_person_vector: Vector
+    ) -> Self {
         Self {
             view_matrix: Matrix::new(),
             projection_matrix: Matrix::new(),
@@ -37,7 +48,7 @@ impl Camera {
             far,
             frustum: Frustum::null(),
             infinite_reverse,
-            third_person: false,
+            third_person: true,
             third_person_vector
         }
     }
