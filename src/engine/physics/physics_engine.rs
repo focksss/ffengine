@@ -1,8 +1,9 @@
 use std::cell::RefCell;
+use std::cmp::PartialEq;
 use std::ops::Deref;
 use std::sync::Arc;
 use crate::engine::physics::physics_engine::Hitbox::OBB;
-use crate::engine::physics::player::Player;
+use crate::engine::physics::player::{MovementMode, Player};
 use crate::engine::world::scene::{Mesh, Node, Scene};
 use crate::math::*;
 use crate::math::matrix::Matrix;
@@ -15,6 +16,7 @@ pub struct PhysicsEngine {
     pub rigid_bodies: Vec<RigidBody>,
     pub players: Vec<Arc<RefCell<Player>>>
 }
+
 impl PhysicsEngine {
     pub fn new(world: &Scene, gravity: Vector, air_resistance_coefficient: f32, player_horiz_const_resistance: f32) -> Self {
         let mut rigid_bodies = Vec::new();
@@ -51,13 +53,18 @@ impl PhysicsEngine {
         }
         for player_ref in &self.players {
             let mut player = player_ref.borrow_mut();
-            player.rigid_body.position = player.camera.position;
+            match player.movement_mode {
+                MovementMode::GHOST => { continue }
+                MovementMode::PHYSICS => {
+                    player.rigid_body.position = player.camera.position;
 
-            player.rigid_body.velocity = player.rigid_body.velocity + self.gravity * delta_time;
+                    player.rigid_body.velocity = player.rigid_body.velocity + self.gravity * delta_time;
 
-            let velocity_step = player.rigid_body.velocity * delta_time;
+                    let velocity_step = player.rigid_body.velocity * delta_time;
 
-            self.move_player_with_collision(&mut player, velocity_step);
+                    self.move_player_with_collision(&mut player, velocity_step);
+                }
+            }
         }
         for body in &mut self.rigid_bodies {
             if !body.is_static {
@@ -75,9 +82,15 @@ impl PhysicsEngine {
     }
     fn move_player_with_collision(&self, player: &mut Player, intended_step: Vector) {
         player.step(intended_step);
+        player.grounded = false;
         for rigid_body in &self.rigid_bodies {
             if let Some(contact) = rigid_body.colliding_with_info(&player.rigid_body) {
                 player.step(-1.0 * contact.normal * contact.penetration_depth);
+
+                if contact.normal.dot3(&self.gravity) > 0.9 { // threshold for jumping on walls
+                    player.grounded = true;
+                }
+
                 player.rigid_body.velocity = (player.rigid_body.velocity - player.rigid_body.velocity.project_onto(&contact.normal))
             }
         }

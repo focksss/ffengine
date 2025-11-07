@@ -9,7 +9,7 @@ use winit::event_loop::EventLoopWindowTarget;
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::CursorGrabMode;
 use crate::engine::input;
-use crate::engine::physics::player::Player;
+use crate::engine::physics::player::{MovementMode, Player};
 use crate::engine::world::camera::Camera;
 use crate::engine::world::scene::Scene;
 use crate::gui::gui::{GUIInteractableInformation, GUINode, GUIQuad};
@@ -59,8 +59,9 @@ impl Controller {
                     Vector::new_vec3(0.0, 0.0, 1.0),
                 ),
                 Vector::new_vec3(-0.1, -0.5, -0.1),
-                Vector::new_vec3(0.1, 0.1, 0.1))
-            )),
+                Vector::new_vec3(0.1, 0.1, 0.1),
+                MovementMode::GHOST
+            ))),
             pressed_keys: Default::default(),
             new_pressed_keys: Default::default(),
             pressed_mouse_buttons: Default::default(),
@@ -124,11 +125,24 @@ impl Controller {
             move_direction.z -= camera_rotation.y.sin();
         }
         if self.pressed_keys.contains(&PhysicalKey::Code(KeyCode::Space)) {
-            // move_direction.y += 1.0;
-            self.player.borrow_mut().rigid_body.velocity.y = 5.0;
+            match self.player.borrow().movement_mode {
+                MovementMode::GHOST => {
+                    move_direction.y += 1.0;
+                }
+                MovementMode::PHYSICS => {
+                    if self.player.borrow().grounded {
+                        move_direction.y = 5.0;
+                    }
+                }
+            }
         }
         if self.pressed_keys.contains(&PhysicalKey::Code(KeyCode::ShiftLeft)) {
-            // move_direction.y -= 1.0;
+            match self.player.borrow().movement_mode {
+                MovementMode::GHOST => {
+                    move_direction.y -= 1.0;
+                }
+                MovementMode::PHYSICS => {}
+            }
         }
 
         if self.pressed_keys.contains(&PhysicalKey::Code(KeyCode::Equal)) {
@@ -173,7 +187,14 @@ impl Controller {
 
         {
             let mut player_mut = self.player.borrow_mut();
-            player_mut.rigid_body.velocity = player_mut.rigid_body.velocity + move_direction * speed;
+            match player_mut.movement_mode {
+                MovementMode::GHOST => {
+                    player_mut.step(move_direction * speed * delta_time)
+                }
+                MovementMode::PHYSICS => {
+                    player_mut.rigid_body.velocity = player_mut.rigid_body.velocity + move_direction * speed;
+                }
+            }
         }
 
         self.new_pressed_keys.clear();

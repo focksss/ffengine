@@ -2,12 +2,19 @@ use crate::engine::physics::physics_engine::{Obb, Hitbox, RigidBody};
 use crate::engine::world::camera::Camera;
 use crate::math::Vector;
 
+pub enum MovementMode {
+    GHOST,
+    PHYSICS,
+}
+
 pub struct Player {
+    pub movement_mode: MovementMode,
+    pub grounded: bool,
     pub rigid_body: RigidBody,
     pub camera: Camera,
 }
 impl Player {
-    pub fn new(camera: Camera, eye_to_foot: Vector, eye_to_head: Vector) -> Self {
+    pub fn new(camera: Camera, eye_to_foot: Vector, eye_to_head: Vector, movement_mode: MovementMode) -> Self {
         let mut rigid_body = RigidBody::default();
         let max = camera.position + eye_to_head;
         let min = camera.position + eye_to_foot;
@@ -21,6 +28,8 @@ impl Player {
         rigid_body.friction_coefficient = 0.0;
 
         Player {
+            movement_mode,
+            grounded: false,
             rigid_body,
             camera,
         }

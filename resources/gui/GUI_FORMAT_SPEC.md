@@ -77,13 +77,13 @@
 
 #### InteractableInformation Structure
 
-| Key               | Type      | Description                                                                                                                                                         |
-|-------------------|-----------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| passive_action    | `String`  | Name of the function to be executed constantly by the node. Functions to be defined in `src\gui\gui.rs`                                                             |
-| hover_action      | `String`  | Name of the function to be executed when the mouse is hovering over the hitbox. Functions to be defined in `src\gui\gui.rs`                                         |
-| unhover_action    | `String`  | Name of the function to be executed when the mouse is not hovering over the hitbox (intended to undo the hover action). Functions to be defined in `src\gui\gui.rs` |
-| left_tap_action   | `String`  | Name of the function to be executed upon a single left click of the hitbox. Functions to be defined in `src\gui\gui.rs`                                             |
-| right_tap_action  | `String`  | Name of the function to be executed upon a single right click of the hitbox. Functions to be defined in `src\gui\gui.rs`                                            |
-| left_hold_action  | `String`  | Name of the function to be executed whenever the left mouse button is pressed and hovering over the hitbox. Functions to be defined in `src\gui\gui.rs`             |
-| right_hold_action | `String`  | Name of the function to be executed whenever the right mouse button is pressed and hovering over the hitbox. Functions to be defined in `src\gui\gui.rs`            |
-| hitbox_diversion  | `integer` | Index of child node for the interactable hitbox to be diverted to                                                                                                   |
+| Key                | Type       | Description                                                                                                                                                           |
+|--------------------|------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| passive_actions    | `[String]` | Names of the functions to be executed constantly by the node. Functions to be defined in `src\gui\gui.rs`                                                             |
+| hover_actions      | `[String]` | Names of the functions to be executed when the mouse is hovering over the hitbox. Functions to be defined in `src\gui\gui.rs`                                         |
+| unhover_actions    | `[String]` | Names of the functions to be executed when the mouse is not hovering over the hitbox (intended to undo the hover action). Functions to be defined in `src\gui\gui.rs` |
+| left_tap_actions   | `[String]` | Names of the functions to be executed upon a single left click of the hitbox. Functions to be defined in `src\gui\gui.rs`                                             |
+| right_tap_actions  | `[String]` | Names of the functions to be executed upon a single right click of the hitbox. Functions to be defined in `src\gui\gui.rs`                                            |
+| left_hold_actions  | `[String]` | Names of the functions to be executed whenever the left mouse button is pressed and hovering over the hitbox. Functions to be defined in `src\gui\gui.rs`             |
+| right_hold_actions | `[String]` | Names of the functions to be executed whenever the right mouse button is pressed and hovering over the hitbox. Functions to be defined in `src\gui\gui.rs`            |
+| hitbox_diversion   | `String`   | Index of child node for the interactable hitbox to be diverted to                                                                                                     |

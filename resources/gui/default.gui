@@ -159,7 +159,7 @@
 		{
 			"name": "fps_display",
 			"interactable_information": {
-				"passive_action": "set_fps"
+				"passive_actions": ["set_fps"]
 			},
 			"children": [],
 			"position": [100.0, 100.0],
@@ -185,9 +185,9 @@
 		{
 			"name": "reload shaders button",
 			"interactable_information": {
-				"hover_action": "color_quad_bright",
-				"unhover_action": "color_quad_normal",
-				"left_tap_action": "reload_shaders"
+				"hover_actions": ["color_quad_bright"],
+				"unhover_actions": ["color_quad_normal"],
+				"left_tap_actions": ["reload_shaders"]
 			},
 			"children": [],
 			"position": [0.1, 0.85],
@@ -200,9 +200,9 @@
 		{
 			"name": "reload gui button",
 			"interactable_information": {
-				"hover_action": "color_quad_bright",
-				"unhover_action": "color_quad_normal",
-				"left_tap_action": "reload_gui"
+				"hover_actions": ["color_quad_bright"],
+				"unhover_actions": ["color_quad_normal"],
+				"left_tap_actions": ["reload_gui"]
 			},
 			"children": [],
 			"position": [0.1, 0.78],
@@ -215,9 +215,9 @@
 		{
 			"name": "screenshot button",
 			"interactable_information": {
-				"hover_action": "color_quad_bright",
-				"unhover_action": "color_quad_normal",
-				"left_tap_action": "screenshot"
+				"hover_actions": ["color_quad_bright"],
+				"unhover_actions": ["color_quad_normal"],
+				"left_tap_actions": ["screenshot"]
 			},
 			"children": [],
 			"position": [0.1, 0.71],
@@ -230,7 +230,7 @@
 		{
 			"name": "position display",
 			"interactable_information": {
-				"passive_action": "set_position"
+				"passive_actions": ["set_position"]
 			},
 			"children": [],
 			"position": [100.0, 140.0],
