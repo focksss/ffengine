@@ -9,12 +9,14 @@ use crate::math::matrix::Matrix;
 
 pub struct PhysicsEngine {
     pub gravity: Vector,
+    pub air_resistance_coefficient: f32,
+    pub player_horiz_const_resistance: f32,
 
     pub rigid_bodies: Vec<RigidBody>,
     pub players: Vec<Arc<RefCell<Player>>>
 }
 impl PhysicsEngine {
-    pub fn new(world: &Scene, gravity: Vector) -> Self {
+    pub fn new(world: &Scene, gravity: Vector, air_resistance_coefficient: f32, player_horiz_const_resistance: f32) -> Self {
         let mut rigid_bodies = Vec::new();
         for model in &world.models {
             for node in &model.nodes {
@@ -31,6 +33,8 @@ impl PhysicsEngine {
         }
         Self {
             gravity,
+            air_resistance_coefficient,
+            player_horiz_const_resistance,
             rigid_bodies,
             players: Vec::new(),
         }
@@ -70,58 +74,25 @@ impl PhysicsEngine {
         }
     }
     fn move_player_with_collision(&self, player: &mut Player, intended_step: Vector) {
-        const MAX_ITERATIONS: usize = 4;
-        const COLLISION_EPSILON: f32 = 0.001;
-
-        let mut remaining_step = intended_step;
-        let mut iteration = 0;
-
-        while iteration < MAX_ITERATIONS && remaining_step.magnitude_3d() > COLLISION_EPSILON {
-            let test_position = player.rigid_body.position + remaining_step;
-            player.rigid_body.position = test_position;
-
-            let mut closest_collision: Option<(ContactInformation, usize)> = None;
-            let mut min_distance = f32::MAX;
-            for (i, static_body) in self.rigid_bodies.iter().enumerate() {
-                if !static_body.is_static {
-                    continue;
-                }
-                if let Some(contact) = player.rigid_body.colliding_with_info(static_body) {
-                    let distance = contact.penetration_depth;
-                    if distance < min_distance {
-                        min_distance = distance;
-                        closest_collision = Some((contact, i));
-                    }
-                }
+        player.step(intended_step);
+        for rigid_body in &self.rigid_bodies {
+            if let Some(contact) = rigid_body.colliding_with_info(&player.rigid_body) {
+                player.step(-1.0 * contact.normal * contact.penetration_depth);
+                player.rigid_body.velocity = (player.rigid_body.velocity - player.rigid_body.velocity.project_onto(&contact.normal))
             }
-            if let Some((contact, _body_index)) = closest_collision {
-                let separation = contact.normal * (contact.penetration_depth + COLLISION_EPSILON);
-                let safe_position = test_position + separation;
-
-                let normal_component = remaining_step.dot3(&contact.normal);
-                let tangent_step = remaining_step - contact.normal * normal_component;
-
-                let friction = player.rigid_body.friction_coefficient;
-                let adjusted_tangent = tangent_step * (1.0 - friction);
-
-                player.step(safe_position - player.camera.position);
-                let velocity_normal = player.rigid_body.velocity.dot3(&contact.normal);
-                if velocity_normal < 0.0 {
-                    let restitution = player.rigid_body.restitution_coefficient;
-                    player.rigid_body.velocity = player.rigid_body.velocity - contact.normal * (velocity_normal * (1.0 + restitution));
-                    if contact.normal.y > 0.7 {
-                        player.rigid_body.velocity.y = 0.0;
-                    }
-                }
-                remaining_step = adjusted_tangent;
-            } else {
-                player.step(remaining_step);
-                break;
-            }
-            iteration += 1;
         }
-        player.rigid_body.position = player.camera.position;
+
+        if player.rigid_body.position.y < -20.0 {
+            player.camera.position.y = 20.0;
+        }
+
+        player.rigid_body.velocity = Vector::new_vec3(
+            player.rigid_body.velocity.x * (1.0 - self.player_horiz_const_resistance) * (1.0 - self.air_resistance_coefficient),
+            player.rigid_body.velocity.y * (1.0 - self.air_resistance_coefficient),
+            player.rigid_body.velocity.z * (1.0 - self.player_horiz_const_resistance) * (1.0 - self.air_resistance_coefficient),
+        );
     }
+
     fn axis_angle_to_quat(axis: &Vector, angle: f32) -> Vector {
         let half_angle = angle * 0.5;
         let s = half_angle.sin();
@@ -155,8 +126,6 @@ pub struct RigidBody {
 }
 
 impl RigidBody {
-    //TODO
-    // * SHOULD CONSTRUCT MIN AND MAX FROM THE WORLD TRANSFORM, OR MAYBE COPY WHAT THE FRUSTUM CULLING FUNCTION DOES
     pub fn new_from_node(node: &Node, hitbox: Hitbox) -> Self {
         let mut body = RigidBody::default();
         body.position = node.world_transform * Vector::new_vec4(0.0, 0.0, 0.0, 1.0);
@@ -169,36 +138,6 @@ impl RigidBody {
             (OBB(_), OBB(_)) => {
                 self.obb_intersects_obb(other)
             }
-        }
-    }
-
-    pub fn get_min_max(&self) -> (Vector, Vector) {
-        // return min and max of hitbox in world space for debug/drawing purposes
-        match &self.hitbox {
-            OBB(obb) => {
-                let min = (obb.center - obb.half_extents).rotate_by_quat(&obb.orientation) + self.position;
-                let max = (obb.center + obb.half_extents).rotate_by_quat(&obb.orientation) + self.position;
-
-                let corners = [
-                    Vector::new_vec3(min.x, min.y, min.z),
-                    Vector::new_vec3(min.x, max.y, min.z),
-                    Vector::new_vec3(max.x, min.y, min.z),
-                    Vector::new_vec3(max.x, max.y, min.z),
-                    Vector::new_vec3(min.x, min.y, max.z),
-                    Vector::new_vec3(min.x, max.y, max.z),
-                    Vector::new_vec3(max.x, min.y, max.z),
-                    Vector::new_vec3(max.x, max.y, max.z),
-                ];
-                let mut min = corners[0];
-                let mut max = corners[0];
-                for corner in &corners {
-                    min = Vector::min(&min, corner);
-                    max = Vector::max(&max, corner);
-                }
-
-                (min, max)
-            }
-            _ => (Vector::new_vec(0.0), Vector::new_vec(0.0))
         }
     }
 
@@ -281,7 +220,9 @@ impl RigidBody {
         }
 
         // bad normal?
-
+        if collision_normal.dot3(&t) < 0.0 {
+            collision_normal = -1.0 * collision_normal;
+        }
 
         let contact_point = a_center + collision_normal * (min_penetration * 0.5);
 

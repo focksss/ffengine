@@ -124,10 +124,11 @@ impl Controller {
             move_direction.z -= camera_rotation.y.sin();
         }
         if self.pressed_keys.contains(&PhysicalKey::Code(KeyCode::Space)) {
-            move_direction.y += 1.0;
+            // move_direction.y += 1.0;
+            self.player.borrow_mut().rigid_body.velocity.y = 5.0;
         }
         if self.pressed_keys.contains(&PhysicalKey::Code(KeyCode::ShiftLeft)) {
-            move_direction.y -= 1.0;
+            // move_direction.y -= 1.0;
         }
 
         if self.pressed_keys.contains(&PhysicalKey::Code(KeyCode::Equal)) {
@@ -170,7 +171,10 @@ impl Controller {
 
         let speed = { self.player.borrow().camera.speed };
 
-        self.player.borrow_mut().step(move_direction * (delta_time * speed));
+        {
+            let mut player_mut = self.player.borrow_mut();
+            player_mut.rigid_body.velocity = player_mut.rigid_body.velocity + move_direction * speed;
+        }
 
         self.new_pressed_keys.clear();
     } }

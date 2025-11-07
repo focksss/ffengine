@@ -73,8 +73,8 @@ fn main() { unsafe {
 
     world.initialize(&base, MAX_FRAMES_IN_FLIGHT, true);
 
-    let mut physics_engine = PhysicsEngine::new(&world, Vector::new_vec3(0.0, -9.8, 0.0));
-    let controller = Arc::new(RefCell::new(Controller::new(&base.window, Vector::new_vec3(0.0, 100.0, 0.0))));
+    let mut physics_engine = PhysicsEngine::new(&world, Vector::new_vec3(0.0, -9.8, 0.0), 0.001, 0.2);
+    let controller = Arc::new(RefCell::new(Controller::new(&base.window, Vector::new_vec3(0.0, 20.0, 0.0))));
     physics_engine.add_player(controller.borrow().player.clone());
 
     let mut renderer = Renderer::new(&base, &world, controller.clone());
@@ -123,6 +123,7 @@ fn main() { unsafe {
                       controller_mut.do_controls(delta_time, &base, &mut renderer, &world, current_frame) };
 
                     physics_engine.tick(delta_time);
+
 
                     { let mut controller_mut = controller.borrow_mut();
                       controller_mut.update_camera(); }

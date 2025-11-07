@@ -164,7 +164,7 @@ impl Vector {
     }
 
     /**
-    *
+    * self * other
      */
     pub fn combine(&self, other: &Vector) -> Vector {
         Vector::new_vec4(
@@ -278,6 +278,11 @@ impl Vector {
         let new_z = iz * qw + iw * -qz + ix * -qy - iy * -qx;
 
         Vector::new_vec3(new_x, new_y, new_z)
+    }
+
+    pub fn project_onto(&self, other: &Vector) -> Vector {
+        let n = other.normalize_3d();
+        n * self.dot3(&n)
     }
     //</editor-fold>
 

@@ -18,6 +18,7 @@ impl Player {
             center: Vector::new_vec3(0.0, -hitbox_height * 0.5 + eye_to_head.y, 0.0),
         });
         rigid_body.position = camera.position;
+        rigid_body.friction_coefficient = 0.0;
 
         Player {
             rigid_body,
