@@ -2,6 +2,7 @@ use crate::engine::physics::physics_engine::{Obb, Hitbox, RigidBody};
 use crate::engine::world::camera::Camera;
 use crate::math::Vector;
 
+#[derive(Copy, Clone)]
 pub enum MovementMode {
     GHOST,
     PHYSICS,

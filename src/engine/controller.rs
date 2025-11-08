@@ -8,7 +8,7 @@ use winit::event::{ElementState, Event, KeyEvent, MouseButton, WindowEvent};
 use winit::event_loop::EventLoopWindowTarget;
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::CursorGrabMode;
-use crate::engine::input;
+use crate::engine::controller;
 use crate::engine::physics::player::{MovementMode, Player};
 use crate::engine::world::camera::Camera;
 use crate::engine::world::scene::Scene;
@@ -23,7 +23,7 @@ pub struct Controller {
     pub player: Arc<RefCell<Player>>,
 
     pub cursor_position: PhysicalPosition<f64>,
-    pub queue_flags: Flags,
+    pub flags: Flags,
 
     pub pressed_keys: HashSet<PhysicalKey>,
     pub new_pressed_keys: HashSet<PhysicalKey>,
@@ -44,7 +44,7 @@ impl Controller {
         Controller {
             window_ptr: window as *const _,
             cursor_position: Default::default(),
-            queue_flags: Default::default(),
+            flags: Default::default(),
             player: Arc::new(RefCell::new(Player::new(
                 Camera::new_perspective_rotation(
                     start_pos,
@@ -83,8 +83,8 @@ impl Controller {
         world: &Scene,
         frame: usize,
     ) { unsafe {
-        if self.queue_flags.screenshot_queued {
-            self.queue_flags.screenshot_queued = false;
+        if self.flags.screenshot_queued {
+            self.flags.screenshot_queued = false;
             let timestamp = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
@@ -96,13 +96,13 @@ impl Controller {
                 format!("screenshots\\screenshot_{}.png", timestamp).as_str()
             );
         }
-        if self.queue_flags.reload_shaders_queued {
-            self.queue_flags.reload_shaders_queued = false;
+        if self.flags.reload_shaders_queued {
+            self.flags.reload_shaders_queued = false;
             Renderer::compile_shaders();
             renderer.reload(base, world);
         }
-        if self.queue_flags.reload_gui_queued {
-            self.queue_flags.reload_gui_queued = false;
+        if self.flags.reload_gui_queued {
+            self.flags.reload_gui_queued = false;
             renderer.gui.load_from_file(base, "resources\\gui\\default.gui");
         }
 
@@ -176,7 +176,7 @@ impl Controller {
         }
 
         if self.new_pressed_keys.contains(&PhysicalKey::Code(KeyCode::F2)) {
-            self.queue_flags.screenshot_queued = true;
+            self.flags.screenshot_queued = true;
         }
         if self.new_pressed_keys.contains(&PhysicalKey::Code(KeyCode::F5)) {
             let last_third_person_state = self.player.borrow().camera.third_person;
@@ -314,10 +314,11 @@ impl Controller {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Copy, Clone)]
 pub struct Flags {
     pub reload_gui_queued: bool,
     pub reload_shaders_queued: bool,
     pub pause_rendering: bool,
     pub screenshot_queued: bool,
+    pub draw_hitboxes: bool,
 }

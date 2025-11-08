@@ -22,7 +22,7 @@ use math::vector::*;
 use engine::*;
 use engine::world;
 use render::render::MAX_FRAMES_IN_FLIGHT;
-use crate::engine::input::Controller;
+use crate::engine::controller::Controller;
 use crate::engine::world::scene::{Light, Model, Scene};
 use crate::render::*;
 use crate::render::render::Renderer;
@@ -164,7 +164,8 @@ fn main() { unsafe {
 
                         let player =  { controller.borrow().player.clone() };
 
-                        renderer.render_frame(current_frame, present_index as usize, &world, player, true, &physics_engine);
+                        let flags = controller.borrow().flags.clone();
+                        renderer.render_frame(current_frame, present_index as usize, &world, player, flags.draw_hitboxes, &physics_engine);
                     },
                 );
 

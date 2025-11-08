@@ -6,7 +6,8 @@ use ash::vk;
 use ash::vk::{CommandBuffer, DescriptorType, Format, ShaderStageFlags};
 use json::JsonValue;
 use winit::event::MouseButton;
-use crate::engine::input::Controller;
+use crate::engine::controller::Controller;
+use crate::engine::physics::player::MovementMode;
 use crate::math::Vector;
 use crate::render::{Descriptor, DescriptorCreateInfo, DescriptorSetCreateInfo, Font, Pass, PassCreateInfo, Renderpass, RenderpassCreateInfo, TextInformation, TextRenderer, TextureCreateInfo, VkBase};
 
@@ -87,6 +88,9 @@ impl GUI {
                     "color_quad_normal" => {
                         self.gui_quads[node.quad.expect("GUINode with 'color_quad_normal' does not have quad'")].color = Vector::new_vec4(0.5, 0.5, 0.5, 1.0);
                     }
+                    "color_quad_normal1" => {
+                        self.gui_quads[node.quad.expect("GUINode with 'color_quad_normal' does not have quad'")].color = Vector::new_vec4(0.3, 0.3, 0.3, 1.0);
+                    }
                     _ => ()
                 }
             }
@@ -99,6 +103,9 @@ impl GUI {
                 "color_quad_bright" => {
                     self.gui_quads[node.quad.expect("GUINode with 'color_quad_bright' does not have quad'")].color = Vector::new_vec4(0.7, 0.7, 0.7, 1.0);
                 }
+                "color_quad_bright1" => {
+                    self.gui_quads[node.quad.expect("GUINode with 'color_quad_bright' does not have quad'")].color = Vector::new_vec4(0.4, 0.4, 0.4, 1.0);
+                }
                 _ => ()
             }
         }
@@ -107,20 +114,57 @@ impl GUI {
         if !left_pressed { interactable_information.was_pressed_last_frame = false; }
         if !interactable_information.was_pressed_last_frame && left_pressed {
             interactable_information.was_pressed_last_frame = true;
-            for left_tap_action in interactable_information.left_tap_actions.iter() {
+            for left_tap_action in interactable_information.left_tap_actions.clone().iter() {
                 let left_tap_action = left_tap_action.as_str();
                 match left_tap_action {
                     "reload_shaders" => {
-                        self.controller.borrow_mut().queue_flags.reload_shaders_queued = true;
+                        self.controller.borrow_mut().flags.reload_shaders_queued = true;
                     }
                     "reload_gui" => {
-                        self.controller.borrow_mut().queue_flags.reload_gui_queued = true;
+                        self.controller.borrow_mut().flags.reload_gui_queued = true;
                     }
                     "pause_rendering" => {
-                        self.controller.borrow_mut().queue_flags.pause_rendering = true;
+                        self.controller.borrow_mut().flags.pause_rendering = true;
                     }
                     "screenshot" => {
-                        self.controller.borrow_mut().queue_flags.screenshot_queued = true;
+                        self.controller.borrow_mut().flags.screenshot_queued = true;
+                    }
+                    "toggle hitbox vis" => {
+                        let last_state = { self.controller.borrow().flags.draw_hitboxes };
+                        self.controller.borrow_mut().flags.draw_hitboxes = !last_state;
+                    }
+                    "toggle player physics" => {
+                        let controller_ref = self.controller.borrow_mut();
+                        let last_state = controller_ref.player.borrow().movement_mode.clone();
+                        match last_state {
+                            MovementMode::PHYSICS => {
+                                controller_ref.player.borrow_mut().movement_mode = MovementMode::GHOST
+                            }
+                            MovementMode::GHOST => {
+                                controller_ref.player.borrow_mut().movement_mode = MovementMode::PHYSICS
+                            }
+                            _ => ()
+                        }
+                    }
+                    "toggle text" => {
+                        let current_text = self.gui_texts[node.text.unwrap()].text_information.text.as_str();
+                        match current_text {
+                            "On" => {
+                                self.update_text_of_node(
+                                    node_index,
+                                    "Off",
+                                    frame_command_buffer
+                                );
+                            }
+                            "Off" => {
+                                self.update_text_of_node(
+                                    node_index,
+                                    "On",
+                                    frame_command_buffer
+                                );
+                            }
+                            _ => ()
+                        }
                     }
                     _ => ()
                 }

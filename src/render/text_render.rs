@@ -303,7 +303,7 @@ pub struct TextInformation {
 
     font: Arc<Font>,
     font_index: Option<u32>,
-    text: String,
+    pub text: String,
     font_size: f32,
     scale_vector: Vector,
     color: Vector,

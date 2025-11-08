@@ -1,4 +1,4 @@
-use crate::engine::input::Controller;
+use crate::engine::controller::Controller;
 use crate::engine::world::camera::Camera;
 use crate::engine::world::scene::Scene;
 use crate::gui::gui::GUI;

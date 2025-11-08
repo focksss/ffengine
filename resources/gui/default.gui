@@ -2,7 +2,7 @@
 	"guis": [
 	    {
 	        "name": "default1",
-	        "nodes": [0, 1, 5]
+	        "nodes": [0, 1, 2]
 	    }
 	],
 	"fonts": [
@@ -61,6 +61,46 @@
 			"absolute_position": false,
 			"absolute_scale": false,
 			"color": [0.5, 0.5, 0.5, 1.0],
+			"corner_radius": 5.0
+		},
+		{
+			"position": [0.0, 0.0],
+			"scale": [1.0, 1.0],
+			"clip_min": [0.0, 0.0],
+			"clip_max": [1.0, 1.0],
+			"absolute_position": false,
+			"absolute_scale": false,
+			"color": [0.5, 0.5, 0.5, 1.0],
+			"corner_radius": 5.0
+		},
+		{
+			"position": [0.0, 0.0],
+			"scale": [1.0, 1.0],
+			"clip_min": [0.0, 0.0],
+			"clip_max": [1.0, 1.0],
+			"absolute_position": false,
+			"absolute_scale": false,
+			"color": [0.3, 0.3, 0.3, 1.0],
+			"corner_radius": 5.0
+		},
+		{
+			"position": [0.0, 0.0],
+			"scale": [1.0, 1.0],
+			"clip_min": [0.0, 0.0],
+			"clip_max": [1.0, 1.0],
+			"absolute_position": false,
+			"absolute_scale": false,
+			"color": [0.5, 0.5, 0.5, 1.0],
+			"corner_radius": 5.0
+		},
+		{
+			"position": [0.0, 0.0],
+			"scale": [1.0, 1.0],
+			"clip_min": [0.0, 0.0],
+			"clip_max": [1.0, 1.0],
+			"absolute_position": false,
+			"absolute_scale": false,
+			"color": [0.3, 0.3, 0.3, 1.0],
 			"corner_radius": 5.0
 		}
 	],
@@ -158,6 +198,66 @@
 		"absolute_position": false,
 		"absolute_scale": false,
 		"color": [1.0, 1.0, 1.0, 1.0]
+	},
+	{
+		"text_information": {
+			"font": 0,
+			"text": "Toggle Hitbox Vis",
+			"font_size": 23.0,
+			"newline_distance": 1720.0
+		},
+		"position": [0.05, 0.35],
+		"scale": [1.0, 1.0],
+		"clip_min": [0.0, 0.0],
+		"clip_max": [1.0, 1.0],
+		"absolute_position": false,
+		"absolute_scale": false,
+		"color": [1.0, 1.0, 1.0, 1.0]
+	},
+	{
+		"text_information": {
+			"font": 0,
+			"text": "Off",
+			"font_size": 30.0,
+			"newline_distance": 1720.0
+		},
+		"position": [0.05, 0.25],
+		"scale": [1.0, 1.0],
+		"clip_min": [0.0, 0.0],
+		"clip_max": [1.0, 1.0],
+		"absolute_position": false,
+		"absolute_scale": false,
+		"color": [1.0, 1.0, 1.0, 1.0]
+	},
+	{
+		"text_information": {
+			"font": 0,
+			"text": "Toggle Player Physics",
+			"font_size": 23.0,
+			"newline_distance": 1720.0
+		},
+		"position": [0.05, 0.35],
+		"scale": [1.0, 1.0],
+		"clip_min": [0.0, 0.0],
+		"clip_max": [1.0, 1.0],
+		"absolute_position": false,
+		"absolute_scale": false,
+		"color": [1.0, 1.0, 1.0, 1.0]
+	},
+	{
+		"text_information": {
+			"font": 0,
+			"text": "Off",
+			"font_size": 30.0,
+			"newline_distance": 1720.0
+		},
+		"position": [0.05, 0.25],
+		"scale": [1.0, 1.0],
+		"clip_min": [0.0, 0.0],
+		"clip_max": [1.0, 1.0],
+		"absolute_position": false,
+		"absolute_scale": false,
+		"color": [1.0, 1.0, 1.0, 1.0]
 	}
 ],
 	"nodes": [
@@ -178,61 +278,6 @@
 			"quad": 0
 		},
 		{
-			"name": "settings",
-			"children": [2, 3, 4],
-			"position": [0.8, 0.0],
-			"scale": [0.2, 1.0],
-			"absolute_position": false,
-			"absolute_scale": false,
-			"quad": 0,
-			"text": 1
-		},
-		{
-			"name": "reload shaders button",
-			"interactable_information": {
-				"hover_actions": ["color_quad_bright"],
-				"unhover_actions": ["color_quad_normal"],
-				"left_tap_actions": ["reload_shaders"]
-			},
-			"children": [],
-			"position": [0.1, 0.85],
-			"scale": [0.8, 0.05],
-			"absolute_position": false,
-			"absolute_scale": false,
-			"quad": 2,
-			"text": 2
-		},
-		{
-			"name": "reload gui button",
-			"interactable_information": {
-				"hover_actions": ["color_quad_bright"],
-				"unhover_actions": ["color_quad_normal"],
-				"left_tap_actions": ["reload_gui"]
-			},
-			"children": [],
-			"position": [0.1, 0.78],
-			"scale": [0.8, 0.05],
-			"absolute_position": false,
-			"absolute_scale": false,
-			"quad": 3,
-			"text": 3
-		},
-		{
-			"name": "screenshot button",
-			"interactable_information": {
-				"hover_actions": ["color_quad_bright"],
-				"unhover_actions": ["color_quad_normal"],
-				"left_tap_actions": ["screenshot"]
-			},
-			"children": [],
-			"position": [0.1, 0.71],
-			"scale": [0.8, 0.05],
-			"absolute_position": false,
-			"absolute_scale": false,
-			"quad": 4,
-			"text": 4
-		},
-		{
 			"name": "position display",
 			"interactable_information": {
 				"passive_actions": ["set_position"]
@@ -247,6 +292,115 @@
 			"absolute_scale": true,
 			"text": 5,
 			"quad": 0
-		}
+		},
+		{
+			"name": "settings",
+			"children": [3, 4, 5, 6, 8],
+			"position": [0.8, 0.0],
+			"scale": [0.2, 1.0],
+			"absolute_position": false,
+			"absolute_scale": false,
+			"quad": 0,
+			"text": 1
+		},
+			{
+				"name": "reload shaders button",
+				"interactable_information": {
+					"hover_actions": ["color_quad_bright"],
+					"unhover_actions": ["color_quad_normal"],
+					"left_tap_actions": ["reload_shaders"]
+				},
+				"children": [],
+				"position": [0.1, 0.85],
+				"scale": [0.8, 0.05],
+				"absolute_position": false,
+				"absolute_scale": false,
+				"quad": 2,
+				"text": 2
+			},
+			{
+				"name": "reload gui button",
+				"interactable_information": {
+					"hover_actions": ["color_quad_bright"],
+					"unhover_actions": ["color_quad_normal"],
+					"left_tap_actions": ["reload_gui"]
+				},
+				"children": [],
+				"position": [0.1, 0.78],
+				"scale": [0.8, 0.05],
+				"absolute_position": false,
+				"absolute_scale": false,
+				"quad": 3,
+				"text": 3
+			},
+			{
+				"name": "screenshot button",
+				"interactable_information": {
+					"hover_actions": ["color_quad_bright"],
+					"unhover_actions": ["color_quad_normal"],
+					"left_tap_actions": ["screenshot"]
+				},
+				"children": [],
+				"position": [0.1, 0.71],
+				"scale": [0.8, 0.05],
+				"absolute_position": false,
+				"absolute_scale": false,
+				"quad": 4,
+				"text": 4
+			},
+			{
+				"name": "Toggle Hitbox View button",
+				"interactable_information": {
+				},
+				"children": [7],
+				"position": [0.1, 0.64],
+				"scale": [0.8, 0.05],
+				"absolute_position": false,
+				"absolute_scale": false,
+				"quad": 5,
+				"text": 6
+			},
+				{
+					"name": "Toggle Hitbox View toggle",
+					"interactable_information": {
+						"hover_actions": ["color_quad_bright1"],
+						"unhover_actions": ["color_quad_normal1"],
+						"left_tap_actions": ["toggle hitbox vis", "toggle text"]
+					},
+					"children": [],
+					"position": [0.7, 0.1],
+					"scale": [0.27, 0.8],
+					"absolute_position": false,
+					"absolute_scale": false,
+					"quad": 6,
+					"text": 7
+				},
+			{
+				"name": "Toggle player physics button",
+				"interactable_information": {
+				},
+				"children": [9],
+				"position": [0.1, 0.57],
+				"scale": [0.8, 0.05],
+				"absolute_position": false,
+				"absolute_scale": false,
+				"quad": 7,
+				"text": 8
+			},
+				{
+				"name": "Toggle player physics toggle",
+				"interactable_information": {
+					"hover_actions": ["color_quad_bright1"],
+					"unhover_actions": ["color_quad_normal1"],
+					"left_tap_actions": ["toggle player physics", "toggle text"]
+				},
+				"children": [],
+				"position": [0.7, 0.1],
+				"scale": [0.27, 0.8],
+				"absolute_position": false,
+				"absolute_scale": false,
+				"quad": 8,
+				"text": 9
+			}
 	]
 }
