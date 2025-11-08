@@ -101,17 +101,19 @@ impl PhysicsEngine {
         player.step(intended_step);
         player.grounded = false;
         for rigid_body in &self.rigid_bodies {
-            if let Some(contact) = &mut rigid_body.colliding_with_info(&player.rigid_body) {
-                if contact.normal.dot3(&player.rigid_body.velocity) < 0.0 {
-                    contact.normal = -1.0 * contact.normal;
-                }
-                player.step(-1.0 * contact.normal * contact.penetration_depth);
+            if let Some(contacts) = &mut rigid_body.colliding_with_info(&player.rigid_body) {
+                for contact in contacts.iter_mut() {
+                    if contact.normal.dot3(&player.rigid_body.velocity) < 0.0 {
+                        contact.normal = -1.0 * contact.normal;
+                    }
+                    player.step(-1.0 * contact.normal * contact.penetration_depth);
 
-                if contact.normal.dot3(&self.gravity) > 0.9 { // threshold for jumping on walls
-                    player.grounded = true;
-                }
+                    if contact.normal.dot3(&self.gravity) > 0.9 { // threshold for jumping on walls
+                        player.grounded = true;
+                    }
 
-                player.rigid_body.velocity = (player.rigid_body.velocity - player.rigid_body.velocity.project_onto(&contact.normal))
+                    player.rigid_body.velocity = (player.rigid_body.velocity - player.rigid_body.velocity.project_onto(&contact.normal))
+                }
             }
         }
 
@@ -195,14 +197,17 @@ impl RigidBody {
         }
     }
 
-    pub fn colliding_with_info(&self, other: &RigidBody) -> Option<ContactInformation> {
+    pub fn colliding_with_info(&self, other: &RigidBody) -> Option<Vec<ContactInformation>> {
         match (&self.hitbox, &other.hitbox) {
             (Hitbox::OBB(a), Hitbox::OBB(b)) => {
-                Self::obb_intersects_obb(
+                let info = Self::obb_intersects_obb(
                     &a, &b,
                     &self.position, &other.position,
                     &self.orientation, &other.orientation,
-                )
+                );
+                if info.is_some() {
+                    Some(vec![info.unwrap()])
+                } else { None }
             }
             (Hitbox::OBB(_), Hitbox::MESH(_)) => {
                 self.obb_intersects_mesh(other)
@@ -213,7 +218,7 @@ impl RigidBody {
             _ => None,
         }
     }
-    pub fn obb_intersects_mesh(&self, other: &RigidBody) -> Option<ContactInformation> {
+    pub fn obb_intersects_mesh(&self, other: &RigidBody) -> Option<Vec<ContactInformation>> {
         let obb = if let Hitbox::OBB(ref obb) = self.hitbox {
             obb
         } else {
@@ -228,24 +233,74 @@ impl RigidBody {
         let rot_mat = Matrix::new_rotate_quaternion_vec4(&other.orientation);
         let rot_mat_inv = rot_mat.inverse();
 
-        let mut obb_half_extent = obb.half_extents / mesh_collider.current_scale_factor;
+        let obb_mesh_space = BoundingBox {
+            center: obb.center / mesh_collider.current_scale_factor,
+            half_extents: obb.half_extents / mesh_collider.current_scale_factor,
+        };
+        let obb_position_mesh_space = rot_mat_inv * ((self.position - &other.position) / mesh_collider.current_scale_factor).unitize_w();
+        let obb_orientation_mesh_space = self.orientation.combine(&other.orientation.conjugate());
 
-        let mut contact_info = Self::obb_intersects_obb(
-            &BoundingBox {
-                center: obb.center / mesh_collider.current_scale_factor,
-                half_extents: obb.half_extents / mesh_collider.current_scale_factor,
-            }, &mesh_collider.bvh.bounds,
-            &(rot_mat_inv * ((self.position - &other.position) / mesh_collider.current_scale_factor).unitize_w()), &Vector::new_empty_quat(), // positions
-            &self.orientation.combine(&other.orientation.conjugate()), &Vector::new_empty_quat()
+
+        let mut contact_infos = Self::split_into_bvh(
+            &obb_mesh_space,
+            &obb_position_mesh_space,
+            &obb_orientation_mesh_space,
+            &mesh_collider,
+            &mesh_collider.bvh
         );
-        if let Some(info) = &mut contact_info {
-            info.normal = rot_mat * (info.normal * mesh_collider.current_scale_factor).unitize_w();
-            return contact_info
+
+
+        if let Some(infos) = &mut contact_infos {
+            for info in infos.iter_mut() {
+                info.normal = rot_mat * (info.normal * mesh_collider.current_scale_factor).unitize_w();
+            }
+            return contact_infos;
         }
 
         None
     }
-    pub fn obb_intersects_obb(
+    fn split_into_bvh(
+        obb: &BoundingBox,
+        obb_position: &Vector,
+        obb_orientation: &Vector,
+        mesh_collider: &MeshCollider,
+        bvh: &Bvh,
+    ) -> Option<Vec<ContactInformation>> {
+        let intersection = Self::obb_intersects_obb(
+            &obb, &bvh.bounds,
+            &obb_position, &Vector::new_empty_quat(),
+            &obb_orientation, &Vector::new_empty_quat()
+        );
+        if intersection.is_some() {
+            if let Some(triangle_indices) = &bvh.triangle_indices {
+                //TODO() Take ONLY from triangles. do not use anything from OBB-OBB results.
+                // this is for debugging
+                return Some(vec![intersection.unwrap()]);
+            };
+            let mut left_intersections = if let Some(left) = &bvh.left_child {
+                Self::split_into_bvh(
+                    obb,
+                    obb_position,
+                    obb_orientation,
+                    mesh_collider,
+                    left
+                ).unwrap_or(vec![])
+            } else { vec![] };
+            let mut right_intersections = if let Some(right) = &bvh.right_child {
+                Self::split_into_bvh(
+                    obb,
+                    obb_position,
+                    obb_orientation,
+                    mesh_collider,
+                    right
+                ).unwrap_or(vec![])
+            } else { vec![] };
+            left_intersections.append(&mut right_intersections);
+            return Some(left_intersections);
+        }
+        None
+    }
+    fn obb_intersects_obb(
         a_bounds: &BoundingBox, b_bounds: &BoundingBox,
         a_position: &Vector, b_position: &Vector,
         a_orientation: &Vector, b_orientation: &Vector,
