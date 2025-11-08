@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+use std::any::{Any, TypeId};
 use std::ops::{Add, Div, Mul, Sub};
 
 #[derive(Clone, Debug, Copy)]
@@ -120,8 +121,19 @@ impl Vector {
             cr * cp * cy + sr * sp * sy
         )
     }
+
+    pub fn conjugate(&self) -> Vector {
+        Vector::new_vec4(-self.x, -self.y, -self.z, self.w)
+    }
+
+    pub fn unitize_w(mut self) -> Self {
+        self.w = 1.0;
+        self
+    }
     
-    
+    pub fn get<T: AxisKey>(&self, axis: T) -> f32 {
+        axis.get_component(self)
+    }
     //</editor-fold>
 
     //<editor-fold desc = "vector vector operations">
@@ -442,4 +454,43 @@ impl<'a> Div<&'a Vector> for f32 {
 impl Div<Vector> for f32 {
     type Output = Vector;
     fn div(self, vector: Vector) -> Vector { self / &vector }
+}
+
+pub enum Axis {
+    X,
+    Y,
+    Z,
+}
+
+pub trait AxisKey {
+    fn get_component(&self, v: &Vector) -> f32;
+}
+impl AxisKey for Axis {
+    fn get_component(&self, v: &Vector) -> f32 {
+        match self {
+            Axis::X => v.x,
+            Axis::Y => v.y,
+            Axis::Z => v.z,
+        }
+    }
+}
+impl AxisKey for char {
+    fn get_component(&self, v: &Vector) -> f32 {
+        match self {
+            'x' | 'X' => v.x,
+            'y' | 'Y' => v.y,
+            'z' | 'Z' => v.z,
+            _ => panic!("invalid axis '{}'", self),
+        }
+    }
+}
+impl AxisKey for usize {
+    fn get_component(&self, v: &Vector) -> f32 {
+        match *self {
+            0 => v.x,
+            1 => v.y,
+            2 => v.z,
+            _ => panic!("invalid axis index {}", self),
+        }
+    }
 }

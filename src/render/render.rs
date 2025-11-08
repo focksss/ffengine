@@ -13,7 +13,7 @@ use std::slice;
 use std::sync::Arc;
 use std::time::Instant;
 use crate::engine::physics::physics_engine::Hitbox::OBB;
-use crate::engine::physics::physics_engine::PhysicsEngine;
+use crate::engine::physics::physics_engine::{Bvh, Hitbox, PhysicsEngine};
 use crate::engine::physics::player::Player;
 use crate::math::Vector;
 
@@ -231,37 +231,57 @@ impl Renderer {
         if render_hitboxes {
             let player = player.borrow();
             for rigid_body in physics_engine.rigid_bodies.iter() {
-                let constants = match &rigid_body.hitbox {
+                match &rigid_body.hitbox {
                     OBB(a) => {
-                        HitboxPushConstantSendable {
+                        let constants = HitboxPushConstantSendable {
                             view_proj: (&player.camera.projection_matrix * &player.camera.view_matrix).data,
-                            center: (a.center.rotate_by_quat(&a.orientation) + rigid_body.position).to_array4(),
+                            center: (a.center.rotate_by_quat(&rigid_body.orientation) + rigid_body.position).to_array4(),
                             half_extent: a.half_extents.to_array4(),
-                            quat: a.orientation.to_array4(),
+                            quat: rigid_body.orientation.to_array4(),
+                        };
+
+                        self.device.cmd_push_constants(frame_command_buffer, self.hitbox_renderpass.pipeline_layout, ShaderStageFlags::VERTEX, 0, slice::from_raw_parts(
+                            &constants as *const HitboxPushConstantSendable as *const u8,
+                            size_of::<HitboxPushConstantSendable>(),
+                        ));
+                        self.device.cmd_draw(frame_command_buffer, 36, 1, 0, 0);
+                    }
+                    Hitbox::MESH(a) => {
+                        let constants = a.bvh.get_bounds_info();
+                        for constant in constants.iter() {
+                            self.device.cmd_push_constants(frame_command_buffer, self.hitbox_renderpass.pipeline_layout, ShaderStageFlags::VERTEX, 0, slice::from_raw_parts(
+                                &HitboxPushConstantSendable {
+                                    view_proj: (&player.camera.projection_matrix * &player.camera.view_matrix).data,
+                                    center: ((constant.0 * a.current_scale_factor).rotate_by_quat(&rigid_body.orientation) + rigid_body.position).to_array4(),
+                                    half_extent: (constant.1 * a.current_scale_factor).to_array4(),
+                                    quat: rigid_body.orientation.to_array4(),
+                                } as *const HitboxPushConstantSendable as *const u8,
+                                size_of::<HitboxPushConstantSendable>(),
+                            ));
+                            self.device.cmd_draw(frame_command_buffer, 36, 1, 0, 0);
                         }
                     }
+                    _ => { continue }
                 };
+            }
+            let constants_option = match &player.rigid_body.hitbox {
+                OBB(a) => {
+                    Some(HitboxPushConstantSendable {
+                        view_proj: (&player.camera.projection_matrix * &player.camera.view_matrix).data,
+                        center: (a.center.rotate_by_quat(&player.rigid_body.orientation) + player.rigid_body.position).to_array4(),
+                        half_extent: a.half_extents.to_array4(),
+                        quat: player.rigid_body.orientation.to_array4(),
+                    })
+                }
+                _ => { None }
+            };
+            if let Some(constants) = constants_option {
                 self.device.cmd_push_constants(frame_command_buffer, self.hitbox_renderpass.pipeline_layout, ShaderStageFlags::VERTEX, 0, slice::from_raw_parts(
                     &constants as *const HitboxPushConstantSendable as *const u8,
                     size_of::<HitboxPushConstantSendable>(),
                 ));
                 self.device.cmd_draw(frame_command_buffer, 36, 1, 0, 0);
             }
-            let constants = match &player.rigid_body.hitbox {
-                OBB(a) => {
-                    HitboxPushConstantSendable {
-                        view_proj: (&player.camera.projection_matrix * &player.camera.view_matrix).data,
-                        center: (a.center.rotate_by_quat(&a.orientation) + player.rigid_body.position).to_array4(),
-                        half_extent: a.half_extents.to_array4(),
-                        quat: a.orientation.to_array4(),
-                    }
-                }
-            };
-            self.device.cmd_push_constants(frame_command_buffer, self.hitbox_renderpass.pipeline_layout, ShaderStageFlags::VERTEX, 0, slice::from_raw_parts(
-                &constants as *const HitboxPushConstantSendable as *const u8,
-                size_of::<HitboxPushConstantSendable>(),
-            ));
-            self.device.cmd_draw(frame_command_buffer, 36, 1, 0, 0);
         }
         self.device.cmd_end_render_pass(frame_command_buffer);
         { self.hitbox_renderpass.pass.borrow().transition_to_readable(frame_command_buffer, current_frame); }
@@ -465,7 +485,7 @@ pub unsafe fn screenshot_texture(base: &VkBase, texture: &Texture, layout: vk::I
     println!("Screenshot saved to {}", path);
 }
 
-struct HitboxPushConstantSendable {
+pub struct HitboxPushConstantSendable {
     view_proj: [f32; 16],
     center: [f32; 4],
     half_extent: [f32; 4],

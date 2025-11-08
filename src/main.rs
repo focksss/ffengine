@@ -33,15 +33,12 @@ const PI: f32 = std::f32::consts::PI;
 fn main() { unsafe {
     let mut base = VkBase::new("ffengine".to_string(), 1920, 1080, MAX_FRAMES_IN_FLIGHT).unwrap();
 
-    //let font = Font::new(base, "resources\\fonts\\JetBrainsMono-Bold.ttf", Some(64), Some(2.0));
-    //let font = Font::new(base, "resources\\fonts\\MonsieurLaDoulaise-Regular.ttf", Some(128), Some(2.0));
-
     let mut world = Scene::new(&base);
 
-    world.preload_model(Model::new(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources\\models\\ffocks\\untitled.gltf").to_str().unwrap()));
-    world.models[0].transform_roots(&Vector::new_vec3(0.0, 0.0, 5.0), &Vector::new_vec(0.0), &Vector::new_vec(0.05));
-    world.models[0].animations[0].repeat = true;
-    world.models[0].animations[0].start();
+    //world.preload_model(Model::new(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources\\models\\ffocks\\untitled.gltf").to_str().unwrap()));
+    //world.models[0].transform_roots(&Vector::new_vec3(0.0, 0.0, 5.0), &Vector::new_vec(0.0), &Vector::new_vec(0.05));
+    //world.models[0].animations[0].repeat = true;
+    //world.models[0].animations[0].start();
 
     //world.add_model(Model::new("C:\\Graphics\\assets\\flower\\world.gltf"));
     //world.models[0].transform_roots(&Vector::new_vec3(0.0, 1.0, 0.0), &Vector::new_vec(0.0), &Vector::new_vec(1.0));

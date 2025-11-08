@@ -202,7 +202,7 @@
 	{
 		"text_information": {
 			"font": 0,
-			"text": "Toggle Hitbox Vis",
+			"text": "Hitbox Visibility",
 			"font_size": 23.0,
 			"newline_distance": 1720.0
 		},
@@ -232,7 +232,7 @@
 	{
 		"text_information": {
 			"font": 0,
-			"text": "Toggle Player Physics",
+			"text": "Player Physics",
 			"font_size": 23.0,
 			"newline_distance": 1720.0
 		},
