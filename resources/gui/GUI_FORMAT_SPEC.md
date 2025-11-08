@@ -34,15 +34,16 @@
 | glyph_msdf_distance_range | `float`   | Distance range to be used in MSDF generation           |
 
 ### Quad Structure
-| Key               | Type   | Description |
-|-------------------|--------|-------------|
-| position          | Common | Common      |
-| scale             | Common | Common      |
-| clip_min          | Common | Common      |
-| clip_max          | Common | Common      |
-| absolute_position | Common | Common      |
-| absolute_scale    | Common | Common      |
-| color             | Common | Common      |
+| Key               | Type      | Description                                                 |
+|-------------------|-----------|-------------------------------------------------------------|
+| position          | Common    | Common                                                      |
+| scale             | Common    | Common                                                      |
+| clip_min          | Common    | Common                                                      |
+| clip_max          | Common    | Common                                                      |
+| absolute_position | Common    | Common                                                      |
+| absolute_scale    | Common    | Common                                                      |
+| color             | Common    | Common                                                      |
+| corner_radius     | `integer` | The radius of the corner rounding to be applied to the quad |
 
 ### Text Structure
 | Key               | Type              | Description                        |

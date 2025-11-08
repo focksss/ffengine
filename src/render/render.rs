@@ -227,8 +227,8 @@ impl Renderer {
 
         self.scene_renderer.render_world(current_frame, &world, &player.borrow().camera.clone());
 
+        self.hitbox_renderpass.begin_renderpass(current_frame, frame_command_buffer, Some(present_index));
         if render_hitboxes {
-            self.hitbox_renderpass.begin_renderpass(current_frame, frame_command_buffer, Some(present_index));
             let player = player.borrow();
             for rigid_body in physics_engine.rigid_bodies.iter() {
                 let constants = match &rigid_body.hitbox {
@@ -262,8 +262,8 @@ impl Renderer {
                 size_of::<HitboxPushConstantSendable>(),
             ));
             self.device.cmd_draw(frame_command_buffer, 36, 1, 0, 0);
-            self.device.cmd_end_render_pass(frame_command_buffer);
         }
+        self.device.cmd_end_render_pass(frame_command_buffer);
         { self.hitbox_renderpass.pass.borrow().transition_to_readable(frame_command_buffer, current_frame); }
 
         self.compositing_renderpass.do_renderpass(current_frame, frame_command_buffer, None::<fn()>, None::<fn()>, None);

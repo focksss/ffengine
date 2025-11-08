@@ -629,6 +629,13 @@ impl GUI {
                 }
             }
 
+            let mut corner_radius = 0.0;
+            if let JsonValue::Number(ref corner_radius_json) = quad["corner_radius"] {
+                if let Ok(v) = corner_radius_json.to_string().parse::<f32>() {
+                    corner_radius = v;
+                }
+            }
+
             gui_quads.push(GUIQuad {
                 position,
                 scale,
@@ -637,12 +644,13 @@ impl GUI {
                 absolute_position,
                 absolute_scale,
                 color,
+                corner_radius,
             });
         }
         self.gui_quads = gui_quads;
     }
 
-    pub unsafe fn draw(&mut self, current_frame: usize, command_buffer: vk::CommandBuffer,) { unsafe {
+    pub unsafe fn draw(&mut self, current_frame: usize, command_buffer: CommandBuffer,) { unsafe {
         let mut interactable_action_parameter_sets = Vec::new();
 
         self.device.cmd_begin_render_pass(
@@ -720,7 +728,8 @@ impl GUI {
             clip_max: clip_max.to_array2(),
             position: position.to_array2(),
             scale: scale.to_array2(),
-            _pad: [0.0; 2],
+            corner_radius: quad.corner_radius,
+            _pad: [0.0; 1],
         };
 
         let device = self.device.clone();
@@ -825,8 +834,8 @@ pub struct GUIQuad {
     pub clip_max: Vector,
     pub absolute_position: bool,
     pub absolute_scale: bool,
-
     pub color: Vector,
+    pub corner_radius: f32,
 }
 pub struct GUIText {
     pub text_information: TextInformation,
@@ -853,5 +862,7 @@ pub struct GUIQuadSendable {
 
     pub scale: [f32; 2],
 
-    pub _pad: [f32; 2],
+    pub corner_radius: f32,
+
+    pub _pad: [f32; 1],
 }
