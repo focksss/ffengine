@@ -230,17 +230,16 @@ impl RigidBody {
 
         let mut obb_half_extent = obb.half_extents / mesh_collider.current_scale_factor;
 
-        //println!("{:?}", mesh_collider.bvh.bounds.half_extents);
         let mut contact_info = Self::obb_intersects_obb(
-            &obb, &BoundingBox {
-                center: mesh_collider.bvh.bounds.center * mesh_collider.current_scale_factor,
-                half_extents: mesh_collider.bvh.bounds.half_extents * mesh_collider.current_scale_factor,
-            },
-            &(rot_mat_inv * (self.position - &other.position).unitize_w()), &Vector::new_empty_quat(),
+            &BoundingBox {
+                center: obb.center / mesh_collider.current_scale_factor,
+                half_extents: obb.half_extents / mesh_collider.current_scale_factor,
+            }, &mesh_collider.bvh.bounds,
+            &(rot_mat_inv * ((self.position - &other.position) / mesh_collider.current_scale_factor).unitize_w()), &Vector::new_empty_quat(), // positions
             &self.orientation.combine(&other.orientation.conjugate()), &Vector::new_empty_quat()
         );
         if let Some(info) = &mut contact_info {
-            info.normal = rot_mat * info.normal.unitize_w();
+            info.normal = rot_mat * (info.normal * mesh_collider.current_scale_factor).unitize_w();
             return contact_info
         }
 
