@@ -38,10 +38,10 @@ fn main() { unsafe {
 
     let mut world = Scene::new(&base);
 
-    //world.preload_model(Model::new(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources\\models\\ffocks\\untitled.gltf").to_str().unwrap()));
-    //world.models[0].transform_roots(&Vector::new_vec3(0.0, 0.0, -3.0), &Vector::new_vec(0.0), &Vector::new_vec(0.05));
-    //world.models[0].animations[0].repeat = true;
-    //world.models[0].animations[0].start();
+    world.preload_model(Model::new(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources\\models\\ffocks\\untitled.gltf").to_str().unwrap()));
+    world.models[0].transform_roots(&Vector::new_vec3(0.0, 0.0, 5.0), &Vector::new_vec(0.0), &Vector::new_vec(0.05));
+    world.models[0].animations[0].repeat = true;
+    world.models[0].animations[0].start();
 
     //world.add_model(Model::new("C:\\Graphics\\assets\\flower\\world.gltf"));
     //world.models[0].transform_roots(&Vector::new_vec3(0.0, 1.0, 0.0), &Vector::new_vec(0.0), &Vector::new_vec(1.0));
@@ -122,7 +122,7 @@ fn main() { unsafe {
                     { let mut controller_mut = controller.borrow_mut();
                       controller_mut.do_controls(delta_time, &base, &mut renderer, &world, current_frame) };
 
-                    physics_engine.tick(delta_time);
+                    physics_engine.tick(delta_time, &world);
 
 
                     { let mut controller_mut = controller.borrow_mut();

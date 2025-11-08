@@ -169,6 +169,16 @@ impl Matrix {
         let len = (x * x + y * y + z * z + w * w).sqrt();
         Vector::new_vec4(x / len, y / len, z / len, w / len)
     }
+
+    pub fn extract_scale(&self) -> Vector {
+        let m = &self.data;
+
+        let scale_x = (m[0] * m[0] + m[1] * m[1] + m[2] * m[2]).sqrt();
+        let scale_y = (m[4] * m[4] + m[5] * m[5] + m[6] * m[6]).sqrt();
+        let scale_z = (m[8] * m[8] + m[9] * m[9] + m[10] * m[10]).sqrt();
+
+        Vector::new_vec3(scale_x, scale_y, scale_z)
+    }
     //</editor-fold>
 
     //<editor-fold desc = "matrix matrix operations">

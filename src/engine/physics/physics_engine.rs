@@ -20,8 +20,8 @@ pub struct PhysicsEngine {
 impl PhysicsEngine {
     pub fn new(world: &Scene, gravity: Vector, air_resistance_coefficient: f32, player_horiz_const_resistance: f32) -> Self {
         let mut rigid_bodies = Vec::new();
-        for model in &world.models {
-            for node in &model.nodes {
+        for (model_index, model) in world.models.iter().enumerate() {
+            for (node_index, node) in model.nodes.iter().enumerate() {
                 if let Some(mesh) = &node.mesh {
                     let (min, max) = mesh.borrow().get_min_max();
                     let obb = Obb {
@@ -29,7 +29,7 @@ impl PhysicsEngine {
                         half_extents: (max - min) * 0.5 * node.scale,
                         orientation: node.world_transform.extract_quaternion(),
                     };
-                    rigid_bodies.push(RigidBody::new_from_node(node, OBB(obb)));
+                    rigid_bodies.push(RigidBody::new_from_node(node, Some((model_index, node_index, (min, max))), OBB(obb)));
                 }
             }
         }
@@ -45,8 +45,20 @@ impl PhysicsEngine {
         self.players.push(player);
     }
 
-    pub fn tick(&mut self, delta_time: f32) {
+    pub fn tick(&mut self, delta_time: f32, world: &Scene) {
         for body in &mut self.rigid_bodies {
+            if let Some(coupled_object) = body.coupled_with_scene_object {
+                let node = &world.models[coupled_object.0].nodes[coupled_object.1];
+                let local_center = (coupled_object.2.0 + coupled_object.2.1) * 0.5;
+                let scale = node.world_transform.extract_scale();
+                body.position = node.world_transform * Vector::new_vec4(0.0, 0.0, 0.0, 1.0);
+                let obb = Obb {
+                    center: local_center * scale,
+                    half_extents: (coupled_object.2.1 - coupled_object.2.0) * 0.5 * scale,
+                    orientation: node.world_transform.extract_quaternion(),
+                };
+                body.hitbox = OBB(obb);
+            }
             if !body.is_static {
                 body.velocity = body.velocity + self.gravity * delta_time;
             }
@@ -119,6 +131,8 @@ impl PhysicsEngine {
 }
 
 pub struct RigidBody {
+    pub coupled_with_scene_object: Option<(usize, usize, (Vector, Vector))>, // model index, node index, (min, max)
+
     pub hitbox: Hitbox,
     pub is_static: bool,
     pub restitution_coefficient: f32,
@@ -139,8 +153,9 @@ pub struct RigidBody {
 }
 
 impl RigidBody {
-    pub fn new_from_node(node: &Node, hitbox: Hitbox) -> Self {
+    pub fn new_from_node(node: &Node, couple_with_node: Option<(usize, usize, (Vector, Vector))>, hitbox: Hitbox) -> Self {
         let mut body = RigidBody::default();
+        body.coupled_with_scene_object = couple_with_node;
         body.position = node.world_transform * Vector::new_vec4(0.0, 0.0, 0.0, 1.0);
         body.hitbox = hitbox;
         body
@@ -293,7 +308,8 @@ impl RigidBody {
 impl Default for RigidBody {
     fn default() -> Self {
         Self {
-            hitbox: Hitbox::OBB(Obb {
+            coupled_with_scene_object: None,
+            hitbox: OBB(Obb {
                 center: Vector::new_vec(0.0),
                 half_extents: Vector::new_vec(1.0),
                 orientation: Vector::new_vec4(0.0, 0.0, 0.0, 1.0),
