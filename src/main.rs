@@ -46,11 +46,12 @@ fn main() { unsafe {
     // world.models[1].animations[0].repeat = true;
     // world.models[1].animations[0].start();
 
-    world.preload_model(Model::new(&PathBuf::from("resources/models/shadowTest/shadowTest.gltf").to_str().unwrap()));
+    //world.preload_model(Model::new(&PathBuf::from("resources/models/shadowTest/shadowTest.gltf").to_str().unwrap()));
+    world.preload_model(Model::new("C:\\Graphics\\assets\\collisionTest\\collisionTest.gltf"));
     //world.models[1].transform_roots(&Vector::new_vec3(0.0, 0.0, -5.0), &Vector::new_vec(0.0), &Vector::new_vec(1.0));
     //world.preload_model(Model::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf"));
     //world.preload_model(Model::new("C:\\Graphics\\assets\\bistroGLTF\\untitled.gltf"));
-    //world.add_model(Model::new("C:\\Graphics\\assets\\asgard\\asgard.gltf"));
+    //world.preload_model(Model::new("C:\\Graphics\\assets\\asgard\\asgard.gltf"));
     //world.preload_model(Model::new("C:\\Graphics\\assets\\helmet\\DamagedHelmet.gltf"));
     //world.preload_model(Model::new("C:\\Graphics\\assets\\grassblockGLTF\\grassblock.gltf"));
     //world.models[0].transform_roots(&Vector::new_vec3(1.0, 1.0, 2.0), &Vector::new_vec3(0.0, 0.0, 0.0), &Vector::new_vec3(2.0, 1.0, 1.0));
@@ -68,7 +69,7 @@ fn main() { unsafe {
         outer_cutoff: 0.0,
     });
 
-    world.initialize(&base, MAX_FRAMES_IN_FLIGHT, true);
+    world.initialize(&base, MAX_FRAMES_IN_FLIGHT, false);
 
     let mut physics_engine = PhysicsEngine::new(&world, Vector::new_vec3(0.0, -9.8, 0.0), 0.001, 0.2);
     let controller = Arc::new(RefCell::new(Controller::new(&base.window, Vector::new_vec3(0.0, 20.0, 0.0))));

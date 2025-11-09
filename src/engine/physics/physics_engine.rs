@@ -100,33 +100,46 @@ impl PhysicsEngine {
     fn move_player_with_collision(&self, player: &mut Player, intended_step: Vector) {
         player.step(intended_step);
         player.grounded = false;
+
+        let finish_resolution = |player: &mut Player| -> () {
+            if player.rigid_body.position.y < -20.0 {
+                player.camera.position.y = 20.0;
+                player.rigid_body.velocity = Vector::new_empty();
+            }
+
+            player.rigid_body.velocity = Vector::new_vec3(
+                player.rigid_body.velocity.x * (1.0 - self.player_horiz_const_resistance) * (1.0 - self.air_resistance_coefficient),
+                player.rigid_body.velocity.y * (1.0 - self.air_resistance_coefficient),
+                player.rigid_body.velocity.z * (1.0 - self.player_horiz_const_resistance) * (1.0 - self.air_resistance_coefficient),
+            );
+        };
+        
+        let mut final_velocity = player.rigid_body.velocity;
         for rigid_body in &self.rigid_bodies {
             if let Some(contacts) = &mut rigid_body.colliding_with_info(&player.rigid_body) {
-                for contact in contacts.iter_mut() {
-                    if contact.normal.dot3(&player.rigid_body.velocity) < 0.0 {
-                        contact.normal = -1.0 * contact.normal;
+                if contacts.len() == 0 { continue; }
+                let mut closest_contact = &contacts[0];
+                for contact in contacts.iter() {
+                    if contact.penetration_depth > closest_contact.penetration_depth {
+                        closest_contact = contact;
                     }
-                    player.step(-1.0 * contact.normal * contact.penetration_depth);
-
-                    if contact.normal.dot3(&self.gravity) > 0.9 { // threshold for jumping on walls
-                        player.grounded = true;
-                    }
-
-                    player.rigid_body.velocity = (player.rigid_body.velocity - player.rigid_body.velocity.project_onto(&contact.normal))
                 }
+                let mut normal = closest_contact.normal;
+                if closest_contact.normal.dot3(&player.rigid_body.velocity) < 0.0 {
+                    normal = normal * -1.0;
+                }
+                player.step(-1.0 * (normal * closest_contact.penetration_depth));
+
+                if normal.dot3(&self.gravity) > 0.9 { // threshold for jumping on walls
+                    player.grounded = true;
+                }
+
+                final_velocity = final_velocity - final_velocity.project_onto(&normal)
             }
         }
+        player.rigid_body.velocity = final_velocity;
 
-        if player.rigid_body.position.y < -20.0 {
-            player.camera.position.y = 20.0;
-            player.rigid_body.velocity = Vector::new_empty();
-        }
-
-        player.rigid_body.velocity = Vector::new_vec3(
-            player.rigid_body.velocity.x * (1.0 - self.player_horiz_const_resistance) * (1.0 - self.air_resistance_coefficient),
-            player.rigid_body.velocity.y * (1.0 - self.air_resistance_coefficient),
-            player.rigid_body.velocity.z * (1.0 - self.player_horiz_const_resistance) * (1.0 - self.air_resistance_coefficient),
-        );
+        finish_resolution(player);
     }
 
     fn axis_angle_to_quat(axis: &Vector, angle: f32) -> Vector {
@@ -273,9 +286,20 @@ impl RigidBody {
         );
         if intersection.is_some() {
             if let Some(triangle_indices) = &bvh.triangle_indices {
-                //TODO() Take ONLY from triangles. do not use anything from OBB-OBB results.
-                // this is for debugging
-                return Some(vec![intersection.unwrap()]);
+                let mut triangle_intersections = Vec::new();
+                for triangle_index in triangle_indices {
+                    let triangle_intersection = Self::obb_intersects_triangle(
+                        obb,
+                        obb_position,
+                        obb_orientation,
+                        Bvh::get_triangle_vertices(&*mesh_collider.mesh.borrow(), *triangle_index)
+                    );
+                    if triangle_intersection.is_some() {
+                        triangle_intersections.push(triangle_intersection.unwrap());
+                    }
+                }
+
+                return Some(triangle_intersections);
             };
             let mut left_intersections = if let Some(left) = &bvh.left_child {
                 Self::split_into_bvh(
@@ -299,6 +323,90 @@ impl RigidBody {
             return Some(left_intersections);
         }
         None
+    }
+    fn obb_intersects_triangle(
+        obb: &BoundingBox,
+        obb_position: &Vector,
+        obb_orientation: &Vector,
+        vertices: (Vertex, Vertex, Vertex),
+    ) -> Option<ContactInformation> {
+        let rot_mat = Matrix::new_rotate_quaternion_vec4(obb_orientation);
+
+        let v0 = rot_mat.inverse() * ((Vector::new_from_array(&vertices.0.position) - obb_position).unitize_w());
+        let v1 = rot_mat.inverse() * ((Vector::new_from_array(&vertices.1.position) - obb_position).unitize_w());
+        let v2 = rot_mat.inverse() * ((Vector::new_from_array(&vertices.2.position) - obb_position).unitize_w());
+
+        let e0 = v1 - v0;
+        let e1 = v2 - v1;
+        let e2 = v0 - v2;
+
+        let axes = [
+            Vector::new_vec3(1.0, 0.0, 0.0),
+            Vector::new_vec3(0.0, 1.0, 0.0),
+            Vector::new_vec3(0.0, 0.0, 1.0),
+        ];
+
+        let normal = e0.cross(&e1).normalize_3d();
+
+        let project = |axis: &Vector| -> (f32, f32) {
+            let p0 = v0.dot3(axis);
+            let p1 = v1.dot3(axis);
+            let p2 = v2.dot3(axis);
+            (p0.min(p1.min(p2)), p0.max(p1.max(p2)))
+        };
+        let project_bounds = |axis: &Vector| -> (f32, f32) {
+            let r = obb.half_extents.x * axis.x.abs() + obb.half_extents.y * axis.y.abs() + obb.half_extents.z * axis.z.abs();
+            (-r, r)
+        };
+        let test_axis = |axis: &Vector, min_penetration: &mut f32, best_axis: &mut Vector| -> bool {
+            if axis.magnitude_3d() < 1e-6 { return true; }
+            let axis = axis.normalize_3d();
+            let (t_min, t_max) = project(&axis);
+            let (b_min, b_max) = project_bounds(&axis);
+            if t_max < b_min || t_min > b_max {
+                return false;
+            }
+            let penetration = if t_min < b_min {
+                (t_max - b_min).min(b_max - t_min)
+            } else {
+                (b_max - t_min).min(t_max - b_min)
+            };
+            if penetration < *min_penetration {
+                *min_penetration = penetration;
+                *best_axis = axis;
+            }
+            true
+        };
+
+        let mut min_penetration = f32::MAX;
+        let mut best_axis = normal;
+        for axis in &axes {
+            if !test_axis(axis, &mut min_penetration, &mut best_axis) {
+                return None;
+            }
+        }
+        if !test_axis(&normal, &mut min_penetration, &mut best_axis) {
+            return None;
+        }
+        for edge in &[e0, e1, e2] {
+            for axis in &axes {
+                let cross_axis = edge.cross(axis);
+                if !test_axis(&cross_axis, &mut min_penetration, &mut best_axis) {
+                    return None;
+                }
+            }
+        }
+        let tri_center = (v0 + v1 + v2) / 3.0;
+        let closest_point = tri_center.clamp(
+            &(-1.0 * obb.half_extents),
+            &obb.half_extents,
+        );
+
+        Some(ContactInformation {
+            point: (rot_mat * closest_point) + obb_position,
+            normal: rot_mat * (best_axis.unitize_w()),
+            penetration_depth: min_penetration,
+        })
     }
     fn obb_intersects_obb(
         a_bounds: &BoundingBox, b_bounds: &BoundingBox,

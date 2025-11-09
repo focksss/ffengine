@@ -58,8 +58,8 @@ impl Controller {
                     true,
                     Vector::new_vec3(0.0, 0.0, 1.0),
                 ),
-                Vector::new_vec3(-0.1, -0.5, -0.1),
-                Vector::new_vec3(0.1, 0.1, 0.1),
+                Vector::new_vec3(-0.15, -0.85, -0.15),
+                Vector::new_vec3(0.15, 0.15, 0.15),
                 MovementMode::GHOST
             ))),
             pressed_keys: Default::default(),

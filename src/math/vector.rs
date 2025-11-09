@@ -296,6 +296,15 @@ impl Vector {
         let n = other.normalize_3d();
         n * self.dot3(&n)
     }
+
+    pub fn clamp(&self, min: &Vector, max: &Vector) -> Vector {
+        Vector::new_vec4(
+            self.x.clamp(min.x, max.x),
+            self.y.clamp(min.y, max.y),
+            self.z.clamp(min.z, max.z),
+            self.w.clamp(min.w, max.w)
+        )
+    }
     //</editor-fold>
 
     //<editor-fold desc = "vector float operations"
