@@ -23,10 +23,11 @@ use engine::*;
 use engine::world;
 use render::render::MAX_FRAMES_IN_FLIGHT;
 use crate::engine::controller::Controller;
+use crate::engine::physics::physics_engine;
 use crate::engine::world::scene::{Light, Model, Scene};
 use crate::render::*;
 use crate::render::render::Renderer;
-use crate::engine::physics::physics_engine::PhysicsEngine;
+use crate::engine::physics::physics_engine::{BoundingBox, PhysicsEngine, RigidBody};
 
 const PI: f32 = std::f32::consts::PI;
 
@@ -49,7 +50,7 @@ fn main() { unsafe {
     //world.preload_model(Model::new(&PathBuf::from("resources/models/shadowTest/shadowTest.gltf").to_str().unwrap()));
     world.preload_model(Model::new("C:\\Graphics\\assets\\collisionTest\\collisionTest.gltf"));
     //world.models[1].transform_roots(&Vector::new_vec3(0.0, 0.0, -5.0), &Vector::new_vec(0.0), &Vector::new_vec(1.0));
-    //world.preload_model(Model::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf"));
+    // world.preload_model(Model::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf"));
     //world.preload_model(Model::new("C:\\Graphics\\assets\\bistroGLTF\\untitled.gltf"));
     //world.preload_model(Model::new("C:\\Graphics\\assets\\asgard\\asgard.gltf"));
     //world.preload_model(Model::new("C:\\Graphics\\assets\\helmet\\DamagedHelmet.gltf"));
@@ -71,7 +72,7 @@ fn main() { unsafe {
 
     world.initialize(&base, MAX_FRAMES_IN_FLIGHT, false);
 
-    let mut physics_engine = PhysicsEngine::new(&world, Vector::new_vec3(0.0, -9.8, 0.0), 0.001, 0.2);
+    let mut physics_engine = PhysicsEngine::new(&world, Vector::new_vec3(0.0, -9.8, 0.0), 0.15, 10.0);
     let controller = Arc::new(RefCell::new(Controller::new(&base.window, Vector::new_vec3(0.0, 20.0, 0.0))));
     physics_engine.add_player(controller.borrow().player.clone());
 
@@ -120,7 +121,7 @@ fn main() { unsafe {
                     { let mut controller_mut = controller.borrow_mut();
                       controller_mut.do_controls(delta_time, &base, &mut renderer, &world, current_frame) };
 
-                    physics_engine.tick(delta_time, &world);
+                    physics_engine.tick(delta_time, &mut world);
 
 
                     { let mut controller_mut = controller.borrow_mut();

@@ -60,7 +60,10 @@ impl Controller {
                 ),
                 Vector::new_vec3(-0.15, -0.85, -0.15),
                 Vector::new_vec3(0.15, 0.15, 0.15),
-                MovementMode::GHOST
+                MovementMode::GHOST,
+                0.2,
+                4.5,
+                0.015
             ))),
             pressed_keys: Default::default(),
             new_pressed_keys: Default::default(),
@@ -130,9 +133,7 @@ impl Controller {
                     move_direction.y += 1.0;
                 }
                 MovementMode::PHYSICS => {
-                    if self.player.borrow().grounded {
-                        move_direction.y = 5.0;
-                    }
+                    if self.player.borrow().grounded { move_direction.y += 1.0; }
                 }
             }
         }
@@ -183,16 +184,16 @@ impl Controller {
             self.player.borrow_mut().camera.third_person = !last_third_person_state;
         }
 
-        let speed = { self.player.borrow().camera.speed };
-
         {
             let mut player_mut = self.player.borrow_mut();
+            let speed = player_mut.camera.speed;
             match player_mut.movement_mode {
                 MovementMode::GHOST => {
-                    player_mut.step(move_direction * speed * delta_time)
+                    player_mut.step(&(move_direction * speed * delta_time))
                 }
                 MovementMode::PHYSICS => {
-                    player_mut.rigid_body.velocity = player_mut.rigid_body.velocity + move_direction * speed;
+                    player_mut.rigid_body.velocity = player_mut.rigid_body.velocity + move_direction * 
+                        Vector::new_vec3(player_mut.move_power, player_mut.jump_power, player_mut.move_power) * speed;
                 }
             }
         }
