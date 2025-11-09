@@ -134,6 +134,10 @@ impl Vector {
     pub fn get<T: AxisKey>(&self, axis: T) -> f32 {
         axis.get_component(self)
     }
+    pub fn set<T: AxisKey>(&mut self, axis: T, v: f32) -> &mut Self {
+        axis.set_component(self, v);
+        self
+    }
     //</editor-fold>
 
     //<editor-fold desc = "vector vector operations">
@@ -469,10 +473,12 @@ pub enum Axis {
     X,
     Y,
     Z,
+    W,
 }
 
 pub trait AxisKey {
     fn get_component(&self, v: &Vector) -> f32;
+    fn set_component(&self, v: &mut Vector, f: f32);
 }
 impl AxisKey for Axis {
     fn get_component(&self, v: &Vector) -> f32 {
@@ -480,6 +486,15 @@ impl AxisKey for Axis {
             Axis::X => v.x,
             Axis::Y => v.y,
             Axis::Z => v.z,
+            Axis::W => v.w,
+        }
+    }
+    fn set_component(&self, v: &mut Vector, f: f32) {
+        match self {
+            Axis::X => v.x = f,
+            Axis::Y => v.y = f,
+            Axis::Z => v.z = f,
+            Axis::W => v.w = f,
         }
     }
 }
@@ -489,6 +504,16 @@ impl AxisKey for char {
             'x' | 'X' => v.x,
             'y' | 'Y' => v.y,
             'z' | 'Z' => v.z,
+            'w' | 'W' => v.w,
+            _ => panic!("invalid axis '{}'", self),
+        }
+    }
+    fn set_component(&self, v: &mut Vector, f: f32) {
+        match self {
+            'x' | 'X' => v.x = f,
+            'y' | 'Y' => v.y = f,
+            'z' | 'Z' => v.z = f,
+            'w' | 'W' => v.w = f,
             _ => panic!("invalid axis '{}'", self),
         }
     }
@@ -499,6 +524,16 @@ impl AxisKey for usize {
             0 => v.x,
             1 => v.y,
             2 => v.z,
+            3 => v.w,
+            _ => panic!("invalid axis index {}", self),
+        }
+    }
+    fn set_component(&self, v: &mut Vector, f: f32) {
+        match *self {
+            0 => v.x = f,
+            1 => v.y = f,
+            2 => v.z = f,
+            3 => v.w = f,
             _ => panic!("invalid axis index {}", self),
         }
     }
