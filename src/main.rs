@@ -55,7 +55,7 @@ fn main() { unsafe {
     //world.preload_model(Model::new("C:\\Graphics\\assets\\asgard\\asgard.gltf"));
     //world.preload_model(Model::new("C:\\Graphics\\assets\\helmet\\DamagedHelmet.gltf"));
     //world.preload_model(Model::new("C:\\Graphics\\assets\\grassblockGLTF\\grassblock.gltf"));
-    //world.models[0].transform_roots(&Vector::new_vec3(1.0, 1.0, 2.0), &Vector::new_vec3(0.0, 0.0, 0.0), &Vector::new_vec3(2.0, 1.0, 1.0));
+    //world.models[0].transform_roots(&Vector::new_vec3(0.0, 0.0, 0.0), &Vector::new_vec3(0.0, 30.0, 30.0), &Vector::new_vec3(1.0, 1.0, 1.0));
     //world.preload_model(Model::new(&PathBuf::from("resources/models/coordinateSpace/coordinateSpace.gltf").to_str().unwrap()));
 
     world.add_light(Light {
@@ -70,7 +70,7 @@ fn main() { unsafe {
         outer_cutoff: 0.0,
     });
 
-    world.initialize(&base, MAX_FRAMES_IN_FLIGHT, false);
+    world.initialize(&base, MAX_FRAMES_IN_FLIGHT, true);
 
     let mut physics_engine = PhysicsEngine::new(&world, Vector::new_vec3(0.0, -9.8, 0.0), 0.15, 10.0);
     let controller = Arc::new(RefCell::new(Controller::new(&base.window, Vector::new_vec3(0.0, 20.0, 0.0))));

@@ -24,17 +24,19 @@ impl Player {
         let min = camera.position + eye_to_foot;
         let hitbox_height = max.y - min.y;
         let radius = (Vector::new_vec3(max.x, 0.0, max.z) - Vector::new_vec3(min.x, 0.0, min.z)).magnitude_3d();
-        /*
+         /*
         rigid_body.hitbox = Hitbox::OBB(BoundingBox {
              half_extents: (max - min) * 0.5,
              center: Vector::new_vec3(0.0, -hitbox_height * 0.5 + eye_to_head.y, 0.0),
         });
          */
+        // /*
         rigid_body.hitbox = Hitbox::CAPSULE(Capsule {
              a: Vector::new_vec3(0.0, eye_to_foot.y, 0.0),
              b: Vector::new_vec3(0.0, eye_to_head.y, 0.0),
              radius,
         });
+        // */
         rigid_body.position = camera.position;
         rigid_body.friction_coefficient = 0.0;
 

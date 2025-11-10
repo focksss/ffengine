@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
+use image::imageops::sample_nearest;
 use crate::engine::physics::player::{MovementMode, Player};
 use crate::engine::world::scene::{Mesh, Node, Scene, Vertex};
 use crate::math::*;
@@ -60,6 +61,25 @@ impl PhysicsEngine {
         self.players.push(player);
     }
 
+    fn get_world_contact(&self, body:& RigidBody) -> Option<ContactInformation> {
+        let mut collisions = Vec::new();
+        for other_body in self.rigid_bodies.iter() {
+            if let Some(new_collisions) = body.colliding_with_info(other_body) {
+                collisions.extend(new_collisions);
+            }
+        }
+        if collisions.len() > 0 {
+            let mut closest_contact = collisions[0];
+            for contact in collisions {
+                if contact.penetration_depth > closest_contact.penetration_depth {
+                    closest_contact = contact;
+                }
+            }
+            return Some(closest_contact)
+        }
+        None
+    }
+
     fn body_cast(
         &self,
         body: &mut RigidBody,
@@ -72,22 +92,11 @@ impl PhysicsEngine {
 
         let start_pos = body.position + start_offset;
         body.position = start_pos;
-        let mut all_original_collisions = Vec::new();
-        for other_body in self.rigid_bodies.iter() {
-            if let Some(collisions) = body.colliding_with_info(other_body) {
-                all_original_collisions.extend(collisions);
-            }
-        }
-        if all_original_collisions.len() > 0 {
-            let mut closest_contact = all_original_collisions[0];
-            for contact in all_original_collisions {
-                if contact.penetration_depth > closest_contact.penetration_depth {
-                    closest_contact = contact;
-                }
-            }
+        let original_contact = self.get_world_contact(&body);
+        if let Some(collision) = original_contact {
             return Some(CastInformation {
                 distance: 0.0,
-                contact: closest_contact,
+                contact: collision,
             });
         }
 
@@ -119,23 +128,12 @@ impl PhysicsEngine {
         let final_offset = dir * t_max;
 
         body.position = start_pos + final_offset;
-        let mut final_contacts = Vec::new();
-        for other_body in self.rigid_bodies.iter() {
-            if let Some(contacts) = body.colliding_with_info(other_body) {
-                final_contacts.extend(contacts);
-            }
-        }
+        let final_contact = self.get_world_contact(&body);
         body.position = original_position;
-        if final_contacts.len() > 0 {
-            let mut closest_contact = final_contacts[0];
-            for contact in final_contacts {
-                if contact.penetration_depth > closest_contact.penetration_depth {
-                    closest_contact = contact;
-                }
-            }
+        if let Some(collision) = final_contact {
             Some(CastInformation {
-                distance: t_max,
-                contact: closest_contact,
+                distance: 0.0,
+                contact: collision,
             })
         } else {
             None
@@ -153,11 +151,17 @@ impl PhysicsEngine {
         for player_ref in &self.players {
             let mut player = player_ref.borrow_mut();
             match player.movement_mode {
-                MovementMode::GHOST => { continue }
+                MovementMode::GHOST => {
+                    // println!("{:?}", self.body_cast(&mut player.rigid_body, &Vector::new_empty_quat(), &Vector::new_vec3(0.0, 0.0, -1.0), 1.0));
+                    ///*
+                    let all_original_collisions = self.get_world_contact(&player.rigid_body);
+                    println!("{:?}", all_original_collisions);
+                    //*/
+
+                    continue
+                }
                 MovementMode::PHYSICS => {
                     player.rigid_body.position = player.camera.position;
-
-                    player.rigid_body.velocity = player.rigid_body.velocity + self.gravity * delta_time;
 
                     self.move_player_with_collision(&mut player, delta_time);
                 }
@@ -181,8 +185,6 @@ impl PhysicsEngine {
         player.grounded = false;
 
         let original_hitbox = player.rigid_body.hitbox.clone();
-
-        // Shrink hitbox for skin width
         match &mut player.rigid_body.hitbox {
             Hitbox::OBB(obb) => {
                 obb.half_extents = obb.half_extents - Vector::new_vec(player.skin_width)
@@ -193,17 +195,39 @@ impl PhysicsEngine {
             Hitbox::MESH(_) => panic!("player mesh colliders not yet implemented")
         }
 
-        // Calculate final velocity WITHOUT moving the player
-        let final_velocity = self.collide(player, 0, delta_time);
-
-        // Restore hitbox
+        player.rigid_body.velocity = self.collide(
+            player,
+            player.rigid_body.velocity,
+            player.rigid_body.position.clone(),
+            false,
+            0,
+            player.rigid_body.velocity,
+            delta_time
+        );
+        player.rigid_body.velocity = player.rigid_body.velocity + self.collide(
+            player,
+            self.gravity * delta_time,
+            player.rigid_body.position.clone(),
+            true,
+            0,
+            self.gravity * delta_time,
+            delta_time
+        );
+        println!("{:?}", player.rigid_body.velocity);
+        player.step(&(player.rigid_body.velocity * delta_time));
         player.rigid_body.hitbox = original_hitbox;
 
-        // NOW move the player once with the final resolved velocity
-        player.rigid_body.velocity = final_velocity;
-        player.step(&(final_velocity * delta_time));
+        let initial_collision = self.get_world_contact(&player.rigid_body);
+        if let Some(collision) = initial_collision {
+            let mut normal = collision.normal;
 
-        // Apply friction/air resistance and reset if fallen
+            if normal.dot3(&player.rigid_body.velocity) > 0.0 {
+                normal = normal * -1.0;
+            }
+
+            // player.step(&(normal.normalize_3d() * (collision.penetration_depth)))
+        }
+
         if player.rigid_body.position.y < -20.0 {
             player.camera.position.y = 20.0;
             player.rigid_body.velocity = Vector::new_empty();
@@ -218,38 +242,58 @@ impl PhysicsEngine {
         player.rigid_body.velocity.z *= horiz_decay * air_decay;
         player.rigid_body.velocity.y *= air_decay;
     }
-
-    fn collide(&self, player: &mut Player, iteration_depth: i32, delta_time: f32) -> Vector {
+    fn collide(&self, player: &mut Player, velocity: Vector, position: Vector, gravity_pass: bool, iteration_depth: i32, initial_velocity: Vector, delta_time: f32) -> Vector {
         if iteration_depth > 10 {
             return Vector::new_empty();
         }
 
-        let vel = player.rigid_body.velocity.clone();
-        let max_dist = vel.magnitude_3d() * delta_time + player.skin_width;
+        let max_slope_angle = 55.0_f32.to_radians();
 
-        let hit = self.body_cast(&mut player.rigid_body, &Vector::new_empty(), &vel, max_dist);
+        let max_dist = velocity.magnitude_3d() * delta_time + player.skin_width;
 
-        if let Some(hit_info) = hit {
-            let mut normal = hit_info.contact.normal;
-
-            // Fix normal direction
-            if normal.dot3(&vel) > 0.0 {
+        if let Some(hit) = self.body_cast(&mut player.rigid_body, &position, &velocity, max_dist) {
+            let mut normal = hit.contact.normal.normalize_3d();
+            if normal.dot3(&velocity) > 0.0 {
                 normal = normal * -1.0;
             }
 
-            // Check if grounded
-            if normal.dot3(&self.gravity) < -0.7 {  // Pointing opposite to gravity
-                player.grounded = true;
+            let project_onto_and_preserve_magnitude = |v: &Vector, n: &Vector| -> Vector {
+                v.project_onto_plane(&n).normalize_3d() * v.magnitude_3d()
+            };
+
+            let mut surface_snap = velocity.normalize_3d() * (hit.distance - player.skin_width);
+            let mut remaining_velocity = velocity - surface_snap;
+            if surface_snap.magnitude_3d() <= player.skin_width {
+                surface_snap = Vector::new_empty();
+            }
+            let angle = (-1.0 * self.gravity).dot(&normal).acos();
+
+            player.grounded = true;
+            if angle <= max_slope_angle {
+                if gravity_pass {
+                    return surface_snap;
+                }
+                remaining_velocity = project_onto_and_preserve_magnitude(&remaining_velocity, &normal);
+            } else {
+                let non_vertical_normal = normal.project_onto_plane(&self.gravity).normalize_3d();
+                let non_vertical_initial_velocity = initial_velocity.project_onto_plane(&self.gravity);
+                let non_vertical_remaining_velocity = remaining_velocity.project_onto_plane(&self.gravity);
+
+                let scale = 1.0 - non_vertical_normal.dot3(&(-1.0 * non_vertical_initial_velocity.normalize_3d()));
+                if player.grounded && !gravity_pass {
+                    remaining_velocity = project_onto_and_preserve_magnitude(
+                        &non_vertical_remaining_velocity,
+                        &non_vertical_normal
+                    );
+                    remaining_velocity = remaining_velocity * scale;
+                } else {
+                    remaining_velocity = project_onto_and_preserve_magnitude(&remaining_velocity, &normal);
+                }
             }
 
-            // Calculate the slide plane projection
-            let slide_velocity = vel - vel.project_onto(&normal);
-
-            // Recurse with the slid velocity
-            player.rigid_body.velocity = slide_velocity;
-            self.collide(player, iteration_depth + 1, delta_time)
+            surface_snap + self.collide(player, remaining_velocity, position + surface_snap, gravity_pass, iteration_depth + 1, initial_velocity, delta_time)
         } else {
-            vel
+            velocity
         }
     }
 
@@ -403,11 +447,11 @@ impl RigidBody {
             p0: &Vector,
             p1: &Vector,
         | -> Vector {
-            let clamped_p0 = p0.clamp(
+            let clamped_p0 = p0.clamp3(
                 &(-1.0 * bounds.half_extents.unitize_w()),
                 &bounds.half_extents.unitize_w()
             );
-            let clamped_p1 = p1.clamp(
+            let clamped_p1 = p1.clamp3(
                 &(-1.0 * bounds.half_extents.unitize_w()),
                 &bounds.half_extents.unitize_w()
             );
@@ -417,7 +461,7 @@ impl RigidBody {
             let t = (to_p0.dot3(&segment) / segment.dot3(&segment)).clamp(0.0, 1.0);
             let point_on_segment = p0 + (segment * t);
 
-            point_on_segment.clamp(
+            point_on_segment.clamp3(
                 &(-1.0 * bounds.half_extents.unitize_w()),
                 &bounds.half_extents.unitize_w()
             )
@@ -459,36 +503,34 @@ impl RigidBody {
             penetration_depth: penetration,
         })
     }
-    fn intersects_mesh(&self, other: &RigidBody) -> Option<Vec<ContactInformation>> {
-        let obb = if let Hitbox::OBB(ref obb) = self.hitbox {
-            obb
-        } else {
-            return None;
-        };
-        let mesh_collider = if let Hitbox::MESH(ref mesh) = other.hitbox {
+    fn intersects_mesh(&self, mesh_body: &RigidBody) -> Option<Vec<ContactInformation>> {
+        let mesh_collider = if let Hitbox::MESH(ref mesh) = mesh_body.hitbox {
             mesh
         } else {
             return None;
         };
 
-        let rot_mat = Matrix::new_rotate_quaternion_vec4(&other.orientation);
+        let rot_mat = Matrix::new_rotate_quaternion_vec4(&mesh_body.orientation);
         let rot_mat_inv = rot_mat.inverse();
 
+
+        let mut center_offset = Vector::new_vec3(0.0, 0.0, 0.0);
         let body_hitbox_mesh_space = match self.hitbox {
             Hitbox::MESH(ref mesh) => panic!("mesh-mesh collision not implemented"),
-            Hitbox::OBB(ref obb) => Hitbox::OBB(BoundingBox {
-                center: obb.center / mesh_collider.current_scale_factor,
+            Hitbox::OBB(ref obb) => {
+                center_offset = obb.center / mesh_collider.current_scale_factor;
+                Hitbox::OBB(BoundingBox {
+                center: Vector::new_vec3(0.0, 0.0, 0.0),
                 half_extents: obb.half_extents / mesh_collider.current_scale_factor,
-            }),
+            })},
             Hitbox::CAPSULE(ref capsule) => Hitbox::CAPSULE(Capsule {
                 a: capsule.a / mesh_collider.current_scale_factor,
                 b: capsule.b / mesh_collider.current_scale_factor,
                 radius: capsule.radius, //TODO() Make capsule radius a vector
             }),
         };
-        let body_position_mesh_space = rot_mat_inv * ((self.position - &other.position) / mesh_collider.current_scale_factor).unitize_w();
-        let body_orientation_mesh_space = self.orientation.combine(&other.orientation.conjugate());
-
+        let body_position_mesh_space = rot_mat_inv * ((self.position + center_offset - &mesh_body.position) / mesh_collider.current_scale_factor).unitize_w();
+        let body_orientation_mesh_space = self.orientation.combine(&mesh_body.orientation.conjugate());
 
 
         let mut contact_infos = Self::split_into_bvh(
@@ -646,7 +688,7 @@ impl RigidBody {
             }
         }
         let tri_center = (v0 + v1 + v2) / 3.0;
-        let closest_point = tri_center.clamp(
+        let closest_point = tri_center.clamp3(
             &(-1.0 * obb.half_extents),
             &obb.half_extents,
         );
@@ -811,6 +853,7 @@ impl Default for RigidBody {
     }
 }
 
+#[derive(Debug)]
 struct CastInformation {
     distance: f32,
     contact: ContactInformation,

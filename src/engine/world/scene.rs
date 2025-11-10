@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::f32::consts::PI;
 use std::ffi::c_void;
 use std::fs;
 use std::rc::Rc;
@@ -1174,11 +1175,11 @@ impl Model {
         }
     }
 
-    pub fn transform_roots(&mut self, translation: &Vector, rotation: &Vector, scale: &Vector) {
+    pub fn transform_roots(&mut self, translation: &Vector, rotation: &Vector, scale: &Vector) { // takes euler rotation angles in degrees
         for node_index in self.scene.nodes.iter() {
             let node = &mut self.nodes[*node_index];
             node.user_translation.add_vec_to_self(translation);
-            node.user_rotation.combine_to_self(&rotation.normalize_4d());
+            node.user_rotation.combine_to_self(&((rotation * PI / 180.0).euler_to_quat().normalize_4d()));
             node.user_scale.mul_by_vec_to_self(scale);
             node.needs_update = true;
         }

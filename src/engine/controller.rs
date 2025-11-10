@@ -63,7 +63,7 @@ impl Controller {
                 MovementMode::GHOST,
                 0.2,
                 4.5,
-                0.015
+                0.001
             ))),
             pressed_keys: Default::default(),
             new_pressed_keys: Default::default(),

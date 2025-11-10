@@ -138,6 +138,11 @@ impl Vector {
         axis.set_component(self, v);
         self
     }
+    pub fn with<T: AxisKey>(&self, axis: T, v: f32) -> Vector {
+        let mut ret = self.clone();
+        axis.set_component(&mut ret, v);
+        ret
+    }
     //</editor-fold>
 
     //<editor-fold desc = "vector vector operations">
@@ -192,11 +197,10 @@ impl Vector {
     }
     
     pub fn combine_to_self(&mut self, other: &Vector) {
-        let temp = self.clone().combine(other);
-        self.x = temp.x;
-        self.y = temp.y;
-        self.z = temp.z;
-        self.w = temp.w;
+        self.x = self.w * other.x + self.x * other.w + self.y * other.z - self.z * other.y;
+        self.y = self.w * other.y - self.x * other.z + self.y * other.w + self.z * other.x;
+        self.z = self.w * other.z + self.x * other.y - self.y * other.x + self.z * other.w;
+        self.w = self.w * other.w - self.x * other.x - self.y * other.y - self.z * other.z;
     }
     
     pub fn max(a: &Vector, b: &Vector) -> Vector {
@@ -296,12 +300,19 @@ impl Vector {
         Vector::new_vec3(new_x, new_y, new_z)
     }
 
-    pub fn project_onto(&self, other: &Vector) -> Vector {
+    pub fn project_onto_plane(&self, other: &Vector) -> Vector {
         let n = other.normalize_3d();
-        n * self.dot3(&n)
+        self - n * self.dot3(&n)
     }
 
-    pub fn clamp(&self, min: &Vector, max: &Vector) -> Vector {
+    pub fn clamp3(&self, min: &Vector, max: &Vector) -> Vector {
+        Vector::new_vec3(
+            self.x.clamp(min.x, max.x),
+            self.y.clamp(min.y, max.y),
+            self.z.clamp(min.z, max.z),
+        )
+    }
+    pub fn clamp4(&self, min: &Vector, max: &Vector) -> Vector {
         Vector::new_vec4(
             self.x.clamp(min.x, max.x),
             self.y.clamp(min.y, max.y),
