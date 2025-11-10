@@ -5,6 +5,7 @@ layout(push_constant) uniform constants {
     vec4 center;
     vec4 half_extent;
     vec4 quat;
+    vec4 color;
 } pc;
 
 mat3 quat_to_mat3(vec4 q) {

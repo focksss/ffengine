@@ -320,6 +320,24 @@ impl Vector {
             self.w.clamp(min.w, max.w)
         )
     }
+    ///* Threshold is not direction dependent.
+    pub fn nullify_threshold(&self, threshold: f32) -> Vector {
+        Vector::new_vec4(
+            if self.x.abs() > threshold { self.x } else { 0.0 },
+            if self.y.abs() > threshold { self.y } else { 0.0 },
+            if self.z.abs() > threshold { self.z } else { 0.0 },
+            if self.w.abs() > threshold { self.w } else { 0.0 },
+        )
+    }
+    ///* Threshold is not direction dependent.
+    pub fn nullify_horizontal_threshold(&self, threshold: f32) -> Vector {
+        Vector::new_vec4(
+            if self.x.abs() > threshold { self.x } else { 0.0 },
+            self.y,
+            if self.z.abs() > threshold { self.z } else { 0.0 },
+            self.w
+        )
+    }
     //</editor-fold>
 
     //<editor-fold desc = "vector float operations"

@@ -112,7 +112,7 @@ impl Renderer {
             .fragment_shader_uri(String::from("hitbox_display\\hitbox.frag.spv"))
             .pipeline_color_blend_state_create_info(color_blend_state)
             .push_constant_range(vk::PushConstantRange {
-                stage_flags: ShaderStageFlags::VERTEX,
+                stage_flags: ShaderStageFlags::ALL_GRAPHICS,
                 offset: 0,
                 size: size_of::<HitboxPushConstantSendable>() as u32,
             });
@@ -238,6 +238,7 @@ impl Renderer {
                             center: (a.center.rotate_by_quat(&rigid_body.orientation) + rigid_body.position).to_array4(),
                             half_extent: a.half_extents.to_array4(),
                             quat: rigid_body.orientation.to_array4(),
+                            color: Vector::new_vec4(0.0, 0.0, 1.0, 0.3).to_array4()
                         };
 
                         self.device.cmd_push_constants(frame_command_buffer, self.hitbox_renderpass.pipeline_layout, ShaderStageFlags::VERTEX, 0, slice::from_raw_parts(
@@ -255,6 +256,7 @@ impl Renderer {
                                     center: ((constant.0 * a.current_scale_factor).rotate_by_quat(&rigid_body.orientation) + rigid_body.position).to_array4(),
                                     half_extent: (constant.1 * a.current_scale_factor).to_array4(),
                                     quat: rigid_body.orientation.to_array4(),
+                                    color: Vector::new_vec4(0.0, 0.0, 1.0, 0.01).to_array4()
                                 } as *const HitboxPushConstantSendable as *const u8,
                                 size_of::<HitboxPushConstantSendable>(),
                             ));
@@ -271,6 +273,7 @@ impl Renderer {
                         center: (a.center.rotate_by_quat(&player.rigid_body.orientation) + player.rigid_body.position).to_array4(),
                         half_extent: a.half_extents.to_array4(),
                         quat: player.rigid_body.orientation.to_array4(),
+                        color: Vector::new_vec4(1.0, 0.0, 0.0, 0.5).to_array4()
                     })
                 }
                 _ => { None }
@@ -490,4 +493,5 @@ pub struct HitboxPushConstantSendable {
     center: [f32; 4],
     half_extent: [f32; 4],
     quat: [f32; 4],
+    color: [f32; 4],
 }
