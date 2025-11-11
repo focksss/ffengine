@@ -17,19 +17,46 @@ layout (location = 3) in mat3 view_TBN;
 layout(set = 0, binding = 2) uniform sampler2D textures[];
 
 struct Material {
-    int normal_tex;      // 0
+    int normal_tex;
     float alpha_cutoff;
     float emissive_strength;
     int emissive_texture;
+
+    vec2 normal_tex_offset;
+    vec2 normal_tex_scale;
+
+    vec2 emissive_tex_offset;
+    vec2 emissive_tex_scale;
+
     vec4 specular_color;
+
     vec4 emissive_color;
-    float ior;            // 32
-    vec4 base_color;      // 48
-    int base_color_tex;  // 64
-    float metallic;       // 68
-    int metallic_tex;    // 72
-    float roughness;      // 76
-    int roughness_tex;   // 80
+
+    float ior;
+    float _pad3_0;
+    float _pad3_1;
+    float _pad3_2;
+
+    vec4 base_color;
+
+    int base_color_tex;
+    float metallic;
+    int metallic_tex;
+    float roughness;
+
+    int roughness_tex;
+    float _pad4_0;
+    float _pad4_1;
+    float _pad4_2;
+
+    vec2 base_color_tex_offset;
+    vec2 base_color_tex_scale;
+
+    vec2 metallic_tex_offset;
+    vec2 metallic_tex_scale;
+
+    vec2 roughness_tex_offset;
+    vec2 roughness_tex_scale;
 };
 
 layout(set = 0, binding = 0, std430) readonly buffer MaterialSSBO {
@@ -41,7 +68,8 @@ void main() {
     vec3 normal;
     vec3 view_normal;
     if (mat.normal_tex > -1) {
-        vec3 mapped_normal = texture(textures[mat.normal_tex], o_uv).rgb;
+        vec2 transformed_uv = o_uv * mat.normal_tex_scale + mat.normal_tex_offset;
+        vec3 mapped_normal = texture(textures[mat.normal_tex], transformed_uv).rgb;
         mapped_normal = normalize(mapped_normal * 2.0 - 1.0);
         view_normal = normalize(view_TBN * mapped_normal);
     } else {
@@ -50,7 +78,8 @@ void main() {
 
     vec4 base_color;
     if (mat.base_color_tex > -1) {
-        base_color = texture(textures[mat.base_color_tex], o_uv);
+        vec2 transformed_uv = o_uv * mat.base_color_tex_scale + mat.base_color_tex_offset;
+        base_color = texture(textures[mat.base_color_tex], transformed_uv);
     } else {
         base_color = mat.base_color;
     }
@@ -60,7 +89,8 @@ void main() {
 
     vec3 emission;
     if (mat.emissive_texture > -1) {
-        emission = texture(textures[mat.emissive_texture], o_uv).rgb;
+        vec2 transformed_uv = o_uv * mat.emissive_tex_scale + mat.emissive_tex_offset;
+        emission = texture(textures[mat.emissive_texture], transformed_uv).rgb;
     } else {
         emission = mat.emissive_color.rgb;
     }

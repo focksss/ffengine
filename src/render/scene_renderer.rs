@@ -859,7 +859,7 @@ impl SceneRenderer {
                     image_infos.push(vk::DescriptorImageInfo {
                         image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                         image_view: texture.borrow().source.borrow().image_view,
-                        sampler: texture.borrow().sampler,
+                        sampler: texture.borrow().sampler.unwrap(),
                         ..Default::default()
                     });
                 } else {

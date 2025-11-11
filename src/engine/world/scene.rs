@@ -743,12 +743,24 @@ impl Model {
                 ))))
         }
 
+        let mut samplers = Vec::new();
+        for sampler in json["samplers"].members() {
+            samplers.push(SceneSampler {
+                min_filter: SceneSampler::get_filter_type(sampler["minFilter"].as_i32().unwrap_or(0)),
+                mag_filter: SceneSampler::get_filter_type(sampler["magFilter"].as_i32().unwrap_or(0)),
+                address_mode_u: SceneSampler::get_address_mode(sampler["wrapS"].as_i32().unwrap_or(0)),
+                address_mode_v: SceneSampler::get_address_mode(sampler["wrapT"].as_i32().unwrap_or(0)),
+                address_mode_w: SceneSampler::get_address_mode(sampler["wrapT"].as_i32().unwrap_or(0)), // TODO() Deduce if modern gltf has a w-wrapping field
+            })
+        }
+
         let mut textures = Vec::new();
         for texture in json["textures"].members() {
             textures.push(
                 Rc::new(RefCell::new(SceneTexture {
                     source: images[texture["source"].as_usize().unwrap()].clone(),
-                    sampler: Sampler::null()
+                    sampler: None,
+                    sampler_info: samplers[texture["sampler"].as_usize().unwrap().clone()]
                 })))
         }
 
@@ -758,17 +770,27 @@ impl Model {
             alpha_cutoff: 0.5,
             double_sided: false,
             normal_texture: None,
+            normal_texture_offset: None,
+            normal_texture_scale: None,
             specular_color_factor: [1.0; 3],
             ior: 1.0,
             name: String::from("default material"),
             base_color_factor: [1.0; 4],
             base_color_texture: None,
+            base_color_texture_offset: None,
+            base_color_texture_scale: None,
             metallic_factor: 0.1,
             metallic_texture: None,
+            metallic_texture_offset: None,
+            metallic_texture_scale: None,
             roughness_factor: 0.5,
             roughness_texture: None,
+            roughness_texture_offset: None,
+            roughness_texture_scale: None,
             emissive_factor: [0.0; 3],
             emissive_texture: None,
+            emissive_texture_offset: None,
+            emissive_texture_scale: None,
             emissive_strength: 1.0,
         });
         for material in json["materials"].members() {
@@ -797,12 +819,36 @@ impl Model {
             }
 
             let mut normal_texture = None;
+            let mut normal_texture_offset = None;
+            let mut normal_texture_scale = None;
             if let JsonValue::Object(ref normal_texture_json) = material["normalTexture"] {
                 normal_texture = Some(normal_texture_json["index"].as_i32().expect(""));
+                if let JsonValue::Object(ref extensions_json) = normal_texture_json["extensions"] {
+                    if let JsonValue::Object(ref texture_transform_json) = extensions_json["KHR_texture_transform"] {
+                        if let JsonValue::Array(ref json_value) = texture_transform_json["offset"] {
+                            if json_value.len() >= 3 {
+                                normal_texture_offset = Some([
+                                    json_value[0].as_f32().unwrap(),
+                                    json_value[1].as_f32().unwrap(),
+                                ]);
+                            }
+                        }
+                        if let JsonValue::Array(ref json_value) = texture_transform_json["scale"] {
+                            if json_value.len() >= 3 {
+                                normal_texture_scale = Some([
+                                    json_value[0].as_f32().unwrap(),
+                                    json_value[1].as_f32().unwrap(),
+                                ]);
+                            }
+                        }
+                    }
+                }
             }
 
             let mut emissive_factor = [0.0; 3];
             let mut emissive_texture = None;
+            let mut emissive_texture_offset = None;
+            let mut emissive_texture_scale = None;
             if let JsonValue::Array(ref json_value) = material["emissiveFactor"] {
                 if json_value.len() >= 3 {
                     emissive_factor = [
@@ -812,16 +858,42 @@ impl Model {
                     ];
                 }
             }
-            if let JsonValue::Object(ref json_value) = material["emissiveTexture"] {
-                emissive_texture = Some(json_value["index"].as_i32().expect("FAULTY GLTF: \n    Missing index for emissiveTexture"));
+            if let JsonValue::Object(ref emissive_texture_json) = material["emissiveTexture"] {
+                emissive_texture = Some(emissive_texture_json["index"].as_i32().expect("FAULTY GLTF: \n    Missing index for emissiveTexture"));
+                if let JsonValue::Object(ref extensions_json) = emissive_texture_json["extensions"] {
+                    if let JsonValue::Object(ref texture_transform_json) = extensions_json["KHR_texture_transform"] {
+                        if let JsonValue::Array(ref json_value) = texture_transform_json["offset"] {
+                            if json_value.len() >= 3 {
+                                emissive_texture_offset = Some([
+                                    json_value[0].as_f32().unwrap(),
+                                    json_value[1].as_f32().unwrap(),
+                                ]);
+                            }
+                        }
+                        if let JsonValue::Array(ref json_value) = texture_transform_json["scale"] {
+                            if json_value.len() >= 3 {
+                                emissive_texture_scale = Some([
+                                    json_value[0].as_f32().unwrap(),
+                                    json_value[1].as_f32().unwrap(),
+                                ]);
+                            }
+                        }
+                    }
+                }
             }
 
             let mut base_color_factor = [0.5, 0.5, 0.5, 1.0];
             let mut base_color_texture = None;
+            let mut base_color_texture_offset = None;
+            let mut base_color_texture_scale = None;
             let mut metallic_factor = 0.1;
             let mut roughness_factor = 0.5;
             let mut metallic_texture = None;
+            let mut metallic_texture_offset = None;
+            let mut metallic_texture_scale = None;
             let mut roughness_texture = None;
+            let mut roughness_texture_offset = None;
+            let mut roughness_texture_scale = None;
             if let JsonValue::Object(ref pbr_metallic_roughness) = material["pbrMetallicRoughness"] {
                 if let JsonValue::Array(ref json_value) = pbr_metallic_roughness["baseColorFactor"] {
                     if json_value.len() >= 4 {
@@ -833,8 +905,30 @@ impl Model {
                         ];
                     }
                 }
-                if let JsonValue::Object(ref json_value) = pbr_metallic_roughness["baseColorTexture"] {
-                    base_color_texture = Some(json_value["index"].as_i32().expect("FAULTY GLTF: \n    Missing index for baseColorTexture at pbrMetallicRoughness"));
+                if let JsonValue::Object(ref base_color_texture_json) = pbr_metallic_roughness["baseColorTexture"] {
+                    base_color_texture = Some(base_color_texture_json["index"].as_i32().expect("FAULTY GLTF: \n    Missing index for baseColorTexture at pbrMetallicRoughness"));
+                    if let JsonValue::Object(ref extensions_json) = base_color_texture_json["extensions"] {
+                        if let JsonValue::Object(ref texture_transform_json) = extensions_json["KHR_texture_transform"] {
+                            if let JsonValue::Array(ref json_value) = texture_transform_json["offset"] {
+                                if json_value.len() >= 2 {
+                                    base_color_texture_offset = Some([
+                                        json_value[0].as_f32().unwrap(),
+                                        json_value[1].as_f32().unwrap(),
+                                    ]);
+                                }
+                            }
+                            if let JsonValue::Array(ref json_value) = texture_transform_json["scale"] {
+                                if json_value.len() >= 2 {
+                                    base_color_texture_scale = Some([
+                                        json_value[0].as_f32().unwrap(),
+                                        json_value[1].as_f32().unwrap(),
+                                    ]);
+                                }
+                            }
+                            print!("offset: {:?}", base_color_texture_offset);
+                            print!("scale: {:?}", base_color_texture_scale);
+                        }
+                    }
                 }
 
                 if let JsonValue::Number(ref json_value) = pbr_metallic_roughness["metallicFactor"] {
@@ -842,8 +936,28 @@ impl Model {
                         metallic_factor = f;
                     }
                 }
-                if let JsonValue::Object(ref json_value) = pbr_metallic_roughness["metallicTexture"] {
-                    metallic_texture = Some(json_value["index"].as_i32().expect("FAULTY GLTF: \n    Missing index for metallicTexture at pbrMetallicRoughness"));
+                if let JsonValue::Object(ref metallic_texture_json) = pbr_metallic_roughness["metallicTexture"] {
+                    metallic_texture = Some(metallic_texture_json["index"].as_i32().expect("FAULTY GLTF: \n    Missing index for metallicTexture at pbrMetallicRoughness"));
+                    if let JsonValue::Object(ref extensions_json) = metallic_texture_json["extensions"] {
+                        if let JsonValue::Object(ref texture_transform_json) = extensions_json["KHR_texture_transform"] {
+                            if let JsonValue::Array(ref json_value) = texture_transform_json["offset"] {
+                                if json_value.len() >= 2 {
+                                    metallic_texture_offset = Some([
+                                        json_value[0].as_f32().unwrap(),
+                                        json_value[1].as_f32().unwrap(),
+                                    ]);
+                                }
+                            }
+                            if let JsonValue::Array(ref json_value) = texture_transform_json["scale"] {
+                                if json_value.len() >= 2 {
+                                    metallic_texture_scale = Some([
+                                        json_value[0].as_f32().unwrap(),
+                                        json_value[1].as_f32().unwrap(),
+                                    ]);
+                                }
+                            }
+                        }
+                    }
                 }
 
                 if let JsonValue::Number(ref json_value) = pbr_metallic_roughness["roughnessFactor"] {
@@ -851,13 +965,61 @@ impl Model {
                         roughness_factor = f;
                     }
                 }
-                if let JsonValue::Object(ref json_value) = pbr_metallic_roughness["roughnessTexture"] {
-                    roughness_texture = Some(json_value["index"].as_i32().expect("FAULTY GLTF: \n    Missing index for roughnessTexture at pbrMetallicRoughness"));
+                if let JsonValue::Object(ref roughness_texture_json) = pbr_metallic_roughness["roughnessTexture"] {
+                    roughness_texture = Some(roughness_texture_json["index"].as_i32().expect("FAULTY GLTF: \n    Missing index for roughnessTexture at pbrMetallicRoughness"));
+                    if let JsonValue::Object(ref extensions_json) = roughness_texture_json["extensions"] {
+                        if let JsonValue::Object(ref texture_transform_json) = extensions_json["KHR_texture_transform"] {
+                            if let JsonValue::Array(ref json_value) = texture_transform_json["offset"] {
+                                if json_value.len() >= 2 {
+                                    roughness_texture_offset = Some([
+                                        json_value[0].as_f32().unwrap(),
+                                        json_value[1].as_f32().unwrap(),
+                                    ]);
+                                }
+                            }
+                            if let JsonValue::Array(ref json_value) = texture_transform_json["scale"] {
+                                if json_value.len() >= 2 {
+                                    roughness_texture_scale = Some([
+                                        json_value[0].as_f32().unwrap(),
+                                        json_value[1].as_f32().unwrap(),
+                                    ]);
+                                }
+                            }
+                        }
+                    }
                 }
 
-                if let JsonValue::Object(ref json_value) = pbr_metallic_roughness["metallicRoughnessTexture"] {
-                    roughness_texture = Some(json_value["index"].as_i32().expect("FAULTY GLTF: \n    Missing index for metallicRoughnessTexture at pbrMetallicRoughness"));
-                    metallic_texture = Some(json_value["index"].as_i32().expect("FAULTY GLTF: \n    Missing index for metallicRoughnessTexture at pbrMetallicRoughness"));
+                if let JsonValue::Object(ref metallic_roughness_texture_json) = pbr_metallic_roughness["metallicRoughnessTexture"] {
+                    roughness_texture = Some(metallic_roughness_texture_json["index"].as_i32().expect("FAULTY GLTF: \n    Missing index for metallicRoughnessTexture at pbrMetallicRoughness"));
+                    metallic_texture = Some(metallic_roughness_texture_json["index"].as_i32().expect("FAULTY GLTF: \n    Missing index for metallicRoughnessTexture at pbrMetallicRoughness"));
+                    if let JsonValue::Object(ref extensions_json) = metallic_roughness_texture_json["extensions"] {
+                        if let JsonValue::Object(ref texture_transform_json) = extensions_json["KHR_texture_transform"] {
+                            if let JsonValue::Array(ref json_value) = texture_transform_json["offset"] {
+                                if json_value.len() >= 2 {
+                                    metallic_texture_offset = Some([
+                                        json_value[0].as_f32().unwrap(),
+                                        json_value[1].as_f32().unwrap(),
+                                    ]);
+                                    roughness_texture_offset = Some([
+                                        json_value[0].as_f32().unwrap(),
+                                        json_value[1].as_f32().unwrap(),
+                                    ]);
+                                }
+                            }
+                            if let JsonValue::Array(ref json_value) = texture_transform_json["scale"] {
+                                if json_value.len() >= 2 {
+                                    metallic_texture_scale = Some([
+                                        json_value[0].as_f32().unwrap(),
+                                        json_value[1].as_f32().unwrap(),
+                                    ]);
+                                    roughness_texture_scale = Some([
+                                        json_value[0].as_f32().unwrap(),
+                                        json_value[1].as_f32().unwrap(),
+                                    ]);
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
@@ -897,6 +1059,9 @@ impl Model {
                     alpha_cutoff,
                     double_sided,
                     normal_texture,
+                    // KHR_texture_transform
+                        normal_texture_offset,
+                        normal_texture_scale,
                     // KHR_materials_specular
                         specular_color_factor,
                     // KHR_materials_ior
@@ -904,12 +1069,24 @@ impl Model {
                     // pbrMetallicRoughness
                         base_color_factor,
                         base_color_texture,
+                        // KHR_texture_transform
+                            base_color_texture_offset,
+                            base_color_texture_scale,
                         metallic_factor,
                         metallic_texture,
+                        // KHR_texture_transform
+                            metallic_texture_offset,
+                            metallic_texture_scale,
                         roughness_factor,
                         roughness_texture,
+                        // KHR_texture_transform
+                            roughness_texture_offset,
+                            roughness_texture_scale,
                     emissive_factor,
                     emissive_texture,
+                        // KHR_texture_transform
+                        emissive_texture_offset,
+                        emissive_texture_scale,
                     // extensions
                         emissive_strength,
                 })
@@ -1155,8 +1332,6 @@ impl Model {
 
         let scene = scenes[json["world"].as_usize().unwrap_or(0)].clone();
 
-
-
         Self {
             extensions_used,
             scene,
@@ -1234,7 +1409,7 @@ impl Model {
     pub unsafe fn cleanup(&self, base: &VkBase) { unsafe {
         for texture in &self.textures {
             let texture = texture.borrow();
-            base.device.destroy_sampler(texture.sampler, None);
+            if let Some(sampler) = texture.sampler { base.device.destroy_sampler(sampler, None); }
         }
         for image in &self.images {
             let image = image.borrow();
@@ -1310,20 +1485,48 @@ impl Image {
     } }
 }
 
+#[derive(Copy, Clone)]
+pub struct SceneSampler {
+    pub mag_filter: vk::Filter,
+    pub min_filter: vk::Filter,
+    pub address_mode_u: vk::SamplerAddressMode,
+    pub address_mode_v: vk::SamplerAddressMode,
+    pub address_mode_w: vk::SamplerAddressMode,
+}
+impl SceneSampler {
+    pub fn get_filter_type(id: i32) -> vk::Filter {
+        match id {
+            9728 => vk::Filter::NEAREST,
+            9729 => vk::Filter::LINEAR,
+            // TODO() Handle 9984 (NEAREST_MIPMAP_NEAREST), 9985 (LINEAR_MIPMAP_NEAREST), 9986 (NEAREST_MIPMAP_LINEAR), 9987 (LINEAR_MIPMAP_LINEAR)
+            _ => vk::Filter::LINEAR,
+        }
+    }
+    ///* Wrapping mode = address mode
+    pub fn get_address_mode(id: i32) -> vk::SamplerAddressMode {
+        match id {
+            33071 => vk::SamplerAddressMode::CLAMP_TO_EDGE,
+            33648 => vk::SamplerAddressMode::MIRRORED_REPEAT,
+            10497 => vk::SamplerAddressMode::REPEAT,
+            _ => vk::SamplerAddressMode::REPEAT,
+        }
+    }
+}
+
 pub struct SceneTexture {
     pub source: Rc<RefCell<Image>>,
-
-    pub sampler: Sampler,
+    pub sampler: Option<Sampler>,
+    pub sampler_info: SceneSampler,
 }
 impl SceneTexture {
     pub unsafe fn construct_sampler(&mut self, base: &VkBase) { unsafe {
         let sampler_info = vk::SamplerCreateInfo {
             s_type: vk::StructureType::SAMPLER_CREATE_INFO,
-            mag_filter: vk::Filter::LINEAR,
-            min_filter: vk::Filter::LINEAR,
-            address_mode_u: vk::SamplerAddressMode::REPEAT,
-            address_mode_v: vk::SamplerAddressMode::REPEAT,
-            address_mode_w: vk::SamplerAddressMode::REPEAT,
+            mag_filter: self.sampler_info.mag_filter,
+            min_filter: self.sampler_info.min_filter,
+            address_mode_u: self.sampler_info.address_mode_u,
+            address_mode_v: self.sampler_info.address_mode_v,
+            address_mode_w: self.sampler_info.address_mode_w,
             anisotropy_enable: vk::TRUE,
             max_anisotropy: base.pdevice_properties.limits.max_sampler_anisotropy,
             border_color: vk::BorderColor::INT_OPAQUE_BLACK,
@@ -1334,7 +1537,7 @@ impl SceneTexture {
             max_lod: self.source.borrow().mip_levels as f32,
             ..Default::default()
         };
-        self.sampler = base.device.create_sampler(&sampler_info, None).expect("failed to create sampler");
+        self.sampler = Some(base.device.create_sampler(&sampler_info, None).expect("failed to create sampler"));
     } }
 }
 pub struct Material {
@@ -1342,6 +1545,9 @@ pub struct Material {
     pub alpha_cutoff: f32,
     pub double_sided: bool,
     pub normal_texture: Option<i32>,
+    // KHR_texture_transform
+        pub normal_texture_offset: Option<[f32; 2]>,
+        pub normal_texture_scale: Option<[f32; 2]>,
     // KHR_materials_specular
         pub specular_color_factor: [f32; 3],
     // KHR_materials_ior
@@ -1350,12 +1556,24 @@ pub struct Material {
     // pbrMetallicRoughness
         pub base_color_factor: [f32; 4],
         pub base_color_texture: Option<i32>,
+        // KHR_texture_transform
+            pub base_color_texture_offset: Option<[f32; 2]>,
+            pub base_color_texture_scale: Option<[f32; 2]>,
         pub metallic_factor: f32,
         pub metallic_texture: Option<i32>,
+        // KHR_texture_transform
+            pub metallic_texture_offset: Option<[f32; 2]>,
+            pub metallic_texture_scale: Option<[f32; 2]>,
         pub roughness_factor: f32,
         pub roughness_texture: Option<i32>,
+        // KHR_texture_transform
+            pub roughness_texture_offset: Option<[f32; 2]>,
+            pub roughness_texture_scale: Option<[f32; 2]>,
     pub emissive_factor: [f32; 3],
     pub emissive_texture: Option<i32>,
+    // KHR_texture_transform
+        pub emissive_texture_offset: Option<[f32; 2]>,
+        pub emissive_texture_scale: Option<[f32; 2]>,
     // KHR_materials_emissive_strength
         pub emissive_strength: f32,
 }
@@ -1366,29 +1584,56 @@ impl Material {
             alpha_cutoff: self.alpha_cutoff,
             emissive_strength: self.emissive_strength,
             emissive_texture: self.emissive_texture.map(|val| val + texture_offset).unwrap_or(-1),
+
+            normal_texture_offset: self.normal_texture_offset.unwrap_or([0.0; 2]),
+            normal_texture_scale: self.normal_texture_scale.unwrap_or([1.0; 2]),
+
+            emissive_texture_offset: self.emissive_texture_offset.unwrap_or([0.0; 2]),
+            emissive_texture_scale: self.emissive_texture_scale.unwrap_or([1.0; 2]),
+
             specular_color_factor: self.specular_color_factor,
             _pad1: 0,
+
             emissive_factor: self.emissive_factor,
             _pad2: 0,
+
             ior: self.ior,
             _pad3: [0; 3],
+
             base_color_factor: self.base_color_factor,
+
             base_color_texture: self.base_color_texture.map(|val| val + texture_offset).unwrap_or(-1),
-            roughness_factor: self.roughness_factor,
-            roughness_texture: self.roughness_texture.map(|val| val + texture_offset).unwrap_or(-1),
             metallic_factor: self.metallic_factor,
             metallic_texture: self.metallic_texture.map(|val| val + texture_offset).unwrap_or(-1),
-            _pad4: [0u32; 3],
+            roughness_factor: self.roughness_factor,
+
+            roughness_texture: self.roughness_texture.map(|val| val + texture_offset).unwrap_or(-1),
+            _pad4: [0; 3],
+
+            base_color_texture_offset: self.base_color_texture_offset.unwrap_or([0.0; 2]),
+            base_color_texture_scale: self.base_color_texture_scale.unwrap_or([1.0; 2]),
+
+            metallic_texture_offset: self.metallic_texture_offset.unwrap_or([0.0; 2]),
+            metallic_texture_scale: self.metallic_texture_scale.unwrap_or([1.0; 2]),
+
+            roughness_texture_offset: self.roughness_texture_offset.unwrap_or([0.0; 2]),
+            roughness_texture_scale: self.roughness_texture_scale.unwrap_or([1.0; 2]),
         }
     }
 }
 #[derive(Clone, Debug, Copy)]
 #[repr(C)]
-pub struct MaterialSendable {
+pub struct MaterialSendable { // newlines at each set of 16 bytes
     pub normal_texture: i32,
     pub alpha_cutoff: f32,
     pub emissive_strength: f32,
     pub emissive_texture: i32,
+
+    pub normal_texture_offset: [f32; 2],
+    pub normal_texture_scale: [f32; 2],
+
+    pub emissive_texture_offset: [f32; 2],
+    pub emissive_texture_scale: [f32; 2],
 
     pub specular_color_factor: [f32; 3],
     pub _pad1: u32,
@@ -1409,7 +1654,14 @@ pub struct MaterialSendable {
     pub roughness_texture: i32,
     pub _pad4: [u32; 3],
 
+    pub base_color_texture_offset: [f32; 2],
+    pub base_color_texture_scale: [f32; 2],
 
+    pub metallic_texture_offset: [f32; 2],
+    pub metallic_texture_scale: [f32; 2],
+
+    pub roughness_texture_offset: [f32; 2],
+    pub roughness_texture_scale: [f32; 2],
 }
 
 #[derive(Debug, Clone, Copy)]
