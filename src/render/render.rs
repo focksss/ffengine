@@ -241,7 +241,7 @@ impl Renderer {
                             color: Vector::new_vec4(0.0, 0.0, 1.0, 0.3).to_array4()
                         };
 
-                        self.device.cmd_push_constants(frame_command_buffer, self.hitbox_renderpass.pipeline_layout, ShaderStageFlags::VERTEX, 0, slice::from_raw_parts(
+                        self.device.cmd_push_constants(frame_command_buffer, self.hitbox_renderpass.pipeline_layout, ShaderStageFlags::ALL_GRAPHICS, 0, slice::from_raw_parts(
                             &constants as *const HitboxPushConstantSendable as *const u8,
                             size_of::<HitboxPushConstantSendable>(),
                         ));
@@ -250,7 +250,7 @@ impl Renderer {
                     Hitbox::MESH(a) => {
                         let constants = a.bvh.get_bounds_info();
                         for constant in constants.iter() {
-                            self.device.cmd_push_constants(frame_command_buffer, self.hitbox_renderpass.pipeline_layout, ShaderStageFlags::VERTEX, 0, slice::from_raw_parts(
+                            self.device.cmd_push_constants(frame_command_buffer, self.hitbox_renderpass.pipeline_layout, ShaderStageFlags::ALL_GRAPHICS, 0, slice::from_raw_parts(
                                 &HitboxPushConstantSendable {
                                     view_proj: (&player.camera.projection_matrix * &player.camera.view_matrix).data,
                                     center: ((constant.0 * a.current_scale_factor).rotate_by_quat(&rigid_body.orientation) + rigid_body.position).to_array4(),
@@ -279,7 +279,7 @@ impl Renderer {
                 _ => { None }
             };
             if let Some(constants) = constants_option {
-                self.device.cmd_push_constants(frame_command_buffer, self.hitbox_renderpass.pipeline_layout, ShaderStageFlags::VERTEX, 0, slice::from_raw_parts(
+                self.device.cmd_push_constants(frame_command_buffer, self.hitbox_renderpass.pipeline_layout, ShaderStageFlags::ALL_GRAPHICS, 0, slice::from_raw_parts(
                     &constants as *const HitboxPushConstantSendable as *const u8,
                     size_of::<HitboxPushConstantSendable>(),
                 ));

@@ -192,7 +192,7 @@ impl Controller {
                     player_mut.step(&(move_direction * speed * delta_time))
                 }
                 MovementMode::PHYSICS => {
-                    player_mut.rigid_body.velocity = player_mut.rigid_body.velocity + move_direction * 
+                    player_mut.rigid_body.velocity = player_mut.rigid_body.velocity + move_direction *
                         Vector::new_vec3(player_mut.move_power, player_mut.jump_power, player_mut.move_power) * speed;
                 }
             }

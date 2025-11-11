@@ -182,6 +182,15 @@ impl PhysicsEngine {
         }
     }
     fn move_player_with_collision(&self, player: &mut Player, delta_time: f32) {
+        let air_resist = self.air_resistance_coefficient.powf(delta_time);
+        let lerp_f = 1.0 - 0.001_f32.powf(delta_time / self.player_horiz_const_resistance);
+        player.rigid_body.velocity = player.rigid_body.velocity * air_resist.powf(delta_time);
+        let lerp = |a: f32, b: f32, t: f32| -> f32 {
+            a + t * (b - a)
+        };
+        player.rigid_body.velocity.x = lerp(player.rigid_body.velocity.x, 0.0, lerp_f);
+        player.rigid_body.velocity.z = lerp(player.rigid_body.velocity.z, 0.0, lerp_f);
+
 
         let original_hitbox = player.rigid_body.hitbox.clone();
         match &mut player.rigid_body.hitbox {
@@ -194,7 +203,7 @@ impl PhysicsEngine {
             Hitbox::MESH(_) => panic!("player mesh colliders not yet implemented")
         }
 
-        if true { player.rigid_body.velocity = player.rigid_body.velocity + self.gravity * delta_time; }
+        player.rigid_body.velocity = player.rigid_body.velocity + self.gravity * delta_time;
         self.collide(player, 0, delta_time);
         player.rigid_body.hitbox = original_hitbox;
 
@@ -202,16 +211,6 @@ impl PhysicsEngine {
             player.camera.position.y = 20.0;
             player.rigid_body.velocity = Vector::new_empty();
         }
-
-        let air_resist = self.air_resistance_coefficient.powf(delta_time);
-        let lerp_f = 1.0 - 0.001_f32.powf(delta_time / self.player_horiz_const_resistance);
-
-        player.rigid_body.velocity = player.rigid_body.velocity * air_resist.powf(delta_time);
-        let lerp = |a: f32, b: f32, t: f32| -> f32 {
-            a + t * (b - a)
-        };
-        player.rigid_body.velocity.x = lerp(player.rigid_body.velocity.x, 0.0, lerp_f);
-        player.rigid_body.velocity.z = lerp(player.rigid_body.velocity.z, 0.0, lerp_f);
     }
     fn collide(&self, player: &mut Player, iteration_depth: i32, delta_time: f32) {
         if iteration_depth == 0 {
@@ -224,8 +223,6 @@ impl PhysicsEngine {
         }
 
         let displacement = player.rigid_body.velocity; // use velocity field as storage for remaining displacement in step
-        println!("iteration: {}", iteration_depth);
-        println!("    remaining displacement: {:?}", displacement);
 
         let max_dist = displacement.magnitude_3d() + player.skin_width;
 
@@ -237,7 +234,6 @@ impl PhysicsEngine {
             if normal.dot3(&self.gravity.normalize_3d()) < -0.35 {
                 player.grounded = true;
             }
-            println!("    hit: {:?}", hit);
 
             let displacement_direction = displacement.normalize_3d();
             let mut surface_snap_displacement = displacement_direction * (hit.distance - player.skin_width * 0.5);
@@ -248,17 +244,13 @@ impl PhysicsEngine {
             }
 
             let remaining_displacement = displacement - surface_snap_displacement;
-            println!("    remaining displacement: {:?}", remaining_displacement);
-            let remaining_displacement_rotated_onto_normal = remaining_displacement.project_onto_plane(&normal).normalize_3d()
-                * remaining_displacement.magnitude_3d();
-            println!("    remaining projected: {:?}", remaining_displacement_rotated_onto_normal);
+            let remaining_displacement_rotated_onto_normal = remaining_displacement.project_onto_plane(&normal); 
+                //TODO: do or don't do this?: .normalize_3d() * remaining_displacement.magnitude_3d();
             player.rigid_body.velocity = remaining_displacement_rotated_onto_normal; // use velocity field as storage for remaining displacement in next step
             self.collide(player, iteration_depth + 1, delta_time)
         } else {
-            println!("    terminating with step of {:?}", displacement);
             player.step(&displacement);
-            player.rigid_body.velocity = displacement.nullify_horizontal_threshold(0.001) / delta_time; // convert remaining displacement back to velocity //TODO replace horizontal only with tangential to gravity only
-            println!("    terminating with final velocity {:?}", player.rigid_body.velocity);
+            player.rigid_body.velocity = displacement / delta_time; // convert remaining displacement to velocity
         }
     }
 

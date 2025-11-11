@@ -320,6 +320,16 @@ impl Vector {
             self.w.clamp(min.w, max.w)
         )
     }
+    //</editor-fold>
+
+    //<editor-fold desc = "vector float operations"
+    pub fn add_float(&self, v: f32) -> Vector {
+        Vector::new_vec4(self.x + v, self.y + v, self.z + v, self.w + v)
+    }
+    pub fn sub_float(&self, v: f32) -> Vector {
+        Vector::new_vec4(self.x - v, self.y - v, self.z - v, self.w - v)
+    }
+
     ///* Threshold is not direction dependent.
     pub fn nullify_threshold(&self, threshold: f32) -> Vector {
         Vector::new_vec4(
@@ -337,15 +347,6 @@ impl Vector {
             if self.z.abs() > threshold { self.z } else { 0.0 },
             self.w
         )
-    }
-    //</editor-fold>
-
-    //<editor-fold desc = "vector float operations"
-    pub fn add_float(&self, v: f32) -> Vector {
-        Vector::new_vec4(self.x + v, self.y + v, self.z + v, self.w + v)
-    }
-    pub fn sub_float(&self, v: f32) -> Vector {
-        Vector::new_vec4(self.x - v, self.y - v, self.z - v, self.w - v)
     }
     //</editor-fold>
     
