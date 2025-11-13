@@ -248,13 +248,13 @@ impl Renderer {
                         self.device.cmd_draw(frame_command_buffer, 36, 1, 0, 0);
                     }
                     Hitbox::MESH(a) => {
-                        let constants = a.bvh.get_bounds_info();
+                        let constants = Bvh::get_bounds_info(&a.bvh);
                         for constant in constants.iter() {
                             self.device.cmd_push_constants(frame_command_buffer, self.hitbox_renderpass.pipeline_layout, ShaderStageFlags::ALL_GRAPHICS, 0, slice::from_raw_parts(
                                 &HitboxPushConstantSendable {
                                     view_proj: (&player.camera.projection_matrix * &player.camera.view_matrix).data,
-                                    center: ((constant.0 * a.current_scale_factor).rotate_by_quat(&rigid_body.orientation) + rigid_body.position).to_array4(),
-                                    half_extent: (constant.1 * a.current_scale_factor).to_array4(),
+                                    center: ((constant.0 * a.current_scale_multiplier).rotate_by_quat(&rigid_body.orientation) + rigid_body.position).to_array4(),
+                                    half_extent: (constant.1 * a.current_scale_multiplier).to_array4(),
                                     quat: rigid_body.orientation.to_array4(),
                                     color: Vector::new_vec4(0.0, 0.0, 1.0, 0.01).to_array4()
                                 } as *const HitboxPushConstantSendable as *const u8,

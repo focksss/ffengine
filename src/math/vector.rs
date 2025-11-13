@@ -320,6 +320,13 @@ impl Vector {
             self.w.clamp(min.w, max.w)
         )
     }
+
+    pub fn equals(&self, other: &Vector, threshold: f32) -> bool {
+        (self.x - other.x).abs() <= threshold &&
+        (self.y - other.y).abs() <= threshold && 
+        (self.z - other.z).abs() <= threshold &&
+        (self.w - other.w).abs() <= threshold
+    }
     //</editor-fold>
 
     //<editor-fold desc = "vector float operations"

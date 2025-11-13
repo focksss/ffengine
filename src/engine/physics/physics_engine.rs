@@ -31,12 +31,8 @@ impl PhysicsEngine {
                         if half_extent.x > 1.0 {1} else {0} +
                         if half_extent.y > 1.0 {1} else {0} +
                         if half_extent.z > 1.0 {1} else {0}
-                    ) > 3 {
-                        let mesh_collider = MeshCollider {
-                            mesh: mesh.clone(),
-                            current_scale_factor: node.scale,
-                            bvh: Bvh::new(mesh.clone()),
-                        };
+                    ) >- 3 {
+                        let mesh_collider = MeshCollider::new(mesh.clone(), node.scale);
                         hitbox = Hitbox::MESH(mesh_collider);
                     } else {
                         hitbox = Hitbox::OBB(BoundingBox {
@@ -215,6 +211,7 @@ impl PhysicsEngine {
     fn collide(&self, player: &mut Player, iteration_depth: i32, delta_time: f32) {
         if iteration_depth == 0 {
             player.grounded = false;
+            println!("starting velocity: {:?}", player.rigid_body.velocity);
             player.rigid_body.velocity = player.rigid_body.velocity * delta_time; // use velocity field as storage for remaining displacement in step
         }
         if iteration_depth > 10 {
@@ -223,6 +220,8 @@ impl PhysicsEngine {
         }
 
         let displacement = player.rigid_body.velocity; // use velocity field as storage for remaining displacement in step
+        // println!("iteration: {}", iteration_depth);
+        // println!("    remaining displacement: {:?}", displacement);
 
         let max_dist = displacement.magnitude_3d() + player.skin_width;
 
@@ -234,6 +233,7 @@ impl PhysicsEngine {
             if normal.dot3(&self.gravity.normalize_3d()) < -0.35 {
                 player.grounded = true;
             }
+            // println!("    hit: {:?}", hit);
 
             let displacement_direction = displacement.normalize_3d();
             let mut surface_snap_displacement = displacement_direction * (hit.distance - player.skin_width * 0.5);
@@ -244,13 +244,17 @@ impl PhysicsEngine {
             }
 
             let remaining_displacement = displacement - surface_snap_displacement;
-            let remaining_displacement_rotated_onto_normal = remaining_displacement.project_onto_plane(&normal); 
+            // println!("    remaining displacement: {:?}", remaining_displacement);
+            let remaining_displacement_rotated_onto_normal = remaining_displacement.project_onto_plane(&normal);
                 //TODO: do or don't do this?: .normalize_3d() * remaining_displacement.magnitude_3d();
+            // println!("    remaining projected: {:?}", remaining_displacement_rotated_onto_normal);
             player.rigid_body.velocity = remaining_displacement_rotated_onto_normal; // use velocity field as storage for remaining displacement in next step
             self.collide(player, iteration_depth + 1, delta_time)
         } else {
+            // println!("    terminating with step of {:?}", displacement);
             player.step(&displacement);
             player.rigid_body.velocity = displacement / delta_time; // convert remaining displacement to velocity
+            // println!("    terminating with final velocity {:?}", player.rigid_body.velocity);
         }
     }
 
@@ -471,22 +475,28 @@ impl RigidBody {
         let rot_mat_inv = rot_mat.inverse();
 
 
+        /*
+         * TODO: TRYING TO NONUNIFORMLY SCALE A CAPSULE RADIUS OR OBB HALF EXTENT WILL INTRODUCE SHEAR, BREAKING THE DEFINITION OF AN OBB/CAPSULE.
+         *       MUST IMPLEMENT CONVEX POLYHEDRA, AND CONVERT THE OBB TO A CONVEX POLYHEDRA BEFORE, AND DO THE SAME FOR THE CAPSULE BUT ELLIPSOID.
+         *       ----- OR PANIC!()
+         *       ----- OR REBUILD THE MESH COLLIDER WITH THE NONUNIFORM SCALING
+        */
         let mut center_offset = Vector::new_vec3(0.0, 0.0, 0.0);
         let body_hitbox_mesh_space = match self.hitbox {
             Hitbox::MESH(ref mesh) => panic!("mesh-mesh collision not implemented"),
             Hitbox::OBB(ref obb) => {
-                center_offset = obb.center / mesh_collider.current_scale_factor;
+                center_offset = obb.center;
                 Hitbox::OBB(BoundingBox {
                 center: Vector::new_vec3(0.0, 0.0, 0.0),
-                half_extents: obb.half_extents / mesh_collider.current_scale_factor,
+                half_extents: obb.half_extents / mesh_collider.current_scale_multiplier,
             })},
             Hitbox::CAPSULE(ref capsule) => Hitbox::CAPSULE(Capsule {
-                a: capsule.a / mesh_collider.current_scale_factor,
-                b: capsule.b / mesh_collider.current_scale_factor,
-                radius: capsule.radius, //TODO() Make capsule radius a vector
+                a: capsule.a / mesh_collider.current_scale_multiplier,
+                b: capsule.b / mesh_collider.current_scale_multiplier,
+                radius: capsule.radius / mesh_collider.current_scale_multiplier,
             }),
         };
-        let body_position_mesh_space = rot_mat_inv * ((self.position + center_offset - &mesh_body.position) / mesh_collider.current_scale_factor).unitize_w();
+        let body_position_mesh_space = rot_mat_inv * ((self.position + center_offset - &mesh_body.position) / mesh_collider.current_scale_multiplier).unitize_w();
         let body_orientation_mesh_space = self.orientation.combine(&mesh_body.orientation.conjugate());
 
 
@@ -495,12 +505,12 @@ impl RigidBody {
             &body_position_mesh_space,
             &body_orientation_mesh_space,
             &mesh_collider,
-            &mesh_collider.bvh
+            &mesh_collider.bvh.borrow()
         );
 
         if let Some(infos) = &mut contact_infos {
             for info in infos.iter_mut() {
-                info.normal = rot_mat * (info.normal * mesh_collider.current_scale_factor).unitize_w();
+                info.normal = rot_mat * info.normal.unitize_w();
             }
             return contact_infos;
         }
@@ -536,7 +546,7 @@ impl RigidBody {
                                 obb,
                                 body_position,
                                 body_orientation,
-                                Bvh::get_triangle_vertices(&*mesh_collider.mesh.borrow(), *triangle_index)
+                                Bvh::get_triangle_vertices(&*mesh_collider.mesh.borrow(), *triangle_index, Some(mesh_collider.current_scale_factor))
                             );
                             if triangle_intersection.is_some() {
                                 triangle_intersections.push(triangle_intersection.unwrap());
@@ -555,7 +565,7 @@ impl RigidBody {
                     body_position,
                     body_orientation,
                     mesh_collider,
-                    left
+                    &left.borrow()
                 ).unwrap_or(vec![])
             } else { vec![] };
             let mut right_intersections = if let Some(right) = &bvh.right_child {
@@ -564,7 +574,7 @@ impl RigidBody {
                     body_position,
                     body_orientation,
                     mesh_collider,
-                    right
+                    &right.borrow()
                 ).unwrap_or(vec![])
             } else { vec![] };
             left_intersections.append(&mut right_intersections);
@@ -848,56 +858,87 @@ pub struct BoundingBox {
     pub half_extents: Vector,
 }
 impl BoundingBox {
-    pub fn from_min_max(min: &Vector, max: &Vector) -> Self {
+    pub fn from_min_max(min: Vector, max: Vector) -> Self {
         BoundingBox {
             center: (min + max) * 0.5,
             half_extents: (max - min) * 0.5,
         }
     }
 }
+///* Does not support non-uniform scaling, as is the standard(?) with physics engines. Must call .rescale() to rescale the bvh to be nonuniform.
 pub struct MeshCollider {
     pub mesh: Rc<RefCell<Mesh>>,
-    pub current_scale_factor: Vector,
-    pub bvh: Bvh
+    pub current_scale_multiplier: f32,
+    current_scale_factor: Vector,
+    pub bvh: Rc<RefCell<Bvh>>,
+}
+impl MeshCollider {
+    pub fn new(mesh: Rc<RefCell<Mesh>>, scale: Vector) -> Self {
+        MeshCollider {
+            mesh: mesh.clone(),
+            current_scale_factor: scale,
+            current_scale_multiplier: 1.0,
+            bvh: Rc::new(RefCell::new(Bvh::new(mesh.clone(), scale))),
+        }
+    }
+
+    pub fn rescale_bvh(&mut self, new_scale: Vector) {
+        if self.bvh.borrow().active_scale_factor.equals(&new_scale, 1e-6) { return }
+        self.bvh.borrow_mut().rescale_bvh_bounds(&new_scale, &self.current_scale_factor);
+        self.current_scale_factor = new_scale;
+    }
 }
 impl Clone for MeshCollider {
     fn clone(&self) -> Self {
         Self {
             mesh: self.mesh.clone(),
             current_scale_factor: self.current_scale_factor.clone(),
+            current_scale_multiplier: self.current_scale_multiplier,
             bvh: self.bvh.clone()
         }
     }
 }
 pub struct Bvh {
+    pub active_scale_factor: Vector,
     bounds: BoundingBox,
-    left_child: Option<Arc<Bvh>>,
-    right_child: Option<Arc<Bvh>>,
+    left_child: Option<Rc<RefCell<Bvh>>>,
+    right_child: Option<Rc<RefCell<Bvh>>>,
     triangle_indices: Option<Vec<usize>>,
 }
 
 impl Bvh {
-    pub fn get_bounds_info(&self) -> Vec<(Vector, Vector)> { // centers, half extents
+    pub fn get_bounds_info(bvh: &Rc<RefCell<Bvh>>) -> Vec<(Vector, Vector)> { // centers, half extents
         let mut constants = Vec::new();
-        self.bounds_stack_add_bvh(&self, &mut constants);
+        Bvh::bounds_stack_add_bvh(&bvh, &mut constants);
         constants
     }
-    pub fn bounds_stack_add_bvh(&self, bvh: &Bvh, constants: &mut Vec<(Vector, Vector)>) {
-        if true {
-            constants.push((
-                bvh.bounds.center.clone(),
-                bvh.bounds.half_extents.clone()
-            ));
-        }
+    fn bounds_stack_add_bvh(bvh: &Rc<RefCell<Bvh>>, constants: &mut Vec<(Vector, Vector)>) {
+        let bvh = bvh.borrow();
+        constants.push((
+            bvh.bounds.center.clone(),
+            bvh.bounds.half_extents.clone()
+        ));
         if let Some(left_child) = &bvh.left_child {
-            self.bounds_stack_add_bvh(left_child, constants);
+            Bvh::bounds_stack_add_bvh(left_child, constants);
         }
         if let Some(right_child) = &bvh.right_child {
-            self.bounds_stack_add_bvh(right_child, constants);
+            Bvh::bounds_stack_add_bvh(right_child, constants);
         }
     }
 
-    pub fn new(mesh: Rc<RefCell<Mesh>>) -> Bvh {
+    pub fn rescale_bvh_bounds(&mut self, new_scale: &Vector, old_scale: &Vector) {
+        self.bounds.half_extents = (self.bounds.half_extents / old_scale) * new_scale;
+        self.bounds.center = (self.bounds.center / old_scale) * new_scale;
+        if let Some(left_child) = self.left_child.clone() {
+            left_child.borrow_mut().rescale_bvh_bounds(&new_scale, &old_scale);
+        }
+        if let Some(right_child) = self.right_child.clone() {
+            right_child.borrow_mut().rescale_bvh_bounds(&new_scale, &old_scale);
+        }
+        self.active_scale_factor = new_scale.clone();
+    }
+
+    pub fn new(mesh: Rc<RefCell<Mesh>>, scale: Vector) -> Bvh {
         let mesh_ref = mesh.borrow();
         let mut triangles = Vec::new();
 
@@ -924,14 +965,15 @@ impl Bvh {
 
         drop(mesh_ref);
         let num_tris = triangles.len();
-        Self::split(mesh, &mut triangles, 0, num_tris)
+        Self::split(mesh, &mut triangles, 0, num_tris, &scale)
     }
 
     fn split(
         mesh: Rc<RefCell<Mesh>>,
         triangles: &mut [(usize, Vector)],
         start: usize,
-        end: usize
+        end: usize,
+        scale: &Vector,
     ) -> Bvh {
         let (min, max) = Self::min_max(&mesh, triangles, start, end);
         let num_triangles = end - start;
@@ -945,7 +987,8 @@ impl Bvh {
                 .collect();
 
             return Bvh {
-                bounds: BoundingBox::from_min_max(&min, &max),
+                active_scale_factor: scale.clone(),
+                bounds: BoundingBox::from_min_max(min, max),
                 left_child: None,
                 right_child: None,
                 triangle_indices: Some(triangle_indices),
@@ -965,22 +1008,25 @@ impl Bvh {
 
         let mid = start + num_triangles / 2;
 
-        let left_child = Some(Arc::new(Self::split(
+        let left_child = Some(Rc::new(RefCell::new(Self::split(
             mesh.clone(),
             triangles,
             start,
-            mid
-        )));
+            mid,
+            scale
+        ))));
 
-        let right_child = Some(Arc::new(Self::split(
+        let right_child = Some(Rc::new(RefCell::new(Self::split(
             mesh.clone(),
             triangles,
             mid,
-            end
-        )));
+            end,
+            scale
+        ))));
 
         Bvh {
-            bounds: BoundingBox::from_min_max(&min, &max),
+            active_scale_factor: scale.clone(),
+            bounds: BoundingBox::from_min_max(min * scale, max * scale),
             left_child,
             right_child,
             triangle_indices: None,
@@ -999,7 +1045,7 @@ impl Bvh {
         let mesh_borrow = mesh.borrow();
 
         for (triangle_idx, _) in &triangles[start..end] {
-            let (v0, v1, v2) = Self::get_triangle_vertices(&mesh_borrow, *triangle_idx);
+            let (v0, v1, v2) = Self::get_triangle_vertices(&mesh_borrow, *triangle_idx, None);
 
             min = Vector::min(&min, &Vector::new_from_array(&v0.position));
             min = Vector::min(&min, &Vector::new_from_array(&v1.position));
@@ -1013,7 +1059,7 @@ impl Bvh {
         (min, max)
     }
 
-    fn get_triangle_vertices(mesh: &Mesh, triangle_index: usize) -> (Vertex, Vertex, Vertex) {
+    fn get_triangle_vertices(mesh: &Mesh, triangle_index: usize, scale_factor: Option<Vector>) -> (Vertex, Vertex, Vertex) {
         let primitive = &mesh.primitives[0];
 
         let idx0;
@@ -1036,11 +1082,22 @@ impl Bvh {
             panic!("mesh does not have indices")
         }
 
-        (
-            primitive.vertex_data[idx0].clone(),
-            primitive.vertex_data[idx1].clone(),
-            primitive.vertex_data[idx2].clone()
-        )
+        let mut v0 = primitive.vertex_data[idx0].clone();
+        let mut v1 = primitive.vertex_data[idx1].clone();
+        let mut v2 = primitive.vertex_data[idx2].clone();
+
+        if let Some(scale) = scale_factor {
+            v0.position = (Vector::new_from_array(&v0.position) * scale).to_array3();
+            v0.normal = (Vector::new_from_array(&v0.normal) * scale).normalize_3d().to_array3();
+
+            v1.position = (Vector::new_from_array(&v1.position) * scale).to_array3();
+            v1.normal = (Vector::new_from_array(&v1.normal) * scale).normalize_3d().to_array3();
+
+            v2.position = (Vector::new_from_array(&v2.position) * scale).to_array3();
+            v2.normal = (Vector::new_from_array(&v2.normal) * scale).normalize_3d().to_array3();
+        }
+
+        (v0, v1, v2)
     }
 
     fn sort_triangles_by_axis(triangles: &mut [(usize, Vector)], axis: char) {
@@ -1061,6 +1118,7 @@ impl Bvh {
 impl Clone for Bvh {
     fn clone(&self) -> Self {
         Self {
+            active_scale_factor: self.active_scale_factor.clone(),
             bounds: self.bounds.clone(),
             left_child: self.left_child.clone(),
             right_child: self.right_child.clone(),
