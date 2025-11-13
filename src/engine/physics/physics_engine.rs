@@ -142,6 +142,16 @@ impl PhysicsEngine {
 
             if !body.is_static {
                 body.velocity = body.velocity + self.gravity * delta_time;
+
+                let displacement = body.velocity * delta_time;
+                body.position = body.position + displacement;
+
+                if body.angular_velocity.magnitude_3d() > 1e-6 {
+                    let angle = body.angular_velocity.magnitude_3d() * delta_time;
+                    let axis = body.angular_velocity.normalize_3d();
+                    let rotation_quat = PhysicsEngine::axis_angle_to_quat(&axis, angle);
+                    body.orientation = body.orientation.combine(&rotation_quat).normalize_4d();
+                }
             }
         }
         for player_ref in &self.players {
@@ -160,19 +170,6 @@ impl PhysicsEngine {
                     player.rigid_body.position = player.camera.position;
 
                     self.move_player_with_collision(&mut player, delta_time);
-                }
-            }
-        }
-        for body in &mut self.rigid_bodies {
-            if !body.is_static {
-                let displacement = body.velocity * delta_time;
-                body.position = body.position + displacement;
-
-                if body.angular_velocity.magnitude_3d() > 1e-6 {
-                    let angle = body.angular_velocity.magnitude_3d() * delta_time;
-                    let axis = body.angular_velocity.normalize_3d();
-                    let rotation_quat = PhysicsEngine::axis_angle_to_quat(&axis, angle);
-                    body.orientation = body.orientation.combine(&rotation_quat).normalize_4d();
                 }
             }
         }
@@ -318,7 +315,7 @@ impl RigidBody {
                     self.hitbox = Hitbox::OBB(obb);
                 }
                 Hitbox::MESH(mesh) => {
-                    mesh.current_scale_factor = scale;
+                    mesh.rescale_bvh(scale);
                     self.position = node.world_transform * Vector::new_vec4(0.0, 0.0, 0.0, 1.0);
                 }
                 Hitbox::CAPSULE(_) => {
@@ -975,7 +972,8 @@ impl Bvh {
         end: usize,
         scale: &Vector,
     ) -> Bvh {
-        let (min, max) = Self::min_max(&mesh, triangles, start, end);
+        let (mut min, mut max) = Self::min_max(&mesh, triangles, start, end);
+        min = min * scale; max = max * scale;
         let num_triangles = end - start;
 
         const MAX_LEAF_SIZE: usize = 4;
@@ -1026,7 +1024,7 @@ impl Bvh {
 
         Bvh {
             active_scale_factor: scale.clone(),
-            bounds: BoundingBox::from_min_max(min * scale, max * scale),
+            bounds: BoundingBox::from_min_max(min, max),
             left_child,
             right_child,
             triangle_indices: None,
