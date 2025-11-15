@@ -759,7 +759,7 @@ impl Model {
             textures.push(
                 Rc::new(RefCell::new(SceneTexture {
                     source: images[texture["source"].as_usize().unwrap()].clone(),
-                    sampler: None,
+                    sampler: Sampler::null(),
                     sampler_info: samplers[texture["sampler"].as_usize().unwrap().clone()]
                 })))
         }
@@ -1409,7 +1409,7 @@ impl Model {
     pub unsafe fn cleanup(&self, base: &VkBase) { unsafe {
         for texture in &self.textures {
             let texture = texture.borrow();
-            if let Some(sampler) = texture.sampler { base.device.destroy_sampler(sampler, None); }
+            base.device.destroy_sampler(texture.sampler, None);
         }
         for image in &self.images {
             let image = image.borrow();
@@ -1515,7 +1515,7 @@ impl SceneSampler {
 
 pub struct SceneTexture {
     pub source: Rc<RefCell<Image>>,
-    pub sampler: Option<Sampler>,
+    pub sampler: Sampler,
     pub sampler_info: SceneSampler,
 }
 impl SceneTexture {
@@ -1537,7 +1537,7 @@ impl SceneTexture {
             max_lod: self.source.borrow().mip_levels as f32,
             ..Default::default()
         };
-        self.sampler = Some(base.device.create_sampler(&sampler_info, None).expect("failed to create sampler"));
+        self.sampler = base.device.create_sampler(&sampler_info, None).expect("failed to create sampler");
     } }
 }
 pub struct Material {
