@@ -47,7 +47,8 @@ fn main() { unsafe {
     // world.models[1].animations[0].repeat = true;
     // world.models[1].animations[0].start();
 
-    world.preload_model(Model::new(&PathBuf::from("resources/models/collisionTest/collisionTestNoWalls.gltf").to_str().unwrap()));
+    //world.preload_model(Model::new(&PathBuf::from("resources/models/collisionTest/collisionTestNoWalls.gltf").to_str().unwrap()));
+    world.preload_model(Model::new(&PathBuf::from("resources/models/discardTest/scene.gltf").to_str().unwrap()));
     //world.preload_model(Model::new(&PathBuf::from("resources/models/shadowTest/shadowTest.gltf").to_str().unwrap()));
     //world.models[1].transform_roots(&Vector::new_vec3(0.0, 0.0, -5.0), &Vector::new_vec(0.0), &Vector::new_vec(1.0));
     //world.preload_model(Model::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf"));
