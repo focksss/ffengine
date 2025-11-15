@@ -8,6 +8,9 @@ use crate::math::*;
 use crate::math::matrix::Matrix;
 use crate::render::render::HitboxPushConstantSendable;
 
+const MAX_ITERATIONS: usize = 5;
+const MIN_MOVE_THRESHOLD: f32 = 0.001;
+
 pub struct PhysicsEngine {
     pub gravity: Vector,
     pub air_resistance_coefficient: f32,
@@ -57,22 +60,14 @@ impl PhysicsEngine {
         self.players.push(player);
     }
 
-    fn get_world_contact(&self, body:& RigidBody) -> Option<ContactInformation> {
+    fn get_world_contacts(&self, body:& RigidBody) -> Option<Vec<ContactInformation>> {
         let mut collisions = Vec::new();
         for other_body in self.rigid_bodies.iter() {
             if let Some(new_collisions) = body.colliding_with_info(other_body) {
                 collisions.extend(new_collisions);
             }
         }
-        if collisions.len() > 0 {
-            let mut closest_contact = collisions[0];
-            for contact in collisions {
-                if contact.penetration_depth > closest_contact.penetration_depth {
-                    closest_contact = contact;
-                }
-            }
-            return Some(closest_contact)
-        }
+        if collisions.len() > 0 { return Some(collisions) }
         None
     }
 
@@ -88,11 +83,11 @@ impl PhysicsEngine {
 
         let start_pos = body.position + start_offset;
         body.position = start_pos;
-        let original_contact = self.get_world_contact(&body);
-        if let Some(collision) = original_contact {
+        let original_contacts = self.get_world_contacts(&body);
+        if let Some(collisions) = original_contacts {
             return Some(CastInformation {
                 distance: 0.0,
-                contact: collision,
+                contacts: collisions,
             });
         }
 
@@ -124,12 +119,12 @@ impl PhysicsEngine {
         let final_offset = dir * t_max;
 
         body.position = start_pos + final_offset;
-        let final_contact = self.get_world_contact(&body);
+        let final_contacts = self.get_world_contacts(&body);
         body.position = original_position;
-        if let Some(collision) = final_contact {
+        if let Some(collisions) = final_contacts {
             Some(CastInformation {
-                distance: 0.0,
-                contact: collision,
+                distance: t_max,
+                contacts: collisions,
             })
         } else {
             None
@@ -160,7 +155,7 @@ impl PhysicsEngine {
                 MovementMode::GHOST => {
                     // println!("{:?}", self.body_cast(&mut player.rigid_body, &Vector::new_empty_quat(), &Vector::new_vec3(0.0, 0.0, -1.0), 1.0));
                     ///*
-                    let all_original_collisions = self.get_world_contact(&player.rigid_body);
+                    // let all_original_collisions = self.get_world_contacts(&player.rigid_body);
                     //println!("{:?}", all_original_collisions);
                     //*/
 
@@ -185,6 +180,8 @@ impl PhysicsEngine {
         player.rigid_body.velocity.z = lerp(player.rigid_body.velocity.z, 0.0, lerp_f);
 
 
+        player.rigid_body.velocity = player.rigid_body.velocity + self.gravity * delta_time;
+        /*
         let original_hitbox = player.rigid_body.hitbox.clone();
         match &mut player.rigid_body.hitbox {
             Hitbox::OBB(obb) => {
@@ -196,9 +193,50 @@ impl PhysicsEngine {
             Hitbox::MESH(_) => panic!("player mesh colliders not yet implemented")
         }
 
-        player.rigid_body.velocity = player.rigid_body.velocity + self.gravity * delta_time;
-        self.collide(player, 0, delta_time);
+        // self.collide(player, 0, delta_time);
         player.rigid_body.hitbox = original_hitbox;
+         */
+        let mut iteration = 0;
+        player.step(&(player.rigid_body.velocity * delta_time));
+        player.grounded = false;
+
+        while iteration < MAX_ITERATIONS {
+            let contacts = self.get_world_contacts(&player.rigid_body);
+
+            if contacts.is_none() || contacts.as_ref().unwrap().is_empty() {
+                break;
+            }
+
+            let deepest = contacts.unwrap().into_iter()
+                .max_by(|a, b| a.penetration_depth.partial_cmp(&b.penetration_depth).unwrap())
+                .unwrap();
+
+            let mut normal = deepest.normal.normalize_3d();
+            if normal.dot3(&player.rigid_body.velocity) > 0.0 {
+                normal = normal * -1.0;
+            }
+
+            if normal.dot3(&self.gravity.normalize_3d()) < -0.35 {
+                player.grounded = true;
+            }
+
+            let depenetration = normal * (deepest.penetration_depth + 0.001);
+            player.step(&depenetration);
+
+            player.rigid_body.velocity = player.rigid_body.velocity
+                .project_onto_plane(&normal);
+
+            if depenetration.magnitude_3d() < MIN_MOVE_THRESHOLD {
+                break;
+            }
+
+            iteration += 1;
+        }
+
+        if iteration >= MAX_ITERATIONS {
+            println!("Resolution exceeded max iterations - stuck in geometry");
+            // Optional: Teleport player to last known good position
+        }
 
         if player.rigid_body.position.y < -20.0 {
             player.camera.position.y = 20.0;
@@ -208,7 +246,7 @@ impl PhysicsEngine {
     fn collide(&self, player: &mut Player, iteration_depth: i32, delta_time: f32) {
         if iteration_depth == 0 {
             player.grounded = false;
-            println!("starting velocity: {:?}", player.rigid_body.velocity);
+            // println!("starting velocity: {:?}", player.rigid_body.velocity);
             player.rigid_body.velocity = player.rigid_body.velocity * delta_time; // use velocity field as storage for remaining displacement in step
         }
         if iteration_depth > 10 {
@@ -222,30 +260,33 @@ impl PhysicsEngine {
 
         let max_dist = displacement.magnitude_3d() + player.skin_width;
 
-        if let Some(hit) = self.body_cast(&mut player.rigid_body, &Vector::new_empty(), &displacement, max_dist) {
-            let mut normal = hit.contact.normal.normalize_3d();
-            if normal.dot3(&displacement) > 0.0 {
-                normal = normal * -1.0;
-            }
-            if normal.dot3(&self.gravity.normalize_3d()) < -0.35 {
-                player.grounded = true;
-            }
-            // println!("    hit: {:?}", hit);
+        if let Some(hits) = self.body_cast(&mut player.rigid_body, &Vector::new_empty(), &displacement, max_dist) {
+            for contact in hits.contacts {
+                let mut normal = contact.normal.normalize_3d();
+                if normal.dot3(&displacement) > 0.0 {
+                    normal = normal * -1.0;
+                }
+                if normal.dot3(&self.gravity.normalize_3d()) < -0.35 {
+                    player.grounded = true;
+                }
+                println!("    normal: {:?}", normal);
+                println!("    depth: {:?}", contact.penetration_depth);
 
-            let displacement_direction = displacement.normalize_3d();
-            let mut surface_snap_displacement = displacement_direction * (hit.distance - player.skin_width * 0.5);
-            if surface_snap_displacement.magnitude_3d() >= player.skin_width {
-                player.step(&surface_snap_displacement);
-            } else {
-                surface_snap_displacement = Vector::new_empty();
-            }
+                let displacement_direction = displacement.normalize_3d();
+                let mut surface_snap_displacement = displacement_direction * (hits.distance - player.skin_width * 0.5);
+                if surface_snap_displacement.magnitude_3d() >= player.skin_width {
+                    player.step(&surface_snap_displacement);
+                } else {
+                    surface_snap_displacement = Vector::new_empty();
+                }
 
-            let remaining_displacement = displacement - surface_snap_displacement;
-            // println!("    remaining displacement: {:?}", remaining_displacement);
-            let remaining_displacement_rotated_onto_normal = remaining_displacement.project_onto_plane(&normal);
+                let remaining_displacement = displacement - surface_snap_displacement;
+                // println!("    remaining displacement: {:?}", remaining_displacement);
+                let remaining_displacement_rotated_onto_normal = remaining_displacement.project_onto_plane(&normal);
                 //TODO: do or don't do this?: .normalize_3d() * remaining_displacement.magnitude_3d();
-            // println!("    remaining projected: {:?}", remaining_displacement_rotated_onto_normal);
-            player.rigid_body.velocity = remaining_displacement_rotated_onto_normal; // use velocity field as storage for remaining displacement in next step
+                // println!("    remaining projected: {:?}", remaining_displacement_rotated_onto_normal);
+                player.rigid_body.velocity = remaining_displacement_rotated_onto_normal; // use velocity field as storage for remaining displacement in next step
+            }
             self.collide(player, iteration_depth + 1, delta_time)
         } else {
             // println!("    terminating with step of {:?}", displacement);
@@ -820,7 +861,7 @@ impl Default for RigidBody {
 #[derive(Debug)]
 struct CastInformation {
     distance: f32,
-    contact: ContactInformation,
+    contacts: Vec<ContactInformation>,
 }
 #[derive(Debug, Copy, Clone)]
 pub struct ContactInformation {
