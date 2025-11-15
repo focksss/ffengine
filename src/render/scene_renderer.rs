@@ -43,7 +43,7 @@ pub struct SceneRenderer {
 }
 impl SceneRenderer {
     pub unsafe fn new(base: &VkBase, world: &Scene) -> SceneRenderer { unsafe {
-        let null_tex_info = base.create_2d_texture_image(&PathBuf::from("").join("resources\\null8x.png"), true) ;
+        let null_tex_info = base.create_2d_texture_image(&PathBuf::from("").join("resources\\checker_2x2.png"), true) ;
 
         let null_texture = Texture {
             device: base.device.clone(),

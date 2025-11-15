@@ -72,7 +72,7 @@ fn main() { unsafe {
         outer_cutoff: 0.0,
     });
 
-    world.initialize(&base, MAX_FRAMES_IN_FLIGHT, true);
+    world.initialize(&base, MAX_FRAMES_IN_FLIGHT, false);
 
     let mut physics_engine = PhysicsEngine::new(&world, Vector::new_vec3(0.0, -9.8, 0.0), 0.9, 0.5);
     let controller = Arc::new(RefCell::new(Controller::new(&base.window, Vector::new_vec3(0.0, 20.0, 0.0))));
