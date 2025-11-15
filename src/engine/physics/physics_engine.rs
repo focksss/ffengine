@@ -181,7 +181,7 @@ impl PhysicsEngine {
 
 
         player.rigid_body.velocity = player.rigid_body.velocity + self.gravity * delta_time;
-        /*
+         /*
         let original_hitbox = player.rigid_body.hitbox.clone();
         match &mut player.rigid_body.hitbox {
             Hitbox::OBB(obb) => {
@@ -193,11 +193,21 @@ impl PhysicsEngine {
             Hitbox::MESH(_) => panic!("player mesh colliders not yet implemented")
         }
 
-        // self.collide(player, 0, delta_time);
+        self.collide(player, 0, delta_time);
         player.rigid_body.hitbox = original_hitbox;
          */
+
+        // /*
         let mut iteration = 0;
-        player.step(&(player.rigid_body.velocity * delta_time));
+        let dir = player.rigid_body.velocity.clone();
+        let pre_hit_result = self.body_cast(&mut player.rigid_body, &Vector::new_empty(), &dir, dir.magnitude_3d() * delta_time);
+        if let Some(hit_result) = pre_hit_result {
+            let step = (hit_result.distance - 0.001) * player.rigid_body.velocity;
+            player.step(&step);
+            player.rigid_body.velocity = player.rigid_body.velocity - step;
+        } else {
+            player.step(&(player.rigid_body.velocity * delta_time));
+        }
         player.grounded = false;
 
         while iteration < MAX_ITERATIONS {
@@ -220,7 +230,7 @@ impl PhysicsEngine {
                 player.grounded = true;
             }
 
-            let depenetration = normal * (deepest.penetration_depth + 0.001);
+            let depenetration = normal * (deepest.penetration_depth);
             player.step(&depenetration);
 
             player.rigid_body.velocity = player.rigid_body.velocity
@@ -232,11 +242,12 @@ impl PhysicsEngine {
 
             iteration += 1;
         }
-
         if iteration >= MAX_ITERATIONS {
             println!("Resolution exceeded max iterations - stuck in geometry");
             // Optional: Teleport player to last known good position
         }
+        // */
+
 
         if player.rigid_body.position.y < -20.0 {
             player.camera.position.y = 20.0;

@@ -1253,8 +1253,8 @@ impl VkBase {
 
             let sampler_info = vk::SamplerCreateInfo {
                 s_type: vk::StructureType::SAMPLER_CREATE_INFO,
-                mag_filter: vk::Filter::NEAREST,
-                min_filter: vk::Filter::NEAREST,
+                mag_filter: vk::Filter::LINEAR,
+                min_filter: vk::Filter::LINEAR,
                 address_mode_u: vk::SamplerAddressMode::REPEAT,
                 address_mode_v: vk::SamplerAddressMode::REPEAT,
                 address_mode_w: vk::SamplerAddressMode::REPEAT,

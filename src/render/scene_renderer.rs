@@ -44,7 +44,24 @@ pub struct SceneRenderer {
 impl SceneRenderer {
     pub unsafe fn new(base: &VkBase, world: &Scene) -> SceneRenderer { unsafe {
         let null_tex_info = base.create_2d_texture_image(&PathBuf::from("").join("resources\\checker_2x2.png"), true) ;
-
+        base.device.destroy_sampler(null_tex_info.0.1, None);
+        let sampler_info = vk::SamplerCreateInfo {
+            s_type: vk::StructureType::SAMPLER_CREATE_INFO,
+            mag_filter: vk::Filter::NEAREST,
+            min_filter: vk::Filter::NEAREST,
+            address_mode_u: vk::SamplerAddressMode::REPEAT,
+            address_mode_v: vk::SamplerAddressMode::REPEAT,
+            address_mode_w: vk::SamplerAddressMode::REPEAT,
+            anisotropy_enable: vk::TRUE,
+            max_anisotropy: base.pdevice_properties.limits.max_sampler_anisotropy,
+            border_color: vk::BorderColor::INT_OPAQUE_BLACK,
+            unnormalized_coordinates: vk::FALSE,
+            mipmap_mode: vk::SamplerMipmapMode::LINEAR,
+            mip_lod_bias: 0.0,
+            min_lod: 0.0,
+            max_lod: null_tex_info.2 as f32,
+            ..Default::default()
+        };
         let null_texture = Texture {
             device: base.device.clone(),
             image: null_tex_info.1.0,
@@ -57,7 +74,7 @@ impl SceneRenderer {
             samples: vk::SampleCountFlags::TYPE_1,
             is_depth: false,
         };
-        let null_tex_sampler = null_tex_info.0.1;
+        let null_tex_sampler = base.device.create_sampler(&sampler_info, None).expect("failed to create sampler");
 
         let (
             geometry_renderpass,
