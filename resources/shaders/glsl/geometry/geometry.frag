@@ -100,9 +100,5 @@ void main() {
 
     if (base_color.a < mat.alpha_cutoff) {
         discard;
-        frag_albedo.a = 0.0;
-        frag_metallic_roughness.a = 0.0;
-        frag_extra_material_properties.a = 0.0;
-        frag_view_normal.a = 0.0;
     }
 }

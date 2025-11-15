@@ -722,7 +722,7 @@ impl SceneRenderer {
             .pipeline_vertex_input_state(geometry_vertex_input_state_info)
             .pipeline_rasterization_state(rasterization_info)
             .pipeline_depth_stencil_state(infinite_reverse_depth_state_info)
-            .pipeline_color_blend_state_create_info(color_blend_state) };
+            .pipeline_color_blend_state_create_info(null_blend_state) };
         let geometry_renderpass = Renderpass::new(geometry_renderpass_create_info);
 
         let shadow_renderpass_create_info = { RenderpassCreateInfo::new(base)
