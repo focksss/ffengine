@@ -167,30 +167,25 @@ impl SceneRenderer {
                     sampler,
                     image_view: geometry_renderpass.pass.borrow().textures[current_frame][0].image_view,
                     image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                }, // material
+                }, // albedo
                 vk::DescriptorImageInfo {
                     sampler,
                     image_view: geometry_renderpass.pass.borrow().textures[current_frame][1].image_view,
                     image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                }, // albedo
+                }, // metallic roughness
                 vk::DescriptorImageInfo {
                     sampler,
                     image_view: geometry_renderpass.pass.borrow().textures[current_frame][2].image_view,
                     image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                }, // metallic roughness
-                vk::DescriptorImageInfo {
-                    sampler,
-                    image_view: geometry_renderpass.pass.borrow().textures[current_frame][3].image_view,
-                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                 }, // extra properties
                 vk::DescriptorImageInfo {
                     sampler,
-                    image_view: geometry_renderpass.pass.borrow().textures[current_frame][5].image_view,
+                    image_view: geometry_renderpass.pass.borrow().textures[current_frame][4].image_view,
                     image_layout: vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
                 }, // depth
                 vk::DescriptorImageInfo {
                     sampler,
-                    image_view: geometry_renderpass.pass.borrow().textures[current_frame][4].image_view,
+                    image_view: geometry_renderpass.pass.borrow().textures[current_frame][3].image_view,
                     image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                 }, // view normal
                 vk::DescriptorImageInfo {
@@ -217,12 +212,12 @@ impl SceneRenderer {
             let image_infos = [
                 vk::DescriptorImageInfo {
                     sampler,
-                    image_view: geometry_renderpass.pass.borrow().textures[current_frame][5].image_view,
+                    image_view: geometry_renderpass.pass.borrow().textures[current_frame][4].image_view,
                     image_layout: vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
                 }, // geometry depth
                 vk::DescriptorImageInfo {
                     sampler,
-                    image_view: geometry_renderpass.pass.borrow().textures[current_frame][4].image_view,
+                    image_view: geometry_renderpass.pass.borrow().textures[current_frame][3].image_view,
                     image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                 }, // view normal
             ];
@@ -313,12 +308,12 @@ impl SceneRenderer {
                 }, // downsampled normal + depth
                 vk::DescriptorImageInfo {
                     sampler,
-                    image_view: geometry_renderpass.pass.borrow().textures[current_frame][4].image_view,
+                    image_view: geometry_renderpass.pass.borrow().textures[current_frame][3].image_view,
                     image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                 }, // g_normal
                 vk::DescriptorImageInfo {
                     sampler,
-                    image_view: geometry_renderpass.pass.borrow().textures[current_frame][5].image_view,
+                    image_view: geometry_renderpass.pass.borrow().textures[current_frame][4].image_view,
                     image_layout: vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
                 }, // geometry depth
             ];
@@ -375,7 +370,7 @@ impl SceneRenderer {
         //<editor-fold desc = "passes">
         let ssao_res_color_tex_create_info = TextureCreateInfo::new(base).format(Format::R8_UNORM).resolution_denominator((1.0 / SSAO_RESOLUTION_MULTIPLIER) as u32);
         let geometry_pass_create_info = PassCreateInfo::new(base)
-            .add_color_attachment_info(TextureCreateInfo::new(base).format(Format::R16_SINT)) // material
+            // .add_color_attachment_info(TextureCreateInfo::new(base).format(Format::R16_SINT)) // material
             .add_color_attachment_info(TextureCreateInfo::new(base).format(Format::R8G8B8A8_UNORM)) // albedo
             .add_color_attachment_info(TextureCreateInfo::new(base).format(Format::R8G8B8A8_UNORM)) // metallic roughness
             .add_color_attachment_info(TextureCreateInfo::new(base).format(Format::R8G8B8A8_UNORM)) // extra properties
@@ -699,9 +694,23 @@ impl SceneRenderer {
             alpha_blend_op: vk::BlendOp::ADD,
             color_write_mask: vk::ColorComponentFlags::RGBA,
         };
-        let null_blend_states = [null_blend_attachment; 5];
+        let null_blend_states = [null_blend_attachment; 4];
         let null_blend_state = vk::PipelineColorBlendStateCreateInfo::default()
             .attachments(&null_blend_states);
+
+        let color_blend_attachment_states = [vk::PipelineColorBlendAttachmentState {
+            blend_enable: vk::TRUE,
+            src_color_blend_factor: vk::BlendFactor::SRC_ALPHA,
+            dst_color_blend_factor: vk::BlendFactor::ONE_MINUS_SRC_ALPHA,
+            color_blend_op: vk::BlendOp::ADD,
+            src_alpha_blend_factor: vk::BlendFactor::ONE,
+            dst_alpha_blend_factor: vk::BlendFactor::ONE_MINUS_SRC_ALPHA,
+            alpha_blend_op: vk::BlendOp::ADD,
+            color_write_mask: vk::ColorComponentFlags::RGBA,
+        }; 4];
+        let color_blend_state = vk::PipelineColorBlendStateCreateInfo::default()
+            .logic_op(vk::LogicOp::CLEAR)
+            .attachments(&color_blend_attachment_states);
         //</editor-fold>
 
         let geometry_renderpass_create_info = { RenderpassCreateInfo::new(base)
@@ -713,7 +722,7 @@ impl SceneRenderer {
             .pipeline_vertex_input_state(geometry_vertex_input_state_info)
             .pipeline_rasterization_state(rasterization_info)
             .pipeline_depth_stencil_state(infinite_reverse_depth_state_info)
-            .pipeline_color_blend_state_create_info(null_blend_state) };
+            .pipeline_color_blend_state_create_info(color_blend_state) };
         let geometry_renderpass = Renderpass::new(geometry_renderpass_create_info);
 
         let shadow_renderpass_create_info = { RenderpassCreateInfo::new(base)

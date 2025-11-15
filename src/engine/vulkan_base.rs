@@ -321,6 +321,7 @@ impl VkBase {
                 shader_sampled_image_array_dynamic_indexing: vk::TRUE,
                 shader_storage_image_array_dynamic_indexing: vk::TRUE,
                 geometry_shader: vk::TRUE,
+                independent_blend: vk::TRUE,
                 ..Default::default()
             };
             let priorities = [1.0];

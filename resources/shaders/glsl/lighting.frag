@@ -8,15 +8,14 @@ const float PI = 3.141592;
 layout (location = 0) out vec4 uFragColor;
 
 layout (location = 0) in vec2 uv;
-layout(set = 0, binding = 0) uniform sampler2D g_material;
-layout(set = 0, binding = 1) uniform sampler2D g_albedo;
-layout(set = 0, binding = 2) uniform sampler2D g_metallic_roughness;
-layout(set = 0, binding = 3) uniform sampler2D g_extra_properties;
-layout(set = 0, binding = 4) uniform sampler2D g_depth;
-layout(set = 0, binding = 5) uniform sampler2D g_view_normal;
+layout(set = 0, binding = 0) uniform sampler2D g_albedo;
+layout(set = 0, binding = 1) uniform sampler2D g_metallic_roughness;
+layout(set = 0, binding = 2) uniform sampler2D g_extra_properties;
+layout(set = 0, binding = 3) uniform sampler2D g_depth;
+layout(set = 0, binding = 4) uniform sampler2D g_view_normal;
 
-layout(set = 0, binding = 6) uniform sampler2DArray shadowmap;
-layout(set = 0, binding = 7) uniform sampler2D ssao_tex;
+layout(set = 0, binding = 5) uniform sampler2DArray shadowmap;
+layout(set = 0, binding = 6) uniform sampler2D ssao_tex;
 
 layout(push_constant) uniform push_constants {
     mat4 inverse_view;
