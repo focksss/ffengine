@@ -155,6 +155,13 @@ impl Vector {
         axis.set_component(&mut ret, v);
         ret
     }
+
+    pub fn max_of(&self) -> f32 {
+        self.x.max(self.y).max(self.z).max(self.w)
+    }
+    pub fn min_of(&self) -> f32 {
+        self.x.min(self.y).min(self.z).min(self.w)
+    }
     //</editor-fold>
 
     //<editor-fold desc = "vector vector operations">

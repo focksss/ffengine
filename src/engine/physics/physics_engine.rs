@@ -32,25 +32,18 @@ impl PhysicsEngine {
             players: Vec::new(),
         }
     }
-    pub fn add_all_nodes_from_model(&mut self, world: &Scene, model_index: usize, gen_mesh_hitbox: bool) {
+    /// For hitbox type:
+    /// * 0 = OBB
+    /// * 1 = Mesh
+    /// * 2 = Capsule
+    /// * 3 = Sphere
+    pub fn add_all_nodes_from_model(&mut self, world: &Scene, model_index: usize, hitbox_type: usize) {
+        assert!(hitbox_type < 4);
         let model = &world.models[model_index];
         for (node_index, node) in model.nodes.iter().enumerate() {
-            if let Some(mesh) = &node.mesh {
-                let (min, max) = mesh.borrow().get_min_max();
-                let half_extent = (max - min) * 0.5 * node.scale;
-
-                let hitbox;
-                if gen_mesh_hitbox {
-                    let mesh_collider = MeshCollider::new(mesh.clone(), node.scale);
-                    hitbox = Hitbox::MESH(mesh_collider);
-                } else {
-                    hitbox = Hitbox::OBB(BoundingBox {
-                        center: (min + max) * 0.5,
-                        half_extents: half_extent,
-                    });
-                }
-
-                let rb = RigidBody::new_from_node(node, Some((model_index, node_index, (min, max))), hitbox);
+            if let Some(hitbox) = Hitbox::get_hitbox_from_node(node, hitbox_type) {
+                let mut rb = RigidBody::new_from_node(node, Some((model_index, node_index)), hitbox);
+                rb.update_this_according_to_coupled(world);
                 self.rigid_bodies.push(rb);
             }
         }
@@ -183,6 +176,21 @@ impl PhysicsEngine {
                     let j = normal * (1.0 + restitution) * v_diff.dot3(&normal) / (s_im + angular_factor);
                     body_a.apply_impulse(-1.0 * j, pt_on_a);
                     body_b.apply_impulse(j, pt_on_b);
+
+                    let friction = body_a.friction_coefficient * body_b.friction_coefficient;
+                    let velocity_normal = normal * normal.dot3(&v_diff);
+                    let velocity_tangent = v_diff - velocity_normal;
+
+                    let relative_tangent_vel = velocity_tangent.normalize_3d();
+                    let inertia_a = (inv_inertia_a * ra.cross(&relative_tangent_vel)).cross(&ra);
+                    let inertia_b = (inv_inertia_b * rb.cross(&relative_tangent_vel)).cross(&rb);
+                    let inv_inertia = (inertia_a + inertia_b).dot3(&relative_tangent_vel);
+
+                    let mass_reduc = 1.0 / (s_im + inv_inertia);
+                    let friction_impulse = velocity_tangent * mass_reduc * friction;
+
+                    body_a.apply_impulse(-1.0 * friction_impulse, pt_on_a);
+                    body_b.apply_impulse(friction_impulse, pt_on_b);
 
                     let t_a = im_a / s_im;
                     let t_b = im_b / s_im;
@@ -372,7 +380,7 @@ impl PhysicsEngine {
 }
 
 pub struct RigidBody {
-    pub coupled_with_scene_object: Option<(usize, usize, (Vector, Vector))>, // model index, node index, (min, max)
+    pub coupled_with_scene_object: Option<(usize, usize)>, // model index, node index
 
     pub hitbox: Hitbox,
     is_static: bool,
@@ -395,7 +403,7 @@ pub struct RigidBody {
 }
 
 impl RigidBody {
-    pub fn new_from_node(node: &Node, couple_with_node: Option<(usize, usize, (Vector, Vector))>, hitbox: Hitbox) -> Self {
+    pub fn new_from_node(node: &Node, couple_with_node: Option<(usize, usize)>, hitbox: Hitbox) -> Self {
         let mut body = RigidBody::default();
         body.coupled_with_scene_object = couple_with_node;
         body.position = node.world_transform * Vector::new_vec4(0.0, 0.0, 0.0, 1.0);
@@ -408,34 +416,14 @@ impl RigidBody {
         if let Some(coupled_object) = self.coupled_with_scene_object {
             let node = &world.models[coupled_object.0].nodes[coupled_object.1];
 
-            let scale = node.world_transform.extract_scale();
             self.position = node.world_transform * Vector::new_vec4(0.0, 0.0, 0.0, 1.0);
             self.orientation = node.world_transform.extract_quaternion();
-            match &mut self.hitbox {
-                Hitbox::OBB(_) => {
-                    let local_center = (coupled_object.2.0 + coupled_object.2.1) * 0.5;
-                    let obb = BoundingBox {
-                        center: local_center * scale,
-                        half_extents: (coupled_object.2.1 - coupled_object.2.0) * 0.5 * scale,
-                    };
-                    self.hitbox = Hitbox::OBB(obb);
-                }
-                Hitbox::MESH(mesh) => {
-                    mesh.rescale_bvh(scale);
-                    self.position = node.world_transform * Vector::new_vec4(0.0, 0.0, 0.0, 1.0);
-                }
-                Hitbox::CAPSULE(_) => {
-                    let local_center = (coupled_object.2.0 + coupled_object.2.1) * 0.5;
-                    let half_extents = (coupled_object.2.1 - coupled_object.2.0) * 0.5 * scale;
-                    let radius = Vector::new_vec3(half_extents.x, 0.0, half_extents.z).magnitude_3d();
-                    let capsule = Capsule {
-                        a: Vector::new_vec3(local_center.x, coupled_object.2.0.y + radius, local_center.z),
-                        b: Vector::new_vec3(local_center.x, coupled_object.2.1.y - radius, local_center.z),
-                        radius
-                    };
-                    self.hitbox = Hitbox::CAPSULE(capsule);
-                }
-            }
+            self.hitbox = Hitbox::get_hitbox_from_node(node, match self.hitbox {
+                Hitbox::OBB(_) => 0,
+                Hitbox::MESH(_) => 1,
+                Hitbox::CAPSULE(_) => 2,
+                Hitbox::SPHERE(_) => 3,
+            }).unwrap();
             self.update_shape_properties();
         }
     }
@@ -486,6 +474,17 @@ impl RigidBody {
 
                 self.center_of_mass = (capsule.a + capsule.b) * 0.5
             }
+            Hitbox::SPHERE(sphere) => {
+                let r2 = sphere.radius * sphere.radius;
+                let c = 2.0 / 5.0;
+                let v = c * r2;
+                self.inertia_tensor = Matrix::new();
+                self.inertia_tensor.set(0, 0, v);
+                self.inertia_tensor.set(1, 1, v);
+                self.inertia_tensor.set(2, 2, v);
+
+                self.center_of_mass = sphere.center
+            }
         }
         self.inv_inertia_tensor = self.inertia_tensor.inverse3().mul_float_into3(self.inv_mass);
     }
@@ -513,8 +512,6 @@ impl RigidBody {
         let d_theta = self.angular_velocity * delta_time;
         let dq = Vector::axis_angle_quat(&d_theta, d_theta.magnitude_3d());
         self.orientation = dq.combine(&self.orientation).normalize_4d();
-
-        println!("orientation: {:?}, dq: {:?}, dtheta {:?}", self.orientation, dq, d_theta);
 
         self.position = c + Matrix::new_rotate_quaternion_vec4(&dq) * c_to_pos;
     }
@@ -563,6 +560,8 @@ impl RigidBody {
                     Some(vec![info.unwrap()])
                 } else { None }
             }
+            (Hitbox::OBB(_), Hitbox::SPHERE(_)) => { panic!("obb-sphere intersections not yet implemented") }
+
             (Hitbox::MESH(_), Hitbox::MESH(_)) => {
                 other.intersects_mesh(self)
             }
@@ -572,6 +571,8 @@ impl RigidBody {
             (Hitbox::MESH(_), Hitbox::CAPSULE(_)) => {
                 other.intersects_mesh(self)
             }
+            (Hitbox::MESH(_), Hitbox::SPHERE(_)) => { panic!("mesh-sphere intersections not yet implemented") }
+
             (Hitbox::CAPSULE(_), Hitbox::CAPSULE(_)) => {
                 panic!("capsule-capsule intersections not yet implemented");
             }
@@ -587,7 +588,41 @@ impl RigidBody {
             (Hitbox::CAPSULE(_), Hitbox::MESH(_)) => {
                 self.intersects_mesh(other)
             }
+            (Hitbox::CAPSULE(_), Hitbox::SPHERE(_)) => { panic!("capsule-sphere intersections not yet implemented") }
+
+            (Hitbox::SPHERE(a), Hitbox::SPHERE(b)) => {
+                Self::sphere_intersects_sphere(a, b, &self.position, &other.position, &self.orientation, &other.orientation)
+            }
+            (Hitbox::SPHERE(a), Hitbox::OBB(_)) => { panic!("obb-sphere intersections not yet implemented") }
+            (Hitbox::SPHERE(_), Hitbox::MESH(_)) => { panic!("mesh-sphere intersections not yet implemented") }
+            (Hitbox::SPHERE(_), Hitbox::CAPSULE(_)) => { panic!("capsule-capsule intersections not yet implemented") }
         }
+    }
+
+    pub fn sphere_intersects_sphere(
+        a: &Sphere, b: &Sphere,
+        a_position: &Vector,
+        b_position: &Vector,
+        a_orientation: &Vector, b_orientation: &Vector) -> Option<Vec<ContactInformation>> {
+        let p_a = a.center.rotate_by_quat(a_orientation) + a_position;
+        let p_b = b.center.rotate_by_quat(b_orientation) + b_position;
+
+        let d = p_b - p_a;
+        let d_m = d.magnitude_3d();
+        let n = if d_m > 1e-6 { d / d_m } else { Vector::new_vec3(0.0, 1.0, 0.0) };
+
+        if d_m > a.radius + b.radius { return None }
+
+        let pt_on_a = p_a + n * a.radius;
+        let pt_on_b = p_b - n * b.radius;
+
+        let penetration = a.radius + b.radius - d_m;
+
+        Some(vec![ContactInformation {
+            points: vec![(pt_on_a, pt_on_b, n, penetration)],
+            normal: n,
+            penetration_depth: penetration
+        }])
     }
     pub fn obb_intersects_capsule(
         a_bounds: &BoundingBox, a_orientation: &Vector, a_position: &Vector,
@@ -691,6 +726,7 @@ impl RigidBody {
                 b: capsule.b / mesh_collider.current_scale_multiplier,
                 radius: capsule.radius / mesh_collider.current_scale_multiplier,
             }),
+            Hitbox::SPHERE(ref sphere) => panic!("sphere-mesh collision not implemented"),
         };
         let body_position_mesh_space = rot_mat_inv * ((self.position + center_offset - &mesh_body.position) / mesh_collider.current_scale_multiplier).unitize_w();
         let body_orientation_mesh_space = self.orientation.combine(&mesh_body.orientation.conjugate());
@@ -731,6 +767,7 @@ impl RigidBody {
                 &body_position, &Vector::new_empty_quat(),
                 &body_orientation, &Vector::new_empty_quat()
             ) }
+            Hitbox::SPHERE(sphere) => { panic!("sphere-obb collision not implemented"); }
         };
         if intersection.is_some() {
             if let Some(triangle_indices) = &bvh.triangle_indices {
@@ -751,6 +788,7 @@ impl RigidBody {
                     }
                     Hitbox::CAPSULE(capsule) => { panic!("capsule-triangle collision not implemented"); }
                     Hitbox::MESH(mesh) => { panic!("mesh-triangle collision not implemented"); }
+                    Hitbox::SPHERE(sphere) => { panic!("sphere-triangle collision not implemented"); }
                 }
 
                 return Some(triangle_intersections);
@@ -1003,7 +1041,7 @@ impl Default for RigidBody {
             }),
             is_static: true,
             restitution_coefficient: 0.0,
-            friction_coefficient: 0.0,
+            friction_coefficient: 0.5,
             mass: 999.0,
             inv_mass: 0.0,
             force: Default::default(),
@@ -1033,6 +1071,51 @@ pub enum Hitbox {
     OBB(BoundingBox),
     MESH(MeshCollider),
     CAPSULE(Capsule),
+    SPHERE(Sphere),
+}
+impl Hitbox {
+    fn get_hitbox_from_node(node: &Node, hitbox_type: usize) -> Option<Hitbox> {
+        assert!(hitbox_type < 4);
+        if let Some(mesh) = &node.mesh {
+            let scale = node.world_transform.extract_scale();
+            let (min, max) = mesh.borrow().get_min_max();
+            let half_extent = (max - min) * 0.5 * scale;
+
+            return Some(match hitbox_type {
+                0 => {
+                    Hitbox::OBB(BoundingBox {
+                        center: (min + max) * scale * 0.5,
+                        half_extents: half_extent,
+                    })
+                }
+                1 => {
+                    let mesh_collider = MeshCollider::new(mesh.clone(), scale);
+                    Hitbox::MESH(mesh_collider)
+                }
+                2 => {
+                    let mid = (min + max) * 0.5 * scale;
+                    let radius = half_extent.with('y', 0.0).magnitude_3d();
+
+                    let min_s = min * scale;
+                    let max_s = max * scale;
+
+                    Hitbox::CAPSULE(Capsule {
+                        a: Vector::new_vec3(mid.x, max_s.y - radius, mid.z),
+                        b: Vector::new_vec3(mid.x, min_s.y + radius, mid.z),
+                        radius,
+                    })
+                }
+                3 => {
+                    Hitbox::SPHERE(Sphere {
+                        center: (min + max) * scale * 0.5,
+                        radius: half_extent.max_of(),
+                    })
+                }
+                _ => unreachable!()
+            })
+        }
+        None
+    }
 }
 impl Clone for Hitbox {
     fn clone(&self) -> Self {
@@ -1040,6 +1123,7 @@ impl Clone for Hitbox {
             Hitbox::OBB(bounding_box) => Hitbox::OBB(bounding_box.clone()),
             Hitbox::MESH(collider) => Hitbox::MESH(collider.clone()),
             Hitbox::CAPSULE(capsule) => Hitbox::CAPSULE(capsule.clone()),
+            Hitbox::SPHERE(sphere) => Hitbox::SPHERE(sphere.clone()),
         }
     }
 }
@@ -1047,6 +1131,11 @@ impl Clone for Hitbox {
 pub struct Capsule {
     pub a: Vector,
     pub b: Vector,
+    pub radius: f32,
+}
+#[derive(Debug, Copy, Clone)]
+pub struct Sphere {
+    pub center: Vector,
     pub radius: f32,
 }
 #[derive(Debug, Copy, Clone)]

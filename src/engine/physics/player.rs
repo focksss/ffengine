@@ -1,4 +1,4 @@
-use crate::engine::physics::physics_engine::{BoundingBox, Capsule, Hitbox, RigidBody};
+use crate::engine::physics::physics_engine::{BoundingBox, Capsule, Hitbox, RigidBody, Sphere};
 use crate::engine::world::camera::Camera;
 use crate::math::Vector;
 
@@ -24,10 +24,16 @@ impl Player {
         let min = camera.position + eye_to_foot;
         let hitbox_height = max.y - min.y;
         let radius = (Vector::new_vec3(max.x, 0.0, max.z) - Vector::new_vec3(min.x, 0.0, min.z)).magnitude_3d();
-        // /*
+         /*
         rigid_body.hitbox = Hitbox::OBB(BoundingBox {
              half_extents: (max - min) * 0.5,
              center: Vector::new_vec3(0.0, -hitbox_height * 0.5 + eye_to_head.y, 0.0),
+        });
+         */
+        // /*
+        rigid_body.hitbox = Hitbox::SPHERE(Sphere {
+            center: Vector::new_vec3(0.0, -hitbox_height * 0.5 + eye_to_head.y, 0.0),
+            radius,
         });
         // */
         /*
