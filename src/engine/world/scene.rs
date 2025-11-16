@@ -609,7 +609,7 @@ impl Sun {
         frustum_center.x = frustum_center.x.floor();
         frustum_center.y = frustum_center.y.floor();
         frustum_center.w = 1.0;
-        frustum_center = temp_view.inverse() * frustum_center;
+        frustum_center = temp_view.inverse4() * frustum_center;
 
         let view = Matrix::new_look_at(
             &(frustum_center - (self.vector * 2.0 * radius)),

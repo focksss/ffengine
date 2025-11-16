@@ -79,7 +79,7 @@ fn main() { unsafe {
     physics_engine.add_all_nodes_from_model(&world, 0, false);
     physics_engine.rigid_bodies[0].set_static(false);
     physics_engine.rigid_bodies[0].set_mass(1.0);
-    physics_engine.rigid_bodies[0].position = Vector::new_vec3(0.0, 10.0, 0.0);
+    physics_engine.rigid_bodies[0].position = Vector::new_vec3(0.5, 10.0, -0.5);
     // physics_engine.rigid_bodies[0].angular_velocity = Vector::new_vec3(0.0, 1.0, 0.0);
 
 

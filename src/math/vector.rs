@@ -68,6 +68,18 @@ impl Vector {
             }
         }
     }
+
+    pub fn axis_angle_quat(n: &Vector, theta: f32) -> Vector {
+        let half_angle = theta * 0.5;
+        let half_sine = half_angle.sin();
+        let a = n.normalize_3d();
+        Vector::new_vec4(
+            a.x * half_sine,
+            a.y * half_sine,
+            a.z * half_sine,
+            half_angle.cos(),
+        )
+    }
     //</editor-fold>
 
     //<editor-fold desc = "to array">

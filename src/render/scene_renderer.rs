@@ -937,7 +937,7 @@ impl SceneRenderer {
         let ubo = SSAOPassUniformData {
             samples: self.ssao_kernal,
             projection: player_camera.projection_matrix.data,
-            inverse_projection: player_camera.projection_matrix.inverse().data,
+            inverse_projection: player_camera.projection_matrix.inverse4().data,
             radius: 1.5,
             width: (self.ssao_renderpass.viewport.width * SSAO_RESOLUTION_MULTIPLIER) as i32,
             height: (self.ssao_renderpass.viewport.height * SSAO_RESOLUTION_MULTIPLIER) as i32,
@@ -954,8 +954,8 @@ impl SceneRenderer {
             projection: player_camera.projection_matrix.data,
         };
         let camera_inverse_constants = CameraMatrixUniformData {
-            view: player_camera.view_matrix.inverse().data,
-            projection: player_camera.projection_matrix.inverse().data,
+            view: player_camera.view_matrix.inverse4().data,
+            projection: player_camera.projection_matrix.inverse4().data,
         };
 
         let radius = 20;

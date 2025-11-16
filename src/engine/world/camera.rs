@@ -117,7 +117,7 @@ impl Camera {
     }
 
     pub fn get_frustum_corners_with_near_far(&self, near: f32, far: f32) -> [Vector; 8] {
-        let inverse_view_projection = (Matrix::new_projection(self.fov_y.to_radians(), self.aspect_ratio, near, far) * self.view_matrix).inverse();
+        let inverse_view_projection = (Matrix::new_projection(self.fov_y.to_radians(), self.aspect_ratio, near, far) * self.view_matrix).inverse4();
         let mut corners = [
             Vector::new_vec4(-1.0,1.0,0.0, 1.0),
             Vector::new_vec4(1.0,1.0,0.0, 1.0),

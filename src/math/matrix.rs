@@ -50,24 +50,11 @@ impl Matrix {
             ],
         }
     }
+
+
     //</editor-fold>
-
     //<editor-fold desc ="matrix operations">
-    pub fn inverse(&self) -> Matrix {
-        let det = self.determinant();
-        if det.abs() < f32::EPSILON {
-            panic!("Matrix is not invertible (determinant is zero)");
-        }
-
-        let adjugate = self.adjugate();
-        let mut result = Matrix::new_empty();
-        for i in 0..16 {
-            result.data[i] = adjugate.data[i] / det;
-        }
-        result
-    }
-
-    pub fn determinant(&self) -> f32 {
+    pub fn determinant4(&self) -> f32 {
         let m = &self.data;
 
         let subfactor00 = m[10] * m[15] - m[11] * m[14];
@@ -82,8 +69,7 @@ impl Matrix {
             + m[2] * (m[4] * subfactor01 - m[5] * subfactor03 + m[7] * subfactor05)
             - m[3] * (m[4] * subfactor02 - m[5] * subfactor04 + m[6] * subfactor05)
     }
-
-    fn adjugate(&self) -> Matrix {
+    fn adjugate4(&self) -> Matrix {
         let mut cofactors = [0.0f32; 16];
 
         for row in 0..4 {
@@ -95,6 +81,71 @@ impl Matrix {
         }
 
         Matrix::new_manual(cofactors)
+    }
+    pub fn inverse4(&self) -> Matrix {
+        let det = self.determinant4();
+        if det.abs() < f32::EPSILON {
+            panic!("Matrix is not invertible (determinant is zero)");
+        }
+
+        let adjugate = self.adjugate4();
+        let mut result = Matrix::new_empty();
+        for i in 0..16 {
+            result.data[i] = adjugate.data[i] / det;
+        }
+        result
+    }
+    pub fn transpose4(&self) -> Matrix {
+        let mut result = Matrix::new_empty();
+        for i in 0..4 {
+            for j in 0..4 {
+                result.data[i * 4 + j] = self.data[j * 4 + i];
+            }
+        }
+        result
+    }
+
+    pub fn determinant3(&self) -> f32 {
+        let m = &self.data;
+        m[0] * (m[5]*m[10] - m[6]*m[9])
+        - m[1] * (m[4]*m[10] - m[6]*m[8])
+        + m[2] * (m[4]*m[9] - m[5]*m[8])
+    }
+    pub fn adjugate3(&self) -> Matrix {
+        let m = &self.data;
+        let mut result = Matrix::new();
+
+        result.set(0, 0,  m[5]*m[10] - m[6]*m[9]);
+        result.set(0, 1, -(m[1]*m[10] - m[2]*m[9]));
+        result.set(0, 2,  m[1]*m[6]  - m[2]*m[5]);
+
+        result.set(1, 0, -(m[4]*m[10] - m[6]*m[8]));
+        result.set(1, 1,  m[0]*m[10] - m[2]*m[8]);
+        result.set(1, 2, -(m[0]*m[6]  - m[2]*m[4]));
+
+        result.set(2, 0,  m[4]*m[9]  - m[5]*m[8]);
+        result.set(2, 1, -(m[0]*m[9] - m[1]*m[8]));
+        result.set(2, 2,  m[0]*m[5]  - m[1]*m[4]);
+
+        result.set(3, 3, 1.0);
+
+        result
+    }
+    pub fn inverse3(&self) -> Matrix {
+        let det = self.determinant3();
+        if det.abs() < f32::EPSILON {
+            panic!("3x3 block is not invertible");
+        }
+        self.adjugate3().mul_float_into3(1.0 / det)
+    }
+    pub fn transpose3(&self) -> Matrix {
+        let mut result = Matrix::new_empty();
+        for i in 0..3 {
+            for j in 0..3 {
+                result.data[i * 4 + j] = self.data[j * 4 + i];
+            }
+        }
+        result
     }
 
     fn minor(&self, row: usize, col: usize) -> f32 {
@@ -112,16 +163,6 @@ impl Matrix {
         sub[0] * (sub[4] * sub[8] - sub[5] * sub[7])
             - sub[1] * (sub[3] * sub[8] - sub[5] * sub[6])
             + sub[2] * (sub[3] * sub[7] - sub[4] * sub[6])
-    }
-
-    pub fn transpose(&self) -> Matrix {
-        let mut result = Matrix::new_empty();
-        for i in 0..4 {
-            for j in 0..4 {
-                result.data[i * 4 + j] = self.data[j * 4 + i];
-            }
-        }
-        result
     }
 
     pub fn extract_quaternion(&self) -> Vector {
@@ -179,6 +220,13 @@ impl Matrix {
 
         Vector::new_vec3(scale_x, scale_y, scale_z)
     }
+
+    pub fn set(&mut self, row: usize, col: usize, v: f32) {
+        self.data[col * 4 + row] = v;
+    }
+    pub fn get(&self, row: usize, col: usize) -> f32 {
+        self.data[col * 4 + row]
+    }
     //</editor-fold>
 
     //<editor-fold desc = "matrix matrix operations">
@@ -195,6 +243,23 @@ impl Matrix {
     }
     pub fn set_and_mul_mat4(&mut self, other: &Matrix) {
         self.data = self.mul_mat4(other).data;
+    }
+
+    pub fn mul_float(&self, v: f32) -> Matrix {
+        let mut result = self.clone();
+        result.set(0, 0, result.get(0, 0) * v);
+        result.set(1, 1, result.get(1, 1) * v);
+        result.set(2, 2, result.get(2, 2) * v);
+        result.set(3, 3, result.get(3, 3) * v);
+        result
+    }
+    ///* 3x3 scalar operation
+    pub fn mul_float_into3(&self, v: f32) -> Matrix {
+        let mut result = self.clone();
+        result.set(0, 0, result.get(0, 0) * v);
+        result.set(1, 1, result.get(1, 1) * v);
+        result.set(2, 2, result.get(2, 2) * v);
+        result
     }
     //</editor-fold>
 

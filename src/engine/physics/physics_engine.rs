@@ -143,7 +143,7 @@ impl PhysicsEngine {
             if body.is_static {
                 continue;
             } else {
-                body.apply_impulse(self.gravity * delta_time * body.mass);
+                body.apply_impulse(self.gravity * delta_time * body.mass, body.get_center_of_mass_world_space());
             }
         }
         // collision
@@ -161,14 +161,16 @@ impl PhysicsEngine {
                     let depth = deepest_collision.penetration_depth;
                     let im_a = body_a.inv_mass; let im_b = body_b.inv_mass;
                     let s_im = im_a + im_b;
-                    let r_a = body_a.restitution_coefficient; let r_b = body_b.restitution_coefficient;
-                    let r = r_a * r_b;
+                    let restitution = body_a.restitution_coefficient * body_b.restitution_coefficient;
+                    let inv_inertia_a = body_a.get_inverse_inertia_tensor_world_space();
+                    let inv_inertia_b = body_b.get_inverse_inertia_tensor_world_space();
+
 
                     let v_diff = body_a.velocity - body_b.velocity;
 
-                    let j = normal * -(1.0 + r) * v_diff.dot3(&normal) / s_im;
-                    body_a.apply_impulse(j);
-                    body_b.apply_impulse(-1.0 * j);
+                    let j = normal * -(1.0 + restitution) * v_diff.dot3(&normal) / s_im;
+                    body_a.apply_impulse(j, deepest_collision.point);
+                    body_b.apply_impulse(-1.0 * j, deepest_collision.point);
 
                     let t_a = im_a / s_im;
                     let t_b = im_b / s_im;
@@ -176,7 +178,7 @@ impl PhysicsEngine {
                     let ds = normal * depth;
 
                     body_a.position += ds * t_a;
-                    body_b.position += ds * t_b;
+                    body_b.position -= ds * t_b;
                 }
             }
         }
@@ -185,15 +187,7 @@ impl PhysicsEngine {
             if body.is_static {
                 body.update_this_according_to_coupled(world);
             } else {
-                let displacement = body.velocity * delta_time;
-                body.position = body.position + displacement;
-
-                if body.angular_velocity.magnitude_3d() > 1e-6 {
-                    let angle = body.angular_velocity.magnitude_3d() * delta_time;
-                    let axis = body.angular_velocity.normalize_3d();
-                    let rotation_quat = PhysicsEngine::axis_angle_to_quat(&axis, angle);
-                    body.orientation = body.orientation.combine(&rotation_quat).normalize_4d();
-                }
+                body.update(delta_time);
 
                 body.update_coupled_according_to_this(world);
             }
@@ -382,9 +376,10 @@ pub struct RigidBody {
     pub velocity: Vector,
     pub orientation: Vector, // quaternion
     pub angular_velocity: Vector,
+    center_of_mass: Vector,
 
-    pub inertia_tensor: Matrix, // 3x3
-    pub inv_inertia_tensor: Matrix,
+    inertia_tensor: Matrix, // 3x3
+    inv_inertia_tensor: Matrix,
 }
 
 impl RigidBody {
@@ -394,9 +389,10 @@ impl RigidBody {
         body.position = node.world_transform * Vector::new_vec4(0.0, 0.0, 0.0, 1.0);
         body.orientation = node.world_transform.extract_quaternion();
         body.hitbox = hitbox;
+        body.update_shape_properties();
         body
     }
-    pub fn update_this_according_to_coupled(&mut self, world: &Scene) {
+    pub fn update_this_according_to_coupled(&mut self, world: &Scene)  {
         if let Some(coupled_object) = self.coupled_with_scene_object {
             let node = &world.models[coupled_object.0].nodes[coupled_object.1];
 
@@ -428,6 +424,7 @@ impl RigidBody {
                     self.hitbox = Hitbox::CAPSULE(capsule);
                 }
             }
+            self.update_shape_properties();
         }
     }
     pub fn update_coupled_according_to_this(&self, world: &mut Scene) {
@@ -442,6 +439,7 @@ impl RigidBody {
     pub fn set_mass(&mut self, mass: f32) {
         self.mass = mass;
         self.inv_mass = 1.0 / mass;
+        self.update_shape_properties();
     }
     pub fn set_static(&mut self, is_static: bool) {
         self.is_static = is_static;
@@ -451,10 +449,78 @@ impl RigidBody {
         } else {
             self.inv_mass = 1.0 / self.mass;
         }
+        self.update_shape_properties();
     }
 
-    pub fn apply_impulse(&mut self, impulse: Vector) {
+    pub fn update_shape_properties(&mut self) {
+        match self.hitbox {
+            Hitbox::OBB(obb) => {
+                let a = obb.half_extents.x * 2.0;
+                let b = obb.half_extents.y * 2.0;
+                let c = obb.half_extents.z * 2.0;
+
+                self.inertia_tensor = Matrix::new();
+                self.inertia_tensor.set(0, 0, (1.0 / 12.0) * (b * b + c * c));
+                self.inertia_tensor.set(1, 1, (1.0 / 12.0) * (a * a + c * c));
+                self.inertia_tensor.set(2, 2, (1.0 / 12.0) * (a * a + b * b));
+
+                self.center_of_mass = obb.center
+            }
+            Hitbox::MESH(_) => {
+                //TODO inertia tensor and center of mass
+            }
+            Hitbox::CAPSULE(capsule) => {
+                //TODO inertia tensor
+
+                self.center_of_mass = (capsule.a + capsule.b) * 0.5
+            }
+        }
+        self.inv_inertia_tensor = self.inertia_tensor.inverse3().mul_float_into3(self.inv_mass);
+    }
+    fn get_inverse_inertia_tensor_world_space(&self) -> Matrix {
+        let rot = Matrix::new_rotate_quaternion_vec4(&self.orientation);
+        rot * self.inv_inertia_tensor * rot.transpose3()
+    }
+    fn get_center_of_mass_world_space(&self) -> Vector {
+        self.position + Matrix::new_rotate_quaternion_vec4(&self.orientation) * self.center_of_mass
+    }
+
+    pub fn update(&mut self, delta_time: f32) {
+        self.position += self.velocity * delta_time;
+
+        let c = self.get_center_of_mass_world_space();
+        let c_to_pos = self.position - c;
+
+        let rot = Matrix::new_rotate_quaternion_vec4(&self.orientation);
+        let inertia_tensor = rot * self.inv_inertia_tensor * rot.transpose3();
+        let alpha = inertia_tensor.inverse3() * (self.angular_velocity.cross(&(inertia_tensor * self.angular_velocity)));
+        self.angular_velocity += alpha * delta_time;
+
+        let d_theta = self.angular_velocity * delta_time;
+        let dq = Vector::axis_angle_quat(&d_theta, d_theta.magnitude_3d());
+        self.orientation = dq.combine(&self.orientation).normalize_4d();
+
+        self.position = c + Matrix::new_rotate_quaternion_vec4(&dq) * c_to_pos;
+    }
+
+    pub fn apply_impulse(&mut self, impulse: Vector, point: Vector) {
+        if self.inv_mass == 0.0 { return }
+
         self.velocity += impulse * self.inv_mass;
+
+        let c = self.get_center_of_mass_world_space();
+        let r = point - c;
+        let dl = r.cross(&impulse);
+        self.apply_angular_impulse(dl);
+    }
+    pub fn apply_angular_impulse(&mut self, impulse: Vector) {
+        if self.inv_mass == 0.0 { return }
+        self.angular_velocity += self.get_inverse_inertia_tensor_world_space() * impulse;
+
+        const MAX_ANGULAR_SPEED: f32 = 30.0;
+        if self.angular_velocity.magnitude_3d() > MAX_ANGULAR_SPEED {
+            self.angular_velocity = self.angular_velocity.normalize_3d() * MAX_ANGULAR_SPEED;
+        }
     }
 
     pub fn colliding_with_info(&self, other: &RigidBody) -> Option<Vec<ContactInformation>> {
@@ -512,7 +578,7 @@ impl RigidBody {
         b_point_a: &Vector, b_point_b: &Vector, b_radius: f32, b_position: &Vector, b_orientation: &Vector,
     ) -> Option<ContactInformation> {
         let rot_mat = Matrix::new_rotate_quaternion_vec4(a_orientation);
-        let inv_rot_mat = rot_mat.inverse();
+        let inv_rot_mat = rot_mat.inverse4();
 
         let capsule_rot_mat = Matrix::new_rotate_quaternion_vec4(&b_orientation);
 
@@ -593,7 +659,7 @@ impl RigidBody {
         };
 
         let rot_mat = Matrix::new_rotate_quaternion_vec4(&mesh_body.orientation);
-        let rot_mat_inv = rot_mat.inverse();
+        let rot_mat_inv = rot_mat.inverse4();
 
         let mut center_offset = Vector::new_vec3(0.0, 0.0, 0.0);
         let body_hitbox_mesh_space = match self.hitbox {
@@ -704,9 +770,9 @@ impl RigidBody {
     ) -> Option<ContactInformation> {
         let rot_mat = Matrix::new_rotate_quaternion_vec4(obb_orientation);
 
-        let v0 = rot_mat.inverse() * ((Vector::new_from_array(&vertices.0.position) - obb_position).unitize_w());
-        let v1 = rot_mat.inverse() * ((Vector::new_from_array(&vertices.1.position) - obb_position).unitize_w());
-        let v2 = rot_mat.inverse() * ((Vector::new_from_array(&vertices.2.position) - obb_position).unitize_w());
+        let v0 = rot_mat.inverse4() * ((Vector::new_from_array(&vertices.0.position) - obb_position).unitize_w());
+        let v1 = rot_mat.inverse4() * ((Vector::new_from_array(&vertices.1.position) - obb_position).unitize_w());
+        let v2 = rot_mat.inverse4() * ((Vector::new_from_array(&vertices.2.position) - obb_position).unitize_w());
 
         let e0 = v1 - v0;
         let e1 = v2 - v1;
@@ -928,6 +994,7 @@ impl Default for RigidBody {
             velocity: Default::default(),
             orientation: Vector::new_empty_quat(),
             angular_velocity: Default::default(),
+            center_of_mass: Vector::new_empty_quat(),
             inertia_tensor: Matrix::new(),
             inv_inertia_tensor: Matrix::new(),
         }
