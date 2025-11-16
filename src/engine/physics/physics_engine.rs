@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::ops::Deref;
 use std::rc::Rc;
 use std::sync::Arc;
 use image::imageops::sample_nearest;
@@ -68,10 +69,10 @@ impl PhysicsEngine {
         if collisions.len() > 0 { return Some(collisions) }
         None
     }
-    fn get_deepest_of_contacts(contacts: &Vec<ContactInformation>) -> ContactInformation {
-        let mut deepest = contacts[0];
+    fn get_deepest_of_contacts(contacts: &Vec<ContactInformation>) -> &ContactInformation {
+        let mut deepest = &contacts[0];
         for i in 1..contacts.len() {
-            if contacts[i].penetration_depth > deepest.penetration_depth { deepest = contacts[i]; }
+            if contacts[i].penetration_depth > deepest.penetration_depth { deepest = &contacts[i]; }
         }
         deepest
     }
@@ -138,7 +139,7 @@ impl PhysicsEngine {
 
 
     pub fn tick(&mut self, delta_time: f32, world: &mut Scene) {
-        // apply impulse
+        // apply gravity
         for body in &mut self.rigid_bodies {
             if body.is_static {
                 continue;
@@ -165,20 +166,31 @@ impl PhysicsEngine {
                     let inv_inertia_a = body_a.get_inverse_inertia_tensor_world_space();
                     let inv_inertia_b = body_b.get_inverse_inertia_tensor_world_space();
 
+                    let pt_on_a = deepest_collision.points[0].0;
+                    let pt_on_b = deepest_collision.points[0].1;
+                    let ra = pt_on_a - body_a.get_center_of_mass_world_space();
+                    let rb = pt_on_b - body_b.get_center_of_mass_world_space();
 
-                    let v_diff = body_a.velocity - body_b.velocity;
+                    let angular_j_a = (inv_inertia_a * ra.cross(&normal)).cross(&ra);
+                    let angular_j_b = (inv_inertia_b * rb.cross(&normal)).cross(&rb);
+                    let angular_factor = (angular_j_a + angular_j_b).dot3(&normal);
 
-                    let j = normal * -(1.0 + restitution) * v_diff.dot3(&normal) / s_im;
-                    body_a.apply_impulse(j, deepest_collision.point);
-                    body_b.apply_impulse(-1.0 * j, deepest_collision.point);
+                    let vel_a = body_a.velocity + body_a.angular_velocity.cross(&ra);
+                    let vel_b = body_b.velocity + body_b.angular_velocity.cross(&rb);
+
+                    let v_diff = vel_a - vel_b;
+
+                    let j = normal * (1.0 + restitution) * v_diff.dot3(&normal) / (s_im + angular_factor);
+                    body_a.apply_impulse(-1.0 * j, pt_on_a);
+                    body_b.apply_impulse(j, pt_on_b);
 
                     let t_a = im_a / s_im;
                     let t_b = im_b / s_im;
 
                     let ds = normal * depth;
 
-                    body_a.position += ds * t_a;
-                    body_b.position -= ds * t_b;
+                    body_a.position -= ds * t_a;
+                    body_b.position += ds * t_b;
                 }
             }
         }
@@ -492,13 +504,17 @@ impl RigidBody {
         let c_to_pos = self.position - c;
 
         let rot = Matrix::new_rotate_quaternion_vec4(&self.orientation);
-        let inertia_tensor = rot * self.inv_inertia_tensor * rot.transpose3();
-        let alpha = inertia_tensor.inverse3() * (self.angular_velocity.cross(&(inertia_tensor * self.angular_velocity)));
+        let inertia_world = rot * self.inertia_tensor * rot.transpose3();
+        let inv_inertia_world = rot * self.inv_inertia_tensor * rot.transpose3();
+        let torque = self.angular_velocity.cross(&(inertia_world * self.angular_velocity));
+        let alpha = inv_inertia_world * torque;
         self.angular_velocity += alpha * delta_time;
 
         let d_theta = self.angular_velocity * delta_time;
         let dq = Vector::axis_angle_quat(&d_theta, d_theta.magnitude_3d());
         self.orientation = dq.combine(&self.orientation).normalize_4d();
+
+        println!("orientation: {:?}, dq: {:?}, dtheta {:?}", self.orientation, dq, d_theta);
 
         self.position = c + Matrix::new_rotate_quaternion_vec4(&dq) * c_to_pos;
     }
@@ -647,7 +663,7 @@ impl RigidBody {
 
         Some(ContactInformation {
             normal: normal_world,
-            point: contact_point_world,
+            points: vec![],
             penetration_depth: penetration,
         })
     }
@@ -841,7 +857,7 @@ impl RigidBody {
         );
 
         Some(ContactInformation {
-            point: (rot_mat * closest_point) + obb_position,
+            points: vec![],
             normal: rot_mat * (best_axis.unitize_w()),
             penetration_depth: min_penetration,
         })
@@ -922,11 +938,13 @@ impl RigidBody {
             }
         }
 
-        let contact_point = a_center + collision_normal * (min_penetration * 0.5);
+        let point_on_b = a_center + collision_normal * (min_penetration * 0.5);
+        let point_on_a = b_center - collision_normal * (min_penetration * 0.5);
 
+        // TODO Multiple contact points
         Some(ContactInformation {
-            point: contact_point,
-            normal: -1.0 * collision_normal,
+            points: vec![(point_on_a, point_on_b, collision_normal, min_penetration)],
+            normal: collision_normal,
             penetration_depth: min_penetration,
         })
     }
@@ -1001,14 +1019,12 @@ impl Default for RigidBody {
     }
 }
 
-#[derive(Debug)]
 struct CastInformation {
     distance: f32,
     contacts: Vec<ContactInformation>,
 }
-#[derive(Debug, Copy, Clone)]
 pub struct ContactInformation {
-    point: Vector,
+    points: Vec<(Vector, Vector, Vector, f32)>, // point on A, point on B, normal, depth
     normal: Vector,
     penetration_depth: f32,
 }
