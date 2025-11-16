@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use std::any::{Any, TypeId};
-use std::ops::{Add, Div, Mul, Sub};
+use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign};
 
 #[derive(Clone, Debug, Copy)]
 #[derive(Default)]
@@ -388,6 +388,17 @@ impl Add<Vector> for Vector {
     }
 }
 
+impl AddAssign<&Vector> for Vector {
+    fn add_assign(&mut self, other: &Vector) {
+        self.add_vec_to_self(other);
+    }
+}
+impl AddAssign<Vector> for Vector {
+    fn add_assign(&mut self, other: Vector) {
+        *self += &other;
+    }
+}
+
 impl<'a, 'b> Sub<&'b Vector> for &'a Vector {
     type Output = Vector;
 
@@ -411,6 +422,20 @@ impl Sub<Vector> for Vector {
     type Output = Vector;
     fn sub(self, other: Vector) -> Vector {
         &self - &other
+    }
+}
+
+impl SubAssign<&Vector> for Vector {
+    fn sub_assign(&mut self, other: &Vector) {
+        self.x -= other.x;
+        self.y -= other.y;
+        self.z -= other.z;
+        self.w -= other.w;
+    }
+}
+impl SubAssign<Vector> for Vector {
+    fn sub_assign(&mut self, other: Vector) {
+        *self -= &other;
     }
 }
 
@@ -460,6 +485,17 @@ impl Mul<Vector> for f32 {
     fn mul(self, vector: Vector) -> Vector { self * &vector }
 }
 
+impl MulAssign<&Vector> for Vector {
+    fn mul_assign(&mut self, other: &Vector) {
+        self.mul_by_vec_to_self(other);
+    }
+}
+impl MulAssign<Vector> for Vector {
+    fn mul_assign(&mut self, other: Vector) {
+        *self *= &other;
+    }
+}
+
 impl<'a, 'b> Div<&'b Vector> for &'a Vector {
     type Output = Vector;
 
@@ -504,6 +540,20 @@ impl<'a> Div<&'a Vector> for f32 {
 impl Div<Vector> for f32 {
     type Output = Vector;
     fn div(self, vector: Vector) -> Vector { self / &vector }
+}
+
+impl DivAssign<&Vector> for Vector {
+    fn div_assign(&mut self, other: &Vector) {
+        self.x /= &other.x;
+        self.y /= &other.y;
+        self.z /= &other.z;
+        self.w /= &other.w;
+    }
+}
+impl DivAssign<Vector> for Vector {
+    fn div_assign(&mut self, other: Vector) {
+        *self /= &other;
+    }
 }
 
 pub enum Axis {

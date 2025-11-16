@@ -3,7 +3,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use image::imageops::sample_nearest;
 use crate::engine::physics::player::{MovementMode, Player};
-use crate::engine::world::scene::{Mesh, Node, Scene, Vertex};
+use crate::engine::world::scene::{Mesh, Model, Node, Scene, Vertex};
 use crate::math::*;
 use crate::math::matrix::Matrix;
 use crate::render::render::HitboxPushConstantSendable;
@@ -21,39 +21,37 @@ pub struct PhysicsEngine {
 }
 
 impl PhysicsEngine {
-    pub fn new(world: &Scene, gravity: Vector, air_resistance_coefficient: f32, player_horiz_const_resistance: f32) -> Self {
+    pub fn new(gravity: Vector, air_resistance_coefficient: f32, player_horiz_const_resistance: f32) -> Self {
         let mut rigid_bodies = Vec::new();
-        for (model_index, model) in world.models.iter().enumerate() {
-            for (node_index, node) in model.nodes.iter().enumerate() {
-                if let Some(mesh) = &node.mesh {
-                    let (min, max) = mesh.borrow().get_min_max();
-                    let half_extent = (max - min) * 0.5 * node.scale;
-
-                    let hitbox;
-                    if (
-                        if half_extent.x > 1.0 {1} else {0} +
-                        if half_extent.y > 1.0 {1} else {0} +
-                        if half_extent.z > 1.0 {1} else {0}
-                    ) >- 3 {
-                        let mesh_collider = MeshCollider::new(mesh.clone(), node.scale);
-                        hitbox = Hitbox::MESH(mesh_collider);
-                    } else {
-                        hitbox = Hitbox::OBB(BoundingBox {
-                            center: (min + max) * 0.5,
-                            half_extents: half_extent,
-                        });
-                    }
-
-                    rigid_bodies.push(RigidBody::new_from_node(node, Some((model_index, node_index, (min, max))), hitbox));
-                }
-            }
-        }
         Self {
             gravity,
             air_resistance_coefficient,
             player_horiz_const_resistance,
             rigid_bodies,
             players: Vec::new(),
+        }
+    }
+    pub fn add_all_nodes_from_model(&mut self, world: &Scene, model_index: usize, gen_mesh_hitbox: bool) {
+        let model = &world.models[model_index];
+        for (node_index, node) in model.nodes.iter().enumerate() {
+            if let Some(mesh) = &node.mesh {
+                let (min, max) = mesh.borrow().get_min_max();
+                let half_extent = (max - min) * 0.5 * node.scale;
+
+                let hitbox;
+                if gen_mesh_hitbox {
+                    let mesh_collider = MeshCollider::new(mesh.clone(), node.scale);
+                    hitbox = Hitbox::MESH(mesh_collider);
+                } else {
+                    hitbox = Hitbox::OBB(BoundingBox {
+                        center: (min + max) * 0.5,
+                        half_extents: half_extent,
+                    });
+                }
+
+                let rb = RigidBody::new_from_node(node, Some((model_index, node_index, (min, max))), hitbox);
+                self.rigid_bodies.push(rb);
+            }
         }
     }
     pub fn add_player(&mut self, player: Arc<RefCell<Player>>) {
@@ -69,6 +67,13 @@ impl PhysicsEngine {
         }
         if collisions.len() > 0 { return Some(collisions) }
         None
+    }
+    fn get_deepest_of_contacts(contacts: &Vec<ContactInformation>) -> ContactInformation {
+        let mut deepest = contacts[0];
+        for i in 1..contacts.len() {
+            if contacts[i].penetration_depth > deepest.penetration_depth { deepest = contacts[i]; }
+        }
+        deepest
     }
 
     fn body_cast(
@@ -131,13 +136,55 @@ impl PhysicsEngine {
         }
     }
 
+
     pub fn tick(&mut self, delta_time: f32, world: &mut Scene) {
+        // apply impulse
         for body in &mut self.rigid_bodies {
-            body.update_according_to_coupled(world);
+            if body.is_static {
+                continue;
+            } else {
+                body.apply_impulse(self.gravity * delta_time * body.mass);
+            }
+        }
+        // collision
+        for i in 0..self.rigid_bodies.len() {
+            let (a, b) = self.rigid_bodies.split_at_mut(i + 1);
+            let body_a = &mut a[i];
+            for body_b in b {
+                if body_a.is_static && body_b.is_static {
+                    continue;
+                }
+                if let Some(collisions) = body_a.colliding_with_info(body_b) {
+                    if collisions.is_empty() { continue; }
+                    let deepest_collision = Self::get_deepest_of_contacts(&collisions);
+                    let normal = deepest_collision.normal;
+                    let depth = deepest_collision.penetration_depth;
+                    let im_a = body_a.inv_mass; let im_b = body_b.inv_mass;
+                    let s_im = im_a + im_b;
+                    let r_a = body_a.restitution_coefficient; let r_b = body_b.restitution_coefficient;
+                    let r = r_a * r_b;
 
-            if !body.is_static {
-                body.velocity = body.velocity + self.gravity * delta_time;
+                    let v_diff = body_a.velocity - body_b.velocity;
 
+                    let j = normal * -(1.0 + r) * v_diff.dot3(&normal) / s_im;
+                    body_a.apply_impulse(j);
+                    body_b.apply_impulse(-1.0 * j);
+
+                    let t_a = im_a / s_im;
+                    let t_b = im_b / s_im;
+
+                    let ds = normal * depth;
+
+                    body_a.position += ds * t_a;
+                    body_b.position += ds * t_b;
+                }
+            }
+        }
+        // apply velocity
+        for body in &mut self.rigid_bodies {
+            if body.is_static {
+                body.update_this_according_to_coupled(world);
+            } else {
                 let displacement = body.velocity * delta_time;
                 body.position = body.position + displacement;
 
@@ -147,6 +194,8 @@ impl PhysicsEngine {
                     let rotation_quat = PhysicsEngine::axis_angle_to_quat(&axis, angle);
                     body.orientation = body.orientation.combine(&rotation_quat).normalize_4d();
                 }
+
+                body.update_coupled_according_to_this(world);
             }
         }
         for player_ref in &self.players {
@@ -169,6 +218,10 @@ impl PhysicsEngine {
             }
         }
     }
+
+
+    ///* New plan: Implement full physics tick, then make movement force based
+    ///            https://www.youtube.com/watch?v=qdskE8PJy6Q
     fn move_player_with_collision(&self, player: &mut Player, delta_time: f32) {
         let air_resist = self.air_resistance_coefficient.powf(delta_time);
         let lerp_f = 1.0 - 0.001_f32.powf(delta_time / self.player_horiz_const_resistance);
@@ -199,15 +252,8 @@ impl PhysicsEngine {
 
         // /*
         let mut iteration = 0;
-        let dir = player.rigid_body.velocity.clone();
-        let pre_hit_result = self.body_cast(&mut player.rigid_body, &Vector::new_empty(), &dir, dir.magnitude_3d() * delta_time);
-        if let Some(hit_result) = pre_hit_result {
-            let step = (hit_result.distance - 0.001) * player.rigid_body.velocity;
-            player.step(&step);
-            player.rigid_body.velocity = player.rigid_body.velocity - step;
-        } else {
-            player.step(&(player.rigid_body.velocity * delta_time));
-        }
+        let displacement = player.rigid_body.velocity * delta_time;
+        player.step(&displacement);
         player.grounded = false;
 
         while iteration < MAX_ITERATIONS {
@@ -323,11 +369,11 @@ pub struct RigidBody {
     pub coupled_with_scene_object: Option<(usize, usize, (Vector, Vector))>, // model index, node index, (min, max)
 
     pub hitbox: Hitbox,
-    pub is_static: bool,
+    is_static: bool,
     pub restitution_coefficient: f32,
     pub friction_coefficient: f32,
-    pub mass: f32,
-    pub inv_mass: f32,
+    mass: f32,
+    inv_mass: f32,
 
     pub force: Vector,
     pub torque: Vector,
@@ -350,7 +396,7 @@ impl RigidBody {
         body.hitbox = hitbox;
         body
     }
-    pub fn update_according_to_coupled(&mut self, world: &mut Scene) {
+    pub fn update_this_according_to_coupled(&mut self, world: &Scene) {
         if let Some(coupled_object) = self.coupled_with_scene_object {
             let node = &world.models[coupled_object.0].nodes[coupled_object.1];
 
@@ -383,6 +429,32 @@ impl RigidBody {
                 }
             }
         }
+    }
+    pub fn update_coupled_according_to_this(&self, world: &mut Scene) {
+        if let Some(coupled_object) = self.coupled_with_scene_object {
+            let node = &mut world.models[coupled_object.0].nodes[coupled_object.1];
+
+            node.translation = self.position;
+            node.rotation = self.orientation;
+            node.needs_update = true;
+        }
+    }
+    pub fn set_mass(&mut self, mass: f32) {
+        self.mass = mass;
+        self.inv_mass = 1.0 / mass;
+    }
+    pub fn set_static(&mut self, is_static: bool) {
+        self.is_static = is_static;
+        if is_static {
+            self.inv_mass = 0.0;
+            self.mass = 999.0
+        } else {
+            self.inv_mass = 1.0 / self.mass;
+        }
+    }
+
+    pub fn apply_impulse(&mut self, impulse: Vector) {
+        self.velocity += impulse * self.inv_mass;
     }
 
     pub fn colliding_with_info(&self, other: &RigidBody) -> Option<Vec<ContactInformation>> {
@@ -523,13 +595,6 @@ impl RigidBody {
         let rot_mat = Matrix::new_rotate_quaternion_vec4(&mesh_body.orientation);
         let rot_mat_inv = rot_mat.inverse();
 
-
-        /*
-         * TODO: TRYING TO NONUNIFORMLY SCALE A CAPSULE RADIUS OR OBB HALF EXTENT WILL INTRODUCE SHEAR, BREAKING THE DEFINITION OF AN OBB/CAPSULE.
-         *       MUST IMPLEMENT CONVEX POLYHEDRA, AND CONVERT THE OBB TO A CONVEX POLYHEDRA BEFORE, AND DO THE SAME FOR THE CAPSULE BUT ELLIPSOID.
-         *       ----- OR PANIC!()
-         *       ----- OR REBUILD THE MESH COLLIDER WITH THE NONUNIFORM SCALING
-        */
         let mut center_offset = Vector::new_vec3(0.0, 0.0, 0.0);
         let body_hitbox_mesh_space = match self.hitbox {
             Hitbox::MESH(ref mesh) => panic!("mesh-mesh collision not implemented"),
@@ -855,7 +920,7 @@ impl Default for RigidBody {
             is_static: true,
             restitution_coefficient: 0.0,
             friction_coefficient: 0.0,
-            mass: 0.0,
+            mass: 999.0,
             inv_mass: 0.0,
             force: Default::default(),
             torque: Default::default(),

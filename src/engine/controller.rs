@@ -322,4 +322,5 @@ pub struct Flags {
     pub pause_rendering: bool,
     pub screenshot_queued: bool,
     pub draw_hitboxes: bool,
+    pub do_physics: bool,
 }

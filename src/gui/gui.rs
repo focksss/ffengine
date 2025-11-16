@@ -146,6 +146,10 @@ impl GUI {
                             _ => ()
                         }
                     }
+                    "toggle physics tick" => {
+                        let mut controller_ref = self.controller.borrow_mut();
+                        controller_ref.flags.do_physics = !controller_ref.flags.do_physics;
+                    }
                     "toggle text" => {
                         let current_text = self.gui_texts[node.text.unwrap()].text_information.text.as_str();
                         match current_text {

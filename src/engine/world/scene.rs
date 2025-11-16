@@ -1221,7 +1221,7 @@ impl Model {
                     scale,
                     translation,
                     needs_update: true,
-                    user_rotation: Vector::new_empty(),
+                    user_rotation: Vector::new_empty_quat(),
                     user_scale: Vector::new_vec(1.0),
                     user_translation: Vector::new_empty(),
                     original_rotation: rotation,
@@ -1349,11 +1349,12 @@ impl Model {
         }
     }
 
+    ///* Takes euler for rotation, converts to quaternion
     pub fn transform_roots(&mut self, translation: &Vector, rotation: &Vector, scale: &Vector) {
         for node_index in self.scene.nodes.iter() {
             let node = &mut self.nodes[*node_index];
             node.user_translation.add_vec_to_self(translation);
-            node.user_rotation.combine_to_self(&rotation.normalize_4d());
+            node.user_rotation.combine_to_self(&rotation.euler_to_quat().normalize_4d());
             node.user_scale.mul_by_vec_to_self(scale);
             node.needs_update = true;
         }
@@ -2083,7 +2084,7 @@ impl Node {
     } }
 
     pub fn update_local_transform(&mut self) {
-        let rotate = Matrix::new_rotate_quaternion_vec4(&self.rotation.combine(&self.user_rotation.euler_to_quat()));
+        let rotate = Matrix::new_rotate_quaternion_vec4(&self.rotation.combine(&self.user_rotation));
         let scale = Matrix::new_scale_vec3(&(self.scale * self.user_scale));
         let translate = Matrix::new_translation_vec3(&(self.translation + self.user_translation));
 

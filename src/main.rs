@@ -34,31 +34,8 @@ const PI: f32 = std::f32::consts::PI;
 fn main() { unsafe {
     let mut base = VkBase::new("ffengine".to_string(), 1920, 1080, MAX_FRAMES_IN_FLIGHT).unwrap();
 
+    let mut physics_engine = PhysicsEngine::new(Vector::new_vec3(0.0, -9.8, 0.0), 0.9, 0.5);
     let mut world = Scene::new(&base);
-
-    //world.preload_model(Model::new(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources\\models\\ffocks\\untitled.gltf").to_str().unwrap()));
-    //world.models[0].transform_roots(&Vector::new_vec3(0.0, 0.0, 5.0), &Vector::new_vec(0.0), &Vector::new_vec(0.05));
-    //world.models[0].animations[0].repeat = true;
-    //world.models[0].animations[0].start();
-
-    //world.add_model(Model::new("C:\\Graphics\\assets\\flower\\world.gltf"));
-    //world.models[0].transform_roots(&Vector::new_vec3(0.0, 1.0, 0.0), &Vector::new_vec(0.0), &Vector::new_vec(1.0));
-    // world.preload_model(Model::new("C:\\Graphics\\assets\\rivals\\luna\\gltf\\luna.gltf"));
-    // world.models[1].animations[0].repeat = true;
-    // world.models[1].animations[0].start();
-
-    //world.preload_model(Model::new(&PathBuf::from("resources/models/collisionTest/collisionTestNoWalls.gltf").to_str().unwrap()));
-    //world.preload_model(Model::new(&PathBuf::from("resources/models/discardTest/scene.gltf").to_str().unwrap()));
-    //world.preload_model(Model::new(&PathBuf::from("resources/models/shadowTest/shadowTest.gltf").to_str().unwrap()));
-    //world.models[1].transform_roots(&Vector::new_vec3(0.0, 0.0, -5.0), &Vector::new_vec(0.0), &Vector::new_vec(1.0));
-    world.preload_model(Model::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf"));
-    //world.preload_model(Model::new("C:\\Graphics\\assets\\neeko\\scene.gltf"));
-    //world.preload_model(Model::new("C:\\Graphics\\assets\\bistroGLTF\\untitled.gltf"));
-    //world.preload_model(Model::new("C:\\Graphics\\assets\\asgard\\asgard.gltf"));
-    //world.preload_model(Model::new("C:\\Graphics\\assets\\helmet\\DamagedHelmet.gltf"));
-    //world.preload_model(Model::new("C:\\Graphics\\assets\\grassblockGLTF\\grassblock.gltf"));
-    //world.models[0].transform_roots(&Vector::new_vec3(1.0, 1.0, 2.0), &Vector::new_vec3(0.0, 0.0, 0.0), &Vector::new_vec3(2.0, 1.0, 1.0));
-    //world.preload_model(Model::new(&PathBuf::from("resources/models/coordinateSpace/coordinateSpace.gltf").to_str().unwrap()));
 
     world.add_light(Light {
         position: Vector::new_vec3(0.0, 3.0, 0.0),
@@ -72,9 +49,41 @@ fn main() { unsafe {
         outer_cutoff: 0.0,
     });
 
-    world.initialize(&base, MAX_FRAMES_IN_FLIGHT, false);
+    //world.preload_model(Model::new(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources\\models\\ffocks\\untitled.gltf").to_str().unwrap()));
+    //world.models[0].transform_roots(&Vector::new_vec3(0.0, 0.0, 5.0), &Vector::new_vec(0.0), &Vector::new_vec(0.05));
+    //world.models[0].animations[0].repeat = true;
+    //world.models[0].animations[0].start();
 
-    let mut physics_engine = PhysicsEngine::new(&world, Vector::new_vec3(0.0, -9.8, 0.0), 0.9, 0.5);
+    //world.add_model(Model::new("C:\\Graphics\\assets\\flower\\world.gltf"));
+    //world.models[0].transform_roots(&Vector::new_vec3(0.0, 1.0, 0.0), &Vector::new_vec(0.0), &Vector::new_vec(1.0));
+    // world.preload_model(Model::new("C:\\Graphics\\assets\\rivals\\luna\\gltf\\luna.gltf"));
+    // world.models[1].animations[0].repeat = true;
+    // world.models[1].animations[0].start();
+
+    world.preload_model(Model::new(&PathBuf::from("resources/models/collisionTest/collisionTestNoWalls.gltf").to_str().unwrap()));
+    //world.preload_model(Model::new(&PathBuf::from("resources/models/discardTest/scene.gltf").to_str().unwrap()));
+    //world.preload_model(Model::new(&PathBuf::from("resources/models/shadowTest/shadowTest.gltf").to_str().unwrap()));
+    //world.models[1].transform_roots(&Vector::new_vec3(0.0, 0.0, -5.0), &Vector::new_vec(0.0), &Vector::new_vec(1.0));
+    //world.preload_model(Model::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf"));
+    //world.preload_model(Model::new("C:\\Graphics\\assets\\neeko\\scene.gltf"));
+    //world.preload_model(Model::new("C:\\Graphics\\assets\\bistroGLTF\\untitled.gltf"));
+    //world.preload_model(Model::new("C:\\Graphics\\assets\\asgard\\asgard.gltf"));
+    //world.preload_model(Model::new("C:\\Graphics\\assets\\helmet\\DamagedHelmet.gltf"));
+    world.preload_model(Model::new("C:\\Graphics\\assets\\grassblockGLTF\\grassblock.gltf"));
+    //world.models[0].transform_roots(&Vector::new_vec3(1.0, 1.0, 2.0), &Vector::new_vec3(0.0, 0.0, 0.0), &Vector::new_vec3(2.0, 1.0, 1.0));
+    //world.preload_model(Model::new(&PathBuf::from("resources/models/coordinateSpace/coordinateSpace.gltf").to_str().unwrap()));
+
+    world.initialize(&base, MAX_FRAMES_IN_FLIGHT, true);
+
+    physics_engine.add_all_nodes_from_model(&world, 1, false);
+    physics_engine.add_all_nodes_from_model(&world, 0, false);
+    physics_engine.rigid_bodies[0].set_static(false);
+    physics_engine.rigid_bodies[0].set_mass(1.0);
+    physics_engine.rigid_bodies[0].position = Vector::new_vec3(0.0, 10.0, 0.0);
+    // physics_engine.rigid_bodies[0].angular_velocity = Vector::new_vec3(0.0, 1.0, 0.0);
+
+
+
     let controller = Arc::new(RefCell::new(Controller::new(&base.window, Vector::new_vec3(0.0, 20.0, 0.0))));
     physics_engine.add_player(controller.borrow().player.clone());
 
@@ -123,7 +132,7 @@ fn main() { unsafe {
                     { let mut controller_mut = controller.borrow_mut();
                       controller_mut.do_controls(delta_time, &base, &mut renderer, &world, current_frame) };
 
-                    physics_engine.tick(delta_time, &mut world);
+                    if controller.borrow().flags.do_physics { physics_engine.tick(delta_time, &mut world); }
 
 
                     { let mut controller_mut = controller.borrow_mut();
