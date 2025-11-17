@@ -71,17 +71,31 @@ fn main() { unsafe {
     //world.preload_model(Model::new("C:\\Graphics\\assets\\asgard\\asgard.gltf"));
     //world.preload_model(Model::new("C:\\Graphics\\assets\\helmet\\DamagedHelmet.gltf"));
     world.preload_model(Model::new(&PathBuf::from("resources/models/demoBall/scene.gltf").to_str().unwrap()));
+    world.preload_model(Model::new(&PathBuf::from("resources/models/demoBall/scene.gltf").to_str().unwrap()));
+    world.preload_model(Model::new("C:\\Graphics\\assets\\grassblockGLTF\\grassblock.gltf"));
     //world.models[0].transform_roots(&Vector::new_vec3(1.0, 1.0, 2.0), &Vector::new_vec3(0.0, 0.0, 0.0), &Vector::new_vec3(2.0, 1.0, 1.0));
     //world.preload_model(Model::new(&PathBuf::from("resources/models/coordinateSpace/coordinateSpace.gltf").to_str().unwrap()));
 
     world.initialize(&base, MAX_FRAMES_IN_FLIGHT, true);
 
     physics_engine.add_all_nodes_from_model(&world, 1, 3);
+    physics_engine.add_all_nodes_from_model(&world, 2, 3);
+    physics_engine.add_all_nodes_from_model(&world, 3, 0);
     physics_engine.add_all_nodes_from_model(&world, 0, 0);
     physics_engine.rigid_bodies[0].set_static(false);
     physics_engine.rigid_bodies[0].set_mass(1.0);
     physics_engine.rigid_bodies[0].position = Vector::new_vec3(0.5, 10.0, 0.5);
     physics_engine.rigid_bodies[0].restitution_coefficient = 1.0;
+
+    physics_engine.rigid_bodies[1].set_static(false);
+    physics_engine.rigid_bodies[1].set_mass(1.0);
+    physics_engine.rigid_bodies[1].position = Vector::new_vec3(0.5, 5.0, 0.5);
+    physics_engine.rigid_bodies[1].restitution_coefficient = 1.0;
+
+    physics_engine.rigid_bodies[2].set_static(false);
+    physics_engine.rigid_bodies[2].set_mass(1.0);
+    physics_engine.rigid_bodies[2].position = Vector::new_vec3(0.5, 15.0, 0.5);
+    physics_engine.rigid_bodies[2].restitution_coefficient = 1.0;
     //physics_engine.rigid_bodies[0].angular_velocity = Vector::new_vec3(1.0, 1.0, 0.0);
     // physics_engine.rigid_bodies[0].angular_velocity = Vector::new_vec3(0.0, 1.0, 0.0);
 
