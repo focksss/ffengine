@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use std::any::{Any, TypeId};
-use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign};
+use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
 #[derive(Clone, Debug, Copy)]
 #[derive(Default)]
@@ -572,6 +572,13 @@ impl DivAssign<&Vector> for Vector {
 impl DivAssign<Vector> for Vector {
     fn div_assign(&mut self, other: Vector) {
         *self /= &other;
+    }
+}
+
+impl Neg for Vector {
+    type Output = Vector;
+    fn neg(self) -> Vector {
+        Vector::new_vec4(-self.x, -self.y, -self.z, -self.w)
     }
 }
 

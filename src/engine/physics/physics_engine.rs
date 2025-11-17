@@ -153,6 +153,7 @@ impl PhysicsEngine {
                     continue;
                 }
                 if let Some(collision) = body_a.colliding_with(body_b) {
+                    if collision.contact_points.is_empty() { continue; }
                     let normal = collision.normal;
                     let depth = collision.penetration_depth;
                     let im_a = body_a.inv_mass; let im_b = body_b.inv_mass;
@@ -176,7 +177,7 @@ impl PhysicsEngine {
                     let v_diff = vel_a - vel_b;
 
                     let j = normal * (1.0 + restitution) * v_diff.dot3(&normal) / (s_im + angular_factor);
-                    body_a.apply_impulse(-1.0 * j, pt_on_a);
+                    body_a.apply_impulse(-j, pt_on_a);
                     body_b.apply_impulse(j, pt_on_b);
 
                     let friction = body_a.friction_coefficient * body_b.friction_coefficient;
@@ -191,7 +192,7 @@ impl PhysicsEngine {
                     let mass_reduc = 1.0 / (s_im + inv_inertia);
                     let friction_impulse = velocity_tangent * mass_reduc * friction;
 
-                    body_a.apply_impulse(-1.0 * friction_impulse, pt_on_a);
+                    body_a.apply_impulse(-friction_impulse, pt_on_a);
                     body_b.apply_impulse(friction_impulse, pt_on_b);
 
                     let t_a = im_a / s_im;
@@ -580,11 +581,11 @@ impl RigidBody {
             p1: &Vector,
         | -> Vector {
             let clamped_p0 = p0.clamp3(
-                &(-1.0 * bounds.half_extents.unitize_w()),
+                &(-bounds.half_extents.unitize_w()),
                 &bounds.half_extents.unitize_w()
             );
             let clamped_p1 = p1.clamp3(
-                &(-1.0 * bounds.half_extents.unitize_w()),
+                &(-bounds.half_extents.unitize_w()),
                 &bounds.half_extents.unitize_w()
             );
             let segment = p1 - p0;
@@ -594,7 +595,7 @@ impl RigidBody {
             let point_on_segment = p0 + (segment * t);
 
             point_on_segment.clamp3(
-                &(-1.0 * bounds.half_extents.unitize_w()),
+                &(-bounds.half_extents.unitize_w()),
                 &bounds.half_extents.unitize_w()
             )
         };
@@ -819,7 +820,7 @@ impl RigidBody {
         }
         let tri_center = (v0 + v1 + v2) / 3.0;
         let closest_point = tri_center.clamp3(
-            &(-1.0 * obb.half_extents),
+            &(-obb.half_extents),
             &obb.half_extents,
         );
 
@@ -828,50 +829,6 @@ impl RigidBody {
             normal: rot_mat * (best_axis.unitize_w()),
             penetration_depth: min_penetration,
         })
-    }
-    fn test_axis(
-        axis: &Vector,
-        t: &Vector,
-        half_a: &Vector,
-        half_b: &Vector,
-        axes_a: &[Vector; 3],
-        axes_b: &[Vector; 3],
-        is_a: bool,
-    ) -> f32 {
-        let ra = if is_a {
-            half_a.x * axes_a[0].dot3(axis).abs() +
-                half_a.y * axes_a[1].dot3(axis).abs() +
-                half_a.z * axes_a[2].dot3(axis).abs()
-        } else {
-            half_a.x * axes_a[0].dot3(axis).abs() +
-                half_a.y * axes_a[1].dot3(axis).abs() +
-                half_a.z * axes_a[2].dot3(axis).abs()
-        };
-        let rb = half_b.x * axes_b[0].dot3(axis).abs() +
-            half_b.y * axes_b[1].dot3(axis).abs() +
-            half_b.z * axes_b[2].dot3(axis).abs();
-        let distance = t.dot3(axis).abs();
-        ra + rb - distance
-    }
-    fn test_axis_cross(
-        axis: &Vector,
-        t: &Vector,
-        half_a: &Vector,
-        half_b: &Vector,
-        axes_a: &[Vector; 3],
-        axes_b: &[Vector; 3],
-    ) -> f32 {
-        let ra = half_a.x * axes_a[0].dot3(axis).abs() +
-            half_a.y * axes_a[1].dot3(axis).abs() +
-            half_a.z * axes_a[2].dot3(axis).abs();
-
-        let rb = half_b.x * axes_b[0].dot3(axis).abs() +
-            half_b.y * axes_b[1].dot3(axis).abs() +
-            half_b.z * axes_b[2].dot3(axis).abs();
-
-        let distance = t.dot3(axis).abs();
-
-        ra + rb - distance
     }
 }
 impl Default for RigidBody {
@@ -883,7 +840,7 @@ impl Default for RigidBody {
                 half_extents: Vector::new_vec(1.0),
             }),
             is_static: true,
-            restitution_coefficient: 0.0,
+            restitution_coefficient: 0.5,
             friction_coefficient: 0.5,
             mass: 999.0,
             inv_mass: 0.0,
@@ -928,7 +885,7 @@ impl ColliderInfo<'_> {
                     let delta = sphere_center - obb_center;
                     let local_sphere_center = Vector::new_vec3(delta.dot3(&axes[0]), delta.dot3(&axes[1]), delta.dot3(&axes[2]));
 
-                    let closest_local = local_sphere_center.clamp3(&(-1.0 * obb.half_extents), &obb.half_extents);
+                    let closest_local = local_sphere_center.clamp3(&(-obb.half_extents), &obb.half_extents);
                     let closest_world = obb_center + (axes[0] * closest_local.x) + (axes[1] * closest_local.y) + (axes[2] * closest_local.z);
 
                     let diff = sphere_center - closest_world;
@@ -1073,42 +1030,42 @@ impl ColliderInfo<'_> {
 
                     let mut min_penetration = f32::MAX;
                     let mut collision_normal = Vector::new_empty();
+                    let mut best_axis_type = AxisType::FaceA(0);
                     for i in 0..3 {
                         { // a_normals
                             let axis = a_axes[i];
-
-                            let penetration = RigidBody::test_axis(&axis, &t, &a.half_extents, &b.half_extents, &a_axes, &b_axes, true);
+                            let penetration = Self::test_axis(&axis, &t, &a.half_extents, &b.half_extents, &a_axes, &b_axes, true);
                             if penetration < 0.0 {
                                 return None
                             }
                             if penetration < min_penetration {
                                 min_penetration = penetration;
                                 collision_normal = axis;
+                                best_axis_type = AxisType::FaceA(i);
                             }
                         }
                         { // b_normals
                             let axis = b_axes[i];
-
-                            let penetration = RigidBody::test_axis(&axis, &t, &a.half_extents, &b.half_extents, &a_axes, &b_axes, true);
+                            let penetration = Self::test_axis(&axis, &t, &a.half_extents, &b.half_extents, &a_axes, &b_axes, true);
                             if penetration < 0.0 {
                                 return None
                             }
                             if penetration < min_penetration {
                                 min_penetration = penetration;
                                 collision_normal = axis;
+                                best_axis_type = AxisType::FaceB(i);
                             }
                         }
                         for j in 0..3 { // edge-edge cross-products
                             let axis = a_axes[i].cross(&b_axes[j]);
                             let axis_length = axis.magnitude_3d();
 
-                            // skip near-parallel
                             if axis_length < 1e-6 {
                                 continue;
                             }
 
                             let axis_normalized = axis / axis_length;
-                            let penetration = RigidBody::test_axis_cross(&axis_normalized, &t, &a.half_extents, &b.half_extents, &a_axes, &b_axes);
+                            let penetration = Self::test_axis_cross(&axis_normalized, &t, &a.half_extents, &b.half_extents, &a_axes, &b_axes);
 
                             if penetration < 0.0 {
                                 return None;
@@ -1117,24 +1074,30 @@ impl ColliderInfo<'_> {
                             if penetration < min_penetration {
                                 min_penetration = penetration;
                                 collision_normal = axis_normalized;
+                                best_axis_type = AxisType::Edge(i, j);
                             }
                         }
                     }
 
-                    let point_on_b = a_center + collision_normal * (min_penetration * 0.5);
-                    let point_on_a = b_center - collision_normal * (min_penetration * 0.5);
+                    // normal points from A to B
+                    if collision_normal.dot(&t) < 0.0 {
+                        collision_normal = -collision_normal;
+                    }
 
-                    // TODO Multiple contact points
+                    //TODO correct contact points
                     Some(ContactInformation {
-                        contact_points: vec![ContactPoint { point_on_a, point_on_b, penetration: min_penetration }],
+                        contact_points: vec![ContactPoint {
+                            point_on_a: a_center + t.normalize_3d() * a.half_extents.magnitude_3d(),
+                            point_on_b: b_center - t.normalize_3d() * b.half_extents.magnitude_3d(),
+                            penetration: min_penetration
+                        }],
                         normal: collision_normal,
                         penetration_depth: min_penetration,
                     })
                 }
                 Hitbox::SPHERE(_) => {
-                    let mut contact = other.intersects_sphere(self);
-                    if contact.is_some() {
-                        Some(contact.unwrap().flip())
+                    if let Some(contact) = other.intersects_sphere(self) {
+                        Some(contact.flip())
                     } else { None }
                 }
                 _ => None
@@ -1142,6 +1105,57 @@ impl ColliderInfo<'_> {
         }
         None
     }
+
+    fn test_axis(
+        axis: &Vector,
+        t: &Vector,
+        half_a: &Vector,
+        half_b: &Vector,
+        axes_a: &[Vector; 3],
+        axes_b: &[Vector; 3],
+        is_a: bool,
+    ) -> f32 {
+        let ra = if is_a {
+            half_a.x * axes_a[0].dot3(axis).abs() +
+                half_a.y * axes_a[1].dot3(axis).abs() +
+                half_a.z * axes_a[2].dot3(axis).abs()
+        } else {
+            half_a.x * axes_a[0].dot3(axis).abs() +
+                half_a.y * axes_a[1].dot3(axis).abs() +
+                half_a.z * axes_a[2].dot3(axis).abs()
+        };
+        let rb = half_b.x * axes_b[0].dot3(axis).abs() +
+            half_b.y * axes_b[1].dot3(axis).abs() +
+            half_b.z * axes_b[2].dot3(axis).abs();
+        let distance = t.dot3(axis).abs();
+        ra + rb - distance
+    }
+    fn test_axis_cross(
+        axis: &Vector,
+        t: &Vector,
+        half_a: &Vector,
+        half_b: &Vector,
+        axes_a: &[Vector; 3],
+        axes_b: &[Vector; 3],
+    ) -> f32 {
+        let ra = half_a.x * axes_a[0].dot3(axis).abs() +
+            half_a.y * axes_a[1].dot3(axis).abs() +
+            half_a.z * axes_a[2].dot3(axis).abs();
+
+        let rb = half_b.x * axes_b[0].dot3(axis).abs() +
+            half_b.y * axes_b[1].dot3(axis).abs() +
+            half_b.z * axes_b[2].dot3(axis).abs();
+
+        let distance = t.dot3(axis).abs();
+
+        ra + rb - distance
+    }
+}
+#[derive(Clone, Copy)]
+enum AxisType {
+    FaceA(usize),
+    FaceB(usize),
+    Edge(usize, usize),
 }
 
 struct CastInformation {
@@ -1156,10 +1170,11 @@ pub struct ContactInformation {
 impl ContactInformation {
     fn flip(mut self) -> ContactInformation {
         for point in &mut self.contact_points { point.flip(); }
-        self.normal = -1.0 * self.normal;
+        self.normal = -self.normal;
         self
     }
 }
+#[derive(Debug)]
 struct ContactPoint {
     point_on_a: Vector,
     point_on_b: Vector,
