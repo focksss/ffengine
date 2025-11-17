@@ -3,11 +3,15 @@ use std::ops::Deref;
 use std::rc::Rc;
 use std::sync::Arc;
 use image::imageops::sample_nearest;
+pub(crate) use crate::engine::physics::hitboxes::bounding_box::BoundingBox;
+pub(crate) use crate::engine::physics::hitboxes::capsule::Capsule;
 use crate::engine::physics::player::{MovementMode, Player};
 use crate::engine::world::scene::{Mesh, Model, Node, Scene, Vertex};
 use crate::math::*;
 use crate::math::matrix::Matrix;
-use crate::render::render::HitboxPushConstantSendable;
+pub(crate) use crate::engine::physics::hitboxes::hitbox::Hitbox;
+pub(crate) use crate::engine::physics::hitboxes::mesh::{Bvh, MeshCollider};
+pub(crate) use crate::engine::physics::hitboxes::sphere::Sphere;
 
 const MAX_ITERATIONS: usize = 5;
 const MIN_MOVE_THRESHOLD: f32 = 0.001;
@@ -55,8 +59,8 @@ impl PhysicsEngine {
     fn get_world_contacts(&self, body:& RigidBody) -> Option<Vec<ContactInformation>> {
         let mut collisions = Vec::new();
         for other_body in self.rigid_bodies.iter() {
-            if let Some(new_collisions) = body.colliding_with_info(other_body) {
-                collisions.extend(new_collisions);
+            if let Some(new_collisions) = body.colliding_with(other_body) {
+                collisions.push(new_collisions);
             }
         }
         if collisions.len() > 0 { return Some(collisions) }
@@ -103,7 +107,7 @@ impl PhysicsEngine {
 
             let mut hit = false;
             for other_body in self.rigid_bodies.iter() {
-                if body.colliding_with_info(other_body).is_some() {
+                if body.colliding_with(other_body).is_some() {
                     hit = true;
                     break;
                 }
@@ -148,19 +152,17 @@ impl PhysicsEngine {
                 if body_a.is_static && body_b.is_static {
                     continue;
                 }
-                if let Some(collisions) = body_a.colliding_with_info(body_b) {
-                    if collisions.is_empty() { continue; }
-                    let deepest_collision = Self::get_deepest_of_contacts(&collisions);
-                    let normal = deepest_collision.normal;
-                    let depth = deepest_collision.penetration_depth;
+                if let Some(collision) = body_a.colliding_with(body_b) {
+                    let normal = collision.normal;
+                    let depth = collision.penetration_depth;
                     let im_a = body_a.inv_mass; let im_b = body_b.inv_mass;
                     let s_im = im_a + im_b;
                     let restitution = body_a.restitution_coefficient * body_b.restitution_coefficient;
                     let inv_inertia_a = body_a.get_inverse_inertia_tensor_world_space();
                     let inv_inertia_b = body_b.get_inverse_inertia_tensor_world_space();
 
-                    let pt_on_a = deepest_collision.points[0].0;
-                    let pt_on_b = deepest_collision.points[0].1;
+                    let pt_on_a = collision.contact_points[0].point_on_a;
+                    let pt_on_b = collision.contact_points[0].point_on_b;
                     let ra = pt_on_a - body_a.get_center_of_mass_world_space();
                     let rb = pt_on_b - body_b.get_center_of_mass_world_space();
 
@@ -536,94 +538,25 @@ impl RigidBody {
         }
     }
 
-    pub fn colliding_with_info(&self, other: &RigidBody) -> Option<Vec<ContactInformation>> {
-        match (&self.hitbox, &other.hitbox) {
-            (Hitbox::OBB(a), Hitbox::OBB(b)) => {
-                let info = Self::obb_intersects_obb(
-                    &a, &b,
-                    &self.position, &other.position,
-                    &self.orientation, &other.orientation,
-                );
-                if info.is_some() {
-                    Some(vec![info.unwrap()])
-                } else { None }
-            }
-            (Hitbox::OBB(_), Hitbox::MESH(_)) => {
-                self.intersects_mesh(other)
-            }
-            (Hitbox::OBB(a), Hitbox::CAPSULE(b)) => {
-                let info = Self::obb_intersects_capsule(
-                    &a, &self.orientation, &self.position,
-                    &b.a, &b.b, b.radius, &other.position, &other.orientation
-                );
-                if info.is_some() {
-                    Some(vec![info.unwrap()])
-                } else { None }
-            }
-            (Hitbox::OBB(_), Hitbox::SPHERE(_)) => { panic!("obb-sphere intersections not yet implemented") }
+    fn colliding_with(&self, other: &RigidBody) -> Option<ContactInformation> {
+        let self_collider_info = ColliderInfo {
+            hitbox: &self.hitbox,
+            position: &self.position,
+            orientation: &self.orientation,
+        };
+        let other_collider_info = &ColliderInfo {
+            hitbox: &other.hitbox,
+            position: &other.position,
+            orientation: &other.orientation,
+        };
 
-            (Hitbox::MESH(_), Hitbox::MESH(_)) => {
-                other.intersects_mesh(self)
-            }
-            (Hitbox::MESH(_), Hitbox::OBB(_)) => {
-                other.intersects_mesh(self)
-            }
-            (Hitbox::MESH(_), Hitbox::CAPSULE(_)) => {
-                other.intersects_mesh(self)
-            }
-            (Hitbox::MESH(_), Hitbox::SPHERE(_)) => { panic!("mesh-sphere intersections not yet implemented") }
-
-            (Hitbox::CAPSULE(_), Hitbox::CAPSULE(_)) => {
-                panic!("capsule-capsule intersections not yet implemented");
-            }
-            (Hitbox::CAPSULE(a), Hitbox::OBB(b)) => {
-                let info = Self::obb_intersects_capsule(
-                    &b, &other.orientation, &other.position,
-                    &a.a, &a.b, a.radius, &self.position, &self.orientation
-                );
-                if info.is_some() {
-                    Some(vec![info.unwrap()])
-                } else { None }
-            }
-            (Hitbox::CAPSULE(_), Hitbox::MESH(_)) => {
-                self.intersects_mesh(other)
-            }
-            (Hitbox::CAPSULE(_), Hitbox::SPHERE(_)) => { panic!("capsule-sphere intersections not yet implemented") }
-
-            (Hitbox::SPHERE(a), Hitbox::SPHERE(b)) => {
-                Self::sphere_intersects_sphere(a, b, &self.position, &other.position, &self.orientation, &other.orientation)
-            }
-            (Hitbox::SPHERE(a), Hitbox::OBB(_)) => { panic!("obb-sphere intersections not yet implemented") }
-            (Hitbox::SPHERE(_), Hitbox::MESH(_)) => { panic!("mesh-sphere intersections not yet implemented") }
-            (Hitbox::SPHERE(_), Hitbox::CAPSULE(_)) => { panic!("capsule-capsule intersections not yet implemented") }
+        match &other.hitbox {
+            Hitbox::SPHERE(_) => self_collider_info.intersects_sphere(other_collider_info),
+            Hitbox::OBB(_) => self_collider_info.intersects_obb(other_collider_info),
+            _ => { panic!("{:?}-{:?} intersection not implemented", self.hitbox.get_type(), other.hitbox.get_type()) }
         }
     }
 
-    pub fn sphere_intersects_sphere(
-        a: &Sphere, b: &Sphere,
-        a_position: &Vector,
-        b_position: &Vector,
-        a_orientation: &Vector, b_orientation: &Vector) -> Option<Vec<ContactInformation>> {
-        let p_a = a.center.rotate_by_quat(a_orientation) + a_position;
-        let p_b = b.center.rotate_by_quat(b_orientation) + b_position;
-
-        let d = p_b - p_a;
-        let d_m = d.magnitude_3d();
-        let n = if d_m > 1e-6 { d / d_m } else { Vector::new_vec3(0.0, 1.0, 0.0) };
-
-        if d_m > a.radius + b.radius { return None }
-
-        let pt_on_a = p_a + n * a.radius;
-        let pt_on_b = p_b - n * b.radius;
-
-        let penetration = a.radius + b.radius - d_m;
-
-        Some(vec![ContactInformation {
-            points: vec![(pt_on_a, pt_on_b, n, penetration)],
-            normal: n,
-            penetration_depth: penetration
-        }])
-    }
     pub fn obb_intersects_capsule(
         a_bounds: &BoundingBox, a_orientation: &Vector, a_position: &Vector,
         b_point_a: &Vector, b_point_b: &Vector, b_radius: f32, b_position: &Vector, b_orientation: &Vector,
@@ -697,8 +630,8 @@ impl RigidBody {
         let contact_point_world = obb_center + (rot_mat * contact_point_local.unitize_w());
 
         Some(ContactInformation {
+            contact_points: vec![ContactPoint { point_on_a: contact_point_world, point_on_b: contact_point_world, penetration }],
             normal: normal_world,
-            points: vec![],
             penetration_depth: penetration,
         })
     }
@@ -756,19 +689,15 @@ impl RigidBody {
         mesh_collider: &MeshCollider,
         bvh: &Bvh,
     ) -> Option<Vec<ContactInformation>> {
-        let intersection = match body_hitbox {
-            Hitbox::CAPSULE(capsule) => { Self::obb_intersects_capsule(
-                &bvh.bounds, &Vector::new_empty_quat(), &Vector::new_empty_quat(),
-                &capsule.a, &capsule.b, capsule.radius, &body_position, &body_orientation
-            ) }
-            Hitbox::MESH(mesh) => { panic!("mesh-obb collision not implemented"); }
-            Hitbox::OBB(obb) => { Self::obb_intersects_obb(
-                &obb, &bvh.bounds,
-                &body_position, &Vector::new_empty_quat(),
-                &body_orientation, &Vector::new_empty_quat()
-            ) }
-            Hitbox::SPHERE(sphere) => { panic!("sphere-obb collision not implemented"); }
-        };
+        let intersection = &ColliderInfo {
+            hitbox: body_hitbox,
+            position: body_position,
+            orientation: body_orientation
+        }.intersects_obb(&ColliderInfo {
+            hitbox: &Hitbox::OBB(bvh.bounds),
+            position: &Vector::new_empty_quat(),
+            orientation: &Vector::new_empty_quat(),
+        });
         if intersection.is_some() {
             if let Some(triangle_indices) = &bvh.triangle_indices {
                 let mut triangle_intersections = Vec::new();
@@ -895,94 +824,8 @@ impl RigidBody {
         );
 
         Some(ContactInformation {
-            points: vec![],
+            contact_points: vec![ContactPoint { point_on_a: Vector::new_empty(), point_on_b: Vector::new_empty(), penetration: min_penetration }],
             normal: rot_mat * (best_axis.unitize_w()),
-            penetration_depth: min_penetration,
-        })
-    }
-    fn obb_intersects_obb(
-        a_bounds: &BoundingBox, b_bounds: &BoundingBox,
-        a_position: &Vector, b_position: &Vector,
-        a_orientation: &Vector, b_orientation: &Vector,
-    ) -> Option<ContactInformation> {
-        let (a, b) = (a_bounds, b_bounds);
-
-        let a_center = a.center.rotate_by_quat(&a_orientation) + a_position;
-        let b_center = b.center.rotate_by_quat(&b_orientation) + b_position;
-
-        let a_quat = a_orientation;
-        let b_quat = b_orientation;
-
-        let a_axes = [
-            Vector::new_vec3(1.0, 0.0, 0.0).rotate_by_quat(&a_quat),
-            Vector::new_vec3(0.0, 1.0, 0.0).rotate_by_quat(&a_quat),
-            Vector::new_vec3(0.0, 0.0, 1.0).rotate_by_quat(&a_quat),
-        ];
-        let b_axes = [
-            Vector::new_vec3(1.0, 0.0, 0.0).rotate_by_quat(&b_quat),
-            Vector::new_vec3(0.0, 1.0, 0.0).rotate_by_quat(&b_quat),
-            Vector::new_vec3(0.0, 0.0, 1.0).rotate_by_quat(&b_quat),
-        ];
-
-        let t = b_center - a_center;
-
-        let mut min_penetration = f32::MAX;
-        let mut collision_normal = Vector::new_empty();
-        for i in 0..3 {
-            { // a_normals
-                let axis = a_axes[i];
-
-                let penetration = RigidBody::test_axis(&axis, &t, &a.half_extents, &b.half_extents, &a_axes, &b_axes, true);
-                if penetration < 0.0 {
-                    return None
-                }
-                if penetration < min_penetration {
-                    min_penetration = penetration;
-                    collision_normal = axis;
-                }
-            }
-            { // b_normals
-                let axis = b_axes[i];
-
-                let penetration = RigidBody::test_axis(&axis, &t, &a.half_extents, &b.half_extents, &a_axes, &b_axes, true);
-                if penetration < 0.0 {
-                    return None
-                }
-                if penetration < min_penetration {
-                    min_penetration = penetration;
-                    collision_normal = axis;
-                }
-            }
-            for j in 0..3 { // edge-edge cross-products
-                let axis = a_axes[i].cross(&b_axes[j]);
-                let axis_length = axis.magnitude_3d();
-
-                // skip near-parallel
-                if axis_length < 1e-6 {
-                    continue;
-                }
-
-                let axis_normalized = axis / axis_length;
-                let penetration = RigidBody::test_axis_cross(&axis_normalized, &t, &a.half_extents, &b.half_extents, &a_axes, &b_axes);
-
-                if penetration < 0.0 {
-                    return None;
-                }
-
-                if penetration < min_penetration {
-                    min_penetration = penetration;
-                    collision_normal = axis_normalized;
-                }
-            }
-        }
-
-        let point_on_b = a_center + collision_normal * (min_penetration * 0.5);
-        let point_on_a = b_center - collision_normal * (min_penetration * 0.5);
-
-        // TODO Multiple contact points
-        Some(ContactInformation {
-            points: vec![(point_on_a, point_on_b, collision_normal, min_penetration)],
-            normal: collision_normal,
             penetration_depth: min_penetration,
         })
     }
@@ -1057,359 +900,276 @@ impl Default for RigidBody {
     }
 }
 
+struct ColliderInfo<'a> {
+    hitbox: &'a Hitbox,
+    position: &'a Vector,
+    orientation: &'a Vector,
+}
+impl ColliderInfo<'_> {
+    fn intersects_sphere(&self, other: &ColliderInfo) -> Option<ContactInformation> {
+        if let Hitbox::SPHERE(sphere) = other.hitbox {
+            return match self.hitbox {
+                Hitbox::OBB(obb) => {
+                    let obb_position = self.position;
+                    let sphere_position = other.position;
+                    let obb_orientation = self.orientation;
+                    let sphere_orientation = other.orientation;
+                    let rot = Matrix::new_rotate_quaternion_vec4(obb_orientation);
+
+                    let sphere_center = sphere.center.rotate_by_quat(sphere_orientation) + sphere_position;
+                    let obb_center = (rot * obb.center.with('w', 1.0)) + obb_position;
+
+                    let axes = [
+                        rot * Vector::new_vec4(1.0, 0.0, 0.0, 1.0),
+                        rot * Vector::new_vec4(0.0, 1.0, 0.0, 1.0),
+                        rot * Vector::new_vec4(0.0, 0.0, 1.0, 1.0),
+                    ];
+
+                    let delta = sphere_center - obb_center;
+                    let local_sphere_center = Vector::new_vec3(delta.dot3(&axes[0]), delta.dot3(&axes[1]), delta.dot3(&axes[2]));
+
+                    let closest_local = local_sphere_center.clamp3(&(-1.0 * obb.half_extents), &obb.half_extents);
+                    let closest_world = obb_center + (axes[0] * closest_local.x) + (axes[1] * closest_local.y) + (axes[2] * closest_local.z);
+
+                    let diff = sphere_center - closest_world;
+                    let dist_sq = diff.dot3(&diff);
+                    let radius_sq = sphere.radius * sphere.radius;
+                    if dist_sq > radius_sq {
+                        return None
+                    }
+                    let dist = dist_sq.sqrt();
+
+                    let (normal, penetration, point_on_obb) = if dist < 1e-6 {
+                        let penetrations = [
+                            (obb.half_extents.x - local_sphere_center.x.abs(), 0, local_sphere_center.x.signum()),
+                            (obb.half_extents.y - local_sphere_center.y.abs(), 1, local_sphere_center.y.signum()),
+                            (obb.half_extents.z - local_sphere_center.z.abs(), 2, local_sphere_center.z.signum()),
+                        ];
+                        let mut min_pen = penetrations[0];
+                        for &pen in &penetrations[1..] {
+                            if pen.0 < min_pen.0 {
+                                min_pen = pen;
+                            }
+                        }
+
+                        let axis_idx = min_pen.1;
+                        let sign = min_pen.2;
+                        let normal = axes[axis_idx] * sign;
+                        let penetration = min_pen.0 + sphere.radius;
+
+                        let mut local_point = local_sphere_center;
+                        match axis_idx {
+                            0 => local_point.x = obb.half_extents.x * sign,
+                            1 => local_point.y = obb.half_extents.y * sign,
+                            2 => local_point.z = obb.half_extents.z * sign,
+                            _ => unreachable!(),
+                        }
+
+                        let point_on_obb = obb_center + (
+                            axes[0] * local_point.x + axes[1] * local_point.y + axes[2] * local_point.z
+                        );
+
+                        (normal, penetration, point_on_obb)
+                    } else {
+                        let normal = diff * (1.0 / dist);
+                        let penetration = sphere.radius - dist;
+                        (normal, penetration, closest_world)
+                    };
+
+                    let point_on_sphere = sphere_center - (normal * sphere.radius);
+
+                    let tolerance = 1e-4;
+                    let mut contact_points = vec![ContactPoint {
+                        point_on_a: point_on_obb,
+                        point_on_b: point_on_sphere,
+                        penetration,
+                    }];
+
+                    let on_face_x = (local_sphere_center.x.abs() - obb.half_extents.x).abs() < tolerance;
+                    let on_face_y = (local_sphere_center.y.abs() - obb.half_extents.y).abs() < tolerance;
+                    let on_face_z = (local_sphere_center.z.abs() - obb.half_extents.z).abs() < tolerance;
+
+                    let faces_count = on_face_x as u8 + on_face_y as u8 + on_face_z as u8;
+
+                    // additional contact points for edge/corner
+                    if faces_count >= 2 && dist > 1e-6 {
+                        let tangent1 = if normal.x.abs() < 0.9 {
+                            Vector::new_vec3(1.0, 0.0, 0.0).cross(&normal).normalize_3d()
+                        } else {
+                            Vector::new_vec3(0.0, 1.0, 0.0).cross(&normal).normalize_3d()
+                        };
+                        let tangent2 = normal.cross(&tangent1).normalize_3d();
+
+                        // contact points in a circle around the main contact
+                        let num_additional = if faces_count == 3 { 3 } else { 2 }; // corner/edge
+                        for i in 1..=num_additional {
+                            let angle = (i as f32) * std::f32::consts::PI * 2.0 / (num_additional + 1) as f32;
+                            let offset = tangent1 * (angle.cos() * 0.01) + tangent2 * (angle.sin() * 0.01);
+
+                            contact_points.push(ContactPoint {
+                                point_on_a: point_on_obb + offset,
+                                point_on_b: point_on_sphere + offset,
+                                penetration,
+                            });
+                        }
+                    }
+
+                    Some(ContactInformation {
+                        contact_points,
+                        normal,
+                        penetration_depth: penetration,
+                    })
+                }
+                Hitbox::SPHERE(a) => {
+                    let p_a = a.center.rotate_by_quat(&self.orientation) + self.position;
+                    let p_b = sphere.center.rotate_by_quat(&other.orientation) + other.position;
+
+                    let d = p_b - p_a;
+                    let d_m = d.magnitude_3d();
+                    let n = if d_m > 1e-6 { d / d_m } else { Vector::new_vec3(0.0, 1.0, 0.0) };
+
+                    if d_m > a.radius + sphere.radius { return None }
+
+                    let point_on_a = p_a + n * a.radius;
+                    let point_on_b = p_b - n * sphere.radius;
+
+                    let penetration = a.radius + sphere.radius - d_m;
+
+                    Some(ContactInformation {
+                        contact_points: vec![ContactPoint{ point_on_a, point_on_b, penetration }],
+                        normal: n,
+                        penetration_depth: penetration
+                    })
+                }
+                _ => { None }
+            }
+        }
+        None
+    }
+    fn intersects_obb(&self, other: &ColliderInfo) -> Option<ContactInformation> {
+        if let Hitbox::OBB(obb) = other.hitbox {
+            return match self.hitbox {
+                Hitbox::OBB(this_obb) => {
+                    let (a, b) = (this_obb, obb);
+
+                    let a_center = a.center.rotate_by_quat(&self.orientation) + self.position;
+                    let b_center = b.center.rotate_by_quat(&other.orientation) + other.position;
+
+                    let a_quat = self.orientation;
+                    let b_quat = other.orientation;
+
+                    let a_axes = [
+                        Vector::new_vec3(1.0, 0.0, 0.0).rotate_by_quat(&a_quat),
+                        Vector::new_vec3(0.0, 1.0, 0.0).rotate_by_quat(&a_quat),
+                        Vector::new_vec3(0.0, 0.0, 1.0).rotate_by_quat(&a_quat),
+                    ];
+                    let b_axes = [
+                        Vector::new_vec3(1.0, 0.0, 0.0).rotate_by_quat(&b_quat),
+                        Vector::new_vec3(0.0, 1.0, 0.0).rotate_by_quat(&b_quat),
+                        Vector::new_vec3(0.0, 0.0, 1.0).rotate_by_quat(&b_quat),
+                    ];
+
+                    let t = b_center - a_center;
+
+                    let mut min_penetration = f32::MAX;
+                    let mut collision_normal = Vector::new_empty();
+                    for i in 0..3 {
+                        { // a_normals
+                            let axis = a_axes[i];
+
+                            let penetration = RigidBody::test_axis(&axis, &t, &a.half_extents, &b.half_extents, &a_axes, &b_axes, true);
+                            if penetration < 0.0 {
+                                return None
+                            }
+                            if penetration < min_penetration {
+                                min_penetration = penetration;
+                                collision_normal = axis;
+                            }
+                        }
+                        { // b_normals
+                            let axis = b_axes[i];
+
+                            let penetration = RigidBody::test_axis(&axis, &t, &a.half_extents, &b.half_extents, &a_axes, &b_axes, true);
+                            if penetration < 0.0 {
+                                return None
+                            }
+                            if penetration < min_penetration {
+                                min_penetration = penetration;
+                                collision_normal = axis;
+                            }
+                        }
+                        for j in 0..3 { // edge-edge cross-products
+                            let axis = a_axes[i].cross(&b_axes[j]);
+                            let axis_length = axis.magnitude_3d();
+
+                            // skip near-parallel
+                            if axis_length < 1e-6 {
+                                continue;
+                            }
+
+                            let axis_normalized = axis / axis_length;
+                            let penetration = RigidBody::test_axis_cross(&axis_normalized, &t, &a.half_extents, &b.half_extents, &a_axes, &b_axes);
+
+                            if penetration < 0.0 {
+                                return None;
+                            }
+
+                            if penetration < min_penetration {
+                                min_penetration = penetration;
+                                collision_normal = axis_normalized;
+                            }
+                        }
+                    }
+
+                    let point_on_b = a_center + collision_normal * (min_penetration * 0.5);
+                    let point_on_a = b_center - collision_normal * (min_penetration * 0.5);
+
+                    // TODO Multiple contact points
+                    Some(ContactInformation {
+                        contact_points: vec![ContactPoint { point_on_a, point_on_b, penetration: min_penetration }],
+                        normal: collision_normal,
+                        penetration_depth: min_penetration,
+                    })
+                }
+                Hitbox::SPHERE(_) => {
+                    let mut contact = other.intersects_sphere(self);
+                    if contact.is_some() {
+                        Some(contact.unwrap().flip())
+                    } else { None }
+                }
+                _ => None
+            }
+        }
+        None
+    }
+}
+
 struct CastInformation {
     distance: f32,
     contacts: Vec<ContactInformation>,
 }
 pub struct ContactInformation {
-    points: Vec<(Vector, Vector, Vector, f32)>, // point on A, point on B, normal, depth
+    contact_points: Vec<ContactPoint>,
     normal: Vector,
     penetration_depth: f32,
 }
-
-pub enum Hitbox {
-    OBB(BoundingBox),
-    MESH(MeshCollider),
-    CAPSULE(Capsule),
-    SPHERE(Sphere),
-}
-impl Hitbox {
-    fn get_hitbox_from_node(node: &Node, hitbox_type: usize) -> Option<Hitbox> {
-        assert!(hitbox_type < 4);
-        if let Some(mesh) = &node.mesh {
-            let scale = node.world_transform.extract_scale();
-            let (min, max) = mesh.borrow().get_min_max();
-            let half_extent = (max - min) * 0.5 * scale;
-
-            return Some(match hitbox_type {
-                0 => {
-                    Hitbox::OBB(BoundingBox {
-                        center: (min + max) * scale * 0.5,
-                        half_extents: half_extent,
-                    })
-                }
-                1 => {
-                    let mesh_collider = MeshCollider::new(mesh.clone(), scale);
-                    Hitbox::MESH(mesh_collider)
-                }
-                2 => {
-                    let mid = (min + max) * 0.5 * scale;
-                    let radius = half_extent.with('y', 0.0).magnitude_3d();
-
-                    let min_s = min * scale;
-                    let max_s = max * scale;
-
-                    Hitbox::CAPSULE(Capsule {
-                        a: Vector::new_vec3(mid.x, max_s.y - radius, mid.z),
-                        b: Vector::new_vec3(mid.x, min_s.y + radius, mid.z),
-                        radius,
-                    })
-                }
-                3 => {
-                    Hitbox::SPHERE(Sphere {
-                        center: (min + max) * scale * 0.5,
-                        radius: half_extent.max_of(),
-                    })
-                }
-                _ => unreachable!()
-            })
-        }
-        None
+impl ContactInformation {
+    fn flip(mut self) -> ContactInformation {
+        for point in &mut self.contact_points { point.flip(); }
+        self.normal = -1.0 * self.normal;
+        self
     }
 }
-impl Clone for Hitbox {
-    fn clone(&self) -> Self {
-        match self {
-            Hitbox::OBB(bounding_box) => Hitbox::OBB(bounding_box.clone()),
-            Hitbox::MESH(collider) => Hitbox::MESH(collider.clone()),
-            Hitbox::CAPSULE(capsule) => Hitbox::CAPSULE(capsule.clone()),
-            Hitbox::SPHERE(sphere) => Hitbox::SPHERE(sphere.clone()),
-        }
-    }
+struct ContactPoint {
+    point_on_a: Vector,
+    point_on_b: Vector,
+
+    penetration: f32,
 }
-#[derive(Debug, Copy, Clone)]
-pub struct Capsule {
-    pub a: Vector,
-    pub b: Vector,
-    pub radius: f32,
-}
-#[derive(Debug, Copy, Clone)]
-pub struct Sphere {
-    pub center: Vector,
-    pub radius: f32,
-}
-#[derive(Debug, Copy, Clone)]
-pub struct BoundingBox {
-    pub center: Vector,
-    pub half_extents: Vector,
-}
-impl BoundingBox {
-    pub fn from_min_max(min: Vector, max: Vector) -> Self {
-        BoundingBox {
-            center: (min + max) * 0.5,
-            half_extents: (max - min) * 0.5,
-        }
-    }
-}
-///* Does not support non-uniform scaling, as is the standard(?) with physics engines. Must call .rescale() to rescale the bvh to be nonuniform.
-pub struct MeshCollider {
-    pub mesh: Rc<RefCell<Mesh>>,
-    pub current_scale_multiplier: f32,
-    current_scale_factor: Vector,
-    pub bvh: Rc<RefCell<Bvh>>,
-}
-impl MeshCollider {
-    pub fn new(mesh: Rc<RefCell<Mesh>>, scale: Vector) -> Self {
-        MeshCollider {
-            mesh: mesh.clone(),
-            current_scale_factor: scale,
-            current_scale_multiplier: 1.0,
-            bvh: Rc::new(RefCell::new(Bvh::new(mesh.clone(), scale))),
-        }
-    }
-
-    pub fn rescale_bvh(&mut self, new_scale: Vector) {
-        if self.bvh.borrow().active_scale_factor.equals(&new_scale, 1e-6) { return }
-        self.bvh.borrow_mut().rescale_bvh_bounds(&new_scale, &self.current_scale_factor);
-        self.current_scale_factor = new_scale;
-    }
-}
-impl Clone for MeshCollider {
-    fn clone(&self) -> Self {
-        Self {
-            mesh: self.mesh.clone(),
-            current_scale_factor: self.current_scale_factor.clone(),
-            current_scale_multiplier: self.current_scale_multiplier,
-            bvh: self.bvh.clone()
-        }
-    }
-}
-pub struct Bvh {
-    pub active_scale_factor: Vector,
-    bounds: BoundingBox,
-    left_child: Option<Rc<RefCell<Bvh>>>,
-    right_child: Option<Rc<RefCell<Bvh>>>,
-    triangle_indices: Option<Vec<usize>>,
-}
-
-impl Bvh {
-    pub fn get_bounds_info(bvh: &Rc<RefCell<Bvh>>) -> Vec<(Vector, Vector)> { // centers, half extents
-        let mut constants = Vec::new();
-        Bvh::bounds_stack_add_bvh(&bvh, &mut constants);
-        constants
-    }
-    fn bounds_stack_add_bvh(bvh: &Rc<RefCell<Bvh>>, constants: &mut Vec<(Vector, Vector)>) {
-        let bvh = bvh.borrow();
-        constants.push((
-            bvh.bounds.center.clone(),
-            bvh.bounds.half_extents.clone()
-        ));
-        if let Some(left_child) = &bvh.left_child {
-            Bvh::bounds_stack_add_bvh(left_child, constants);
-        }
-        if let Some(right_child) = &bvh.right_child {
-            Bvh::bounds_stack_add_bvh(right_child, constants);
-        }
-    }
-
-    pub fn rescale_bvh_bounds(&mut self, new_scale: &Vector, old_scale: &Vector) {
-        self.bounds.half_extents = (self.bounds.half_extents / old_scale) * new_scale;
-        self.bounds.center = (self.bounds.center / old_scale) * new_scale;
-        if let Some(left_child) = self.left_child.clone() {
-            left_child.borrow_mut().rescale_bvh_bounds(&new_scale, &old_scale);
-        }
-        if let Some(right_child) = self.right_child.clone() {
-            right_child.borrow_mut().rescale_bvh_bounds(&new_scale, &old_scale);
-        }
-        self.active_scale_factor = new_scale.clone();
-    }
-
-    pub fn new(mesh: Rc<RefCell<Mesh>>, scale: Vector) -> Bvh {
-        let mesh_ref = mesh.borrow();
-        let mut triangles = Vec::new();
-
-        for primitive in &mesh_ref.primitives {
-            let indices: Vec<u32> = if primitive.index_data_u8.len() > 0 {
-                primitive.index_data_u8.iter().map(|i| *i as u32).collect()
-            } else if primitive.index_data_u16.len() > 0 {
-                primitive.index_data_u16.iter().map(|i| *i as u32).collect()
-            } else if primitive.index_data_u32.len() > 0 {
-                primitive.index_data_u32.clone()
-            } else {
-                panic!("mesh does not have indices")
-            };
-
-            for i in (0..indices.len()).step_by(3) {
-                let v0 = &primitive.vertex_data[indices[i] as usize];
-                let v1 = &primitive.vertex_data[indices[i + 1] as usize];
-                let v2 = &primitive.vertex_data[indices[i + 2] as usize];
-
-                let centroid = Self::centroid(v0, v1, v2);
-                triangles.push((i / 3, centroid));
-            }
-        }
-
-        drop(mesh_ref);
-        let num_tris = triangles.len();
-        Self::split(mesh, &mut triangles, 0, num_tris, &scale)
-    }
-
-    fn split(
-        mesh: Rc<RefCell<Mesh>>,
-        triangles: &mut [(usize, Vector)],
-        start: usize,
-        end: usize,
-        scale: &Vector,
-    ) -> Bvh {
-        let (mut min, mut max) = Self::min_max(&mesh, triangles, start, end);
-        min = min * scale; max = max * scale;
-        let num_triangles = end - start;
-
-        const MAX_LEAF_SIZE: usize = 4;
-
-        if num_triangles <= MAX_LEAF_SIZE {
-            let triangle_indices: Vec<usize> = triangles[start..end]
-                .iter()
-                .map(|(idx, _)| *idx)
-                .collect();
-
-            return Bvh {
-                active_scale_factor: scale.clone(),
-                bounds: BoundingBox::from_min_max(min, max),
-                left_child: None,
-                right_child: None,
-                triangle_indices: Some(triangle_indices),
-            };
-        }
-
-        let extent = max - min;
-        let axis = if extent.x > extent.y && extent.x > extent.z {
-            'x'
-        } else if extent.y > extent.z {
-            'y'
-        } else {
-            'z'
-        };
-
-        Self::sort_triangles_by_axis(&mut triangles[start..end], axis);
-
-        let mid = start + num_triangles / 2;
-
-        let left_child = Some(Rc::new(RefCell::new(Self::split(
-            mesh.clone(),
-            triangles,
-            start,
-            mid,
-            scale
-        ))));
-
-        let right_child = Some(Rc::new(RefCell::new(Self::split(
-            mesh.clone(),
-            triangles,
-            mid,
-            end,
-            scale
-        ))));
-
-        Bvh {
-            active_scale_factor: scale.clone(),
-            bounds: BoundingBox::from_min_max(min, max),
-            left_child,
-            right_child,
-            triangle_indices: None,
-        }
-    }
-
-    fn min_max(
-        mesh: &Rc<RefCell<Mesh>>,
-        triangles: &[(usize, Vector)],
-        start: usize,
-        end: usize
-    ) -> (Vector, Vector) {
-        let mut min = Vector::new_vec(f32::MAX);
-        let mut max = Vector::new_vec(f32::MIN);
-
-        let mesh_borrow = mesh.borrow();
-
-        for (triangle_idx, _) in &triangles[start..end] {
-            let (v0, v1, v2) = Self::get_triangle_vertices(&mesh_borrow, *triangle_idx, None);
-
-            min = Vector::min(&min, &Vector::new_from_array(&v0.position));
-            min = Vector::min(&min, &Vector::new_from_array(&v1.position));
-            min = Vector::min(&min, &Vector::new_from_array(&v2.position));
-
-            max = Vector::max(&max, &Vector::new_from_array(&v0.position));
-            max = Vector::max(&max, &Vector::new_from_array(&v1.position));
-            max = Vector::max(&max, &Vector::new_from_array(&v2.position));
-        }
-
-        (min, max)
-    }
-
-    fn get_triangle_vertices(mesh: &Mesh, triangle_index: usize, scale_factor: Option<Vector>) -> (Vertex, Vertex, Vertex) {
-        let primitive = &mesh.primitives[0];
-
-        let idx0;
-        let idx1;
-        let idx2;
-
-        if primitive.index_data_u8.len() > 0 {
-            idx0 = primitive.index_data_u8[3 * triangle_index] as usize;
-            idx1 = primitive.index_data_u8[3 * triangle_index + 1] as usize;
-            idx2 = primitive.index_data_u8[3 * triangle_index + 2] as usize;
-        } else if primitive.index_data_u16.len() > 0 {
-            idx0 = primitive.index_data_u16[3 * triangle_index] as usize;
-            idx1 = primitive.index_data_u16[3 * triangle_index + 1] as usize;
-            idx2 = primitive.index_data_u16[3 * triangle_index + 2] as usize;
-        } else if primitive.index_data_u32.len() > 0 {
-            idx0 = primitive.index_data_u32[3 * triangle_index] as usize;
-            idx1 = primitive.index_data_u32[3 * triangle_index + 1] as usize;
-            idx2 = primitive.index_data_u32[3 * triangle_index + 2] as usize;
-        } else {
-            panic!("mesh does not have indices")
-        }
-
-        let mut v0 = primitive.vertex_data[idx0].clone();
-        let mut v1 = primitive.vertex_data[idx1].clone();
-        let mut v2 = primitive.vertex_data[idx2].clone();
-
-        if let Some(scale) = scale_factor {
-            v0.position = (Vector::new_from_array(&v0.position) * scale).to_array3();
-            v0.normal = (Vector::new_from_array(&v0.normal) * scale).normalize_3d().to_array3();
-
-            v1.position = (Vector::new_from_array(&v1.position) * scale).to_array3();
-            v1.normal = (Vector::new_from_array(&v1.normal) * scale).normalize_3d().to_array3();
-
-            v2.position = (Vector::new_from_array(&v2.position) * scale).to_array3();
-            v2.normal = (Vector::new_from_array(&v2.normal) * scale).normalize_3d().to_array3();
-        }
-
-        (v0, v1, v2)
-    }
-
-    fn sort_triangles_by_axis(triangles: &mut [(usize, Vector)], axis: char) {
-        match axis {
-            'x' => triangles.sort_by(|a, b| a.1.x.partial_cmp(&b.1.x).unwrap()),
-            'y' => triangles.sort_by(|a, b| a.1.y.partial_cmp(&b.1.y).unwrap()),
-            'z' => triangles.sort_by(|a, b| a.1.z.partial_cmp(&b.1.z).unwrap()),
-            _ => panic!("Unknown axis"),
-        }
-    }
-
-    fn centroid(a: &Vertex, b: &Vertex, c: &Vertex) -> Vector {
-        (Vector::new_from_array(&a.position)
-            + Vector::new_from_array(&b.position)
-            + Vector::new_from_array(&c.position)) / 3.0
-    }
-}
-impl Clone for Bvh {
-    fn clone(&self) -> Self {
-        Self {
-            active_scale_factor: self.active_scale_factor.clone(),
-            bounds: self.bounds.clone(),
-            left_child: self.left_child.clone(),
-            right_child: self.right_child.clone(),
-            triangle_indices: self.triangle_indices.clone(),
-        }
+impl ContactPoint {
+    fn flip(&mut self) {
+        let temp = self.point_on_b;
+        self.point_on_b = self.point_on_a;
+        self.point_on_a = temp;
     }
 }

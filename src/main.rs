@@ -27,7 +27,7 @@ use crate::engine::physics::physics_engine;
 use crate::engine::world::scene::{Light, Model, Scene};
 use crate::render::*;
 use crate::render::render::Renderer;
-use crate::engine::physics::physics_engine::{BoundingBox, PhysicsEngine, RigidBody};
+use crate::engine::physics::physics_engine::{PhysicsEngine};
 
 const PI: f32 = std::f32::consts::PI;
 
@@ -76,7 +76,7 @@ fn main() { unsafe {
 
     world.initialize(&base, MAX_FRAMES_IN_FLIGHT, true);
 
-    physics_engine.add_all_nodes_from_model(&world, 1, 3);
+    physics_engine.add_all_nodes_from_model(&world, 1, 0);
     physics_engine.add_all_nodes_from_model(&world, 0, 3);
     physics_engine.rigid_bodies[0].set_static(false);
     physics_engine.rigid_bodies[0].set_mass(1.0);
