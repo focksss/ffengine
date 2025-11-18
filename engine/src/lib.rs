@@ -5,4 +5,5 @@ pub mod math;
 pub mod world;
 pub mod app;
 pub mod scripting;
+pub mod client;
 

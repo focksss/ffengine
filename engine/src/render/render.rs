@@ -5,7 +5,7 @@ use std::fs::File;
 use std::io::BufWriter;
 use std::slice;
 use std::sync::Arc;
-use crate::physics::controller::Controller;
+use crate::client::controller::Controller;
 use crate::gui::gui::GUI;
 use crate::math::Vector;
 use crate::physics::hitboxes::hitbox::Hitbox;

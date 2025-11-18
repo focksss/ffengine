@@ -10,7 +10,7 @@ use winit::event::{Event, WindowEvent};
 use winit::event_loop::ControlFlow;
 use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
 use crate::math::Vector;
-use crate::physics::controller::Controller;
+use crate::client::controller::Controller;
 use crate::physics::physics_engine::PhysicsEngine;
 use crate::render::render::{Renderer, MAX_FRAMES_IN_FLIGHT};
 use crate::render::vulkan_base::{record_submit_commandbuffer, VkBase};

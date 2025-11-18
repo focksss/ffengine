@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use ash::vk;
 use mlua::Lua;
 use crate::gui::gui::{ScriptGUI, GUI};
-use crate::physics::controller::ScriptController;
+use crate::client::controller::ScriptController;
 
 pub struct LuaScriptEngine {
     lua: Lua,

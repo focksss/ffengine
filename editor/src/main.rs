@@ -73,7 +73,7 @@ fn main() { unsafe {
     physics_engine.rigid_bodies[2].position = Vector::new_vec3(0.5, 15.0, 0.5);
     physics_engine.rigid_bodies[2].restitution_coefficient = 1.0;
 
-    
+    physics_engine.add_player(app.controller.borrow().player.clone());
     
     renderer.scene_renderer.update_world_textures_all_frames(base, world);
     renderer.gui.load_from_file(base, "editor\\resources\\gui\\default\\default.gui");

@@ -4,7 +4,7 @@ use crate::physics::hitboxes::bounding_box::BoundingBox;
 use crate::physics::hitboxes::hitbox::Hitbox;
 use crate::physics::physics_engine::RigidBody;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum MovementMode {
     GHOST,
     PHYSICS,

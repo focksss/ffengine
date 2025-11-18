@@ -8,7 +8,7 @@ use ash::vk::{CommandBuffer, DescriptorType, Format, Handle, ShaderStageFlags};
 use json::JsonValue;
 use mlua::{UserData, UserDataFields, UserDataMethods};
 use winit::event::MouseButton;
-use crate::physics::controller::*;
+use crate::client::controller::*;
 use crate::math::*;
 use crate::physics::player::MovementMode;
 use crate::render::render_helper::{Descriptor, DescriptorCreateInfo, DescriptorSetCreateInfo, Pass, PassCreateInfo, Renderpass, RenderpassCreateInfo, TextureCreateInfo};
@@ -168,9 +168,9 @@ impl GUI {
     fn window(&self) -> &winit::window::Window {
         unsafe { &*self.window_ptr }
     }
-    pub unsafe fn set_fonts(&mut self, fonts: &Vec<Arc<Font>>) {
+    pub unsafe fn set_fonts(&mut self, fonts: Vec<Arc<Font>>) {
         self.fonts = fonts.clone();
-        self.text_renderer.update_font_atlases_all_frames(fonts.clone());
+        self.text_renderer.update_font_atlases_all_frames(fonts);
     }
     pub unsafe fn reload_rendering(&mut self, base: &VkBase) { unsafe {
         self.text_renderer.destroy();
@@ -184,7 +184,9 @@ impl GUI {
     * * Nodes are drawn recursively and without depth testing. To make a node appear in front of another, define it after another.
     */
     pub fn load_from_file(&mut self, base: &VkBase, path: &str) {
-        unsafe { base.device.device_wait_idle().unwrap(); }
+        unsafe {
+            base.device.device_wait_idle().unwrap();
+        }
         for text in self.gui_texts.iter() {
             text.text_information.destroy();
         }
@@ -223,7 +225,7 @@ impl GUI {
 
             fonts.push(Arc::new(Font::new(base, uri.as_str(), Some(glyph_msdf_size), Some(glyph_msdf_distance_range))));
         }
-        unsafe { self.set_fonts(&fonts) };
+        unsafe { self.set_fonts(fonts) };
 
         let mut guis = Vec::new();
         for gui in json["guis"].members() {
