@@ -6,6 +6,9 @@
         <entryData>
           <resourceRoots>
             <path value="file://$PROJECT_DIR$/resources" />
+            <path value="file://$PROJECT_DIR$/src/engine/resources" />
+            <path value="file://$PROJECT_DIR$/engine/resources" />
+            <path value="file://$PROJECT_DIR$/editor/resources" />
           </resourceRoots>
         </entryData>
       </entry>

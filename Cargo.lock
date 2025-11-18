@@ -539,6 +539,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ffeditor"
+version = "0.1.0"
+dependencies = [
+ "ffengine",
+]
+
+[[package]]
 name = "ffengine"
 version = "0.1.0"
 dependencies = [

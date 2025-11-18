@@ -1,0 +1,22 @@
+[package]
+name = "ffengine"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+image = "0.25"
+winit = { version = "0.29"}
+ash = { version = "0.38", features = ["linked", "debug", "std"] }
+ash-window = { version = "0.13.0" }
+json = "0.12.4"
+bytemuck = "1.22.0"
+rayon = "1.11.0"
+png = "0.18.0"
+jpeg-decoder = "0.3"
+rand = "0.10.0-rc.0"
+serde_json = "1.0.145"
+half = "2.6.0"
+walkdir = "2.5.0"

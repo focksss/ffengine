@@ -1,0 +1,483 @@
+{
+	"guis": [
+	    {
+	        "name": "default1",
+	        "nodes": [0, 1, 2]
+	    }
+	],
+	"fonts": [
+	{
+		"uri": "editor\\resources\\fonts\\Oxygen-Regular.ttf",
+		"glyph_msdf_size": 32,
+		"glyph_msdf_distance_range": 2.0
+	}
+],
+	"quads": [
+		{
+			"position": [0.0, 0.0],
+			"scale": [1.0, 1.0],
+			"clip_min": [0.0, 0.0],
+			"clip_max": [1.0, 1.0],
+			"absolute_position": false,
+			"absolute_scale": false,
+			"color": [0.5, 0.5, 0.5, 0.5],
+			"corner_radius": 5.0
+		},
+		{
+			"position": [0.0, 0.0],
+			"scale": [1.0, 1.0],
+			"clip_min": [0.0, 0.0],
+			"clip_max": [1.0, 1.0],
+			"absolute_position": false,
+			"absolute_scale": false,
+			"color": [0.5, 0.5, 0.5, 1.0],
+			"corner_radius": 5.0
+		},
+		{
+			"position": [0.0, 0.0],
+			"scale": [1.0, 1.0],
+			"clip_min": [0.0, 0.0],
+			"clip_max": [1.0, 1.0],
+			"absolute_position": false,
+			"absolute_scale": false,
+			"color": [0.5, 0.5, 0.5, 1.0],
+			"corner_radius": 5.0
+		},
+		{
+			"position": [0.0, 0.0],
+			"scale": [1.0, 1.0],
+			"clip_min": [0.0, 0.0],
+			"clip_max": [1.0, 1.0],
+			"absolute_position": false,
+			"absolute_scale": false,
+			"color": [0.5, 0.5, 0.5, 1.0],
+			"corner_radius": 5.0
+		},
+		{
+			"position": [0.0, 0.0],
+			"scale": [1.0, 1.0],
+			"clip_min": [0.0, 0.0],
+			"clip_max": [1.0, 1.0],
+			"absolute_position": false,
+			"absolute_scale": false,
+			"color": [0.5, 0.5, 0.5, 1.0],
+			"corner_radius": 5.0
+		},
+		{
+			"position": [0.0, 0.0],
+			"scale": [1.0, 1.0],
+			"clip_min": [0.0, 0.0],
+			"clip_max": [1.0, 1.0],
+			"absolute_position": false,
+			"absolute_scale": false,
+			"color": [0.5, 0.5, 0.5, 1.0],
+			"corner_radius": 5.0
+		},
+		{
+			"position": [0.0, 0.0],
+			"scale": [1.0, 1.0],
+			"clip_min": [0.0, 0.0],
+			"clip_max": [1.0, 1.0],
+			"absolute_position": false,
+			"absolute_scale": false,
+			"color": [0.3, 0.3, 0.3, 1.0],
+			"corner_radius": 5.0
+		},
+		{
+			"position": [0.0, 0.0],
+			"scale": [1.0, 1.0],
+			"clip_min": [0.0, 0.0],
+			"clip_max": [1.0, 1.0],
+			"absolute_position": false,
+			"absolute_scale": false,
+			"color": [0.5, 0.5, 0.5, 1.0],
+			"corner_radius": 5.0
+		},
+		{
+			"position": [0.0, 0.0],
+			"scale": [1.0, 1.0],
+			"clip_min": [0.0, 0.0],
+			"clip_max": [1.0, 1.0],
+			"absolute_position": false,
+			"absolute_scale": false,
+			"color": [0.3, 0.3, 0.3, 1.0],
+			"corner_radius": 5.0
+		},
+		{
+			"position": [0.0, 0.0],
+			"scale": [1.0, 1.0],
+			"clip_min": [0.0, 0.0],
+			"clip_max": [1.0, 1.0],
+			"absolute_position": false,
+			"absolute_scale": false,
+			"color": [0.5, 0.5, 0.5, 1.0],
+			"corner_radius": 5.0
+		},
+		{
+			"position": [0.0, 0.0],
+			"scale": [1.0, 1.0],
+			"clip_min": [0.0, 0.0],
+			"clip_max": [1.0, 1.0],
+			"absolute_position": false,
+			"absolute_scale": false,
+			"color": [0.3, 0.3, 0.3, 1.0],
+			"corner_radius": 5.0
+		}
+	],
+	"texts": [
+	{
+		"text_information": {
+			"font": 0,
+			"text": "making this text long is one way to force the buffers to be large enough...",
+			"font_size": 32.0,
+			"newline_distance": 1720.0
+		},
+		"position": [0.01, 0.2],
+		"scale": [1.0, 1.0],
+		"clip_min": [0.0, 0.0],
+		"clip_max": [1.0, 1.0],
+		"absolute_position": false,
+		"absolute_scale": false,
+		"color": [1.0, 1.0, 1.0, 1.0]
+	},
+	{
+		"text_information": {
+			"font": 0,
+			"text": "Settings",
+			"font_size": 52.0,
+			"newline_distance": 1720.0
+		},
+		"position": [0.01, 0.95],
+		"scale": [1.0, 1.0],
+		"clip_min": [0.0, 0.0],
+		"clip_max": [
+			1.0, 1.0],
+		"absolute_position": false,
+		"absolute_scale": false,
+		"color": [1.0, 1.0, 1.0, 1.0]
+	},
+	{
+		"text_information": {
+			"font": 0,
+			"text": "Reload shaders",
+			"font_size": 38.0,
+			"newline_distance": 1720.0
+		},
+		"position": [0.05, 0.2],
+		"scale": [1.0, 1.0],
+		"clip_min": [0.0, 0.0],
+		"clip_max": [
+			1.0, 1.0],
+		"absolute_position": false,
+		"absolute_scale": false,
+		"color": [1.0, 1.0, 1.0, 1.0]
+	},
+	{
+		"text_information": {
+			"font": 0,
+			"text": "Reload GUI",
+			"font_size": 38.0,
+			"newline_distance": 1720.0
+		},
+		"position": [0.05, 0.2],
+		"scale": [1.0, 1.0],
+		"clip_min": [0.0, 0.0],
+		"clip_max": [
+			1.0, 1.0],
+		"absolute_position": false,
+		"absolute_scale": false,
+		"color": [1.0, 1.0, 1.0, 1.0]
+	},
+	{
+		"text_information": {
+			"font": 0,
+			"text": "Take Screenshot",
+			"font_size": 38.0,
+			"newline_distance": 1720.0
+		},
+		"position": [0.05, 0.2],
+		"scale": [1.0, 1.0],
+		"clip_min": [0.0, 0.0],
+		"clip_max": [
+			1.0, 1.0],
+		"absolute_position": false,
+		"absolute_scale": false,
+		"color": [1.0, 1.0, 1.0, 1.0]
+	},
+	{
+		"text_information": {
+			"font": 0,
+			"text": "EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE",
+			"font_size": 20.0,
+			"newline_distance": 1720.0
+		},
+		"position": [0.01, 0.2],
+		"scale": [1.0, 1.0],
+		"clip_min": [0.0, 0.0],
+		"clip_max": [1.0, 1.0],
+		"absolute_position": false,
+		"absolute_scale": false,
+		"color": [1.0, 1.0, 1.0, 1.0]
+	},
+	{
+		"text_information": {
+			"font": 0,
+			"text": "Hitbox Visibility",
+			"font_size": 23.0,
+			"newline_distance": 1720.0
+		},
+		"position": [0.05, 0.35],
+		"scale": [1.0, 1.0],
+		"clip_min": [0.0, 0.0],
+		"clip_max": [1.0, 1.0],
+		"absolute_position": false,
+		"absolute_scale": false,
+		"color": [1.0, 1.0, 1.0, 1.0]
+	},
+	{
+		"text_information": {
+			"font": 0,
+			"text": "Off",
+			"font_size": 30.0,
+			"newline_distance": 1720.0
+		},
+		"position": [0.05, 0.25],
+		"scale": [1.0, 1.0],
+		"clip_min": [0.0, 0.0],
+		"clip_max": [1.0, 1.0],
+		"absolute_position": false,
+		"absolute_scale": false,
+		"color": [1.0, 1.0, 1.0, 1.0]
+	},
+	{
+		"text_information": {
+			"font": 0,
+			"text": "Player Physics",
+			"font_size": 23.0,
+			"newline_distance": 1720.0
+		},
+		"position": [0.05, 0.35],
+		"scale": [1.0, 1.0],
+		"clip_min": [0.0, 0.0],
+		"clip_max": [1.0, 1.0],
+		"absolute_position": false,
+		"absolute_scale": false,
+		"color": [1.0, 1.0, 1.0, 1.0]
+	},
+	{
+		"text_information": {
+			"font": 0,
+			"text": "Off",
+			"font_size": 30.0,
+			"newline_distance": 1720.0
+		},
+		"position": [0.05, 0.25],
+		"scale": [1.0, 1.0],
+		"clip_min": [0.0, 0.0],
+		"clip_max": [1.0, 1.0],
+		"absolute_position": false,
+		"absolute_scale": false,
+		"color": [1.0, 1.0, 1.0, 1.0]
+	},
+	{
+		"text_information": {
+			"font": 0,
+			"text": "Physics Tick",
+			"font_size": 23.0,
+			"newline_distance": 1720.0
+		},
+		"position": [0.05, 0.35],
+		"scale": [1.0, 1.0],
+		"clip_min": [0.0, 0.0],
+		"clip_max": [1.0, 1.0],
+		"absolute_position": false,
+		"absolute_scale": false,
+		"color": [1.0, 1.0, 1.0, 1.0]
+	},
+	{
+		"text_information": {
+			"font": 0,
+			"text": "Off",
+			"font_size": 30.0,
+			"newline_distance": 1720.0
+		},
+		"position": [0.05, 0.25],
+		"scale": [1.0, 1.0],
+		"clip_min": [0.0, 0.0],
+		"clip_max": [1.0, 1.0],
+		"absolute_position": false,
+		"absolute_scale": false,
+		"color": [1.0, 1.0, 1.0, 1.0]
+	}
+],
+	"nodes": [
+		{
+			"name": "fps_display",
+			"interactable_information": {
+				"passive_actions": ["set_fps"]
+			},
+			"children": [],
+			"position": [100.0, 100.0],
+			"scale": [
+				220.0,
+				40.0
+			],
+			"absolute_position": true,
+			"absolute_scale": true,
+			"text": 0,
+			"quad": 0
+		},
+		{
+			"name": "position display",
+			"interactable_information": {
+				"passive_actions": ["set_position"]
+			},
+			"children": [],
+			"position": [100.0, 140.0],
+			"scale": [
+				660.0,
+				30.0
+			],
+			"absolute_position": true,
+			"absolute_scale": true,
+			"text": 5,
+			"quad": 0
+		},
+		{
+			"name": "settings",
+			"children": [3, 4, 5, 6, 8, 10],
+			"position": [0.8, 0.0],
+			"scale": [0.2, 1.0],
+			"absolute_position": false,
+			"absolute_scale": false,
+			"quad": 0,
+			"text": 1
+		},
+			{
+				"name": "reload shaders button",
+				"interactable_information": {
+					"hover_actions": ["color_quad_bright"],
+					"unhover_actions": ["color_quad_normal"],
+					"left_tap_actions": ["reload_shaders"]
+				},
+				"children": [],
+				"position": [0.1, 0.85],
+				"scale": [0.8, 0.05],
+				"absolute_position": false,
+				"absolute_scale": false,
+				"quad": 2,
+				"text": 2
+			},
+			{
+				"name": "reload gui button",
+				"interactable_information": {
+					"hover_actions": ["color_quad_bright"],
+					"unhover_actions": ["color_quad_normal"],
+					"left_tap_actions": ["reload_gui"]
+				},
+				"children": [],
+				"position": [0.1, 0.78],
+				"scale": [0.8, 0.05],
+				"absolute_position": false,
+				"absolute_scale": false,
+				"quad": 3,
+				"text": 3
+			},
+			{
+				"name": "screenshot button",
+				"interactable_information": {
+					"hover_actions": ["color_quad_bright"],
+					"unhover_actions": ["color_quad_normal"],
+					"left_tap_actions": ["screenshot"]
+				},
+				"children": [],
+				"position": [0.1, 0.71],
+				"scale": [0.8, 0.05],
+				"absolute_position": false,
+				"absolute_scale": false,
+				"quad": 4,
+				"text": 4
+			},
+			{
+				"name": "Toggle Hitbox View button",
+				"interactable_information": {
+				},
+				"children": [7],
+				"position": [0.1, 0.64],
+				"scale": [0.8, 0.05],
+				"absolute_position": false,
+				"absolute_scale": false,
+				"quad": 5,
+				"text": 6
+			},
+				{
+					"name": "Toggle Hitbox View toggle",
+					"interactable_information": {
+						"hover_actions": ["color_quad_bright1"],
+						"unhover_actions": ["color_quad_normal1"],
+						"left_tap_actions": ["toggle hitbox vis", "toggle text"]
+					},
+					"children": [],
+					"position": [0.7, 0.1],
+					"scale": [0.27, 0.8],
+					"absolute_position": false,
+					"absolute_scale": false,
+					"quad": 6,
+					"text": 7
+				},
+			{
+				"name": "Toggle player physics button",
+				"interactable_information": {
+				},
+				"children": [9],
+				"position": [0.1, 0.57],
+				"scale": [0.8, 0.05],
+				"absolute_position": false,
+				"absolute_scale": false,
+				"quad": 7,
+				"text": 8
+			},
+				{
+				"name": "Toggle player physics toggle",
+				"interactable_information": {
+					"hover_actions": ["color_quad_bright1"],
+					"unhover_actions": ["color_quad_normal1"],
+					"left_tap_actions": ["toggle player physics", "toggle text"]
+				},
+				"children": [],
+				"position": [0.7, 0.1],
+				"scale": [0.27, 0.8],
+				"absolute_position": false,
+				"absolute_scale": false,
+				"quad": 8,
+				"text": 9
+			},
+			{
+				"name": "Toggle physics tick button",
+				"interactable_information": {
+				},
+				"children": [11],
+				"position": [0.1, 0.5],
+				"scale": [0.8, 0.05],
+				"absolute_position": false,
+				"absolute_scale": false,
+				"quad": 9,
+				"text": 10
+			},
+				{
+				"name": "Toggle physics tick toggle",
+				"interactable_information": {
+					"hover_actions": ["color_quad_bright1"],
+					"unhover_actions": ["color_quad_normal1"],
+					"left_tap_actions": ["toggle physics tick", "toggle text"]
+				},
+				"children": [],
+				"position": [0.7, 0.1],
+				"scale": [0.27, 0.8],
+				"absolute_position": false,
+				"absolute_scale": false,
+				"quad": 10,
+				"text": 11
+			}
+	]
+}
