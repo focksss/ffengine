@@ -1,16 +1,12 @@
 use std::mem;
-use std::collections::HashMap;
 use std::{fs, slice};
 use std::cell::RefCell;
 use std::ffi::c_void;
-use std::ops::Add;
-use std::path::PathBuf;
-use std::process::Command;
 use ash::vk;
 use std::ptr::null_mut;
 use std::sync::Arc;
 use ash::vk::{CommandBuffer, DescriptorType, DeviceMemory, Format, Handle, SampleCountFlags, Sampler, ShaderStageFlags};
-use serde_json::Value;
+use crate::gui::text::{font::Font, glyph::{Glyph, GlyphQuadVertex}};
 use crate::math::Vector;
 use crate::offset_of;
 use crate::render::render::MAX_FRAMES_IN_FLIGHT;
@@ -51,6 +47,7 @@ impl TextRenderer {
     pub unsafe fn destroy(&mut self) { unsafe {
         self.renderpass.destroy();
         self.device.destroy_sampler(self.sampler, None);
+        self.default_font.destroy();
     } }
 
     pub unsafe fn create_text_renderpass(base: &VkBase, default_font: Arc<Font>, pass_ref: Option<Arc<RefCell<Pass>>>) -> Renderpass { unsafe {
@@ -521,22 +518,6 @@ impl TextInformation {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone)]
-struct GlyphQuadVertex {
-    position: [f32; 2],
-    uv: [f32; 2],
-    color: [f32; 4],
-}
-impl GlyphQuadVertex {
-    pub fn new(position: Vector, uv: Vector, color: Vector) -> GlyphQuadVertex {
-        GlyphQuadVertex {
-            position: position.to_array2(),
-            uv: uv.to_array2(),
-            color: color.to_array4()
-        }
-    }
-}
-#[repr(C)]
 struct TextPushConstants {
     clip_min: [f32; 2],
     clip_max: [f32; 2],
@@ -548,168 +529,4 @@ struct TextPushConstants {
     _pad: [u32; 1],
 }
 
-pub struct Font {
-    pub device: ash::Device,
-
-    pub texture: Texture,
-    pub sampler: Sampler,
-    pub glyphs: HashMap<char, Glyph>,
-    pub atlas_size: Vector,
-    pub glyph_size: u32,
-    pub distance_range: f32,
-    pub ascent: f32,
-    pub descent: f32,
-    pub line_gap: f32,
-}
-impl Font {
-    pub fn new(base: &VkBase, path: &str, glyph_size: Option<u32>, distance_range: Option<f32>) -> Self { unsafe {
-        let glyph_size_final = glyph_size.unwrap_or(64);
-        let distance_range_final = distance_range.unwrap_or(2.0);
-        let font_name = PathBuf::from(path).file_name()
-            .expect("Font path must be to a named file")
-            .to_str().unwrap().to_string()
-            .replace(".ttf", "");
-        let generated_path = path.replace("fonts", &*("fonts\\generated\\".to_string().add(font_name.as_str())));
-        if let Some(parent_dir) = PathBuf::from(&generated_path).parent() {
-            if let Err(e) = fs::create_dir_all(parent_dir) {
-                eprintln!("Failed to create directory {:?}: {}", parent_dir, e);
-            }
-        }
-
-        let atlas_path_str = generated_path.replace(".ttf", ".png");
-        let json_path_str = generated_path.replace(".ttf", ".json");
-
-        Command::new("engine\\resources\\msdf-atlas-gen.exe") // https://github.com/Chlumsky/msdf-atlas-gen/tree/v1.3
-            .args(&[
-                "-font", path,
-                "-imageout", &atlas_path_str,
-                "-json", &json_path_str,
-                "-size", glyph_size_final.to_string().as_str(), // base pixel size for glyphs
-                "-pxrange", distance_range_final.to_string().as_str() // width of SDF distance range in output pixels
-            ])
-            .status()
-            .expect("Failed to run msdfgen");
-
-        let atlas = base.create_2d_texture_image(&PathBuf::from(atlas_path_str), false);
-        let atlas_texture = Texture {
-            device: base.device.clone(),
-            image: atlas.1.0,
-            image_view: atlas.0.0,
-            device_memory: atlas.1.1,
-            clear_value: vk::ClearValue::default(),
-            format: Format::R8G8B8A8_UNORM,
-            resolution: vk::Extent3D::default(),
-            array_layers: 1,
-            samples: SampleCountFlags::TYPE_1,
-            is_depth: false,
-        };
-
-        let file = fs::File::open(json_path_str).unwrap();
-        let json: Value = serde_json::from_reader(file).unwrap();
-
-        let atlas_w = json["atlas"]["width"].as_f64().unwrap() as f32;
-        let atlas_h = json["atlas"]["height"].as_f64().unwrap() as f32;
-
-        let metrics = &json["metrics"];
-        let ascent = metrics["ascender"].as_f64().unwrap() as f32;
-        let descent = metrics["descender"].as_f64().unwrap() as f32;
-        let line_gap = metrics["lineHeight"].as_f64().unwrap() as f32 - (ascent - descent);
-
-        let mut glyphs = HashMap::new();
-        for glyph in json["glyphs"].as_array().unwrap() {
-            let unicode = glyph["unicode"].as_u64().unwrap();
-            let ch = std::char::from_u32(unicode as u32).unwrap_or('?');
-            let advance = glyph["advance"].as_f64().unwrap_or(0.0) as f32;
-
-            let (plane_min, plane_max) = if let Some(bounds) = glyph.get("planeBounds") {
-                (
-                    Vector::new_vec2(bounds["left"].as_f64().unwrap_or(0.0) as f32, bounds["bottom"].as_f64().unwrap_or(0.0) as f32),
-                    Vector::new_vec2(bounds["right"].as_f64().unwrap_or(0.0) as f32, bounds["top"].as_f64().unwrap_or(0.0) as f32)
-                )
-            } else {
-                (Vector::new_vec2(0.0, 0.0), Vector::new_vec2(0.0, 0.0))
-            };
-
-            let (uv_min, uv_max) = if let Some(bounds) = glyph.get("atlasBounds") {
-                let l = bounds["left"].as_f64().unwrap_or(0.0) as f32 / atlas_w;
-                let r = bounds["right"].as_f64().unwrap_or(0.0) as f32 / atlas_w;
-                let b = bounds["bottom"].as_f64().unwrap_or(0.0) as f32 / atlas_h;
-                let t = bounds["top"].as_f64().unwrap_or(0.0) as f32 / atlas_h;
-                (Vector::new_vec2(l, 1.0 - b), Vector::new_vec2(r, 1.0 - t))
-            } else {
-                (Vector::new_vec2(0.0, 0.0), Vector::new_vec2(0.0, 0.0))
-            };
-
-            glyphs.insert(ch, Glyph { uv_min, uv_max, plane_min, plane_max, advance });
-        }
-
-        Font {
-            device: base.device.clone(),
-
-            texture: atlas_texture,
-            sampler: atlas.0.1,
-            glyphs,
-            atlas_size: Vector::new_vec2(atlas_w, atlas_h),
-            glyph_size: glyph_size_final,
-            distance_range: distance_range_final,
-            ascent,
-            descent,
-            line_gap,
-        }
-    } }
-    pub unsafe fn destroy(&self) { unsafe {
-        self.texture.destroy();
-        self.device.destroy_sampler(self.sampler, None);
-    } }
-}
-impl Drop for Font {
-    fn drop(&mut self) {
-        unsafe { self.destroy() }
-    }
-}
-
-#[derive(Debug)]
-pub struct Glyph {
-    pub uv_min: Vector,
-    pub uv_max: Vector,
-    pub plane_min: Vector,
-    pub plane_max: Vector,
-    pub advance: f32,
-}
-impl Glyph {
-    pub fn get_quad(&self, position: Vector, scale_factor: &Vector, color: &Vector) -> [GlyphQuadVertex; 4] {
-        let position_extent = (self.plane_max - self.plane_min) * scale_factor;
-        let uv_extent = self.uv_max - self.uv_min;
-
-        let p = position * scale_factor;
-        let bl = GlyphQuadVertex::new( // min
-            p + (self.plane_min * scale_factor),
-            self.uv_min,
-            color.clone()
-        );
-        let tl = GlyphQuadVertex::new(
-            p + (self.plane_min * scale_factor) + Vector::new_vec2(0.0, position_extent.y),
-            self.uv_min + Vector::new_vec2(0.0, uv_extent.y),
-            color.clone()
-        );
-        let tr = GlyphQuadVertex::new( // max
-            p + (self.plane_max * scale_factor),
-            self.uv_max,
-            color.clone()
-        );
-        let br = GlyphQuadVertex::new(
-            p + (self.plane_min * scale_factor) + Vector::new_vec2(position_extent.x, 0.0),
-            self.uv_min + Vector::new_vec2(uv_extent.x, 0.0),
-            color.clone()
-        );
-        [bl, tl, tr, br]
-    }
-    pub fn push_to_buffers(&self, vertex_buffer: &mut Vec<GlyphQuadVertex>, index_buffer: &mut Vec<u32>, position: Vector, scale_factor: &Vector, color: &Vector) {
-        let v = vertex_buffer.len() as u32;
-        let [bl, tl, tr, br] = self.get_quad(position, &scale_factor, &color);
-        vertex_buffer.push(bl); vertex_buffer.push(tl); vertex_buffer.push(tr); vertex_buffer.push(br);
-        index_buffer.push(v); index_buffer.push(v + 1); index_buffer.push(v + 2);
-        index_buffer.push(v); index_buffer.push(v + 2); index_buffer.push(v + 3);
-    }
-}
 

@@ -1,22 +1,26 @@
 use std::cell::RefCell;
 use std::{fs, slice};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
 use ash::vk;
-use ash::vk::{CommandBuffer, DescriptorType, Format, ShaderStageFlags};
+use ash::vk::{CommandBuffer, DescriptorType, Format, Handle, ShaderStageFlags};
 use json::JsonValue;
+use mlua::{UserData, UserDataFields, UserDataMethods};
 use winit::event::MouseButton;
 use crate::physics::controller::*;
 use crate::math::*;
 use crate::physics::player::MovementMode;
 use crate::render::render_helper::{Descriptor, DescriptorCreateInfo, DescriptorSetCreateInfo, Pass, PassCreateInfo, Renderpass, RenderpassCreateInfo, TextureCreateInfo};
-use crate::render::text_render::{Font, TextInformation, TextRenderer};
+use crate::gui::text::font::Font;
+use crate::gui::text::text_render::{TextInformation, TextRenderer};
 use crate::render::vulkan_base::VkBase;
+use crate::scripting::lua_engine::LuaScriptEngine;
 
 pub struct GUI {
     device: ash::Device,
     window_ptr: *const winit::window::Window,
-    controller: Arc<RefCell<Controller>>,
+    pub(crate) controller: Arc<RefCell<Controller>>,
 
     pub pass: Arc<RefCell<Pass>>,
     pub text_renderer: TextRenderer,
@@ -31,44 +35,22 @@ pub struct GUI {
     pub interactable_node_indices: Vec<usize>,
 
     pub fonts: Vec<Arc<Font>>,
+
+    pub script_engine: Arc<RefCell<LuaScriptEngine>>,
 }
 impl GUI {
     pub fn handle_gui_interaction(&mut self, node: GUINode, node_index: usize, min: Vector, max: Vector, frame_command_buffer: CommandBuffer) {
         let interactable_information = &node.interactable_information.unwrap();
 
+        let script_engine = self.script_engine.clone();
+
         for passive_action in interactable_information.passive_actions.iter() {
-            let passive_action = passive_action.as_str();
-            match passive_action {
-                "set_fps" => {
-                    let info_ref = self.gui_nodes[node_index].interactable_information.as_ref().unwrap();
-                    if info_ref.storage_time.elapsed().as_secs_f32() > 1.0 {
-                        self.update_text_of_node(
-                            node_index,
-                            format!("FPS: {:?}", info_ref.storage_value1 / info_ref.storage_time.elapsed().as_secs_f32()).as_str(),
-                            frame_command_buffer
-                        );
-                        let info_ref_mut = self.gui_nodes[node_index].interactable_information.as_mut().unwrap();
-                        info_ref_mut.storage_time = Instant::now();
-                        info_ref_mut.storage_value1 = 0.0;
-                    }
-                    let info_ref_mut = self.gui_nodes[node_index].interactable_information.as_mut().unwrap();
-                    info_ref_mut.storage_value1 += 1.0;
-                },
-                "set_position" => {
-                    let info_ref = self.gui_nodes[node_index].interactable_information.as_ref().unwrap();
-                    if info_ref.storage_time.elapsed().as_secs_f32() > 0.1 {
-                        let pos = self.controller.borrow().player.borrow().camera.position;
-                        self.update_text_of_node(
-                            node_index,
-                            format!("Cam pos: X: {}, Y: {}, Z {}", pos.x, pos.y, pos.z).as_str(),
-                            frame_command_buffer
-                        );
-                        let info_ref_mut = self.gui_nodes[node_index].interactable_information.as_mut().unwrap();
-                        info_ref_mut.storage_time = Instant::now();
-                    }
-                }
-                _ => ()
-            }
+            let _ = script_engine.borrow().call_script(
+                *passive_action,
+                self,
+                node_index,
+                frame_command_buffer,
+            );
         }
 
         let (x, y, left_pressed) = {
@@ -85,31 +67,23 @@ impl GUI {
             { true } else { false };
         if !hovered {
             for unhover_action in interactable_information.unhover_actions.iter() {
-                let unhover_action = unhover_action.as_str();
-                match unhover_action {
-                    "color_quad_normal" => {
-                        self.gui_quads[node.quad.expect("GUINode with 'color_quad_normal' does not have quad'")].color = Vector::new_vec4(0.5, 0.5, 0.5, 1.0);
-                    }
-                    "color_quad_normal1" => {
-                        self.gui_quads[node.quad.expect("GUINode with 'color_quad_normal' does not have quad'")].color = Vector::new_vec4(0.3, 0.3, 0.3, 1.0);
-                    }
-                    _ => ()
-                }
+                let _ = script_engine.borrow().call_script(
+                    *unhover_action,
+                    self,
+                    node_index,
+                    frame_command_buffer,
+                );
             }
             return;
         };
 
         for hover_action in interactable_information.hover_actions.iter() {
-            let hover_action = hover_action.as_str();
-            match hover_action {
-                "color_quad_bright" => {
-                    self.gui_quads[node.quad.expect("GUINode with 'color_quad_bright' does not have quad'")].color = Vector::new_vec4(0.7, 0.7, 0.7, 1.0);
-                }
-                "color_quad_bright1" => {
-                    self.gui_quads[node.quad.expect("GUINode with 'color_quad_bright' does not have quad'")].color = Vector::new_vec4(0.4, 0.4, 0.4, 1.0);
-                }
-                _ => ()
-            }
+            let _ = script_engine.borrow().call_script(
+                *hover_action,
+                self,
+                node_index,
+                frame_command_buffer,
+            );
         }
 
         let interactable_information = self.gui_nodes[node_index].interactable_information.as_mut().unwrap();
@@ -117,63 +91,12 @@ impl GUI {
         if !interactable_information.was_pressed_last_frame && left_pressed {
             interactable_information.was_pressed_last_frame = true;
             for left_tap_action in interactable_information.left_tap_actions.clone().iter() {
-                let left_tap_action = left_tap_action.as_str();
-                match left_tap_action {
-                    "reload_shaders" => {
-                        self.controller.borrow_mut().flags.reload_shaders_queued = true;
-                    }
-                    "reload_gui" => {
-                        self.controller.borrow_mut().flags.reload_gui_queued = true;
-                    }
-                    "pause_rendering" => {
-                        self.controller.borrow_mut().flags.pause_rendering = true;
-                    }
-                    "screenshot" => {
-                        self.controller.borrow_mut().flags.screenshot_queued = true;
-                    }
-                    "toggle hitbox vis" => {
-                        let last_state = { self.controller.borrow().flags.draw_hitboxes };
-                        self.controller.borrow_mut().flags.draw_hitboxes = !last_state;
-                    }
-                    "toggle player physics" => {
-                        let controller_ref = self.controller.borrow_mut();
-                        let last_state = controller_ref.player.borrow().movement_mode.clone();
-                        match last_state {
-                            MovementMode::PHYSICS => {
-                                controller_ref.player.borrow_mut().movement_mode = MovementMode::GHOST
-                            }
-                            MovementMode::GHOST => {
-                                controller_ref.player.borrow_mut().movement_mode = MovementMode::PHYSICS
-                            }
-                            _ => ()
-                        }
-                    }
-                    "toggle physics tick" => {
-                        let mut controller_ref = self.controller.borrow_mut();
-                        controller_ref.flags.do_physics = !controller_ref.flags.do_physics;
-                    }
-                    "toggle text" => {
-                        let current_text = self.gui_texts[node.text.unwrap()].text_information.text.as_str();
-                        match current_text {
-                            "On" => {
-                                self.update_text_of_node(
-                                    node_index,
-                                    "Off",
-                                    frame_command_buffer
-                                );
-                            }
-                            "Off" => {
-                                self.update_text_of_node(
-                                    node_index,
-                                    "On",
-                                    frame_command_buffer
-                                );
-                            }
-                            _ => ()
-                        }
-                    }
-                    _ => ()
-                }
+                let _ = script_engine.borrow().call_script(
+                    *left_tap_action,
+                    self,
+                    node_index,
+                    frame_command_buffer,
+                );
             }
         }
     }
@@ -199,6 +122,8 @@ impl GUI {
             fonts: vec![text_renderer.default_font.clone()],
 
             text_renderer,
+
+            script_engine: Arc::new(RefCell::new(LuaScriptEngine::new().unwrap()))
         }
     } }
     pub unsafe fn create_rendering_objects(base: &VkBase) -> (Arc<RefCell<Pass>>, Renderpass, TextRenderer) { unsafe {
@@ -266,6 +191,15 @@ impl GUI {
 
         let json = json::parse(fs::read_to_string(path).expect("failed to load json file").as_str()).expect("json parse error");
 
+        let mut script_uris = Vec::new();
+        for script in json["scripts"].members() {
+            if let JsonValue::String(ref uri_json) = script["uri"] {
+                let path = Path::new(uri_json);
+                script_uris.push(path);
+            }
+        }
+        self.script_engine.borrow_mut().load_scripts(script_uris).expect("script loading error");
+
         let mut fonts = Vec::new();
         for font in json["fonts"].members() {
             let mut uri = String::from("engine\\resources\\fonts\\Oxygen-Regular.ttf");
@@ -324,11 +258,7 @@ impl GUI {
                 match &interactable_information_json["passive_actions"] {
                     JsonValue::Array(arr) => {
                         for v in arr {
-                            match v {
-                                JsonValue::String(s) => interactable_passive_actions.push(s.to_string()),
-                                JsonValue::Short(s)  => interactable_passive_actions.push(s.to_string()),
-                                _ => {}
-                            }
+                            interactable_passive_actions.push(v.as_usize().expect("interactable passive_action index parse error"));
                         }
                     }
                     _ => {}
@@ -336,11 +266,7 @@ impl GUI {
                 match &interactable_information_json["hover_actions"] {
                     JsonValue::Array(arr) => {
                         for v in arr {
-                            match v {
-                                JsonValue::String(s) => interactable_hover_actions.push(s.to_string()),
-                                JsonValue::Short(s)  => interactable_hover_actions.push(s.to_string()),
-                                _ => {}
-                            }
+                            interactable_hover_actions.push(v.as_usize().expect("interactable hover_action index parse error"));
                         }
                     }
                     _ => {}
@@ -348,11 +274,7 @@ impl GUI {
                 match &interactable_information_json["unhover_actions"] {
                     JsonValue::Array(arr) => {
                         for v in arr {
-                            match v {
-                                JsonValue::String(s) => interactable_unhover_actions.push(s.to_string()),
-                                JsonValue::Short(s)  => interactable_unhover_actions.push(s.to_string()),
-                                _ => {}
-                            }
+                            interactable_unhover_actions.push(v.as_usize().expect("interactable unhover_action index parse error"));
                         }
                     }
                     _ => {}
@@ -360,11 +282,7 @@ impl GUI {
                 match &interactable_information_json["left_tap_actions"] {
                     JsonValue::Array(arr) => {
                         for v in arr {
-                            match v {
-                                JsonValue::String(s) => interactable_left_tap_actions.push(s.to_string()),
-                                JsonValue::Short(s)  => interactable_left_tap_actions.push(s.to_string()),
-                                _ => {}
-                            }
+                            interactable_left_tap_actions.push(v.as_usize().expect("interactable left_tap_action index parse error"));
                         }
                     }
                     _ => {}
@@ -372,11 +290,7 @@ impl GUI {
                 match &interactable_information_json["right_tap_actions"] {
                     JsonValue::Array(arr) => {
                         for v in arr {
-                            match v {
-                                JsonValue::String(s) => interactable_right_tap_actions.push(s.to_string()),
-                                JsonValue::Short(s)  => interactable_right_tap_actions.push(s.to_string()),
-                                _ => {}
-                            }
+                            interactable_right_tap_actions.push(v.as_usize().expect("interactable right_tap_action index parse error"));
                         }
                     }
                     _ => {}
@@ -384,11 +298,7 @@ impl GUI {
                 match &interactable_information_json["left_hold_actions"] {
                     JsonValue::Array(arr) => {
                         for v in arr {
-                            match v {
-                                JsonValue::String(s) => interactable_left_hold_actions.push(s.to_string()),
-                                JsonValue::Short(s)  => interactable_left_hold_actions.push(s.to_string()),
-                                _ => {}
-                            }
+                            interactable_left_hold_actions.push(v.as_usize().expect("interactable left_hold_actions index parse error"));
                         }
                     }
                     _ => {}
@@ -396,11 +306,7 @@ impl GUI {
                 match &interactable_information_json["right_hold_actions"] {
                     JsonValue::Array(arr) => {
                         for v in arr {
-                            match v {
-                                JsonValue::String(s) => interactable_right_hold_actions.push(s.to_string()),
-                                JsonValue::Short(s)  => interactable_right_hold_actions.push(s.to_string()),
-                                _ => {}
-                            }
+                            interactable_right_hold_actions.push(v.as_usize().expect("interactable right_hold_action index parse error"));
                         }
                     }
                     _ => {}
@@ -835,6 +741,9 @@ impl GUI {
                 self.gui_texts[*text_index].text_information.destroy();
             }
         }
+        for font in &self.fonts {
+            font.destroy();
+        }
     } }
 }
 
@@ -860,13 +769,13 @@ pub struct GUINode {
 pub struct GUIInteractableInformation {
     pub was_pressed_last_frame: bool,
 
-    pub passive_actions: Vec<String>,
-    pub hover_actions: Vec<String>,
-    pub unhover_actions: Vec<String>,
-    pub left_tap_actions: Vec<String>,
-    pub left_hold_actions: Vec<String>,
-    pub right_tap_actions: Vec<String>,
-    pub right_hold_actions: Vec<String>,
+    pub passive_actions: Vec<usize>,
+    pub hover_actions: Vec<usize>,
+    pub unhover_actions: Vec<usize>,
+    pub left_tap_actions: Vec<usize>,
+    pub left_hold_actions: Vec<usize>,
+    pub right_tap_actions: Vec<usize>,
+    pub right_hold_actions: Vec<usize>,
     pub hitbox_diversion: Option<usize>,
 
     pub storage_time: Instant,
@@ -914,4 +823,59 @@ pub struct GUIQuadSendable {
     pub corner_radius: f32,
 
     pub _pad: [f32; 1],
+}
+
+impl UserData for GUIQuad {
+    fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
+        fields.add_field_method_get("color", |_, this| Ok(this.color.clone()));
+        fields.add_field_method_set("color", |_, this, val: Vector| {
+            this.color = val;
+            Ok(())
+        });
+    }
+}
+
+pub struct ScriptGUI<'a> {
+    pub(crate) gui: &'a mut GUI,
+    pub(crate) command_buffer: CommandBuffer,
+}
+impl<'a> UserData for ScriptGUI<'a> {
+    fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
+        methods.add_method_mut("update_text_of_node", |_, this, (node_index, text): (usize, String)| {
+            this.gui.update_text_of_node(node_index, &text, this.command_buffer);
+            Ok(())
+        });
+        methods.add_method("get_node_text", |_, this, node_index: usize| {
+            let node_text_index = this.gui.gui_nodes[node_index].text.expect("text index parse error");
+            Ok(this.gui.gui_texts[node_text_index].text_information.text.clone())
+        });
+        methods.add_method_mut("set_quad_color", |_, this, (node_index, r, g, b, a): (usize, f32, f32, f32, f32)| {
+            if let Some(quad_index) = this.gui.gui_nodes[node_index].quad {
+                this.gui.gui_quads[quad_index].color = Vector::new_vec4(r, g, b, a);
+            }
+            Ok(())
+        });
+        methods.add_method("get_storage_value1", |_, this, node_index: usize| {
+            Ok(this.gui.gui_nodes[node_index]
+                .interactable_information.as_ref().unwrap()
+                .storage_value1)
+        });
+        methods.add_method_mut("set_storage_value1", |_, this, (node_index, val): (usize, f32)| {
+            this.gui.gui_nodes[node_index]
+                .interactable_information.as_mut().unwrap()
+                .storage_value1 = val;
+            Ok(())
+        });
+        methods.add_method("get_storage_elapsed", |_, this, node_index: usize| {
+            Ok(this.gui.gui_nodes[node_index]
+                .interactable_information.as_ref().unwrap()
+                .storage_time.elapsed().as_secs_f32())
+        });
+        methods.add_method_mut("reset_storage_time", |_, this, node_index: usize| {
+            this.gui.gui_nodes[node_index]
+                .interactable_information.as_mut().unwrap()
+                .storage_time = Instant::now();
+            Ok(())
+        });
+    }
 }

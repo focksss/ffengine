@@ -12,19 +12,25 @@
 | color             | `[float; 4]` | Color of the object in RGBA, normalized                                                                                         |
 
 ## Root Structure
-| Key   | Type     | Description             |
-|-------|----------|-------------------------|
-| guis  | `[GUI]`  | List of all GUI layouts |
-| fonts | `[font]` | List of all fonts       |
-| quads | `[quad]` | List of all quads       |
-| texts | `[text]` | List of all texts       |
-| nodes | `[node]` | List of all nodes       |
+| Key     | Type       | Description             |
+|---------|------------|-------------------------|
+| guis    | `[GUI]`    | List of all GUI layouts |
+| scripts | `[script]` | List of all scripts     |
+| fonts   | `[font]`   | List of all fonts       |
+| quads   | `[quad]`   | List of all quads       |
+| texts   | `[text]`   | List of all texts       |
+| nodes   | `[node]`   | List of all nodes       |
 
 ### GUI Structure
 | Key   | Type                 | Description                                           |
 |-------|----------------------|-------------------------------------------------------|
 | name  | `String`             | Name of GUI layout                                    |
 | nodes | `[integer]`          | List of all node root node indices for the GUI layout |
+
+### Script Structure
+| Key                       | Type      | Description                   |
+|---------------------------|-----------|-------------------------------|
+| uri                       | `String`  | Path to the scripts .lua file |
 
 ### Font Structure
 | Key                       | Type      | Description                                            |
@@ -78,13 +84,13 @@
 
 #### InteractableInformation Structure
 
-| Key                | Type       | Description                                                                                                                                                           |
-|--------------------|------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| passive_actions    | `[String]` | Names of the functions to be executed constantly by the node. Functions to be defined in `src\gui\gui.rs`                                                             |
-| hover_actions      | `[String]` | Names of the functions to be executed when the mouse is hovering over the hitbox. Functions to be defined in `src\gui\gui.rs`                                         |
-| unhover_actions    | `[String]` | Names of the functions to be executed when the mouse is not hovering over the hitbox (intended to undo the hover action). Functions to be defined in `src\gui\gui.rs` |
-| left_tap_actions   | `[String]` | Names of the functions to be executed upon a single left click of the hitbox. Functions to be defined in `src\gui\gui.rs`                                             |
-| right_tap_actions  | `[String]` | Names of the functions to be executed upon a single right click of the hitbox. Functions to be defined in `src\gui\gui.rs`                                            |
-| left_hold_actions  | `[String]` | Names of the functions to be executed whenever the left mouse button is pressed and hovering over the hitbox. Functions to be defined in `src\gui\gui.rs`             |
-| right_hold_actions | `[String]` | Names of the functions to be executed whenever the right mouse button is pressed and hovering over the hitbox. Functions to be defined in `src\gui\gui.rs`            |
-| hitbox_diversion   | `String`   | Index of child node for the interactable hitbox to be diverted to                                                                                                     |
+| Key                | Type        | Description                                                                                                               |
+|--------------------|-------------|---------------------------------------------------------------------------------------------------------------------------|
+| passive_actions    | `[integer]` | Indices of the scripts to be executed constantly by the node.                                                             |
+| hover_actions      | `[integer]` | Indices of the scripts to be executed when the mouse is hovering over the hitbox.                                         |
+| unhover_actions    | `[integer]` | Indices of the scripts to be executed when the mouse is not hovering over the hitbox (intended to undo the hover action). |
+| left_tap_actions   | `[integer]` | Indices of the scripts to be executed upon a single left click of the hitbox.                                             |
+| right_tap_actions  | `[integer]` | Indices of the scripts to be executed upon a single right click of the hitbox.                                            |
+| left_hold_actions  | `[integer]` | Indices of the scripts to be executed whenever the left mouse button is pressed and hovering over the hitbox.             |
+| right_hold_actions | `[integer]` | Indices of the scripts to be executed whenever the right mouse button is pressed and hovering over the hitbox.            |
+| hitbox_diversion   | `integer`   | Index of child node for the interactable hitbox to be diverted to                                                         |

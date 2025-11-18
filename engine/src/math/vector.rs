@@ -2,6 +2,8 @@
 
 use std::any::{Any, TypeId};
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
+use mlua::{FromLua, IntoLua, Lua, UserData, UserDataFields, UserDataMethods, Value};
+use mlua::prelude::{LuaError, LuaResult, LuaValue};
 
 #[derive(Clone, Debug, Copy)]
 #[derive(Default)]
@@ -649,5 +651,49 @@ impl AxisKey for usize {
             3 => v.w = f,
             _ => panic!("invalid axis index {}", self),
         }
+    }
+}
+
+impl<'lua> FromLua<'lua> for Vector {
+    fn from_lua(value: LuaValue<'lua>, _lua: &'lua Lua) -> LuaResult<Self> {
+        match value {
+            LuaValue::UserData(ud) => {
+                Ok(ud.borrow::<Vector>()?.clone())
+            }
+            _ => Err(LuaError::FromLuaConversionError {
+                from: value.type_name(),
+                to: "Vector",
+                message: Some("expected Vector userdata".to_string()),
+            }),
+        }
+    }
+}
+impl UserData for Vector {
+    fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
+        fields.add_field_method_get("x", |_, this| Ok(this.x));
+        fields.add_field_method_set("x", |_, this, val: f32| {
+            this.x = val;
+            Ok(())
+        });
+        fields.add_field_method_get("y", |_, this| Ok(this.y));
+        fields.add_field_method_set("y", |_, this, val: f32| {
+            this.y = val;
+            Ok(())
+        });
+        fields.add_field_method_get("z", |_, this| Ok(this.z));
+        fields.add_field_method_set("z", |_, this, val: f32| {
+            this.z = val;
+            Ok(())
+        });
+        fields.add_field_method_get("w", |_, this| Ok(this.w));
+        fields.add_field_method_set("w", |_, this, val: f32| {
+            this.w = val;
+            Ok(())
+        });
+    }
+    fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
+        methods.add_function("new", |_, (x, y, z, w): (f32, f32, f32, f32)| {
+            Ok(Vector::new_vec4(x, y, z, w))
+        });
     }
 }

@@ -1,0 +1,1 @@
+controller:set_screenshot(true)

@@ -76,7 +76,7 @@ fn main() { unsafe {
     
     
     renderer.scene_renderer.update_world_textures_all_frames(base, world);
-    renderer.gui.load_from_file(base, "editor\\resources\\gui\\default.gui");
+    renderer.gui.load_from_file(base, "editor\\resources\\gui\\default\\default.gui");
     
 
     app.run()

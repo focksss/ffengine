@@ -5,13 +5,54 @@
 	        "nodes": [0, 1, 2]
 	    }
 	],
+	"scripts": [
+		{
+			"uri": "editor\\resources\\gui\\default\\scripts\\set_fps.lua"
+		},
+		{
+			"uri": "editor\\resources\\gui\\default\\scripts\\set_position.lua"
+		},
+		{
+			"uri": "editor\\resources\\gui\\default\\scripts\\color_quad_bright.lua"
+		},
+		{
+			"uri": "editor\\resources\\gui\\default\\scripts\\color_quad_normal.lua"
+		},
+		{
+			"uri": "editor\\resources\\gui\\default\\scripts\\reload_shaders.lua"
+		},
+		{
+			"uri": "editor\\resources\\gui\\default\\scripts\\reload_gui.lua"
+		},
+		{
+			"uri": "editor\\resources\\gui\\default\\scripts\\screenshot.lua"
+		},
+		{
+			"uri": "editor\\resources\\gui\\default\\scripts\\color_quad_bright1.lua"
+		},
+		{
+			"uri": "editor\\resources\\gui\\default\\scripts\\color_quad_normal1.lua"
+		},
+		{
+			"uri": "editor\\resources\\gui\\default\\scripts\\toggle_hitbox_vis.lua"
+		},
+		{
+			"uri": "editor\\resources\\gui\\default\\scripts\\toggle_text.lua"
+		},
+		{
+			"uri": "editor\\resources\\gui\\default\\scripts\\toggle_player_physics.lua"
+		},
+		{
+			"uri": "editor\\resources\\gui\\default\\scripts\\toggle_physics_tick.lua"
+		}
+	],
 	"fonts": [
-	{
-		"uri": "editor\\resources\\fonts\\Oxygen-Regular.ttf",
-		"glyph_msdf_size": 32,
-		"glyph_msdf_distance_range": 2.0
-	}
-],
+		{
+			"uri": "editor\\resources\\fonts\\Oxygen-Regular.ttf",
+			"glyph_msdf_size": 32,
+			"glyph_msdf_distance_range": 2.0
+		}
+	],
 	"quads": [
 		{
 			"position": [0.0, 0.0],
@@ -314,7 +355,7 @@
 		{
 			"name": "fps_display",
 			"interactable_information": {
-				"passive_actions": ["set_fps"]
+				"passive_actions": [0]
 			},
 			"children": [],
 			"position": [100.0, 100.0],
@@ -330,7 +371,7 @@
 		{
 			"name": "position display",
 			"interactable_information": {
-				"passive_actions": ["set_position"]
+				"passive_actions": [1]
 			},
 			"children": [],
 			"position": [100.0, 140.0],
@@ -356,9 +397,9 @@
 			{
 				"name": "reload shaders button",
 				"interactable_information": {
-					"hover_actions": ["color_quad_bright"],
-					"unhover_actions": ["color_quad_normal"],
-					"left_tap_actions": ["reload_shaders"]
+					"hover_actions": [2],
+					"unhover_actions": [3],
+					"left_tap_actions": [4]
 				},
 				"children": [],
 				"position": [0.1, 0.85],
@@ -371,9 +412,9 @@
 			{
 				"name": "reload gui button",
 				"interactable_information": {
-					"hover_actions": ["color_quad_bright"],
-					"unhover_actions": ["color_quad_normal"],
-					"left_tap_actions": ["reload_gui"]
+					"hover_actions": [2],
+					"unhover_actions": [3],
+					"left_tap_actions": [5]
 				},
 				"children": [],
 				"position": [0.1, 0.78],
@@ -386,9 +427,9 @@
 			{
 				"name": "screenshot button",
 				"interactable_information": {
-					"hover_actions": ["color_quad_bright"],
-					"unhover_actions": ["color_quad_normal"],
-					"left_tap_actions": ["screenshot"]
+					"hover_actions": [2],
+					"unhover_actions": [3],
+					"left_tap_actions": [6]
 				},
 				"children": [],
 				"position": [0.1, 0.71],
@@ -413,9 +454,9 @@
 				{
 					"name": "Toggle Hitbox View toggle",
 					"interactable_information": {
-						"hover_actions": ["color_quad_bright1"],
-						"unhover_actions": ["color_quad_normal1"],
-						"left_tap_actions": ["toggle hitbox vis", "toggle text"]
+						"hover_actions": [7],
+						"unhover_actions": [8],
+						"left_tap_actions": [9, 10]
 					},
 					"children": [],
 					"position": [0.7, 0.1],
@@ -440,9 +481,9 @@
 				{
 				"name": "Toggle player physics toggle",
 				"interactable_information": {
-					"hover_actions": ["color_quad_bright1"],
-					"unhover_actions": ["color_quad_normal1"],
-					"left_tap_actions": ["toggle player physics", "toggle text"]
+					"hover_actions": [7],
+					"unhover_actions": [8],
+					"left_tap_actions": [11, 10]
 				},
 				"children": [],
 				"position": [0.7, 0.1],
@@ -467,9 +508,9 @@
 				{
 				"name": "Toggle physics tick toggle",
 				"interactable_information": {
-					"hover_actions": ["color_quad_bright1"],
-					"unhover_actions": ["color_quad_normal1"],
-					"left_tap_actions": ["toggle physics tick", "toggle text"]
+					"hover_actions": [7],
+					"unhover_actions": [8],
+					"left_tap_actions": [12, 10]
 				},
 				"children": [],
 				"position": [0.7, 0.1],

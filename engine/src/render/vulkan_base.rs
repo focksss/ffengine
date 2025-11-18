@@ -1,3 +1,4 @@
+use jpeg_decoder::Decoder;
 use std::{borrow::Cow, cell::RefCell, default::Default, error::Error, ffi, fs, io, ops::Drop, os::raw::c_char};
 use std::ffi::c_void;
 use std::fs::Metadata;

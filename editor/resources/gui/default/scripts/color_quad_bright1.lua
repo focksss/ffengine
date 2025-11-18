@@ -1,0 +1,1 @@
+gui:set_quad_color(node_index, 0.4, 0.4, 0.4, 1.0)
