@@ -30,6 +30,7 @@ pub struct Controller {
     pub pressed_mouse_buttons: HashSet<MouseButton>,
 
     pub mouse_delta: (f32, f32),
+    pub scroll_delta: (f32, f32),
     pub cursor_locked: bool,
     pub saved_cursor_pos: PhysicalPosition<f64>,
     pub paused: bool,
@@ -68,6 +69,7 @@ impl Controller {
             new_pressed_keys: Default::default(),
             pressed_mouse_buttons: Default::default(),
             mouse_delta: (0.0, 0.0),
+            scroll_delta: (0,0, 0,0),
             cursor_locked: false,
             saved_cursor_pos: Default::default(),
             paused: false,
@@ -251,6 +253,19 @@ impl Controller {
                     }
                     ElementState::Released => {
                         if self.pressed_mouse_buttons.contains(&button) { self.pressed_mouse_buttons.remove(&button); }
+                    }
+                }
+            }
+            Event::WindowEvent {
+                event: WindowEvent::MouseWheel { delta, .. },
+                ..
+            } => {                    
+                if self.window().has_focus() {
+                    if let MouseScrollDelta::PixelDelta(delta) = delta {
+                        self.scroll_delta = (
+                            pixel_delta.x as f32,
+                            pixel_delta.y as f32,
+                        );
                     }
                 }
             }
