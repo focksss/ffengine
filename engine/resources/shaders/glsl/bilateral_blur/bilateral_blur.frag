@@ -52,9 +52,7 @@ void main() {
         vec4 sample_color = texture(color, sample_uv);
         float sample_depth = g_info_sample.a;
 
-        if (pc.infinite_reverse_depth == 1) {
-            if (sample_depth == 0.0) continue;
-        } else if (sample_depth == 1.0) continue;
+        if (isnan(g_info_sample.r)) continue;
 
         vec3 sample_norm = normalize(g_info_sample.rgb) * 2.0 - 1.0;
         float sample_z = get_view_z(sample_depth);
