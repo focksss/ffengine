@@ -223,6 +223,9 @@ impl PhysicsEngine {
 
                     continue
                 }
+                MovementMode::EDITOR => {
+
+                }
                 MovementMode::PHYSICS => {
                     player.rigid_body.position = player.camera.position;
 

@@ -170,7 +170,7 @@ impl Renderer {
 
     pub unsafe fn compile_shaders() {
         #[cfg(debug_assertions)] {
-            compile_shaders("resources\\shaders\\glsl").expect("Failed to compile shaders");
+            compile_shaders("engine\\resources\\shaders\\glsl").expect("Failed to compile shaders");
         }
     }
 

@@ -6,7 +6,7 @@ use std::time::Instant;
 use ash::vk;
 use mlua::{UserData, UserDataMethods};
 use winit::dpi::PhysicalPosition;
-use winit::event::{ElementState, Event, KeyEvent, MouseButton, WindowEvent};
+use winit::event::{ElementState, Event, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::EventLoopWindowTarget;
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::CursorGrabMode;
@@ -69,7 +69,7 @@ impl Controller {
             new_pressed_keys: Default::default(),
             pressed_mouse_buttons: Default::default(),
             mouse_delta: (0.0, 0.0),
-            scroll_delta: (0,0, 0,0),
+            scroll_delta: (0.0, 0.0),
             cursor_locked: false,
             saved_cursor_pos: Default::default(),
             paused: false,
@@ -110,6 +110,32 @@ impl Controller {
             renderer.gui.load_from_file(base, "editor\\resources\\gui\\default\\default.gui");
         }
 
+        let movement_mode = self.player.borrow().movement_mode.clone();
+
+        //println!("{:?}", self.scroll_delta);
+
+        if self.scroll_delta.1 != 0.0 {
+            match movement_mode {
+                MovementMode::GHOST => {
+                    if self.scroll_delta.1 > 0.0 {
+                        self.player.borrow_mut().camera.speed *= 1.0 + 10.0 * delta_time;
+                    } else {
+                        self.player.borrow_mut().camera.speed /= 1.0 + 10.0 * delta_time;
+                    }
+                }
+                MovementMode::PHYSICS => {
+                    if self.scroll_delta.1 > 0.0 {
+                        self.player.borrow_mut().camera.speed *= 1.0 + 10.0 * delta_time;
+                    } else {
+                        self.player.borrow_mut().camera.speed /= 1.0 + 10.0 * delta_time;
+                    }
+                }
+                MovementMode::EDITOR => {
+
+                }
+            }
+        }
+
         let mut move_direction= Vector::new_vec(0.0);
         let camera_rotation = self.player.borrow().camera.rotation;
         if self.pressed_keys.contains(&PhysicalKey::Code(KeyCode::KeyW)) {
@@ -136,6 +162,9 @@ impl Controller {
                 MovementMode::PHYSICS => {
                     if self.player.borrow().grounded { move_direction.y += 1.0; }
                 }
+                MovementMode::EDITOR => {
+
+                }
             }
         }
         if self.pressed_keys.contains(&PhysicalKey::Code(KeyCode::ShiftLeft)) {
@@ -144,6 +173,7 @@ impl Controller {
                     move_direction.y -= 1.0;
                 }
                 MovementMode::PHYSICS => {}
+                MovementMode::EDITOR => {}
             }
         }
 
@@ -196,9 +226,11 @@ impl Controller {
                     player_mut.rigid_body.velocity = player_mut.rigid_body.velocity + move_direction *
                         Vector::new_vec3(player_mut.move_power, player_mut.jump_power, player_mut.move_power) * speed;
                 }
+                MovementMode::EDITOR => {}
             }
         }
 
+        self.scroll_delta = (0.0, 0.0);
         self.new_pressed_keys.clear();
     } }
     
@@ -259,13 +291,10 @@ impl Controller {
             Event::WindowEvent {
                 event: WindowEvent::MouseWheel { delta, .. },
                 ..
-            } => {                    
+            } => {
                 if self.window().has_focus() {
-                    if let MouseScrollDelta::PixelDelta(delta) = delta {
-                        self.scroll_delta = (
-                            pixel_delta.x as f32,
-                            pixel_delta.y as f32,
-                        );
+                    if let MouseScrollDelta::LineDelta(x, y) = delta {
+                        self.scroll_delta = (x, y);
                     }
                 }
             }

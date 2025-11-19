@@ -14,11 +14,11 @@ use crate::client::controller::Controller;
 use crate::physics::physics_engine::PhysicsEngine;
 use crate::render::render::{Renderer, MAX_FRAMES_IN_FLIGHT};
 use crate::render::vulkan_base::{record_submit_commandbuffer, VkBase};
+use crate::scripting::lua_engine::Lua;
 use crate::world::scene::{Light, Model, Scene};
 
 const PI: f32 = std::f32::consts::PI;
 
-/// Renderer will remain None until initiated
 pub struct Engine {
     pub base: VkBase,
     pub world: Scene,
@@ -28,6 +28,7 @@ pub struct Engine {
 }
 impl Engine {
     pub unsafe fn new() -> Engine {
+        Lua::initialize().expect("Failed to initialize Lua scripting engine");
         let base = VkBase::new("ffengine".to_string(), 1920, 1080, MAX_FRAMES_IN_FLIGHT).unwrap();
         let controller = Arc::new(RefCell::new(Controller::new(&base.window, Vector::new_vec3(0.0, 20.0, 0.0))));
         let mut world = Scene::new(&base);
@@ -80,9 +81,7 @@ impl Engine {
                     first_frame = false;
                     if base.needs_swapchain_recreate {
                         base.device.device_wait_idle().unwrap();
-
                         base.set_surface_and_present_images();
-
                         renderer.reload(&base, &world);
 
                         base.needs_swapchain_recreate = false;

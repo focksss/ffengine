@@ -15,11 +15,11 @@ use crate::render::render_helper::{Descriptor, DescriptorCreateInfo, DescriptorS
 use crate::gui::text::font::Font;
 use crate::gui::text::text_render::{TextInformation, TextRenderer};
 use crate::render::vulkan_base::VkBase;
-use crate::scripting::lua_engine::LuaScriptEngine;
+use crate::scripting::lua_engine::Lua;
 
 pub struct GUI {
     device: ash::Device,
-    window_ptr: *const winit::window::Window,
+    window: Arc<winit::window::Window>,
     pub(crate) controller: Arc<RefCell<Controller>>,
 
     pub pass: Arc<RefCell<Pass>>,
@@ -35,17 +35,13 @@ pub struct GUI {
     pub interactable_node_indices: Vec<usize>,
 
     pub fonts: Vec<Arc<Font>>,
-
-    pub script_engine: Arc<RefCell<LuaScriptEngine>>,
 }
 impl GUI {
     pub fn handle_gui_interaction(&mut self, node: GUINode, node_index: usize, min: Vector, max: Vector, frame_command_buffer: CommandBuffer) {
         let interactable_information = &node.interactable_information.unwrap();
 
-        let script_engine = self.script_engine.clone();
-
         for passive_action in interactable_information.passive_actions.iter() {
-            let _ = script_engine.borrow().call_script(
+            let _ = Lua::call_script(
                 *passive_action,
                 self,
                 node_index,
@@ -56,7 +52,7 @@ impl GUI {
         let (x, y, left_pressed) = {
             let controller = self.controller.borrow();
             let x = controller.cursor_position.x as f32;
-            let y = self.window().inner_size().height as f32 - controller.cursor_position.y as f32;
+            let y = self.window.inner_size().height as f32 - controller.cursor_position.y as f32;
             let left_pressed = controller.pressed_mouse_buttons.contains(&MouseButton::Left);
             (x, y, left_pressed)
         };
@@ -67,7 +63,7 @@ impl GUI {
             { true } else { false };
         if !hovered {
             for unhover_action in interactable_information.unhover_actions.iter() {
-                let _ = script_engine.borrow().call_script(
+                let _ = Lua::call_script(
                     *unhover_action,
                     self,
                     node_index,
@@ -78,7 +74,7 @@ impl GUI {
         };
 
         for hover_action in interactable_information.hover_actions.iter() {
-            let _ = script_engine.borrow().call_script(
+            let _ = Lua::call_script(
                 *hover_action,
                 self,
                 node_index,
@@ -91,7 +87,7 @@ impl GUI {
         if !interactable_information.was_pressed_last_frame && left_pressed {
             interactable_information.was_pressed_last_frame = true;
             for left_tap_action in interactable_information.left_tap_actions.clone().iter() {
-                let _ = script_engine.borrow().call_script(
+                let _ = Lua::call_script(
                     *left_tap_action,
                     self,
                     node_index,
@@ -106,7 +102,7 @@ impl GUI {
 
         GUI {
             device: base.device.clone(),
-            window_ptr: &base.window as *const _,
+            window: base.window.clone(),
             controller,
 
             pass: pass_ref.clone(),
@@ -122,8 +118,6 @@ impl GUI {
             fonts: vec![text_renderer.default_font.clone()],
 
             text_renderer,
-
-            script_engine: Arc::new(RefCell::new(LuaScriptEngine::new().unwrap()))
         }
     } }
     pub unsafe fn create_rendering_objects(base: &VkBase) -> (Arc<RefCell<Pass>>, Renderpass, TextRenderer) { unsafe {
@@ -165,9 +159,6 @@ impl GUI {
 
         (pass_ref.clone(), quad_renderpass, TextRenderer::new(base, Some(pass_ref.clone())))
     } }
-    fn window(&self) -> &winit::window::Window {
-        unsafe { &*self.window_ptr }
-    }
     pub unsafe fn set_fonts(&mut self, fonts: Vec<Arc<Font>>) {
         self.fonts = fonts.clone();
         self.text_renderer.update_font_atlases_all_frames(fonts);
@@ -200,7 +191,7 @@ impl GUI {
                 script_uris.push(path);
             }
         }
-        self.script_engine.borrow_mut().load_scripts(script_uris).expect("script loading error");
+        Lua::load_scripts(script_uris).expect("script loading error");
 
         let mut fonts = Vec::new();
         for font in json["fonts"].members() {
@@ -622,7 +613,7 @@ impl GUI {
                 current_frame,
                 command_buffer,
                 Vector::new_vec(0.0),
-                Vector::new_vec2(self.window().inner_size().width as f32, self.window().inner_size().height as f32),
+                Vector::new_vec2(self.window.inner_size().width as f32, self.window.inner_size().height as f32),
                 &mut interactable_action_parameter_sets,
             );
         }

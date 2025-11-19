@@ -6,6 +6,7 @@ use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::ptr::null_mut;
+use std::sync::Arc;
 use std::time::Instant;
 use ash::{
     ext::debug_utils,
@@ -133,7 +134,7 @@ pub struct VkBase {
     pub swapchain_loader: swapchain::Device,
     // pub swapchain_images_in_flight: Vec<vk::Fence>,
     pub debug_utils_loader: debug_utils::Instance,
-    pub window: winit::window::Window,
+    pub window: Arc<winit::window::Window>,
     pub event_loop: RefCell<EventLoop<()>>,
     pub debug_call_back: vk::DebugUtilsMessengerEXT,
 
@@ -447,7 +448,7 @@ impl VkBase {
                 queue_family_index,
                 pdevice,
                 device_memory_properties,
-                window,
+                window: Arc::new(window),
                 surface_loader,
                 surface_format,
                 present_queue,

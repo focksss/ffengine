@@ -8,6 +8,7 @@ use crate::physics::physics_engine::RigidBody;
 pub enum MovementMode {
     GHOST,
     PHYSICS,
+    EDITOR,
 }
 
 pub struct Player {
