@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::{fs, slice};
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
@@ -26,18 +27,21 @@ pub struct GUI {
     pub text_renderer: TextRenderer,
     pub quad_renderpass: Renderpass,
 
-    pub gui_nodes: Vec<GUINode>,
+    pub gui_nodes: Vec<Arc<RefCell<GUINode>>>,
     pub gui_root_node_indices: Vec<usize>,
 
-    pub gui_quads: Vec<GUIQuad>,
-    pub gui_texts: Vec<GUIText>,
+    pub gui_quads: Vec<Arc<RefCell<GUIQuad>>>,
+    pub gui_texts: Vec<Arc<RefCell<GUIText>>>,
 
     pub interactable_node_indices: Vec<usize>,
 
     pub fonts: Vec<Arc<Font>>,
+
+    pub active_node: usize,
 }
 impl GUI {
-    pub fn handle_gui_interaction(&mut self, node: GUINode, node_index: usize, min: Vector, max: Vector, frame_command_buffer: CommandBuffer) {
+    pub fn handle_gui_interaction(&mut self, node: Arc<RefCell<GUINode>>, node_index: usize, min: Vector, max: Vector, frame_command_buffer: CommandBuffer) {
+        let node = node.borrow().clone();
         let interactable_information = &node.interactable_information.unwrap();
 
         for passive_action in interactable_information.passive_actions.iter() {
@@ -85,10 +89,17 @@ impl GUI {
             );
         }
 
-        let interactable_information = self.gui_nodes[node_index].interactable_information.as_mut().unwrap();
-        if !left_pressed { interactable_information.was_pressed_last_frame = false; }
+        let left_pressed = self.gui_nodes[node_index].borrow().interactable_information.clone().unwrap().was_pressed_last_frame;
+        if !left_pressed {
+            let node_ref = self.gui_nodes[node_index].borrow_mut();
+            node_ref.clone().interactable_information.unwrap().was_pressed_last_frame = false;
+        }
         if !interactable_information.was_pressed_last_frame && left_pressed {
-            interactable_information.was_pressed_last_frame = true;
+            {
+                let node_ref = self.gui_nodes[node_index].borrow_mut();
+                node_ref.clone().interactable_information.unwrap().was_pressed_last_frame = true;
+            }
+
             for left_tap_action in interactable_information.left_tap_actions.clone().iter() {
                 let _ = Lua::call_script(
                     left_tap_action.1,
@@ -122,6 +133,8 @@ impl GUI {
             fonts: vec![text_renderer.default_font.clone()],
 
             text_renderer,
+
+            active_node: 0,
         }
     } }
     pub unsafe fn create_rendering_objects(base: &VkBase) -> (Arc<RefCell<Pass>>, Renderpass, TextRenderer) { unsafe {
@@ -183,7 +196,7 @@ impl GUI {
             base.device.device_wait_idle().unwrap();
         }
         for text in self.gui_texts.iter() {
-            text.text_information.destroy();
+            text.borrow_mut().text_information.destroy();
         }
 
         let json = json::parse(fs::read_to_string(path).expect("failed to load json file").as_str()).expect("json parse error");
@@ -409,10 +422,6 @@ impl GUI {
                     right_tap_actions: interactable_right_tap_actions,
                     right_hold_actions: interactable_right_hold_actions,
                     hitbox_diversion: interactable_hitbox_diversion,
-
-                    storage_time: Instant::now(),
-                    storage_value1: 0.0,
-                    storage_value2: 0.0,
                 };
                 interactable_information = Some(temp);
             }
@@ -473,7 +482,7 @@ impl GUI {
                 }
             }
 
-            nodes.push(GUINode {
+            nodes.push(Arc::new(RefCell::new(GUINode {
                 index: nodes.len(),
                 name,
                 interactable_information,
@@ -485,7 +494,7 @@ impl GUI {
                 absolute_scale,
                 text,
                 quad,
-            })
+            })))
         }
         self.gui_nodes = nodes;
 
@@ -584,7 +593,7 @@ impl GUI {
                 }
             }
 
-            gui_texts.push(GUIText {
+            gui_texts.push(Arc::new(RefCell::new(GUIText {
                 text_information: TextInformation::new(self.fonts[text_font].clone())
                     .text(text_text)
                     .font_size(text_font_size)
@@ -597,7 +606,7 @@ impl GUI {
                 absolute_position,
                 absolute_scale,
                 color,
-            })
+            })))
         }
         self.gui_texts = gui_texts;
 
@@ -672,7 +681,7 @@ impl GUI {
                 }
             }
 
-            gui_quads.push(GUIQuad {
+            gui_quads.push(Arc::new(RefCell::new(GUIQuad {
                 position,
                 scale,
                 clip_min,
@@ -681,7 +690,7 @@ impl GUI {
                 absolute_scale,
                 color,
                 corner_radius,
-            });
+            })))
         }
         self.gui_quads = gui_quads;
     }
@@ -710,6 +719,7 @@ impl GUI {
         self.pass.borrow().transition_to_readable(command_buffer, current_frame);
 
         for parameter_set in interactable_action_parameter_sets {
+            self.active_node = parameter_set.1;
             self.handle_gui_interaction(parameter_set.0, parameter_set.1, parameter_set.2, parameter_set.3, command_buffer)
         }
     } }
@@ -720,27 +730,28 @@ impl GUI {
         command_buffer: CommandBuffer,
         parent_position: Vector,
         parent_scale: Vector,
-        interactable_parameter_sets: &mut Vec<(GUINode, usize, Vector, Vector)>
+        interactable_parameter_sets: &mut Vec<(Arc<RefCell<GUINode>>, usize, Vector, Vector)>
     ) { unsafe {
         let node = self.gui_nodes[node_index].clone();
-        if node.hidden { return };
+        let node_ref = node.borrow();
+        if node_ref.hidden { return };
 
-        let position = parent_position + if node.absolute_position { node.position } else { node.position * parent_scale };
-        let scale = if node.absolute_scale { node.scale } else { parent_scale * node.scale };
+        let position = parent_position + if node_ref.absolute_position { node_ref.position } else { node_ref.position * parent_scale };
+        let scale = if node_ref.absolute_scale { node_ref.scale } else { parent_scale * node_ref.scale };
 
-        if let Some(quad_index) = &node.quad {
+        if let Some(quad_index) = &node_ref.quad {
             self.draw_quad(*quad_index, current_frame, command_buffer, position, scale);
         }
-        if let Some(text_index) = &node.text {
+        if let Some(text_index) = &node_ref.text {
             self.draw_text(*text_index, current_frame, position, scale);
         }
 
-        for child in &node.children_indices.clone() {
+        for child in &node_ref.children_indices.clone() {
             self.draw_node(*child, current_frame, command_buffer, position, scale, interactable_parameter_sets);
         }
 
-        if node.interactable_information.is_some() {
-            interactable_parameter_sets.push((node, node_index, position, position + scale));
+        if node_ref.interactable_information.is_some() {
+            interactable_parameter_sets.push((self.gui_nodes[node_index].clone(), node_index, position, position + scale));
         }
     } }
     unsafe fn draw_quad(
@@ -751,7 +762,7 @@ impl GUI {
         position: Vector,
         scale: Vector,
     ) { unsafe {
-        let quad = &self.gui_quads[quad_index];
+        let quad = &self.gui_quads[quad_index].borrow();
         let clip_min = position + scale * quad.clip_min; // + if quad.absolute_clip_min { quad.clip_min } else { scale * quad.clip_min }
         let clip_max = position + scale * quad.clip_max; // + if quad.absolute_clip_max { quad.clip_max } else { scale * quad.clip_max }
         let position = position + if quad.absolute_position { quad.position } else { quad.position * scale };
@@ -797,7 +808,7 @@ impl GUI {
         position: Vector,
         scale: Vector,
     ) { unsafe {
-        let text = &self.gui_texts[text_index];
+        let text = &self.gui_texts[text_index].borrow();
 
         let clip_min = position + scale * text.clip_min; // + if quad.absolute_clip_min { quad.clip_min } else { scale * quad.clip_min }
         let clip_max = position + scale * text.clip_max; // + if quad.absolute_clip_max { quad.clip_max } else { scale * quad.clip_max }
@@ -807,9 +818,9 @@ impl GUI {
         self.text_renderer.draw_gui_text(current_frame, &text.text_information, position, scale, clip_min, clip_max);
     } }
 
-    pub fn update_text_of_node(&mut self, node_index: usize, text: &str, command_buffer: vk::CommandBuffer) {
-        let node_text_index = self.gui_nodes[node_index].text.expect("text index parse error");
-        let node_text_information = &mut self.gui_texts[node_text_index].text_information;
+    pub fn update_text_of_node(&mut self, node_index: usize, text: &str, command_buffer: CommandBuffer) {
+        let node_text_index = self.gui_nodes[node_index].borrow().text.expect("text index parse error");
+        let node_text_information = &mut self.gui_texts[node_text_index].borrow_mut().text_information;
         node_text_information.update_text(text);
         node_text_information.update_buffers_all_frames(command_buffer);
     }
@@ -818,8 +829,8 @@ impl GUI {
         self.text_renderer.destroy();
         self.quad_renderpass.destroy();
         for node in &self.gui_nodes {
-            if let Some(text_index) = &node.text {
-                self.gui_texts[*text_index].text_information.destroy();
+            if let Some(text_index) = &node.borrow().text {
+                self.gui_texts[*text_index].borrow_mut().text_information.destroy();
             }
         }
         for font in &self.fonts {
@@ -858,14 +869,11 @@ pub struct GUIInteractableInformation {
     pub right_tap_actions: Vec<(String, usize)>,
     pub right_hold_actions: Vec<(String, usize)>,
     pub hitbox_diversion: Option<usize>,
-
-    pub storage_time: Instant,
-    pub storage_value1: f32,
-    pub storage_value2: f32,
 }
 /**
 * Position and scale are relative and normalized.
 */
+#[derive(Clone)]
 pub struct GUIQuad {
     pub position: Vector,
     pub scale: Vector,
@@ -904,59 +912,4 @@ pub struct GUIQuadSendable {
     pub corner_radius: f32,
 
     pub _pad: [f32; 1],
-}
-
-impl UserData for GUIQuad {
-    fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
-        fields.add_field_method_get("color", |_, this| Ok(this.color.clone()));
-        fields.add_field_method_set("color", |_, this, val: Vector| {
-            this.color = val;
-            Ok(())
-        });
-    }
-}
-
-pub struct ScriptGUI<'a> {
-    pub(crate) gui: &'a mut GUI,
-    pub(crate) command_buffer: CommandBuffer,
-}
-impl<'a> UserData for ScriptGUI<'a> {
-    fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
-        methods.add_method_mut("update_text_of_node", |_, this, (node_index, text): (usize, String)| {
-            this.gui.update_text_of_node(node_index, &text, this.command_buffer);
-            Ok(())
-        });
-        methods.add_method("get_node_text", |_, this, node_index: usize| {
-            let node_text_index = this.gui.gui_nodes[node_index].text.expect("text index parse error");
-            Ok(this.gui.gui_texts[node_text_index].text_information.text.clone())
-        });
-        methods.add_method_mut("set_quad_color", |_, this, (node_index, r, g, b, a): (usize, f32, f32, f32, f32)| {
-            if let Some(quad_index) = this.gui.gui_nodes[node_index].quad {
-                this.gui.gui_quads[quad_index].color = Vector::new_vec4(r, g, b, a);
-            }
-            Ok(())
-        });
-        methods.add_method("get_storage_value1", |_, this, node_index: usize| {
-            Ok(this.gui.gui_nodes[node_index]
-                .interactable_information.as_ref().unwrap()
-                .storage_value1)
-        });
-        methods.add_method_mut("set_storage_value1", |_, this, (node_index, val): (usize, f32)| {
-            this.gui.gui_nodes[node_index]
-                .interactable_information.as_mut().unwrap()
-                .storage_value1 = val;
-            Ok(())
-        });
-        methods.add_method("get_storage_elapsed", |_, this, node_index: usize| {
-            Ok(this.gui.gui_nodes[node_index]
-                .interactable_information.as_ref().unwrap()
-                .storage_time.elapsed().as_secs_f32())
-        });
-        methods.add_method_mut("reset_storage_time", |_, this, node_index: usize| {
-            this.gui.gui_nodes[node_index]
-                .interactable_information.as_mut().unwrap()
-                .storage_time = Instant::now();
-            Ok(())
-        });
-    }
 }

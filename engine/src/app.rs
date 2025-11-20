@@ -91,6 +91,7 @@ impl Engine {
 
                     let now = Instant::now();
                     let delta_time = now.duration_since(last_frame_time).as_secs_f32();
+                    Lua::with_lua(|lua| lua.globals().set("dt", delta_time)).expect("Failed to set lua deltatime global");
                     last_frame_time = now;
 
                     { // kill refs once done

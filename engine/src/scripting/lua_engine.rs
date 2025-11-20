@@ -1,11 +1,12 @@
 use std::path::Path;
 use ash::vk;
 use mlua;
-use crate::gui::gui::{ScriptGUI, GUI};
-use crate::client::controller::ScriptController;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use mlua::AsChunk;
+use crate::gui::gui::GUI;
+use crate::scripting::engine_context::controller_access::ScriptController;
+use crate::scripting::engine_context::gui_access::ScriptGUI;
 
 thread_local! {
     static LUA: RefCell<Option<Lua>> = RefCell::new(None);
@@ -132,7 +133,7 @@ impl Lua {
         // context: Script, TODO: send the lua exposed engine
         // TODO: remove the below contexts
         gui: &mut GUI,
-        node_index: usize,
+        processing_index: usize, // index of node currently in processing
         command_buffer: vk::CommandBuffer,
     ) -> Result<(), mlua::Error> {
         let script = &self.scripts[script_index];
@@ -156,9 +157,9 @@ impl Lua {
                     let gui_ud = scope.create_nonstatic_userdata(script_gui)?;
                     let controller_ud = scope.create_userdata(controller)?;
 
-                    self.lua.globals().set("gui", gui_ud)?;
+                    self.lua.globals().set("GUI", gui_ud)?;
                     self.lua.globals().set("controller", controller_ud)?;
-                    self.lua.globals().set("node_index", node_index)?;
+                    self.lua.globals().set("processing_index", processing_index)?;
 
                     method.call::<_, ()>(())
                 })
@@ -186,5 +187,10 @@ impl Lua {
         Self::with_mut(|engine| {
             engine.call_method_impl(script_index, method_name, gui, node_index, command_buffer)
         })
+    }
+
+    pub fn with_lua<F, R>(f: F) -> R
+    where F: FnOnce(&mlua::Lua) -> R, {
+        Self::with(|engine| f(&engine.lua))
     }
 }
