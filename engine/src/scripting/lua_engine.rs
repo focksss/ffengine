@@ -133,7 +133,6 @@ impl Lua {
         // context: Script, TODO: send the lua exposed engine
         // TODO: remove the below contexts
         gui: &mut GUI,
-        processing_index: usize, // index of node currently in processing
         command_buffer: vk::CommandBuffer,
     ) -> Result<(), mlua::Error> {
         let script = &self.scripts[script_index];
@@ -159,7 +158,6 @@ impl Lua {
 
                     self.lua.globals().set("GUI", gui_ud)?;
                     self.lua.globals().set("controller", controller_ud)?;
-                    self.lua.globals().set("processing_index", processing_index)?;
 
                     method.call::<_, ()>(())
                 })
@@ -181,11 +179,10 @@ impl Lua {
         script_index: usize,
         method_name: &str,
         gui: &mut GUI,
-        node_index: usize,
         command_buffer: vk::CommandBuffer,
     ) -> Result<(), mlua::Error> {
         Self::with_mut(|engine| {
-            engine.call_method_impl(script_index, method_name, gui, node_index, command_buffer)
+            engine.call_method_impl(script_index, method_name, gui, command_buffer)
         })
     }
 

@@ -3,9 +3,17 @@ use std::sync::Arc;
 use std::time::Instant;
 use ash::vk::CommandBuffer;
 use mlua::{UserData, UserDataFields, UserDataMethods};
-use crate::gui::gui::{GUINode, GUIQuad, GUI};
+use crate::gui::gui::{GUINode, GUIQuad, GUIText, GUI};
 use crate::math::Vector;
 use crate::scripting::lua_engine::Lua;
+
+pub struct GUITextRef(pub Arc<RefCell<GUIText>>);
+impl UserData for GUITextRef {
+    fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
+        fields.add_field_method_get("text_message", |_, this| Ok(this.0.borrow().text_information.text.clone()));
+    }
+}
+
 
 pub struct GUIQuadRef(pub Arc<RefCell<GUIQuad>>);
 impl UserData for GUIQuadRef {
@@ -38,7 +46,7 @@ impl UserData for GUINodeRef {
 
         fields.add_field_method_get("quad", |_, this| Ok(this.0.borrow().quad.unwrap_or(0).clone()));
 
-        fields.add_field_method_get("text", |_, this| Ok(this.0.borrow().text.clone()));
+        fields.add_field_method_get("text", |_, this| Ok(this.0.borrow().text.unwrap_or(0).clone()));
     }
 }
 
@@ -66,6 +74,11 @@ impl<'a> UserData for ScriptGUI<'a> {
         methods.add_method("get_quad", |lua, this, index: usize| {
             let quad = GUIQuadRef(this.gui.gui_quads[index].clone());
             lua.create_userdata(quad)
+        });
+
+        methods.add_method("get_text", |lua, this, index: usize| {
+            let text = GUITextRef(this.gui.gui_texts[index].clone());
+            lua.create_userdata(text)
         });
     }
     fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {

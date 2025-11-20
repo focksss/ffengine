@@ -64,7 +64,7 @@ function toggle_player_physics()
 end
 
 function toggle_text()
-    local current_text = GUI:get_node_text(GUI.ActiveNode)
+    local current_text = GUI:get_text(GUI:get_node(GUI.ActiveNode).text).text_message
     if current_text == "On" then
     	GUI:update_text_of_node(GUI.ActiveNode, "Off")
     else

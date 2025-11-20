@@ -49,7 +49,6 @@ impl GUI {
                 passive_action.1,
                 passive_action.0.as_str(),
                 self,
-                node_index,
                 frame_command_buffer,
             );
         }
@@ -72,7 +71,6 @@ impl GUI {
                     unhover_action.1,
                     unhover_action.0.as_str(),
                     self,
-                    node_index,
                     frame_command_buffer,
                 );
             }
@@ -84,20 +82,23 @@ impl GUI {
                 hover_action.1,
                 hover_action.0.as_str(),
                 self,
-                node_index,
                 frame_command_buffer,
             );
         }
 
-        let left_pressed = self.gui_nodes[node_index].borrow().interactable_information.clone().unwrap().was_pressed_last_frame;
+        let left_pressed = self.controller.borrow().pressed_mouse_buttons.contains(&MouseButton::Left);
         if !left_pressed {
-            let node_ref = self.gui_nodes[node_index].borrow_mut();
-            node_ref.clone().interactable_information.unwrap().was_pressed_last_frame = false;
+            let mut node_ref = self.gui_nodes[node_index].borrow_mut();
+            if let Some(info) = node_ref.interactable_information.as_mut() {
+                info.was_pressed_last_frame = false;
+            }
         }
         if !interactable_information.was_pressed_last_frame && left_pressed {
             {
-                let node_ref = self.gui_nodes[node_index].borrow_mut();
-                node_ref.clone().interactable_information.unwrap().was_pressed_last_frame = true;
+                let mut node_ref = self.gui_nodes[node_index].borrow_mut();
+                if let Some(info) = node_ref.interactable_information.as_mut() {
+                    info.was_pressed_last_frame = true;
+                }
             }
 
             for left_tap_action in interactable_information.left_tap_actions.clone().iter() {
@@ -105,7 +106,6 @@ impl GUI {
                     left_tap_action.1,
                     left_tap_action.0.as_str(),
                     self,
-                    node_index,
                     frame_command_buffer,
                 );
             }
