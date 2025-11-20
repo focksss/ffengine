@@ -10,11 +10,11 @@ use crate::scripting::lua_engine::Lua;
 pub struct GUITextRef(pub Arc<RefCell<GUIText>>);
 impl UserData for GUITextRef {
     fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
-        fields.add_field_method_get("text_message", |_, this| Ok(this.0.borrow().text_information.text.clone()));
+        fields.add_field_method_get("text_message", |_, this| Ok(this.0.borrow().text_information.as_ref().unwrap().text.clone()));
     }
     fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
         methods.add_method_mut("update_text", |_, this, text: String| {
-            this.0.borrow_mut().update_text(String, );
+            this.0.borrow_mut().update_text(text.as_str());
             Ok(())
         });
     }
@@ -49,9 +49,15 @@ impl UserData for GUINodeRef {
 
         fields.add_field_method_get("index", |_, this| Ok(this.0.borrow().index.clone()));
 
-        fields.add_field_method_get("quad", |_, this| Ok(this.0.borrow().quad.unwrap_or(0).clone()));
+        fields.add_field_method_get("quad", |lua, this| {
+            let quad = GUIQuadRef(this.0.borrow().quad.clone().unwrap_or(Arc::new(RefCell::new(GUIQuad::default()))));
+            lua.create_userdata(quad)
+        });
 
-        fields.add_field_method_get("text", |_, this| Ok(this.0.borrow().text.unwrap_or(0).clone()));
+        fields.add_field_method_get("text", |lua, this| {
+            let text = GUITextRef(this.0.borrow().text.clone().unwrap_or(Arc::new(RefCell::new(GUIText::default()))));
+            lua.create_userdata(text)
+        });
     }
 }
 
@@ -61,10 +67,6 @@ pub struct ScriptGUI<'a> {
 }
 impl<'a> UserData for ScriptGUI<'a> {
     fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
-        methods.add_method_mut("update_text_of_node", |_, this, (node_index, text): (usize, String)| {
-            this.gui.update_text_of_node(node_index, &text, this.command_buffer);
-            Ok(())
-        });
         methods.add_method("get_node", |lua, this, index: usize| {
             let node = GUINodeRef(this.gui.gui_nodes[index].clone());
             lua.create_userdata(node)
@@ -87,6 +89,9 @@ impl<'a> UserData for ScriptGUI<'a> {
         });
     }
     fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
-        fields.add_field_method_get("ActiveNode", |_, this| Ok(this.gui.active_node));
+        fields.add_field_method_get("ActiveNode", |lua, this| {
+            let node = GUINodeRef(this.gui.gui_nodes[this.gui.active_node].clone());
+            lua.create_userdata(node)
+        });
     }
 }

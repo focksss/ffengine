@@ -9,6 +9,7 @@ use ash::vk::{CommandBuffer, DescriptorType, Format, Handle, ShaderStageFlags};
 use json::JsonValue;
 use mlua::{UserData, UserDataFields, UserDataMethods};
 use winit::event::MouseButton;
+use crate::app::get_command_buffer;
 use crate::client::controller::*;
 use crate::math::*;
 use crate::physics::player::MovementMode;
@@ -195,7 +196,7 @@ impl GUI {
             base.device.device_wait_idle().unwrap();
         }
         for text in self.gui_texts.iter() {
-            text.borrow_mut().text_information.destroy();
+            text.borrow_mut().text_information.as_mut().unwrap().destroy();
         }
 
         let json = json::parse(fs::read_to_string(path).expect("failed to load json file").as_str()).expect("json parse error");
@@ -342,11 +343,11 @@ impl GUI {
             }
 
             gui_texts.push(Arc::new(RefCell::new(GUIText {
-                text_information: TextInformation::new(self.fonts[text_font].clone())
+                text_information: Some(TextInformation::new(self.fonts[text_font].clone())
                     .text(text_text)
                     .font_size(text_font_size)
                     .newline_distance(text_newline_size)
-                    .set_buffers(base),
+                    .set_buffers(base)),
                 position,
                 scale,
                 clip_min,
@@ -666,14 +667,14 @@ impl GUI {
             let mut text = None;
             if let JsonValue::Number(ref text_json) = node["text"] {
                 if let Ok(v) = text_json.to_string().parse::<usize>() {
-                    text = Some(gui_texts[v].clone());
+                    text = Some(self.gui_texts[v].clone());
                 }
             }
 
             let mut quad = None;
             if let JsonValue::Number(ref quad_json) = node["quad"] {
                 if let Ok(v) = quad_json.to_string().parse::<usize>() {
-                    quad = Some(gui_quads[v].clone());
+                    quad = Some(self.gui_quads[v].clone());
                 }
             }
 
@@ -738,11 +739,11 @@ impl GUI {
         let position = parent_position + if node_ref.absolute_position { node_ref.position } else { node_ref.position * parent_scale };
         let scale = if node_ref.absolute_scale { node_ref.scale } else { parent_scale * node_ref.scale };
 
-        if let Some(quad_index) = &node_ref.quad {
-            self.draw_quad(*quad_index, current_frame, command_buffer, position, scale);
+        if let Some(quad) = &node_ref.quad {
+            self.draw_quad(quad.clone(), current_frame, command_buffer, position, scale);
         }
-        if let Some(text_index) = &node_ref.text {
-            self.draw_text(*text_index, current_frame, position, scale);
+        if let Some(text) = &node_ref.text {
+            self.draw_text(text.clone(), current_frame, position, scale);
         }
 
         for child in &node_ref.children_indices.clone() {
@@ -755,13 +756,13 @@ impl GUI {
     } }
     unsafe fn draw_quad(
         &self,
-        quad_index: usize,
+        quad: Arc<RefCell<GUIQuad>>,
         current_frame: usize,
         command_buffer: CommandBuffer,
         position: Vector,
         scale: Vector,
     ) { unsafe {
-        let quad = &self.gui_quads[quad_index].borrow();
+        let quad = &quad.borrow();
         let clip_min = position + scale * quad.clip_min; // + if quad.absolute_clip_min { quad.clip_min } else { scale * quad.clip_min }
         let clip_max = position + scale * quad.clip_max; // + if quad.absolute_clip_max { quad.clip_max } else { scale * quad.clip_max }
         let position = position + if quad.absolute_position { quad.position } else { quad.position * scale };
@@ -802,28 +803,26 @@ impl GUI {
     } }
     unsafe fn draw_text(
         &self,
-        text_index: usize,
+        text: Arc<RefCell<GUIText>>,
         current_frame: usize,
         position: Vector,
         scale: Vector,
     ) { unsafe {
-        let text = &self.gui_texts[text_index].borrow();
+        let text = &text.borrow();
 
         let clip_min = position + scale * text.clip_min; // + if quad.absolute_clip_min { quad.clip_min } else { scale * quad.clip_min }
         let clip_max = position + scale * text.clip_max; // + if quad.absolute_clip_max { quad.clip_max } else { scale * quad.clip_max }
         let position = position + if text.absolute_position { text.position } else { text.position * scale };
         let scale = if text.absolute_scale { text.scale } else { scale * text.scale };
 
-        self.text_renderer.draw_gui_text(current_frame, &text.text_information, position, scale, clip_min, clip_max);
+        self.text_renderer.draw_gui_text(current_frame, &text.text_information.as_ref().unwrap(), position, scale, clip_min, clip_max);
     } }
 
     pub unsafe fn destroy(&mut self) { unsafe {
         self.text_renderer.destroy();
         self.quad_renderpass.destroy();
-        for node in &self.gui_nodes {
-            if let Some(text_index) = &node.borrow().text {
-                self.gui_texts[*text_index].borrow_mut().text_information.destroy();
-            }
+        for text in &self.gui_texts {
+            text.borrow_mut().text_information.as_mut().unwrap().destroy();
         }
         for font in &self.fonts {
             font.destroy();
@@ -876,8 +875,22 @@ pub struct GUIQuad {
     pub color: Vector,
     pub corner_radius: f32,
 }
+impl Default for GUIQuad {
+    fn default() -> Self {
+        GUIQuad {
+            position: Default::default(),
+            scale: Default::default(),
+            clip_min: Default::default(),
+            clip_max: Default::default(),
+            absolute_position: false,
+            absolute_scale: false,
+            color: Default::default(),
+            corner_radius: 0.0,
+        }
+    }
+}
 pub struct GUIText {
-    pub text_information: TextInformation,
+    pub text_information: Option<TextInformation>,
 
     pub position: Vector,
     pub scale: Vector,
@@ -888,9 +901,25 @@ pub struct GUIText {
     pub color: Vector,
 }
 impl GUIText {
-    pub fn update_text(&mut self, text: &str, command_buffer: CommandBuffer) {
-        self.text_information.update_text(text);
-        self.text_information.update_buffers_all_frames(command_buffer);
+    pub fn update_text(&mut self, text: &str) {
+        let command_buffer = get_command_buffer();
+
+        self.text_information.as_mut().unwrap().update_text(text);
+        self.text_information.as_mut().unwrap().update_buffers_all_frames(command_buffer);
+    }
+}
+impl Default for GUIText {
+    fn default() -> Self {
+        GUIText {
+            text_information: None,
+            position: Default::default(),
+            scale: Default::default(),
+            clip_min: Default::default(),
+            clip_max: Default::default(),
+            absolute_position: false,
+            absolute_scale: false,
+            color: Default::default(),
+        }
     }
 }
 #[repr(C)]

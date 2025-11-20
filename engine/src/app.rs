@@ -2,7 +2,7 @@
 use std::cell::RefCell;
 use std::default::Default;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock, RwLock};
 use std::time::{Duration, Instant};
 use ash::vk;
 use ash::vk::QueryPool;
@@ -24,11 +24,12 @@ const PI: f32 = std::f32::consts::PI;
 // update it at start of render loop. 
 // (can keep the parameter system, just ALSO create the OnceLock, so that independent methods (update_text) don't need it passed)
 static COMMAND_BUFFER: OnceLock<RwLock<vk::CommandBuffer>> = OnceLock::new();
-fn use_command_buffer<F, R>(f: F) -> R
-where F: FnOnce(&CommandBuffer) -> R, {
-    let lock = COMMAND_BUFFER.get().expect("Frame command buffer not initialized");
-    let command_buffer = lock.read();
-    f(&command_buffer)
+pub fn get_command_buffer() -> vk::CommandBuffer {
+    *COMMAND_BUFFER
+        .get()
+        .expect("not initialized")
+        .read()
+        .unwrap()
 }
 
 pub struct Engine {
@@ -47,8 +48,8 @@ impl Engine {
 
         unsafe { world.initialize(&base) }
 
-        let rw_lock = RwLock::new(base.command_buffers[0]);
-        COMMAND_BUFFER.set(rw_lock);
+        let rw_lock = RwLock::new(base.draw_command_buffers[0]);
+        COMMAND_BUFFER.set(rw_lock).expect("Failed to initialize frame command buffer global");
 
         Engine {
             physics_engine: PhysicsEngine::new(Vector::new_vec3(0.0, -9.8, 0.0), 0.9, 0.5),
@@ -103,8 +104,8 @@ impl Engine {
                     needs_resize = true;
                 },
                 Event::AboutToWait => {
-                    let lock = COMMAND_BUFFER.get().expect("Frame command buffer not initialized");
-                    let mut command_buffer_guard = lock.write();
+                    let lock = COMMAND_BUFFER.get().expect("not initialized");
+                    *lock.write().unwrap() = base.draw_command_buffers[current_frame];
 
                     first_frame = false;
                     if base.needs_swapchain_recreate {

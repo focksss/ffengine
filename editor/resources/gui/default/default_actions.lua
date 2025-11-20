@@ -1,17 +1,17 @@
 function color_quad_bright()
-	GUI:get_quad(GUI:get_node(GUI.ActiveNode).quad):set_color(0.7, 0.7, 0.7, 1.0)
+	GUI.ActiveNode.quad:set_color(0.7, 0.7, 0.7, 1.0)
 end
 
 function color_quad_bright1()
-	GUI:get_quad(GUI:get_node(GUI.ActiveNode).quad):set_color(0.4, 0.4, 0.4, 1.0)
+	GUI.ActiveNode.quad:set_color(0.4, 0.4, 0.4, 1.0)
 end
 
 function color_quad_normal()
-	GUI:get_quad(GUI:get_node(GUI.ActiveNode).quad):set_color(0.5, 0.5, 0.5, 1.0)
+	GUI.ActiveNode.quad:set_color(0.5, 0.5, 0.5, 1.0)
 end
 
 function color_quad_normal1()
-	GUI:get_quad(GUI:get_node(GUI.ActiveNode).quad):set_color(0.3, 0.3, 0.3, 1.0)
+	GUI.ActiveNode.quad:set_color(0.3, 0.3, 0.3, 1.0)
 end
 
 function reload_gui()
@@ -31,7 +31,7 @@ local time_since_fps_update = 0
 function update_fps_display()
     if time_since_fps_update > 1.0 then
         local fps = fps_counter / time_since_fps_update
-        GUI:update_text_of_node(GUI.ActiveNode, string.format("FPS: %.1f", fps))
+        GUI.ActiveNode.text:update_text(string.format("FPS: %.1f", fps))
         time_since_fps_update = 0
         fps_counter = 0
     end
@@ -44,7 +44,7 @@ local time_since_position_update = 0
 function update_position_display()
     if time_since_position_update > 0.1 then
     	local x, y, z = controller:get_camera_position()
-    	GUI:update_text_of_node(GUI.ActiveNode, string.format("Cam pos: X: %.2f, Y: %.2f, Z: %.2f", x, y, z))
+    	GUI.ActiveNode.text:update_text(string.format("Cam pos: X: %.2f, Y: %.2f, Z: %.2f", x, y, z))
     	time_since_position_update = 0
     end
 
@@ -64,10 +64,10 @@ function toggle_player_physics()
 end
 
 function toggle_text()
-    local current_text = GUI:get_text(GUI:get_node(GUI.ActiveNode).text).text_message
+    local current_text = GUI.ActiveNode.text.text_message
     if current_text == "On" then
-    	GUI:update_text_of_node(GUI.ActiveNode, "Off")
+    	GUI.ActiveNode.text:update_text("Off")
     else
-    	GUI:update_text_of_node(GUI.ActiveNode, "On")
+    	GUI.ActiveNode.text:update_text("On")
     end
 end
