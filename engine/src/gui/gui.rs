@@ -17,6 +17,12 @@ use crate::gui::text::text_render::{TextInformation, TextRenderer};
 use crate::render::vulkan_base::VkBase;
 use crate::scripting::lua_engine::Lua;
 
+
+//TODO: STORE BOTH SCRIPT INDEX AND METHOD NAME IN EACH INTERACTION DEFINITION IN INTERACTABLES.
+// REMEMBER TO STORE INDEX AS THE RETURNED INDEX FROM LOAD FUNCTION, NOT THE ONE GIVEN BY THE GUI.
+// ALSO UPDATE ALL OF THE GUI SCRIPTS ACCORDINGLY.
+
+
 pub struct GUI {
     device: ash::Device,
     window: Arc<winit::window::Window>,
@@ -43,6 +49,7 @@ impl GUI {
         for passive_action in interactable_information.passive_actions.iter() {
             let _ = Lua::call_script(
                 *passive_action,
+                "action",
                 self,
                 node_index,
                 frame_command_buffer,
@@ -65,6 +72,7 @@ impl GUI {
             for unhover_action in interactable_information.unhover_actions.iter() {
                 let _ = Lua::call_script(
                     *unhover_action,
+                    "Action",
                     self,
                     node_index,
                     frame_command_buffer,
@@ -76,6 +84,7 @@ impl GUI {
         for hover_action in interactable_information.hover_actions.iter() {
             let _ = Lua::call_script(
                 *hover_action,
+                "Action",
                 self,
                 node_index,
                 frame_command_buffer,
@@ -89,6 +98,7 @@ impl GUI {
             for left_tap_action in interactable_information.left_tap_actions.clone().iter() {
                 let _ = Lua::call_script(
                     *left_tap_action,
+                    "Action",
                     self,
                     node_index,
                     frame_command_buffer,
