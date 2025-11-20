@@ -1,1 +1,0 @@
-controller:set_reload_shaders(true)

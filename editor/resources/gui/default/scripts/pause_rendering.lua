@@ -1,1 +1,0 @@
-controller:set_pause_rendering(true)

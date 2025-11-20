@@ -1,1 +1,0 @@
-controller:toggle_draw_hitboxes()

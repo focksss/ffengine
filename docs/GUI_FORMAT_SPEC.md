@@ -32,13 +32,6 @@
 |---------------------------|-----------|-------------------------------|
 | uri                       | `String`  | Path to the scripts .lua file |
 
-### Font Structure
-| Key                       | Type      | Description                                            |
-|---------------------------|-----------|--------------------------------------------------------|
-| uri                       | `String`  | Path to the fonts .ttf file                            |
-| glyph_msdf_size           | `integer` | Size in pixels of each glyphs region in the MSDF atlas |
-| glyph_msdf_distance_range | `float`   | Distance range to be used in MSDF generation           |
-
 ### Quad Structure
 | Key               | Type      | Description                                                 |
 |-------------------|-----------|-------------------------------------------------------------|
@@ -82,15 +75,21 @@
 | absolute_position        | Common                    | Common                                     |
 | absolute_scale           | Common                    | Common                                     |
 
+###### Method Structure
+| Key    | Type      | Description                                   |
+|--------|-----------|-----------------------------------------------|
+| method | `String`  | Name of the method.                           |
+| script | `integer` | Index of the script the method is defined in. |
+
 #### InteractableInformation Structure
 
-| Key                | Type        | Description                                                                                                               |
-|--------------------|-------------|---------------------------------------------------------------------------------------------------------------------------|
-| passive_actions    | `[integer]` | Indices of the scripts to be executed constantly by the node.                                                             |
-| hover_actions      | `[integer]` | Indices of the scripts to be executed when the mouse is hovering over the hitbox.                                         |
-| unhover_actions    | `[integer]` | Indices of the scripts to be executed when the mouse is not hovering over the hitbox (intended to undo the hover action). |
-| left_tap_actions   | `[integer]` | Indices of the scripts to be executed upon a single left click of the hitbox.                                             |
-| right_tap_actions  | `[integer]` | Indices of the scripts to be executed upon a single right click of the hitbox.                                            |
-| left_hold_actions  | `[integer]` | Indices of the scripts to be executed whenever the left mouse button is pressed and hovering over the hitbox.             |
-| right_hold_actions | `[integer]` | Indices of the scripts to be executed whenever the right mouse button is pressed and hovering over the hitbox.            |
-| hitbox_diversion   | `integer`   | Index of child node for the interactable hitbox to be diverted to                                                         |
+| Key                | Type        | Description                                                                                                |
+|--------------------|-------------|------------------------------------------------------------------------------------------------------------|
+| passive_actions    | `[Method]`  | Methods to be executed constantly by the node.                                                             |
+| hover_actions      | `[Method]`  | Methods to be executed when the mouse is hovering over the hitbox.                                         |
+| unhover_actions    | `[Method]`  | Methods to be executed when the mouse is not hovering over the hitbox (intended to undo the hover action). |
+| left_tap_actions   | `[Method]`  | Methods to be executed upon a single left click of the hitbox.                                             |
+| right_tap_actions  | `[Method]`  | Methods to be executed upon a single right click of the hitbox.                                            |
+| left_hold_actions  | `[Method]`  | Methods to be executed whenever the left mouse button is pressed and hovering over the hitbox.             |
+| right_hold_actions | `[Method]`  | Methods to be executed whenever the right mouse button is pressed and hovering over the hitbox.            |
+| hitbox_diversion   | `integer`   | Index of child node for the interactable hitbox to be diverted to                                          |

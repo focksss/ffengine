@@ -17,12 +17,6 @@ use crate::gui::text::text_render::{TextInformation, TextRenderer};
 use crate::render::vulkan_base::VkBase;
 use crate::scripting::lua_engine::Lua;
 
-
-//TODO: STORE BOTH SCRIPT INDEX AND METHOD NAME IN EACH INTERACTION DEFINITION IN INTERACTABLES.
-// REMEMBER TO STORE INDEX AS THE RETURNED INDEX FROM LOAD FUNCTION, NOT THE ONE GIVEN BY THE GUI.
-// ALSO UPDATE ALL OF THE GUI SCRIPTS ACCORDINGLY.
-
-
 pub struct GUI {
     device: ash::Device,
     window: Arc<winit::window::Window>,
@@ -48,8 +42,8 @@ impl GUI {
 
         for passive_action in interactable_information.passive_actions.iter() {
             let _ = Lua::call_script(
-                *passive_action,
-                "action",
+                passive_action.1,
+                passive_action.0.as_str(),
                 self,
                 node_index,
                 frame_command_buffer,
@@ -71,8 +65,8 @@ impl GUI {
         if !hovered {
             for unhover_action in interactable_information.unhover_actions.iter() {
                 let _ = Lua::call_script(
-                    *unhover_action,
-                    "Action",
+                    unhover_action.1,
+                    unhover_action.0.as_str(),
                     self,
                     node_index,
                     frame_command_buffer,
@@ -83,8 +77,8 @@ impl GUI {
 
         for hover_action in interactable_information.hover_actions.iter() {
             let _ = Lua::call_script(
-                *hover_action,
-                "Action",
+                hover_action.1,
+                hover_action.0.as_str(),
                 self,
                 node_index,
                 frame_command_buffer,
@@ -97,8 +91,8 @@ impl GUI {
             interactable_information.was_pressed_last_frame = true;
             for left_tap_action in interactable_information.left_tap_actions.clone().iter() {
                 let _ = Lua::call_script(
-                    *left_tap_action,
-                    "Action",
+                    left_tap_action.1,
+                    left_tap_action.0.as_str(),
                     self,
                     node_index,
                     frame_command_buffer,
@@ -201,7 +195,7 @@ impl GUI {
                 script_uris.push(path);
             }
         }
-        Lua::load_scripts(script_uris).expect("script loading error");
+        let script_indices = Lua::load_scripts(script_uris).expect("script loading error");
 
         let mut fonts = Vec::new();
         for font in json["fonts"].members() {
@@ -260,56 +254,140 @@ impl GUI {
 
                 match &interactable_information_json["passive_actions"] {
                     JsonValue::Array(arr) => {
-                        for v in arr {
-                            interactable_passive_actions.push(v.as_usize().expect("interactable passive_action index parse error"));
+                        for method in arr {
+                            let name = match &method["method"] {
+                                JsonValue::String(s) => {
+                                    s.as_str()
+                                }
+                                JsonValue::Short(s) => {
+                                    s.as_str()
+                                }
+                                _ => ""
+                            };
+                            interactable_passive_actions.push((
+                                String::from(name),
+                                script_indices[method["script"].as_usize().expect("interactable passive_action index parse error")]
+                            ));
                         }
                     }
                     _ => {}
                 }
                 match &interactable_information_json["hover_actions"] {
                     JsonValue::Array(arr) => {
-                        for v in arr {
-                            interactable_hover_actions.push(v.as_usize().expect("interactable hover_action index parse error"));
+                        for method in arr {
+                            let name = match &method["method"] {
+                                JsonValue::String(s) => {
+                                    s.as_str()
+                                }
+                                JsonValue::Short(s) => {
+                                    s.as_str()
+                                }
+                                _ => ""
+                            };
+                            interactable_hover_actions.push((
+                                String::from(name),
+                                script_indices[method["script"].as_usize().expect("interactable hover_action index parse error")]
+                            ));
                         }
                     }
                     _ => {}
                 }
                 match &interactable_information_json["unhover_actions"] {
                     JsonValue::Array(arr) => {
-                        for v in arr {
-                            interactable_unhover_actions.push(v.as_usize().expect("interactable unhover_action index parse error"));
+                        for method in arr {
+                            let name = match &method["method"] {
+                                JsonValue::String(s) => {
+                                    s.as_str()
+                                }
+                                JsonValue::Short(s) => {
+                                    s.as_str()
+                                }
+                                _ => ""
+                            };
+                            interactable_unhover_actions.push((
+                                String::from(name),
+                                script_indices[method["script"].as_usize().expect("interactable unhover_action index parse error")]
+                            ));
                         }
                     }
                     _ => {}
                 }
                 match &interactable_information_json["left_tap_actions"] {
                     JsonValue::Array(arr) => {
-                        for v in arr {
-                            interactable_left_tap_actions.push(v.as_usize().expect("interactable left_tap_action index parse error"));
+                        for method in arr {
+                            let name = match &method["method"] {
+                                JsonValue::String(s) => {
+                                    s.as_str()
+                                }
+                                JsonValue::Short(s) => {
+                                    s.as_str()
+                                }
+                                _ => ""
+                            };
+                            interactable_left_tap_actions.push((
+                                String::from(name),
+                                script_indices[method["script"].as_usize().expect("interactable left_tap_action index parse error")]
+                            ));
                         }
                     }
                     _ => {}
                 }
                 match &interactable_information_json["right_tap_actions"] {
                     JsonValue::Array(arr) => {
-                        for v in arr {
-                            interactable_right_tap_actions.push(v.as_usize().expect("interactable right_tap_action index parse error"));
+                        for method in arr {
+                            let name = match &method["method"] {
+                                JsonValue::String(s) => {
+                                    s.as_str()
+                                }
+                                JsonValue::Short(s) => {
+                                    s.as_str()
+                                }
+                                _ => ""
+                            };
+                            interactable_right_tap_actions.push((
+                                String::from(name),
+                                script_indices[method["script"].as_usize().expect("interactable right_tap_actions index parse error")]
+                            ));
                         }
                     }
                     _ => {}
                 }
                 match &interactable_information_json["left_hold_actions"] {
                     JsonValue::Array(arr) => {
-                        for v in arr {
-                            interactable_left_hold_actions.push(v.as_usize().expect("interactable left_hold_actions index parse error"));
+                        for method in arr {
+                            let name = match &method["method"] {
+                                JsonValue::String(s) => {
+                                    s.as_str()
+                                }
+                                JsonValue::Short(s) => {
+                                    s.as_str()
+                                }
+                                _ => ""
+                            };
+                            interactable_left_hold_actions.push((
+                                String::from(name),
+                                script_indices[method["script"].as_usize().expect("interactable left_hold_actions index parse error")]
+                            ));
                         }
                     }
                     _ => {}
                 }
                 match &interactable_information_json["right_hold_actions"] {
                     JsonValue::Array(arr) => {
-                        for v in arr {
-                            interactable_right_hold_actions.push(v.as_usize().expect("interactable right_hold_action index parse error"));
+                        for method in arr {
+                            let name = match &method["method"] {
+                                JsonValue::String(s) => {
+                                    s.as_str()
+                                }
+                                JsonValue::Short(s) => {
+                                    s.as_str()
+                                }
+                                _ => ""
+                            };
+                            interactable_right_hold_actions.push((
+                                String::from(name),
+                                script_indices[method["script"].as_usize().expect("interactable right_hold_actions index parse error")]
+                            ));
                         }
                     }
                     _ => {}
@@ -772,13 +850,13 @@ pub struct GUINode {
 pub struct GUIInteractableInformation {
     pub was_pressed_last_frame: bool,
 
-    pub passive_actions: Vec<usize>,
-    pub hover_actions: Vec<usize>,
-    pub unhover_actions: Vec<usize>,
-    pub left_tap_actions: Vec<usize>,
-    pub left_hold_actions: Vec<usize>,
-    pub right_tap_actions: Vec<usize>,
-    pub right_hold_actions: Vec<usize>,
+    pub passive_actions: Vec<(String, usize)>,
+    pub hover_actions: Vec<(String, usize)>,
+    pub unhover_actions: Vec<(String, usize)>,
+    pub left_tap_actions: Vec<(String, usize)>,
+    pub left_hold_actions: Vec<(String, usize)>,
+    pub right_tap_actions: Vec<(String, usize)>,
+    pub right_hold_actions: Vec<(String, usize)>,
     pub hitbox_diversion: Option<usize>,
 
     pub storage_time: Instant,
