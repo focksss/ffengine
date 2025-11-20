@@ -61,6 +61,9 @@ impl UserData for ScriptController {
             Ok((pos.x, pos.y, pos.z))
         });
     }
+    fn add_fields<'lua, M: UserDataMethods<'lua, Self>>(fields: &mut M) {
+        fields.add_field_method_get("flags", |_, this| Ok(this.flags))
+    }
 }
 
 impl UserData for Flags {

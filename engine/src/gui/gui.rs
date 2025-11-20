@@ -246,6 +246,202 @@ impl GUI {
         }
         self.gui_root_node_indices = guis[0].clone();
 
+        let mut gui_texts = Vec::new();
+        for text in json["texts"].members() {
+            let mut text_font = 0usize;
+            let mut text_text = "placeholder text";
+            let mut text_font_size = 32.0;
+            let mut text_newline_size = 1720.0;
+            if let JsonValue::Object(ref text_information_json) = text["text_information"] {
+                if let JsonValue::Number(ref text_information_font_json) = text_information_json["font"] {
+                    if let Ok(v) = text_information_font_json.to_string().parse::<usize>() {
+                        text_font = v;
+                    }
+                }
+                match &text_information_json["text"] {
+                    JsonValue::String(s) => {
+                        text_text = s.as_str();
+                    }
+                    JsonValue::Short(s) => {
+                        text_text = s.as_str();
+                    }
+                    _ => {}
+                }
+                if let JsonValue::Number(ref text_information_font_size_json) = text_information_json["font_size"] {
+                    if let Ok(v) = text_information_font_size_json.to_string().parse::<f32>() {
+                        text_font_size = v;
+                    }
+                }
+                if let JsonValue::Number(ref text_information_newline_distance_json) = text_information_json["newline_distance"] {
+                    if let Ok(v) = text_information_newline_distance_json.to_string().parse::<f32>() {
+                        text_newline_size = v;
+                    }
+                }
+            }
+
+            let mut position = Vector::new_empty();
+            if let JsonValue::Array(ref position_json) = text["position"] {
+                if position_json.len() >= 2 {
+                    position = Vector::new_vec2(
+                        position_json[0].as_f32().unwrap(),
+                        position_json[1].as_f32().unwrap(),
+                    );
+                }
+            }
+
+            let mut scale = Vector::new_empty();
+            if let JsonValue::Array(ref scale_json) = text["scale"] {
+                if scale_json.len() >= 2 {
+                    scale = Vector::new_vec2(
+                        scale_json[0].as_f32().unwrap(),
+                        scale_json[1].as_f32().unwrap(),
+                    );
+                }
+            }
+
+            let mut clip_min = Vector::new_empty();
+            if let JsonValue::Array(ref clip_min_json) = text["clip_min"] {
+                if clip_min_json.len() >= 2 {
+                    clip_min = Vector::new_vec2(
+                        clip_min_json[0].as_f32().unwrap(),
+                        clip_min_json[1].as_f32().unwrap(),
+                    );
+                }
+            }
+
+            let mut clip_max = Vector::new_empty();
+            if let JsonValue::Array(ref clip_max_json) = text["clip_max"] {
+                if clip_max_json.len() >= 2 {
+                    clip_max = Vector::new_vec2(
+                        clip_max_json[0].as_f32().unwrap(),
+                        clip_max_json[1].as_f32().unwrap(),
+                    );
+                }
+            }
+
+            let mut absolute_position = false;
+            if let JsonValue::Boolean(ref absolute_position_json) = text["absolute_position"] {
+                absolute_position = *absolute_position_json;
+            }
+
+            let mut absolute_scale = false;
+            if let JsonValue::Boolean(ref absolute_scale_json) = text["absolute_scale"] {
+                absolute_scale = *absolute_scale_json;
+            }
+
+            let mut color = Vector::new_empty();
+            if let JsonValue::Array(ref color_json) = text["color"] {
+                if color_json.len() >= 4 {
+                    color = Vector::new_vec4(
+                        color_json[0].as_f32().unwrap(),
+                        color_json[1].as_f32().unwrap(),
+                        color_json[2].as_f32().unwrap(),
+                        color_json[3].as_f32().unwrap(),
+                    );
+                }
+            }
+
+            gui_texts.push(Arc::new(RefCell::new(GUIText {
+                text_information: TextInformation::new(self.fonts[text_font].clone())
+                    .text(text_text)
+                    .font_size(text_font_size)
+                    .newline_distance(text_newline_size)
+                    .set_buffers(base),
+                position,
+                scale,
+                clip_min,
+                clip_max,
+                absolute_position,
+                absolute_scale,
+                color,
+            })))
+        }
+        self.gui_texts = gui_texts;
+
+        let mut gui_quads = Vec::new();
+        for quad in json["quads"].members() {
+            let mut position = Vector::new_empty();
+            if let JsonValue::Array(ref position_json) = quad["position"] {
+                if position_json.len() >= 2 {
+                    position = Vector::new_vec2(
+                        position_json[0].as_f32().unwrap(),
+                        position_json[1].as_f32().unwrap(),
+                    );
+                }
+            }
+
+            let mut scale = Vector::new_empty();
+            if let JsonValue::Array(ref scale_json) = quad["scale"] {
+                if scale_json.len() >= 2 {
+                    scale = Vector::new_vec2(
+                        scale_json[0].as_f32().unwrap(),
+                        scale_json[1].as_f32().unwrap(),
+                    );
+                }
+            }
+
+            let mut clip_min = Vector::new_empty();
+            if let JsonValue::Array(ref clip_min_json) = quad["clip_min"] {
+                if clip_min_json.len() >= 2 {
+                    clip_min = Vector::new_vec2(
+                        clip_min_json[0].as_f32().unwrap(),
+                        clip_min_json[1].as_f32().unwrap(),
+                    );
+                }
+            }
+
+            let mut clip_max = Vector::new_empty();
+            if let JsonValue::Array(ref clip_max_json) = quad["clip_max"] {
+                if clip_max_json.len() >= 2 {
+                    clip_max = Vector::new_vec2(
+                        clip_max_json[0].as_f32().unwrap(),
+                        clip_max_json[1].as_f32().unwrap(),
+                    );
+                }
+            }
+
+            let mut absolute_position = false;
+            if let JsonValue::Boolean(ref absolute_position_json) = quad["absolute_position"] {
+                absolute_position = *absolute_position_json;
+            }
+
+            let mut absolute_scale = false;
+            if let JsonValue::Boolean(ref absolute_scale_json) = quad["absolute_scale"] {
+                absolute_scale = *absolute_scale_json;
+            }
+
+            let mut color = Vector::new_empty();
+            if let JsonValue::Array(ref color_json) = quad["color"] {
+                if color_json.len() >= 4 {
+                    color = Vector::new_vec4(
+                        color_json[0].as_f32().unwrap(),
+                        color_json[1].as_f32().unwrap(),
+                        color_json[2].as_f32().unwrap(),
+                        color_json[3].as_f32().unwrap(),
+                    );
+                }
+            }
+
+            let mut corner_radius = 0.0;
+            if let JsonValue::Number(ref corner_radius_json) = quad["corner_radius"] {
+                if let Ok(v) = corner_radius_json.to_string().parse::<f32>() {
+                    corner_radius = v;
+                }
+            }
+
+            gui_quads.push(Arc::new(RefCell::new(GUIQuad {
+                position,
+                scale,
+                clip_min,
+                clip_max,
+                absolute_position,
+                absolute_scale,
+                color,
+                corner_radius,
+            })))
+        }
+        self.gui_quads = gui_quads;
+
         let mut nodes = Vec::new();
         for node in json["nodes"].members() {
             let mut name = String::from("unnamed node");
@@ -470,14 +666,14 @@ impl GUI {
             let mut text = None;
             if let JsonValue::Number(ref text_json) = node["text"] {
                 if let Ok(v) = text_json.to_string().parse::<usize>() {
-                    text = Some(v);
+                    text = Some(gui_texts[v].clone());
                 }
             }
 
             let mut quad = None;
             if let JsonValue::Number(ref quad_json) = node["quad"] {
                 if let Ok(v) = quad_json.to_string().parse::<usize>() {
-                    quad = Some(v);
+                    quad = Some(gui_quads[v].clone());
                 }
             }
 
@@ -496,202 +692,6 @@ impl GUI {
             })))
         }
         self.gui_nodes = nodes;
-
-        let mut gui_texts = Vec::new();
-        for text in json["texts"].members() {
-            let mut text_font = 0usize;
-            let mut text_text = "placeholder text";
-            let mut text_font_size = 32.0;
-            let mut text_newline_size = 1720.0;
-            if let JsonValue::Object(ref text_information_json) = text["text_information"] {
-                if let JsonValue::Number(ref text_information_font_json) = text_information_json["font"] {
-                    if let Ok(v) = text_information_font_json.to_string().parse::<usize>() {
-                        text_font = v;
-                    }
-                }
-                match &text_information_json["text"] {
-                    JsonValue::String(s) => {
-                        text_text = s.as_str();
-                    }
-                    JsonValue::Short(s) => {
-                        text_text = s.as_str();
-                    }
-                    _ => {}
-                }
-                if let JsonValue::Number(ref text_information_font_size_json) = text_information_json["font_size"] {
-                    if let Ok(v) = text_information_font_size_json.to_string().parse::<f32>() {
-                        text_font_size = v;
-                    }
-                }
-                if let JsonValue::Number(ref text_information_newline_distance_json) = text_information_json["newline_distance"] {
-                    if let Ok(v) = text_information_newline_distance_json.to_string().parse::<f32>() {
-                        text_newline_size = v;
-                    }
-                }
-            }
-
-            let mut position = Vector::new_empty();
-            if let JsonValue::Array(ref position_json) = text["position"] {
-                if position_json.len() >= 2 {
-                    position = Vector::new_vec2(
-                        position_json[0].as_f32().unwrap(),
-                        position_json[1].as_f32().unwrap(),
-                    );
-                }
-            }
-
-            let mut scale = Vector::new_empty();
-            if let JsonValue::Array(ref scale_json) = text["scale"] {
-                if scale_json.len() >= 2 {
-                    scale = Vector::new_vec2(
-                        scale_json[0].as_f32().unwrap(),
-                        scale_json[1].as_f32().unwrap(),
-                    );
-                }
-            }
-
-            let mut clip_min = Vector::new_empty();
-            if let JsonValue::Array(ref clip_min_json) = text["clip_min"] {
-                if clip_min_json.len() >= 2 {
-                    clip_min = Vector::new_vec2(
-                        clip_min_json[0].as_f32().unwrap(),
-                        clip_min_json[1].as_f32().unwrap(),
-                    );
-                }
-            }
-
-            let mut clip_max = Vector::new_empty();
-            if let JsonValue::Array(ref clip_max_json) = text["clip_max"] {
-                if clip_max_json.len() >= 2 {
-                    clip_max = Vector::new_vec2(
-                        clip_max_json[0].as_f32().unwrap(),
-                        clip_max_json[1].as_f32().unwrap(),
-                    );
-                }
-            }
-
-            let mut absolute_position = false;
-            if let JsonValue::Boolean(ref absolute_position_json) = text["absolute_position"] {
-                absolute_position = *absolute_position_json;
-            }
-
-            let mut absolute_scale = false;
-            if let JsonValue::Boolean(ref absolute_scale_json) = text["absolute_scale"] {
-                absolute_scale = *absolute_scale_json;
-            }
-
-            let mut color = Vector::new_empty();
-            if let JsonValue::Array(ref color_json) = text["color"] {
-                if color_json.len() >= 4 {
-                    color = Vector::new_vec4(
-                        color_json[0].as_f32().unwrap(),
-                        color_json[1].as_f32().unwrap(),
-                        color_json[2].as_f32().unwrap(),
-                        color_json[3].as_f32().unwrap(),
-                    );
-                }
-            }
-
-            gui_texts.push(Arc::new(RefCell::new(GUIText {
-                text_information: TextInformation::new(self.fonts[text_font].clone())
-                    .text(text_text)
-                    .font_size(text_font_size)
-                    .newline_distance(text_newline_size)
-                    .set_buffers(base),
-                position,
-                scale,
-                clip_min,
-                clip_max,
-                absolute_position,
-                absolute_scale,
-                color,
-            })))
-        }
-        self.gui_texts = gui_texts;
-
-        let mut gui_quads = Vec::new();
-        for quad in json["quads"].members() {
-            let mut position = Vector::new_empty();
-            if let JsonValue::Array(ref position_json) = quad["position"] {
-                if position_json.len() >= 2 {
-                    position = Vector::new_vec2(
-                        position_json[0].as_f32().unwrap(),
-                        position_json[1].as_f32().unwrap(),
-                    );
-                }
-            }
-
-            let mut scale = Vector::new_empty();
-            if let JsonValue::Array(ref scale_json) = quad["scale"] {
-                if scale_json.len() >= 2 {
-                    scale = Vector::new_vec2(
-                        scale_json[0].as_f32().unwrap(),
-                        scale_json[1].as_f32().unwrap(),
-                    );
-                }
-            }
-
-            let mut clip_min = Vector::new_empty();
-            if let JsonValue::Array(ref clip_min_json) = quad["clip_min"] {
-                if clip_min_json.len() >= 2 {
-                    clip_min = Vector::new_vec2(
-                        clip_min_json[0].as_f32().unwrap(),
-                        clip_min_json[1].as_f32().unwrap(),
-                    );
-                }
-            }
-
-            let mut clip_max = Vector::new_empty();
-            if let JsonValue::Array(ref clip_max_json) = quad["clip_max"] {
-                if clip_max_json.len() >= 2 {
-                    clip_max = Vector::new_vec2(
-                        clip_max_json[0].as_f32().unwrap(),
-                        clip_max_json[1].as_f32().unwrap(),
-                    );
-                }
-            }
-
-            let mut absolute_position = false;
-            if let JsonValue::Boolean(ref absolute_position_json) = quad["absolute_position"] {
-                absolute_position = *absolute_position_json;
-            }
-
-            let mut absolute_scale = false;
-            if let JsonValue::Boolean(ref absolute_scale_json) = quad["absolute_scale"] {
-                absolute_scale = *absolute_scale_json;
-            }
-
-            let mut color = Vector::new_empty();
-            if let JsonValue::Array(ref color_json) = quad["color"] {
-                if color_json.len() >= 4 {
-                    color = Vector::new_vec4(
-                        color_json[0].as_f32().unwrap(),
-                        color_json[1].as_f32().unwrap(),
-                        color_json[2].as_f32().unwrap(),
-                        color_json[3].as_f32().unwrap(),
-                    );
-                }
-            }
-
-            let mut corner_radius = 0.0;
-            if let JsonValue::Number(ref corner_radius_json) = quad["corner_radius"] {
-                if let Ok(v) = corner_radius_json.to_string().parse::<f32>() {
-                    corner_radius = v;
-                }
-            }
-
-            gui_quads.push(Arc::new(RefCell::new(GUIQuad {
-                position,
-                scale,
-                clip_min,
-                clip_max,
-                absolute_position,
-                absolute_scale,
-                color,
-                corner_radius,
-            })))
-        }
-        self.gui_quads = gui_quads;
     }
 
     pub unsafe fn draw(&mut self, current_frame: usize, command_buffer: CommandBuffer,) { unsafe {
@@ -817,13 +817,6 @@ impl GUI {
         self.text_renderer.draw_gui_text(current_frame, &text.text_information, position, scale, clip_min, clip_max);
     } }
 
-    pub fn update_text_of_node(&mut self, node_index: usize, text: &str, command_buffer: CommandBuffer) {
-        let node_text_index = self.gui_nodes[node_index].borrow().text.expect("text index parse error");
-        let node_text_information = &mut self.gui_texts[node_text_index].borrow_mut().text_information;
-        node_text_information.update_text(text);
-        node_text_information.update_buffers_all_frames(command_buffer);
-    }
-
     pub unsafe fn destroy(&mut self) { unsafe {
         self.text_renderer.destroy();
         self.quad_renderpass.destroy();
@@ -853,8 +846,8 @@ pub struct GUINode {
     pub absolute_position: bool,
     pub absolute_scale: bool,
 
-    pub text: Option<usize>,
-    pub quad: Option<usize>
+    pub text: Option<Arc<RefCell<GUIText>>>,
+    pub quad: Option<Arc<RefCell<GUIQuad>>>
 }
 #[derive(Clone)]
 pub struct GUIInteractableInformation {
@@ -893,6 +886,12 @@ pub struct GUIText {
     pub absolute_position: bool,
     pub absolute_scale: bool,
     pub color: Vector,
+}
+impl GUIText {
+    pub fn update_text(&mut self, text: &str, command_buffer: CommandBuffer) {
+        self.text_information.update_text(text);
+        self.text_information.update_buffers_all_frames(command_buffer);
+    }
 }
 #[repr(C)]
 #[derive(Copy, Clone)]

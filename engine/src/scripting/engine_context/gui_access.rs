@@ -12,6 +12,12 @@ impl UserData for GUITextRef {
     fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
         fields.add_field_method_get("text_message", |_, this| Ok(this.0.borrow().text_information.text.clone()));
     }
+    fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
+        methods.add_method_mut("update_text", |_, this, text: String| {
+            this.0.borrow_mut().update_text(String, );
+            Ok(())
+        });
+    }
 }
 
 
@@ -31,7 +37,6 @@ impl UserData for GUIQuadRef {
         });
     }
 }
-
 
 pub struct GUINodeRef(pub Arc<RefCell<GUINode>>);
 impl UserData for GUINodeRef {
