@@ -7,90 +7,103 @@ use crate::gui::gui::{GUINode, GUIQuad, GUIText, GUI};
 use crate::math::Vector;
 use crate::scripting::lua_engine::Lua;
 
-pub struct GUITextRef(pub Arc<RefCell<GUIText>>);
-impl UserData for GUITextRef {
+pub struct GUITextPointer {
+    gui: Arc<RefCell<GUI>>,
+    index: usize
+}
+impl UserData for GUITextPointer {
     fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
-        fields.add_field_method_get("text_message", |_, this| Ok(this.0.borrow().text_information.as_ref().unwrap().text.clone()));
+        fields.add_field_method_get("text_message", |_, this| Ok(
+            this.gui.borrow().gui_texts[this.index].text_information.as_ref().unwrap().text.clone()
+        ));
     }
     fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
         methods.add_method_mut("update_text", |_, this, text: String| {
-            this.0.borrow_mut().update_text(text.as_str());
+            this.gui.borrow_mut().gui_texts[this.index].update_text(text.as_str());
             Ok(())
         });
     }
 }
 
-
-pub struct GUIQuadRef(pub Arc<RefCell<GUIQuad>>);
-impl UserData for GUIQuadRef {
+pub struct GUIQuadPointer {
+    gui: Arc<RefCell<GUI>>,
+    index: usize
+}
+impl UserData for GUIQuadPointer {
     fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
-        fields.add_field_method_get("color", |_, this| Ok(this.0.borrow().color.clone()));
+        fields.add_field_method_get("color", |_, this| Ok(
+            this.gui.borrow().gui_quads[this.index].color
+        ));
         fields.add_field_method_set("color", |_, this, val: Vector| {
-            this.0.borrow_mut().color = val;
+            this.gui.borrow_mut().gui_quads[this.index].color = val;
             Ok(())
         });
     }
     fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
         methods.add_method_mut("set_color", |_, this, color: (f32, f32, f32, f32)| {
-            this.0.borrow_mut().color = Vector::new_vec4(color.0, color.1, color.2, color.3);
+            this.gui.borrow_mut().gui_quads[this.index].color = Vector::new_vec4(color.0, color.1, color.2, color.3);
             Ok(())
         });
     }
 }
 
-pub struct GUINodeRef(pub Arc<RefCell<GUINode>>);
-impl UserData for GUINodeRef {
+pub struct GUINodePointer {
+    gui: Arc<RefCell<GUI>>,
+    index: usize
+}
+impl UserData for GUINodePointer {
     fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
-        fields.add_field_method_get("hidden", |_, this| Ok(this.0.borrow().hidden.clone()));
+        fields.add_field_method_get("hidden", |_, this| Ok(
+            this.gui.borrow().gui_nodes[this.index].hidden
+        ));
         fields.add_field_method_set("hidden", |_, this, val: bool| {
-            this.0.borrow_mut().hidden = val;
+            this.gui.borrow_mut().gui_nodes[this.index].hidden = val;
             Ok(())
         });
 
-        fields.add_field_method_get("index", |_, this| Ok(this.0.borrow().index.clone()));
+        fields.add_field_method_get("index", |_, this| Ok(
+            this.index
+        ));
 
         fields.add_field_method_get("quad", |lua, this| {
-            let quad = GUIQuadRef(this.0.borrow().quad.clone().unwrap_or(Arc::new(RefCell::new(GUIQuad::default()))));
+            let quad = GUIQuadPointer {
+                gui: this.gui.clone(),
+                index: this.gui.borrow().gui_nodes[this.index].quad.unwrap_or(0)
+            };
             lua.create_userdata(quad)
         });
 
         fields.add_field_method_get("text", |lua, this| {
-            let text = GUITextRef(this.0.borrow().text.clone().unwrap_or(Arc::new(RefCell::new(GUIText::default()))));
+            let text = GUITextPointer {
+                gui: this.gui.clone(),
+                index: this.gui.borrow().gui_nodes[this.index].text.unwrap_or(0)
+            };
             lua.create_userdata(text)
         });
     }
 }
 
-pub struct ScriptGUI<'a> {
-    pub(crate) gui: &'a mut GUI,
-    pub(crate) command_buffer: CommandBuffer,
-}
-impl<'a> UserData for ScriptGUI<'a> {
+pub struct GUIRef(pub Arc<RefCell<GUI>>);
+impl UserData for GUIRef {
     fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
         methods.add_method("get_node", |lua, this, index: usize| {
-            let node = GUINodeRef(this.gui.gui_nodes[index].clone());
+            let node = GUINodePointer { gui: this.0.clone(), index };
             lua.create_userdata(node)
         });
 
-        methods.add_method_mut("set_quad_color", |_, this, (quad_index, r, g, b, a): (usize, f32, f32, f32, f32)| {
-            Ok(this.gui.gui_quads[quad_index].borrow_mut()
-                .color = Vector::new_vec4(r, g, b, a)
-            )
-        });
-
         methods.add_method("get_quad", |lua, this, index: usize| {
-            let quad = GUIQuadRef(this.gui.gui_quads[index].clone());
+            let quad = GUIQuadPointer { gui: this.0.clone(), index };
             lua.create_userdata(quad)
         });
 
         methods.add_method("get_text", |lua, this, index: usize| {
-            let text = GUITextRef(this.gui.gui_texts[index].clone());
+            let text = GUITextPointer { gui: this.0.clone(), index };
             lua.create_userdata(text)
         });
     }
     fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
         fields.add_field_method_get("ActiveNode", |lua, this| {
-            let node = GUINodeRef(this.gui.gui_nodes[this.gui.active_node].clone());
+            let node = GUINodePointer { gui: this.0.clone(), index: this.0.borrow().active_node };
             lua.create_userdata(node)
         });
     }

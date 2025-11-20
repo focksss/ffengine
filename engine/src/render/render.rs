@@ -28,7 +28,7 @@ pub struct Renderer {
     pub compositing_renderpass: Renderpass,
 
     pub scene_renderer: SceneRenderer,
-    pub gui: GUI,
+    pub gui: Arc<RefCell<GUI>>,
 
     pub hitbox_renderpass: Renderpass,
 
@@ -48,7 +48,7 @@ impl Renderer {
             compositing_renderpass,
 
             scene_renderer,
-            gui: GUI::new(base, controller),
+            gui: Arc::new(RefCell::new(GUI::new(base, controller))),
 
             hitbox_renderpass,
 
@@ -74,7 +74,7 @@ impl Renderer {
             renderer.hitbox_renderpass.pass.borrow().textures.iter().map(|frame_textures| {
                 &frame_textures[0]
             }).collect::<Vec<&Texture>>(),
-            renderer.gui.pass.borrow().textures.iter().map(|frame_textures| {
+            renderer.gui.borrow().pass.borrow().textures.iter().map(|frame_textures| {
                 &frame_textures[0]
             }).collect::<Vec<&Texture>>()
         ]);
@@ -142,8 +142,8 @@ impl Renderer {
     } }
     pub unsafe fn reload(&mut self, base: &VkBase, world: &Scene) { unsafe {
         self.device.device_wait_idle().unwrap();
-        
-        self.gui.reload_rendering(base);
+
+        { self.gui.borrow_mut().reload_rendering(base); }
 
         self.scene_renderer.destroy();
         self.compositing_renderpass.destroy();
@@ -161,7 +161,7 @@ impl Renderer {
             self.hitbox_renderpass.pass.borrow().textures.iter().map(|frame_textures| {
                 &frame_textures[0]
             }).collect::<Vec<&Texture>>(),
-            self.gui.pass.borrow().textures.iter().map(|frame_textures| {
+            self.gui.borrow().pass.borrow().textures.iter().map(|frame_textures| {
                 &frame_textures[0]
             }).collect::<Vec<&Texture>>()
         ]);
@@ -222,7 +222,7 @@ impl Renderer {
     ) { unsafe {
         let frame_command_buffer = self.draw_command_buffers[current_frame];
 
-        { self.gui.draw(current_frame, frame_command_buffer); }
+        { self.gui.borrow_mut().draw(current_frame, frame_command_buffer); }
 
         self.scene_renderer.render_world(current_frame, &world, &player.borrow().camera.clone());
 
@@ -296,7 +296,7 @@ impl Renderer {
 
     pub unsafe fn destroy(&mut self) { unsafe {
         self.scene_renderer.destroy();
-        self.gui.destroy();
+        self.gui.borrow_mut().destroy();
         self.compositing_renderpass.destroy();
         self.present_renderpass.destroy();
         self.hitbox_renderpass.destroy();

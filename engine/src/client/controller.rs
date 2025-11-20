@@ -107,7 +107,7 @@ impl Controller {
         }
         if self.flags.reload_gui_queued {
             self.flags.reload_gui_queued = false;
-            renderer.gui.load_from_file(base, "editor\\resources\\gui\\default\\default.gui");
+            renderer.gui.borrow_mut().load_from_file(base, "editor\\resources\\gui\\default\\default.gui");
         }
 
         let movement_mode = self.player.borrow().movement_mode.clone();

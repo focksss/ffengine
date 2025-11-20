@@ -3,10 +3,11 @@ use ash::vk;
 use mlua;
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::sync::Arc;
 use mlua::AsChunk;
 use crate::gui::gui::GUI;
 use crate::scripting::engine_context::controller_access::ScriptController;
-use crate::scripting::engine_context::gui_access::ScriptGUI;
+use crate::scripting::engine_context::gui_access::{GUIRef};
 
 thread_local! {
     static LUA: RefCell<Option<Lua>> = RefCell::new(None);
@@ -25,6 +26,8 @@ pub struct Lua {
     lua: mlua::Lua,
     scripts: Vec<Script>,
     free_script_indices: Vec<usize>,
+
+    cached_calls: Vec<(usize, String, usize)>, // cached script calls, stores script index, method name, and call index. Maybe add a parameter cache using a sort of heap?
 }
 
 impl Lua {
@@ -37,6 +40,7 @@ impl Lua {
                 lua: mlua::Lua::new(),
                 scripts: Vec::new(),
                 free_script_indices: Vec::new(),
+                cached_calls: Vec::new(),
             });
             Ok(())
         })
@@ -126,14 +130,21 @@ impl Lua {
         Ok(indices)
     }
 
+    /// call_index is used as the "active_object" index during method calling
+    fn cache_call_impl(
+        &mut self,
+        script_index: usize,
+        method_name: &str,
+        call_index: Option<usize>,
+    ) {
+        self.cached_calls.push((script_index, method_name.to_string(), call_index.unwrap_or(0)));
+    }
+
     fn call_method_impl<'lua>(
         &'lua self,
         script_index: usize,
         method_name: &str,
-        // context: Script, TODO: send the lua exposed engine
-        // TODO: remove the below contexts
-        gui: &mut GUI,
-        command_buffer: vk::CommandBuffer,
+        gui: Arc<RefCell<GUI>>,
     ) -> Result<(), mlua::Error> {
         let script = &self.scripts[script_index];
 
@@ -146,8 +157,8 @@ impl Lua {
                 let env: mlua::Table = self.lua.registry_value(&script.environment)?;
                 let method: mlua::Function = self.lua.registry_value(&key)?;
 
-                let controller = ScriptController(gui.controller.clone());
-                let script_gui = ScriptGUI { gui, command_buffer };
+                let controller = ScriptController(gui.borrow().controller.clone());
+                let script_gui = GUIRef(gui.clone());
 
                 self.lua.scope(|scope| {
                     // TODO: refer to above TODOs
@@ -170,6 +181,22 @@ impl Lua {
         }
     }
 
+    fn run_cache_impl(
+        &mut self,
+        gui: Arc<RefCell<GUI>>,
+        command_buffer: vk::CommandBuffer,
+    ) {
+        for call in self.cached_calls.clone() {
+            { gui.borrow_mut().active_node = call.2 }
+            self.call_method_impl(
+                call.0,
+                call.1.as_str(),
+                gui.clone(),
+            ).expect("failed to call cached method");
+        }
+        self.cached_calls.clear();
+    }
+
     /// Returns assigned indices of the scripts in the directory
     pub fn load_scripts(scripts_dir: Vec<&Path>) -> Result<Vec<usize>, Box<dyn std::error::Error>> {
         Self::with_mut(|engine| engine.load_scripts_impl(scripts_dir))
@@ -178,12 +205,25 @@ impl Lua {
     pub fn call_script(
         script_index: usize,
         method_name: &str,
-        gui: &mut GUI,
-        command_buffer: vk::CommandBuffer,
+        gui: Arc<RefCell<GUI>>,
     ) -> Result<(), mlua::Error> {
         Self::with_mut(|engine| {
-            engine.call_method_impl(script_index, method_name, gui, command_buffer)
+            engine.call_method_impl(script_index, method_name, gui)
         })
+    }
+
+    pub fn run_cache(
+        gui: Arc<RefCell<GUI>>,
+        command_buffer: vk::CommandBuffer,
+    ) {
+        Self::with_mut(|engine| {
+            engine.run_cache_impl(gui, command_buffer);
+        })
+    }
+
+    /// call_index is used as the "active_object" index during method calling
+    pub fn cache_call(script_index: usize, method_name: &str, call_index: Option<usize>) {
+        Self::with_mut(|engine| engine.cache_call_impl(script_index, method_name, call_index));
     }
 
     pub fn with_lua<F, R>(f: F) -> R

@@ -171,6 +171,8 @@ impl Engine {
 
                             let flags = controller.borrow().flags.clone();
                             renderer.render_frame(current_frame, present_index as usize, &world, player, flags.draw_hitboxes, &physics_engine);
+
+                            Lua::run_cache(renderer.gui.clone(), frame_command_buffer);
                         },
                     );
 

@@ -28,11 +28,11 @@ pub struct GUI {
     pub text_renderer: TextRenderer,
     pub quad_renderpass: Renderpass,
 
-    pub gui_nodes: Vec<Arc<RefCell<GUINode>>>,
+    pub gui_nodes: Vec<GUINode>,
     pub gui_root_node_indices: Vec<usize>,
 
-    pub gui_quads: Vec<Arc<RefCell<GUIQuad>>>,
-    pub gui_texts: Vec<Arc<RefCell<GUIText>>>,
+    pub gui_quads: Vec<GUIQuad>,
+    pub gui_texts: Vec<GUIText>,
 
     pub interactable_node_indices: Vec<usize>,
 
@@ -41,73 +41,63 @@ pub struct GUI {
     pub active_node: usize,
 }
 impl GUI {
-    pub fn handle_gui_interaction(&mut self, node: Arc<RefCell<GUINode>>, node_index: usize, min: Vector, max: Vector, frame_command_buffer: CommandBuffer) {
-        let node = node.borrow().clone();
-        let interactable_information = &node.interactable_information.unwrap();
+    pub fn handle_gui_interaction(&mut self, node_index: usize, min: Vector, max: Vector, frame_command_buffer: CommandBuffer) {
+        {
+            let node = &mut self.gui_nodes[node_index];
+            let interactable_information = node.interactable_information.as_mut().unwrap();
 
-        for passive_action in interactable_information.passive_actions.iter() {
-            let _ = Lua::call_script(
-                passive_action.1,
-                passive_action.0.as_str(),
-                self,
-                frame_command_buffer,
-            );
-        }
+            for passive_action in interactable_information.passive_actions.iter() {
+                Lua::cache_call(
+                    passive_action.1,
+                    passive_action.0.as_str(),
+                    Some(self.active_node)
+                )
+            }
 
-        let (x, y, left_pressed) = {
-            let controller = self.controller.borrow();
-            let x = controller.cursor_position.x as f32;
-            let y = self.window.inner_size().height as f32 - controller.cursor_position.y as f32;
-            let left_pressed = controller.pressed_mouse_buttons.contains(&MouseButton::Left);
-            (x, y, left_pressed)
-        };
+            let (x, y, left_pressed) = {
+                let controller = self.controller.borrow();
+                let x = controller.cursor_position.x as f32;
+                let y = self.window.inner_size().height as f32 - controller.cursor_position.y as f32;
+                let left_pressed = controller.pressed_mouse_buttons.contains(&MouseButton::Left);
+                (x, y, left_pressed)
+            };
 
-        let hovered = if
-                x > min.x && x < max.x &&
+            let hovered = if
+            x > min.x && x < max.x &&
                 y > min.y && y < max.y
             { true } else { false };
-        if !hovered {
-            for unhover_action in interactable_information.unhover_actions.iter() {
-                let _ = Lua::call_script(
-                    unhover_action.1,
-                    unhover_action.0.as_str(),
-                    self,
-                    frame_command_buffer,
-                );
-            }
-            return;
-        };
-
-        for hover_action in interactable_information.hover_actions.iter() {
-            let _ = Lua::call_script(
-                hover_action.1,
-                hover_action.0.as_str(),
-                self,
-                frame_command_buffer,
-            );
-        }
-        
-        if !left_pressed {
-            let mut node_ref = self.gui_nodes[node_index].borrow_mut();
-            if let Some(info) = node_ref.interactable_information.as_mut() {
-                info.was_pressed_last_frame = false;
-            }
-        }
-        if !interactable_information.was_pressed_last_frame && left_pressed {
-            {
-                let mut node_ref = self.gui_nodes[node_index].borrow_mut();
-                if let Some(info) = node_ref.interactable_information.as_mut() {
-                    info.was_pressed_last_frame = true;
+            if !hovered {
+                for unhover_action in interactable_information.unhover_actions.iter() {
+                    Lua::cache_call(
+                        unhover_action.1,
+                        unhover_action.0.as_str(),
+                        Some(self.active_node)
+                    )
                 }
+                return;
+            };
+
+            for hover_action in interactable_information.hover_actions.iter() {
+                Lua::cache_call(
+                    hover_action.1,
+                    hover_action.0.as_str(),
+                    Some(self.active_node)
+                )
             }
 
-            for left_tap_action in interactable_information.left_tap_actions.clone().iter() {
-                let _ = Lua::call_script(
-                    left_tap_action.1,
-                    left_tap_action.0.as_str(),
-                    self,
-                    frame_command_buffer,
-                );
+            if !left_pressed {
+                interactable_information.was_pressed_last_frame = false;
+            }
+            if !interactable_information.was_pressed_last_frame && left_pressed {
+                interactable_information.was_pressed_last_frame = true;
+
+                for left_tap_action in interactable_information.left_tap_actions.clone().iter() {
+                    Lua::cache_call(
+                        left_tap_action.1,
+                        left_tap_action.0.as_str(),
+                        Some(self.active_node)
+                    )
+                }
             }
         }
     }
@@ -196,7 +186,7 @@ impl GUI {
             base.device.device_wait_idle().unwrap();
         }
         for text in self.gui_texts.iter() {
-            text.borrow_mut().text_information.as_mut().unwrap().destroy();
+            text.text_information.as_ref().unwrap().destroy();
         }
 
         let json = json::parse(fs::read_to_string(path).expect("failed to load json file").as_str()).expect("json parse error");
@@ -342,7 +332,7 @@ impl GUI {
                 }
             }
 
-            gui_texts.push(Arc::new(RefCell::new(GUIText {
+            gui_texts.push(GUIText {
                 text_information: Some(TextInformation::new(self.fonts[text_font].clone())
                     .text(text_text)
                     .font_size(text_font_size)
@@ -355,7 +345,7 @@ impl GUI {
                 absolute_position,
                 absolute_scale,
                 color,
-            })))
+            })
         }
         self.gui_texts = gui_texts;
 
@@ -430,7 +420,7 @@ impl GUI {
                 }
             }
 
-            gui_quads.push(Arc::new(RefCell::new(GUIQuad {
+            gui_quads.push(GUIQuad {
                 position,
                 scale,
                 clip_min,
@@ -439,7 +429,7 @@ impl GUI {
                 absolute_scale,
                 color,
                 corner_radius,
-            })))
+            })
         }
         self.gui_quads = gui_quads;
 
@@ -667,18 +657,18 @@ impl GUI {
             let mut text = None;
             if let JsonValue::Number(ref text_json) = node["text"] {
                 if let Ok(v) = text_json.to_string().parse::<usize>() {
-                    text = Some(self.gui_texts[v].clone());
+                    text = Some(v);
                 }
             }
 
             let mut quad = None;
             if let JsonValue::Number(ref quad_json) = node["quad"] {
                 if let Ok(v) = quad_json.to_string().parse::<usize>() {
-                    quad = Some(self.gui_quads[v].clone());
+                    quad = Some(v);
                 }
             }
 
-            nodes.push(Arc::new(RefCell::new(GUINode {
+            nodes.push(GUINode {
                 index: nodes.len(),
                 name,
                 interactable_information,
@@ -690,7 +680,7 @@ impl GUI {
                 absolute_scale,
                 text,
                 quad,
-            })))
+            })
         }
         self.gui_nodes = nodes;
     }
@@ -719,8 +709,8 @@ impl GUI {
         self.pass.borrow().transition_to_readable(command_buffer, current_frame);
 
         for parameter_set in interactable_action_parameter_sets {
-            self.active_node = parameter_set.1;
-            self.handle_gui_interaction(parameter_set.0, parameter_set.1, parameter_set.2, parameter_set.3, command_buffer)
+            self.active_node = parameter_set.0;
+            self.handle_gui_interaction(parameter_set.0, parameter_set.1, parameter_set.2, command_buffer)
         }
     } }
     unsafe fn draw_node(
@@ -730,39 +720,38 @@ impl GUI {
         command_buffer: CommandBuffer,
         parent_position: Vector,
         parent_scale: Vector,
-        interactable_parameter_sets: &mut Vec<(Arc<RefCell<GUINode>>, usize, Vector, Vector)>
+        interactable_parameter_sets: &mut Vec<(usize, Vector, Vector)>
     ) { unsafe {
-        let node = self.gui_nodes[node_index].clone();
-        let node_ref = node.borrow();
-        if node_ref.hidden { return };
+        let node = &mut self.gui_nodes[node_index].clone();
+        if node.hidden { return };
 
-        let position = parent_position + if node_ref.absolute_position { node_ref.position } else { node_ref.position * parent_scale };
-        let scale = if node_ref.absolute_scale { node_ref.scale } else { parent_scale * node_ref.scale };
+        let position = parent_position + if node.absolute_position { node.position } else { node.position * parent_scale };
+        let scale = if node.absolute_scale { node.scale } else { parent_scale * node.scale };
 
-        if let Some(quad) = &node_ref.quad {
-            self.draw_quad(quad.clone(), current_frame, command_buffer, position, scale);
+        if let Some(quad) = &node.quad {
+            self.draw_quad(*quad, current_frame, command_buffer, position, scale);
         }
-        if let Some(text) = &node_ref.text {
-            self.draw_text(text.clone(), current_frame, position, scale);
+        if let Some(text) = &node.text {
+            self.draw_text(*text, current_frame, position, scale);
         }
 
-        for child in &node_ref.children_indices.clone() {
+        for child in &node.children_indices.clone() {
             self.draw_node(*child, current_frame, command_buffer, position, scale, interactable_parameter_sets);
         }
 
-        if node_ref.interactable_information.is_some() {
-            interactable_parameter_sets.push((self.gui_nodes[node_index].clone(), node_index, position, position + scale));
+        if node.interactable_information.is_some() {
+            interactable_parameter_sets.push((node_index, position, position + scale));
         }
     } }
     unsafe fn draw_quad(
         &self,
-        quad: Arc<RefCell<GUIQuad>>,
+        quad: usize,
         current_frame: usize,
         command_buffer: CommandBuffer,
         position: Vector,
         scale: Vector,
     ) { unsafe {
-        let quad = &quad.borrow();
+        let quad = &self.gui_quads[quad];
         let clip_min = position + scale * quad.clip_min; // + if quad.absolute_clip_min { quad.clip_min } else { scale * quad.clip_min }
         let clip_max = position + scale * quad.clip_max; // + if quad.absolute_clip_max { quad.clip_max } else { scale * quad.clip_max }
         let position = position + if quad.absolute_position { quad.position } else { quad.position * scale };
@@ -803,12 +792,12 @@ impl GUI {
     } }
     unsafe fn draw_text(
         &self,
-        text: Arc<RefCell<GUIText>>,
+        text: usize,
         current_frame: usize,
         position: Vector,
         scale: Vector,
     ) { unsafe {
-        let text = &text.borrow();
+        let text = &self.gui_texts[text];
 
         let clip_min = position + scale * text.clip_min; // + if quad.absolute_clip_min { quad.clip_min } else { scale * quad.clip_min }
         let clip_max = position + scale * text.clip_max; // + if quad.absolute_clip_max { quad.clip_max } else { scale * quad.clip_max }
@@ -821,8 +810,8 @@ impl GUI {
     pub unsafe fn destroy(&mut self) { unsafe {
         self.text_renderer.destroy();
         self.quad_renderpass.destroy();
-        for text in &self.gui_texts {
-            text.borrow_mut().text_information.as_mut().unwrap().destroy();
+        for text in &mut self.gui_texts {
+            text.text_information.as_mut().unwrap().destroy();
         }
         for font in &self.fonts {
             font.destroy();
@@ -845,8 +834,8 @@ pub struct GUINode {
     pub absolute_position: bool,
     pub absolute_scale: bool,
 
-    pub text: Option<Arc<RefCell<GUIText>>>,
-    pub quad: Option<Arc<RefCell<GUIQuad>>>
+    pub text: Option<usize>,
+    pub quad: Option<usize>
 }
 #[derive(Clone)]
 pub struct GUIInteractableInformation {
