@@ -85,8 +85,7 @@ impl GUI {
                 frame_command_buffer,
             );
         }
-
-        let left_pressed = self.controller.borrow().pressed_mouse_buttons.contains(&MouseButton::Left);
+        
         if !left_pressed {
             let mut node_ref = self.gui_nodes[node_index].borrow_mut();
             if let Some(info) = node_ref.interactable_information.as_mut() {

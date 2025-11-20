@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::sync::Arc;
-use mlua::{UserData, UserDataMethods};
-use crate::client::controller::Controller;
+use mlua::{UserData, UserDataFields, UserDataMethods};
+use crate::client::controller::{Controller, Flags};
 use crate::physics::player::MovementMode;
 
 #[derive(Clone)]
@@ -59,6 +59,46 @@ impl UserData for ScriptController {
         methods.add_method("get_camera_position", |_, this, _: ()| {
             let pos = this.0.borrow().player.borrow().camera.position;
             Ok((pos.x, pos.y, pos.z))
+        });
+    }
+}
+
+impl UserData for Flags {
+    fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
+        fields.add_field_method_get("reload_gui_queued", |_, this| Ok(this.reload_gui_queued));
+        fields.add_field_method_set("reload_gui_queued", |_, this, val: bool| {
+            this.reload_gui_queued = val;
+            Ok(())
+        });
+
+        fields.add_field_method_get("reload_shaders_queued", |_, this| Ok(this.reload_shaders_queued));
+        fields.add_field_method_set("reload_shaders_queued", |_, this, val: bool| {
+            this.reload_shaders_queued = val;
+            Ok(())
+        });
+
+        fields.add_field_method_get("pause_rendering", |_, this| Ok(this.pause_rendering));
+        fields.add_field_method_set("pause_rendering", |_, this, val: bool| {
+            this.pause_rendering = val;
+            Ok(())
+        });
+
+        fields.add_field_method_get("screenshot_queued", |_, this| Ok(this.screenshot_queued));
+        fields.add_field_method_set("screenshot_queued", |_, this, val: bool| {
+            this.pause_rendering = val;
+            Ok(())
+        });
+
+        fields.add_field_method_get("draw_hitboxes", |_, this| Ok(this.draw_hitboxes));
+        fields.add_field_method_set("draw_hitboxes", |_, this, val: bool| {
+            this.draw_hitboxes = val;
+            Ok(())
+        });
+
+        fields.add_field_method_get("do_physics", |_, this| Ok(this.do_physics));
+        fields.add_field_method_set("do_physics", |_, this, val: bool| {
+            this.do_physics = val;
+            Ok(())
         });
     }
 }

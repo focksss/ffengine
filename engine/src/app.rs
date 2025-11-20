@@ -11,6 +11,7 @@ use winit::event_loop::ControlFlow;
 use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
 use crate::math::Vector;
 use crate::client::controller::Controller;
+use crate::gui::gui::GUI;
 use crate::physics::physics_engine::PhysicsEngine;
 use crate::render::render::{Renderer, MAX_FRAMES_IN_FLIGHT};
 use crate::render::vulkan_base::{record_submit_commandbuffer, VkBase};
@@ -42,6 +43,16 @@ impl Engine {
             controller,
             base,
         }
+    }
+
+    pub fn call_script(
+        &self,
+        script_index: usize,
+        method_name: &str,
+        active_command_buffer: Option<vk::CommandBuffer>,
+    ) {
+        //TODO expose engine itself
+        // Lua::call_script(&self, script_index, method_name, active_command_buffer)
     }
 
     pub unsafe fn run(&mut self) { unsafe {
