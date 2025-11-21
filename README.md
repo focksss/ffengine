@@ -1,7 +1,10 @@
 # ffengine
-A W.I.P. game engine written in rust and using Vulkan through the Ash crate. Goal is support of basic game engine features and allowing for extremely customizable rendering pipelines through high level abstractions.
+A W.I.P. game engine written in rust and using Vulkan through the Ash crate, with Lua scripting support. Goal is support of basic game engine features and allowing for extremely customizable rendering pipelines through high level abstractions.
 
 ## Current Features
+- Scripting
+  - API exposing the engine to lua (expanded as needed)
+  - lifecycle functions (Update, Awake, Start)
 - Deferred rendering pipeline
   - Geometry pass
   - CSM shadow pass
@@ -19,13 +22,14 @@ A W.I.P. game engine written in rust and using Vulkan through the Ash crate. Goa
   - Light system
   - Ability to link scene nodes to physics bodies
 - MSDF text rendering, including efficiently updating text per frame
-- Physics engine
-  - `bodyCast() -> Option<CastInformation>` function, capable of "ray" casting any body with any hitbox against all other physics objects
-  - OBB, capsule, and mesh hitboxes
-  - OBB-capsule, OBB-OBB collision detection
-  - Player collision resolution
+- Physics engine 
+  - OBB, capsule, mesh, and sphere hitboxes
+  - Collision detection with manifolds
+  - Collision resolution
+  - Newtonian physics tick integration
 
 ## Features In Development
 - GUI-node-based runtime rendering pipeline editor (long term)
 - Full PBR rendering preset
-- Physics engine (auto-gen world hitboxes, player controller, other basic features)
+- Physics engine (finishing support for all collision cases)
+- Scene editor
