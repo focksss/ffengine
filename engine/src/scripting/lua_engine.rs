@@ -19,7 +19,6 @@ pub struct Script {
     environment: mlua::RegistryKey,
     start_fn: Option<mlua::RegistryKey>,
     update_fn: Option<mlua::RegistryKey>,
-    on_awake_fn: Option<mlua::RegistryKey>,
     has_started: bool,
 }
 
@@ -58,7 +57,6 @@ impl Lua {
             f(borrowed.as_ref().expect("LUA_ENGINE not initialized. Call LuaScriptEngine::initialize() first."))
         })
     }
-
     pub fn with_mut<F, R>(f: F) -> R where F: FnOnce(&mut Lua) -> R, {
         LUA.with(|engine| {
             let mut borrowed = engine.borrow_mut();
@@ -92,12 +90,15 @@ impl Lua {
             .map(|f| self.lua.create_registry_value(f))
             .transpose()?;
 
+        if let Some(awake_fn) = &on_awake_fn {
+            self.call_method_by_key(awake_fn).expect("failed to call Awake method");
+        }
+
         let script = Script {
             name: path.name().unwrap(),
             environment: self.lua.create_registry_value(environment).unwrap(),
             start_fn,
             update_fn,
-            on_awake_fn,
             has_started: false,
         };
 
@@ -109,12 +110,21 @@ impl Lua {
             self.scripts.len() - 1
         };
 
-        // TODO: Call on_awake_fn via a method_call function, bypassing an automatic "set already_started to true"
-
         Ok(assigned_index)
+    }
+    fn call_method_by_key(
+        &self,
+        method_key: &mlua::RegistryKey,
+    ) -> Result<(), mlua::Error> {
+        let func: mlua::Function = self.lua.registry_value(method_key)?;
+        func.call::<_, ()>(())?;
+        Ok(())
     }
 
     /// Returns assigned indices of the scripts in the directory
+    pub fn load_scripts(scripts_dir: Vec<&Path>) -> Result<Vec<usize>, Box<dyn std::error::Error>> {
+        Self::with_mut(|lua| lua.load_scripts_impl(scripts_dir))
+    }
     fn load_scripts_impl(&mut self, scripts_dir: Vec<&Path>) -> Result<Vec<usize>, Box<dyn std::error::Error>> {
         for script in self.scripts.drain(..) {
             self.lua.remove_registry_value(script.environment)?;
@@ -136,14 +146,13 @@ impl Lua {
         Ok(indices)
     }
 
-    /// call_index is used as the "active_object" index during method calling
-    fn cache_call_impl(
-        &mut self,
+    pub fn call_script(
         script_index: usize,
         method_name: &str,
-        call_index: Option<usize>,
-    ) {
-        self.cached_calls.push((script_index, method_name.to_string(), call_index.unwrap_or(0)));
+    ) -> Result<(), mlua::Error> {
+        Self::with_mut(|lua| {
+            lua.call_method_impl(script_index, method_name)
+        })
     }
 
     fn call_method_impl(
@@ -171,6 +180,26 @@ impl Lua {
         }
     }
 
+    /// call_index is used as the "active_object" index during method calling
+    pub fn cache_call(script_index: usize, method_name: &str, call_index: Option<usize>) {
+        Self::with_mut(|lua| lua.cache_call_impl(script_index, method_name, call_index));
+    }
+    fn cache_call_impl(
+        &mut self,
+        script_index: usize,
+        method_name: &str,
+        call_index: Option<usize>,
+    ) {
+        self.cached_calls.push((script_index, method_name.to_string(), call_index.unwrap_or(0)));
+    }
+
+    pub fn run_cache(
+        engine: &EngineRef,
+    ) {
+        Self::with_mut(|lua| {
+            lua.run_cache_impl(engine);
+        })
+    }
     fn run_cache_impl(
         &mut self,
         engine: &EngineRef,
@@ -185,31 +214,22 @@ impl Lua {
         self.cached_calls.clear();
     }
 
-    /// Returns assigned indices of the scripts in the directory
-    pub fn load_scripts(scripts_dir: Vec<&Path>) -> Result<Vec<usize>, Box<dyn std::error::Error>> {
-        Self::with_mut(|lua| lua.load_scripts_impl(scripts_dir))
+    fn run_update_methods_impl(&mut self) -> Result<(), mlua::Error> {
+        for i in 0..self.scripts.len() {
+            if self.scripts[i].update_fn.is_some() {
+                if !self.scripts[i].has_started {
+                    self.scripts[i].has_started = true;
+                    if let Some(start_fn) = &self.scripts[i].start_fn {
+                        self.call_method_by_key(start_fn)?
+                    }
+                }
+                self.call_method_by_key(self.scripts[i].update_fn.as_ref().unwrap())?
+            }
+        }
+        Ok(())
     }
-
-    pub fn call_script(
-        script_index: usize,
-        method_name: &str,
-    ) -> Result<(), mlua::Error> {
-        Self::with_mut(|lua| {
-            lua.call_method_impl(script_index, method_name)
-        })
-    }
-
-    pub fn run_cache(
-        engine: &EngineRef,
-    ) {
-        Self::with_mut(|lua| {
-            lua.run_cache_impl(engine);
-        })
-    }
-
-    /// call_index is used as the "active_object" index during method calling
-    pub fn cache_call(script_index: usize, method_name: &str, call_index: Option<usize>) {
-        Self::with_mut(|lua| lua.cache_call_impl(script_index, method_name, call_index));
+    pub fn run_update_methods() -> Result<(), mlua::Error> {
+        Self::with_mut(|lua| {lua.run_update_methods_impl()})
     }
 
     pub fn with_lua<F, R>(f: F) -> R

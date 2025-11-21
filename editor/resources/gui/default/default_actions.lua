@@ -1,7 +1,16 @@
 ---@meta
 ---@type userdata Engine
-
 ---@type number dt
+
+local fps_counter = 0
+local time_since_fps_update = 0
+local time_since_position_update = 0
+function Update()
+    time_since_fps_update = time_since_fps_update + dt
+    fps_counter = fps_counter + 1
+
+    time_since_position_update = time_since_position_update + dt
+end
 
 function color_quad_bright()
 	Engine.renderer.GUI.ActiveNode.quad:set_color(0.7, 0.7, 0.7, 1.0)
@@ -31,8 +40,6 @@ function screenshot()
     Engine.controller:set_screenshot(true)
 end
 
-local fps_counter = 0
-local time_since_fps_update = 0
 function update_fps_display()
     if time_since_fps_update > 1.0 then
         local fps = fps_counter / time_since_fps_update
@@ -40,20 +47,14 @@ function update_fps_display()
         time_since_fps_update = 0
         fps_counter = 0
     end
-
-    time_since_fps_update = time_since_fps_update + dt
-    fps_counter = fps_counter + 1
 end
 
-local time_since_position_update = 0
 function update_position_display()
     if time_since_position_update > 0.1 then
     	local x, y, z = Engine.controller:get_camera_position()
     	Engine.renderer.GUI.ActiveNode.text:update_text(string.format("Cam pos: X: %.2f, Y: %.2f, Z: %.2f", x, y, z))
     	time_since_position_update = 0
     end
-
-    time_since_position_update = time_since_position_update + dt
 end
 
 function toggle_hitbox_view()

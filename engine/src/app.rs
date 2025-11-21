@@ -81,10 +81,6 @@ impl Engine {
         let engine_ref = self.as_ref();
         let base = &mut self.base;
 
-        // renderer.scene_renderer.update_world_textures_all_frames(base, &world);
-
-        // renderer.reload(&base, &world);
-
         let mut current_frame = 0usize;
         let mut last_frame_time = Instant::now();
         let mut needs_resize = false;
@@ -129,7 +125,7 @@ impl Engine {
                         Lua::with_lua(|lua| lua.globals().set("dt", delta_time)).expect("Failed to set lua deltatime global");
                         last_frame_time = now;
 
-                        { // kill refs once done
+                        {
                             {
                                 let mut controller_mut = self.controller.borrow_mut();
                                 controller_mut.do_controls(delta_time, &base, &mut self.renderer.borrow_mut(), &self.world.borrow(), current_frame)
@@ -137,17 +133,16 @@ impl Engine {
 
                             if self.controller.borrow().flags.do_physics { self.physics_engine.borrow_mut().tick(delta_time, &mut self.world.borrow_mut()); }
 
-
                             { self.controller.borrow_mut().update_camera(); }
                         }
-
+                        Lua::run_update_methods().expect("Failed to run Update methods");
 
                         let current_fence = base.draw_commands_reuse_fences[current_frame];
-                        unsafe {
+                        {
                             base.device.wait_for_fences(&[current_fence], true, u64::MAX).expect("wait failed");
                             base.device.reset_fences(&[current_fence]).expect("reset failed");
                         }
-                        let (present_index, _) = unsafe {
+                        let (present_index, _) = {
                             base
                                 .swapchain_loader
                                 .acquire_next_image(
