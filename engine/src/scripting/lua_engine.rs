@@ -7,8 +7,10 @@ use std::sync::Arc;
 use mlua::AsChunk;
 use crate::app::EngineRef;
 use crate::gui::gui::GUI;
-use crate::scripting::engine_context::engine_access;
-use crate::scripting::engine_context::gui_context::gui_access::{GUIRef};
+use crate::math::Vector;
+use crate::physics::player::MovementMode;
+use crate::scripting::engine_api::engine_api;
+use crate::scripting::engine_api::gui_api::gui_api::{GUIRef};
 
 thread_local! {
     static LUA: RefCell<Option<Lua>> = RefCell::new(None);
@@ -45,8 +47,15 @@ impl Lua {
 
             let script_engine_ref = script_engine.borrow();
             let lua = &script_engine_ref.as_ref().unwrap().lua;
+
+
+            MovementMode::register(&lua)?;
+            Vector::register(&lua)?;
+
+
             let engine_ud = lua.create_userdata(engine)?;
             lua.globals().set("Engine", engine_ud)?;
+            lua.globals().set("dt", 0.0)?;
             Ok(())
         })
     }

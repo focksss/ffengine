@@ -131,7 +131,7 @@ impl Engine {
                                 controller_mut.do_controls(delta_time, &base, &mut self.renderer.borrow_mut(), &self.world.borrow(), current_frame)
                             };
 
-                            if self.controller.borrow().flags.do_physics { self.physics_engine.borrow_mut().tick(delta_time, &mut self.world.borrow_mut()); }
+                            if self.controller.borrow().flags.borrow().do_physics { self.physics_engine.borrow_mut().tick(delta_time, &mut self.world.borrow_mut()); }
 
                             { self.controller.borrow_mut().update_camera(); }
                         }
@@ -178,7 +178,7 @@ impl Engine {
 
                                 let flags = self.controller.borrow().flags.clone();
                                 {
-                                    self.renderer.borrow_mut().render_frame(current_frame, present_index as usize, &self.world.borrow(), player, flags.draw_hitboxes, &self.physics_engine.borrow());
+                                    self.renderer.borrow_mut().render_frame(current_frame, present_index as usize, &self.world.borrow(), player, flags.borrow().draw_hitboxes, &self.physics_engine.borrow());
                                 }
 
                                 Lua::run_cache(&engine_ref);

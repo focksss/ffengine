@@ -22,7 +22,7 @@ pub struct Controller {
     pub player: Arc<RefCell<Player>>,
 
     pub cursor_position: PhysicalPosition<f64>,
-    pub flags: Flags,
+    pub flags: Arc<RefCell<Flags>>,
 
     pub pressed_keys: HashSet<PhysicalKey>,
     pub new_pressed_keys: HashSet<PhysicalKey>,
@@ -44,7 +44,7 @@ impl Controller {
         Controller {
             window_ptr: window as *const _,
             cursor_position: Default::default(),
-            flags: Default::default(),
+            flags: Arc::new(RefCell::new(Flags::default())),
             player: Arc::new(RefCell::new(Player::new(
                 Camera::new_perspective_rotation(
                     start_pos,
@@ -87,8 +87,9 @@ impl Controller {
         world: &Scene,
         frame: usize,
     ) { unsafe {
-        if self.flags.screenshot_queued {
-            self.flags.screenshot_queued = false;
+        let flags = &mut self.flags.borrow_mut();
+        if flags.screenshot_queued {
+            flags.screenshot_queued = false;
             let timestamp = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
@@ -100,13 +101,13 @@ impl Controller {
                 format!("screenshots\\screenshot_{}.png", timestamp).as_str()
             );
         }
-        if self.flags.reload_shaders_queued {
-            self.flags.reload_shaders_queued = false;
+        if flags.reload_shaders_queued {
+            flags.reload_shaders_queued = false;
             Renderer::compile_shaders();
             renderer.reload(base, world);
         }
-        if self.flags.reload_gui_queued {
-            self.flags.reload_gui_queued = false;
+        if flags.reload_gui_queued {
+            flags.reload_gui_queued = false;
             renderer.gui.borrow_mut().load_from_file(base, "editor\\resources\\gui\\default\\default.gui");
         }
 
@@ -208,7 +209,7 @@ impl Controller {
         }
 
         if self.new_pressed_keys.contains(&PhysicalKey::Code(KeyCode::F2)) {
-            self.flags.screenshot_queued = true;
+            flags.screenshot_queued = true;
         }
         if self.new_pressed_keys.contains(&PhysicalKey::Code(KeyCode::F5)) {
             let last_third_person_state = self.player.borrow().camera.third_person;
@@ -358,7 +359,7 @@ impl Controller {
     }
 }
 
-#[derive(Default, Copy, Clone)]
+#[derive(Default)]
 pub struct Flags {
     pub reload_gui_queued: bool,
     pub reload_shaders_queued: bool,

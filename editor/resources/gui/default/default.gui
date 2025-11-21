@@ -7,7 +7,7 @@
 	],
 	"scripts": [
 		{
-			"uri": "editor\\resources\\gui\\default\\default_actions.lua"
+			"uri": "editor\\resources\\scripts\\default_actions.lua"
 		}
 	],
 	"fonts": [
@@ -257,8 +257,8 @@
 	{
 		"text_information": {
 			"font": 0,
-			"text": "Player Physics",
-			"font_size": 23.0,
+			"text": "Player Physics Mode",
+			"font_size": 20.0,
 			"newline_distance": 1720.0
 		},
 		"position": [0.05, 0.35],
@@ -272,11 +272,11 @@
 	{
 		"text_information": {
 			"font": 0,
-			"text": "Off",
-			"font_size": 30.0,
+			"text": "Ghost   ",
+			"font_size": 22.0,
 			"newline_distance": 1720.0
 		},
-		"position": [0.05, 0.25],
+		"position": [0.05, 0.315],
 		"scale": [1.0, 1.0],
 		"clip_min": [0.0, 0.0],
 		"clip_max": [1.0, 1.0],
@@ -528,10 +528,6 @@
 						}
 					],
 					"left_tap_actions": [
-						{
-							"method": "toggle_text",
-							"script": 0
-						},
 						{
 							"method": "toggle_player_physics",
 							"script": 0

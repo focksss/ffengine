@@ -1,11 +1,8 @@
 use std::cell::RefCell;
 use std::sync::Arc;
-use std::time::Instant;
-use ash::vk::CommandBuffer;
 use mlua::{UserData, UserDataFields, UserDataMethods};
-use crate::gui::gui::{GUINode, GUIQuad, GUIText, GUI};
+use crate::gui::gui::GUI;
 use crate::math::Vector;
-use crate::scripting::lua_engine::Lua;
 
 pub struct GUITextPointer {
     gui: Arc<RefCell<GUI>>,
