@@ -1,3 +1,7 @@
+---@meta
+---@type userdata Engine
+
+---@type number dt
 
 function color_quad_bright()
 	Engine.renderer.GUI.ActiveNode.quad:set_color(0.7, 0.7, 0.7, 1.0)
