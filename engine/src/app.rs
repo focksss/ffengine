@@ -49,7 +49,8 @@ pub struct EngineRef {
 impl Engine {
     pub unsafe fn new() -> Engine {
         let base = VkBase::new("ffengine".to_string(), 1920, 1080, MAX_FRAMES_IN_FLIGHT).unwrap();
-        let controller = Arc::new(RefCell::new(Controller::new(&base.window, Vector::new_vec3(0.0, 20.0, 0.0))));
+        let physics_engine = Arc::new(RefCell::new(PhysicsEngine::new(Vector::new_vec3(0.0, -9.8, 0.0), 0.9, 0.5)));
+        let controller = Arc::new(RefCell::new(Controller::new(&base.window, Vector::new_vec3(0.0, 20.0, 0.0), physics_engine)));
         let mut world = Scene::new(&base);
 
         unsafe { world.initialize(&base) }

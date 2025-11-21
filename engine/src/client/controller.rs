@@ -36,7 +36,7 @@ pub struct Controller {
     pub paused: bool,
 }
 impl Controller {
-    pub fn new(window: &winit::window::Window, start_pos: Vector) -> Controller {
+    pub fn new(window: &winit::window::Window, start_pos: Vector, physics_engine: Arc<RefCell<PhysicsEngine>>) -> Controller {
         window.set_cursor_position(PhysicalPosition::new(
             window.inner_size().width as f32 * 0.5,
             window.inner_size().height as f32 * 0.5))
@@ -46,6 +46,7 @@ impl Controller {
             cursor_position: Default::default(),
             flags: Arc::new(RefCell::new(Flags::default())),
             player: Arc::new(RefCell::new(Player::new(
+                physics_engine
                 Camera::new_perspective_rotation(
                     start_pos,
                     Vector::new_empty(),

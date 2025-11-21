@@ -19,9 +19,10 @@ pub struct Player {
     pub grounded: bool,
     pub rigid_body: RigidBody,
     pub camera: Camera,
+    pub physics_engine: Arc<RefCell<PhysicsEngine>>,
 }
 impl Player {
-    pub fn new(camera: Camera, eye_to_foot: Vector, eye_to_head: Vector, movement_mode: MovementMode, move_power: f32, jump_power: f32, skin_width: f32) -> Self {
+    pub fn new(physics_engine: Arc<RefCell<PhysicsEngine>>, camera: Camera, eye_to_foot: Vector, eye_to_head: Vector, movement_mode: MovementMode, move_power: f32, jump_power: f32, skin_width: f32) -> Self {
         let mut rigid_body = RigidBody::default();
         let max = camera.position + eye_to_head;
         let min = camera.position + eye_to_foot;
@@ -57,6 +58,7 @@ impl Player {
             grounded: false,
             rigid_body,
             camera,
+            physics_engine,
         }
     }
     pub fn step(&mut self, step: &Vector) {
