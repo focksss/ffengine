@@ -5,9 +5,11 @@ use crate::client::controller::{Controller, Flags};
 use crate::physics::player::MovementMode;
 
 #[derive(Clone)]
-pub struct ScriptController(pub Arc<RefCell<Controller>>);
-
-impl UserData for ScriptController {
+pub struct ControllerRef(pub Arc<RefCell<Controller>>);
+impl UserData for ControllerRef {
+    fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
+        fields.add_field_method_get("flags", |_, this| Ok(this.0.borrow_mut().flags));
+    }
     fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
         methods.add_method("set_reload_shaders", |_, this, val: bool| {
             this.0.borrow_mut().flags.reload_shaders_queued = val;
@@ -60,9 +62,6 @@ impl UserData for ScriptController {
             let pos = this.0.borrow().player.borrow().camera.position;
             Ok((pos.x, pos.y, pos.z))
         });
-    }
-    fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
-        fields.add_field_method_get("flags", |_, this| Ok(this.0.borrow_mut().flags));
     }
 }
 

@@ -85,6 +85,12 @@ impl UserData for GUINodePointer {
 
 pub struct GUIRef(pub Arc<RefCell<GUI>>);
 impl UserData for GUIRef {
+    fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
+        fields.add_field_method_get("ActiveNode", |lua, this| {
+            let node = GUINodePointer { gui: this.0.clone(), index: this.0.borrow().active_node };
+            lua.create_userdata(node)
+        });
+    }
     fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
         methods.add_method("get_node", |lua, this, index: usize| {
             let node = GUINodePointer { gui: this.0.clone(), index };
@@ -99,12 +105,6 @@ impl UserData for GUIRef {
         methods.add_method("get_text", |lua, this, index: usize| {
             let text = GUITextPointer { gui: this.0.clone(), index };
             lua.create_userdata(text)
-        });
-    }
-    fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
-        fields.add_field_method_get("ActiveNode", |lua, this| {
-            let node = GUINodePointer { gui: this.0.clone(), index: this.0.borrow().active_node };
-            lua.create_userdata(node)
         });
     }
 }

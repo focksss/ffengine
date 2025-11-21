@@ -5,9 +5,10 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::Arc;
 use mlua::AsChunk;
+use crate::app::EngineRef;
 use crate::gui::gui::GUI;
-use crate::scripting::engine_context::controller_access::ScriptController;
-use crate::scripting::engine_context::gui_access::{GUIRef};
+use crate::scripting::engine_context::engine_access;
+use crate::scripting::engine_context::gui_context::gui_access::{GUIRef};
 
 thread_local! {
     static LUA: RefCell<Option<Lua>> = RefCell::new(None);
@@ -31,17 +32,22 @@ pub struct Lua {
 }
 
 impl Lua {
-    pub fn initialize() -> Result<(), mlua::Error> {
-        LUA.with(|engine| {
-            if engine.borrow().is_some() {
-                return Err(mlua::Error::RuntimeError("LUA already initialized".into()));
+    pub fn initialize(engine: EngineRef) -> Result<(), mlua::Error> {
+        LUA.with(|script_engine| {
+            if script_engine.borrow().is_some() {
+                return Err(mlua::Error::RuntimeError("Lua already initialized".into()));
             }
-            *engine.borrow_mut() = Some(Self {
+            *script_engine.borrow_mut() = Some(Self {
                 lua: mlua::Lua::new(),
                 scripts: Vec::new(),
                 free_script_indices: Vec::new(),
                 cached_calls: Vec::new(),
             });
+
+            let script_engine_ref = script_engine.borrow();
+            let lua = &script_engine_ref.as_ref().unwrap().lua;
+            let engine_ud = lua.create_userdata(engine)?;
+            lua.globals().set("Engine", engine_ud)?;
             Ok(())
         })
     }
@@ -82,7 +88,7 @@ impl Lua {
         let update_fn = environment.get::<_, Option<mlua::Function>>("Update")?
             .map(|f| self.lua.create_registry_value(f))
             .transpose()?;
-        let on_awake_fn = environment.get::<_, Option<mlua::Function>>("Update")?
+        let on_awake_fn = environment.get::<_, Option<mlua::Function>>("Awake")?
             .map(|f| self.lua.create_registry_value(f))
             .transpose()?;
 
@@ -140,11 +146,10 @@ impl Lua {
         self.cached_calls.push((script_index, method_name.to_string(), call_index.unwrap_or(0)));
     }
 
-    fn call_method_impl<'lua>(
-        &'lua self,
+    fn call_method_impl(
+        &self,
         script_index: usize,
         method_name: &str,
-        gui: Arc<RefCell<GUI>>,
     ) -> Result<(), mlua::Error> {
         let script = &self.scripts[script_index];
 
@@ -154,24 +159,9 @@ impl Lua {
         match method {
             Some(func) => {
                 let key = self.lua.create_registry_value(func)?;
-                let env: mlua::Table = self.lua.registry_value(&script.environment)?;
                 let method: mlua::Function = self.lua.registry_value(&key)?;
 
-                let controller = ScriptController(gui.borrow().controller.clone());
-                let script_gui = GUIRef(gui.clone());
-
-                self.lua.scope(|scope| {
-                    // TODO: refer to above TODOs
-                    // env.set("Engine", scope.create_nonstatic_userdata(context)?)?;
-
-                    let gui_ud = scope.create_nonstatic_userdata(script_gui)?;
-                    let controller_ud = scope.create_userdata(controller)?;
-
-                    self.lua.globals().set("GUI", gui_ud)?;
-                    self.lua.globals().set("controller", controller_ud)?;
-
-                    method.call::<_, ()>(())
-                })
+                method.call::<_, ()>(())
             }
             None => {
                 Err(mlua::Error::RuntimeError(
@@ -183,15 +173,13 @@ impl Lua {
 
     fn run_cache_impl(
         &mut self,
-        gui: Arc<RefCell<GUI>>,
-        command_buffer: vk::CommandBuffer,
+        engine: &EngineRef,
     ) {
         for call in self.cached_calls.clone() {
-            { gui.borrow_mut().active_node = call.2 }
+            engine.renderer.borrow_mut().gui.borrow_mut().active_node = call.2;
             self.call_method_impl(
                 call.0,
                 call.1.as_str(),
-                gui.clone(),
             ).expect("failed to call cached method");
         }
         self.cached_calls.clear();
@@ -199,35 +187,33 @@ impl Lua {
 
     /// Returns assigned indices of the scripts in the directory
     pub fn load_scripts(scripts_dir: Vec<&Path>) -> Result<Vec<usize>, Box<dyn std::error::Error>> {
-        Self::with_mut(|engine| engine.load_scripts_impl(scripts_dir))
+        Self::with_mut(|lua| lua.load_scripts_impl(scripts_dir))
     }
 
     pub fn call_script(
         script_index: usize,
         method_name: &str,
-        gui: Arc<RefCell<GUI>>,
     ) -> Result<(), mlua::Error> {
-        Self::with_mut(|engine| {
-            engine.call_method_impl(script_index, method_name, gui)
+        Self::with_mut(|lua| {
+            lua.call_method_impl(script_index, method_name)
         })
     }
 
     pub fn run_cache(
-        gui: Arc<RefCell<GUI>>,
-        command_buffer: vk::CommandBuffer,
+        engine: &EngineRef,
     ) {
-        Self::with_mut(|engine| {
-            engine.run_cache_impl(gui, command_buffer);
+        Self::with_mut(|lua| {
+            lua.run_cache_impl(engine);
         })
     }
 
     /// call_index is used as the "active_object" index during method calling
     pub fn cache_call(script_index: usize, method_name: &str, call_index: Option<usize>) {
-        Self::with_mut(|engine| engine.cache_call_impl(script_index, method_name, call_index));
+        Self::with_mut(|lua| lua.cache_call_impl(script_index, method_name, call_index));
     }
 
     pub fn with_lua<F, R>(f: F) -> R
     where F: FnOnce(&mlua::Lua) -> R, {
-        Self::with(|engine| f(&engine.lua))
+        Self::with(|lua_engine| f(&lua_engine.lua))
     }
 }
