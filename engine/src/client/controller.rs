@@ -11,7 +11,8 @@ use winit::event_loop::EventLoopWindowTarget;
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::CursorGrabMode;
 use crate::math::Vector;
-use crate::physics::player::{MovementMode, Player};
+use crate::physics::physics_engine::PhysicsEngine;
+use crate::physics::player::{MovementMode, Player, PlayerPointer};
 use crate::render::render::{screenshot_texture, Renderer};
 use crate::render::vulkan_base::VkBase;
 use crate::world::camera::Camera;
@@ -19,7 +20,10 @@ use crate::world::scene::Scene;
 
 pub struct Controller {
     pub window_ptr: *const winit::window::Window,
-    pub player: Arc<RefCell<Player>>,
+
+    pub player_pointer: PlayerPointer,
+
+    pub sensitivity: f32,
 
     pub cursor_position: PhysicalPosition<f64>,
     pub flags: Arc<RefCell<Flags>>,
@@ -36,36 +40,17 @@ pub struct Controller {
     pub paused: bool,
 }
 impl Controller {
-    pub fn new(window: &winit::window::Window, start_pos: Vector, physics_engine: Arc<RefCell<PhysicsEngine>>) -> Controller {
+    pub fn new(window: &winit::window::Window, player_pointer: PlayerPointer) -> Controller {
         window.set_cursor_position(PhysicalPosition::new(
             window.inner_size().width as f32 * 0.5,
             window.inner_size().height as f32 * 0.5))
             .expect("failed to reset mouse position");
         Controller {
             window_ptr: window as *const _,
+            player_pointer,
+            sensitivity: 0.001,
             cursor_position: Default::default(),
             flags: Arc::new(RefCell::new(Flags::default())),
-            player: Arc::new(RefCell::new(Player::new(
-                physics_engine
-                Camera::new_perspective_rotation(
-                    start_pos,
-                    Vector::new_empty(),
-                    1.0,
-                    0.001,
-                    100.0,
-                    window.inner_size().width as f32 / window.inner_size().height as f32,
-                    0.001,
-                    1000.0,
-                    true,
-                    Vector::new_vec3(0.0, 0.0, 1.0),
-                ),
-                Vector::new_vec3(-0.15, -0.85, -0.15),
-                Vector::new_vec3(0.15, 0.15, 0.15),
-                MovementMode::GHOST,
-                0.2,
-                4.5,
-                0.0015
-            ))),
             pressed_keys: Default::default(),
             new_pressed_keys: Default::default(),
             pressed_mouse_buttons: Default::default(),
@@ -85,148 +70,147 @@ impl Controller {
         delta_time: f32,
         base: &VkBase,
         renderer: &mut Renderer,
-        world: &Scene,
+        world: &mut Scene,
         frame: usize,
     ) { unsafe {
-        let flags = &mut self.flags.borrow_mut();
-        if flags.screenshot_queued {
-            flags.screenshot_queued = false;
-            let timestamp = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs();
-            screenshot_texture(
-                &base,
-                &renderer.compositing_renderpass.pass.borrow().textures[frame][0],
-                vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                format!("screenshots\\screenshot_{}.png", timestamp).as_str()
-            );
-        }
-        if flags.reload_shaders_queued {
-            flags.reload_shaders_queued = false;
-            Renderer::compile_shaders();
-            renderer.reload(base, world);
-        }
-        if flags.reload_gui_queued {
-            flags.reload_gui_queued = false;
-            renderer.gui.borrow_mut().load_from_file(base, "editor\\resources\\gui\\default\\default.gui");
-        }
+        let mut move_direction = Vector::new_vec(0.0);
+        {
+            let physics_engine = &mut self.player_pointer.physics_engine.borrow_mut();
+            let player = &mut physics_engine.players[self.player_pointer.index];
 
-        let movement_mode = self.player.borrow().movement_mode.clone();
+            let flags = &mut self.flags.borrow_mut();
+            if flags.screenshot_queued {
+                flags.screenshot_queued = false;
+                let timestamp = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs();
+                screenshot_texture(
+                    &base,
+                    &renderer.compositing_renderpass.pass.borrow().textures[frame][0],
+                    vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                    format!("screenshots\\screenshot_{}.png", timestamp).as_str()
+                );
+            }
+            if flags.reload_shaders_queued {
+                flags.reload_shaders_queued = false;
+                Renderer::compile_shaders();
+                renderer.reload(base, world);
+            }
+            if flags.reload_gui_queued {
+                flags.reload_gui_queued = false;
+                renderer.gui.borrow_mut().load_from_file(base, "editor\\resources\\gui\\default\\default.gui");
+            }
 
-        //println!("{:?}", self.scroll_delta);
+            let movement_mode = player.movement_mode.clone();
 
-        if self.scroll_delta.1 != 0.0 {
+            //println!("{:?}", self.scroll_delta);
+
+            if self.scroll_delta.1 != 0.0 {
+                match movement_mode {
+                    MovementMode::GHOST => {
+                        if self.scroll_delta.1 > 0.0 {
+                            player.fly_speed *= 1.0 + 10.0 * delta_time;
+                        } else {
+                            player.fly_speed /= 1.0 + 10.0 * delta_time;
+                        }
+                    }
+                    MovementMode::PHYSICS => {
+                        if self.scroll_delta.1 > 0.0 {
+                            player.fly_speed *= 1.0 + 10.0 * delta_time;
+                        } else {
+                            player.fly_speed /= 1.0 + 10.0 * delta_time;
+                        }
+                    }
+                    MovementMode::EDITOR => {}
+                }
+            }
+
+            {
+                let camera = &mut world.cameras[player.camera_pointer.index];
+                let camera_rotation = camera.rotation;
+                if self.pressed_keys.contains(&PhysicalKey::Code(KeyCode::KeyW)) {
+                    move_direction.x += (camera_rotation.y + PI / 2.0).cos();
+                    move_direction.z -= (camera_rotation.y + PI / 2.0).sin();
+                }
+                if self.pressed_keys.contains(&PhysicalKey::Code(KeyCode::KeyA)) {
+                    move_direction.x -= camera_rotation.y.cos();
+                    move_direction.z += camera_rotation.y.sin();
+                }
+                if self.pressed_keys.contains(&PhysicalKey::Code(KeyCode::KeyS)) {
+                    move_direction.x -= (camera_rotation.y + PI / 2.0).cos();
+                    move_direction.z += (camera_rotation.y + PI / 2.0).sin();
+                }
+                if self.pressed_keys.contains(&PhysicalKey::Code(KeyCode::KeyD)) {
+                    move_direction.x += camera_rotation.y.cos();
+                    move_direction.z -= camera_rotation.y.sin();
+                }
+                if self.pressed_keys.contains(&PhysicalKey::Code(KeyCode::Space)) {
+                    match player.movement_mode {
+                        MovementMode::GHOST => {
+                            move_direction.y += 1.0;
+                        }
+                        MovementMode::PHYSICS => {
+                            if player.grounded { move_direction.y += 1.0; }
+                        }
+                        MovementMode::EDITOR => {}
+                    }
+                }
+                if self.pressed_keys.contains(&PhysicalKey::Code(KeyCode::ShiftLeft)) {
+                    match player.movement_mode {
+                        MovementMode::GHOST => {
+                            move_direction.y -= 1.0;
+                        }
+                        MovementMode::PHYSICS => {}
+                        MovementMode::EDITOR => {}
+                    }
+                }
+
+                if self.new_pressed_keys.contains(&PhysicalKey::Code(KeyCode::Escape)) {
+                    self.cursor_locked = !self.cursor_locked;
+                    if self.cursor_locked {
+                        if let Err(err) = self.window().set_cursor_grab(CursorGrabMode::Confined) {} else {
+                            self.window().set_cursor_visible(false);
+                        }
+                        self.window().set_cursor_position(PhysicalPosition::new(
+                            self.window().inner_size().width as f32 * 0.5,
+                            self.window().inner_size().height as f32 * 0.5))
+                            .expect("failed to reset mouse position");
+                    } else {
+                        if let Err(err) = self.window().set_cursor_grab(CursorGrabMode::None) {} else {
+                            self.window().set_cursor_visible(true);
+                        }
+                        self.window().set_cursor_position(self.saved_cursor_pos).expect("Cursor pos reset failed");
+                    }
+                }
+                if self.new_pressed_keys.contains(&PhysicalKey::Code(KeyCode::KeyP)) {
+                    self.paused = !self.paused
+                }
+
+                if self.new_pressed_keys.contains(&PhysicalKey::Code(KeyCode::F2)) {
+                    flags.screenshot_queued = true;
+                }
+                if self.new_pressed_keys.contains(&PhysicalKey::Code(KeyCode::F5)) {
+                    let last_third_person_state = camera.third_person;
+                    camera.third_person = !last_third_person_state;
+                }
+            }
+        }
+        {
+            let (index, speed, fly_speed, movement_mode, jump_power, move_power) = {
+                let physics_engine = &self.player_pointer.physics_engine.borrow();
+                let player = &physics_engine.players[self.player_pointer.index];
+                let speed = player.move_power;
+                (player.rigid_body_pointer.index, speed, player.fly_speed, player.movement_mode, player.jump_power, player.move_power)
+            };
+            let rb = &mut self.player_pointer.physics_engine.borrow_mut().rigid_bodies[index];
             match movement_mode {
                 MovementMode::GHOST => {
-                    if self.scroll_delta.1 > 0.0 {
-                        self.player.borrow_mut().camera.speed *= 1.0 + 10.0 * delta_time;
-                    } else {
-                        self.player.borrow_mut().camera.speed /= 1.0 + 10.0 * delta_time;
-                    }
+                    rb.position += move_direction * fly_speed * delta_time
                 }
                 MovementMode::PHYSICS => {
-                    if self.scroll_delta.1 > 0.0 {
-                        self.player.borrow_mut().camera.speed *= 1.0 + 10.0 * delta_time;
-                    } else {
-                        self.player.borrow_mut().camera.speed /= 1.0 + 10.0 * delta_time;
-                    }
-                }
-                MovementMode::EDITOR => {
-
-                }
-            }
-        }
-
-        let mut move_direction= Vector::new_vec(0.0);
-        let camera_rotation = self.player.borrow().camera.rotation;
-        if self.pressed_keys.contains(&PhysicalKey::Code(KeyCode::KeyW)) {
-            move_direction.x += (camera_rotation.y + PI/2.0).cos();
-            move_direction.z -= (camera_rotation.y + PI/2.0).sin();
-        }
-        if self.pressed_keys.contains(&PhysicalKey::Code(KeyCode::KeyA)) {
-            move_direction.x -= camera_rotation.y.cos();
-            move_direction.z += camera_rotation.y.sin();
-        }
-        if self.pressed_keys.contains(&PhysicalKey::Code(KeyCode::KeyS)) {
-            move_direction.x -= (camera_rotation.y + PI/2.0).cos();
-            move_direction.z += (camera_rotation.y + PI/2.0).sin();
-        }
-        if self.pressed_keys.contains(&PhysicalKey::Code(KeyCode::KeyD)) {
-            move_direction.x += camera_rotation.y.cos();
-            move_direction.z -= camera_rotation.y.sin();
-        }
-        if self.pressed_keys.contains(&PhysicalKey::Code(KeyCode::Space)) {
-            match self.player.borrow().movement_mode {
-                MovementMode::GHOST => {
-                    move_direction.y += 1.0;
-                }
-                MovementMode::PHYSICS => {
-                    if self.player.borrow().grounded { move_direction.y += 1.0; }
-                }
-                MovementMode::EDITOR => {
-
-                }
-            }
-        }
-        if self.pressed_keys.contains(&PhysicalKey::Code(KeyCode::ShiftLeft)) {
-            match self.player.borrow().movement_mode {
-                MovementMode::GHOST => {
-                    move_direction.y -= 1.0;
-                }
-                MovementMode::PHYSICS => {}
-                MovementMode::EDITOR => {}
-            }
-        }
-
-        if self.pressed_keys.contains(&PhysicalKey::Code(KeyCode::Equal)) {
-            self.player.borrow_mut().camera.speed *= 1.0 + 1.0*delta_time;
-        }
-        if self.pressed_keys.contains(&PhysicalKey::Code(KeyCode::Minus)) {
-            self.player.borrow_mut().camera.speed /= 1.0 + 1.0*delta_time;
-        }
-
-        if self.new_pressed_keys.contains(&PhysicalKey::Code(KeyCode::Escape)) {
-            self.cursor_locked = !self.cursor_locked;
-            if self.cursor_locked {
-                if let Err(err) = self.window().set_cursor_grab(CursorGrabMode::Confined) {
-                } else {
-                    self.window().set_cursor_visible(false);
-                }
-                self.window().set_cursor_position(PhysicalPosition::new(
-                    self.window().inner_size().width as f32 * 0.5,
-                    self.window().inner_size().height as f32 * 0.5))
-                    .expect("failed to reset mouse position");
-            } else {
-                if let Err(err) = self.window().set_cursor_grab(CursorGrabMode::None) {
-                } else {
-                    self.window().set_cursor_visible(true);
-                }
-                self.window().set_cursor_position(self.saved_cursor_pos).expect("Cursor pos reset failed");
-            }
-        }
-        if self.new_pressed_keys.contains(&PhysicalKey::Code(KeyCode::KeyP)) {
-            self.paused = !self.paused
-        }
-
-        if self.new_pressed_keys.contains(&PhysicalKey::Code(KeyCode::F2)) {
-            flags.screenshot_queued = true;
-        }
-        if self.new_pressed_keys.contains(&PhysicalKey::Code(KeyCode::F5)) {
-            let last_third_person_state = self.player.borrow().camera.third_person;
-            self.player.borrow_mut().camera.third_person = !last_third_person_state;
-        }
-
-        {
-            let mut player_mut = self.player.borrow_mut();
-            let speed = player_mut.camera.speed;
-            match player_mut.movement_mode {
-                MovementMode::GHOST => {
-                    player_mut.step(&(move_direction * speed * delta_time))
-                }
-                MovementMode::PHYSICS => {
-                    player_mut.rigid_body.velocity = player_mut.rigid_body.velocity + move_direction *
-                        Vector::new_vec3(player_mut.move_power, player_mut.jump_power, player_mut.move_power) * speed;
+                    rb.velocity = rb.velocity + move_direction *
+                        Vector::new_vec3(move_power, jump_power, move_power) * speed;
                 }
                 MovementMode::EDITOR => {}
             }
@@ -235,13 +219,6 @@ impl Controller {
         self.scroll_delta = (0.0, 0.0);
         self.new_pressed_keys.clear();
     } }
-    
-    pub fn update_camera(&mut self) {
-        self.player.borrow_mut().camera.update_matrices();
-        if !self.paused {
-            self.player.borrow_mut().camera.update_frustum()
-        }
-    }
 
     pub fn handle_event<T>(&mut self, event: Event<T>, elwp: &EventLoopWindowTarget<T>) {
         match event {
@@ -349,13 +326,15 @@ impl Controller {
 
     fn do_mouse(&mut self) {
         if self.cursor_locked {
+            let player = &self.player_pointer.physics_engine.borrow().players[self.player_pointer.index];
+            let camera = &mut player.camera_pointer.world.borrow_mut().cameras[self.player_pointer.index];
             let rotation_x_delta = self.mouse_delta.1;
             let rotation_y_delta = self.mouse_delta.0;
-            let sense = { self.player.borrow().camera.sensitivity };
-            { self.player.borrow_mut().camera.rotation.y += rotation_y_delta * sense; }
-            { self.player.borrow_mut().camera.rotation.x -= rotation_x_delta * sense; }
-            let new_rotation_x = { self.player.borrow().camera.rotation.x };
-            self.player.borrow_mut().camera.rotation.x = new_rotation_x.clamp(-PI * 0.5, PI * 0.5);
+            let sense = self.sensitivity;
+            camera.rotation.y += rotation_y_delta * sense;
+            camera.rotation.x -= rotation_x_delta * sense;
+            let new_rotation_x = camera.rotation.x;
+            camera.rotation.x = new_rotation_x.clamp(-PI * 0.5, PI * 0.5);
         }
     }
 }

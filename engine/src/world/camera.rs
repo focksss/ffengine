@@ -1,16 +1,22 @@
+use std::cell::RefCell;
+use std::sync::Arc;
 use crate::math::matrix::Matrix;
 use crate::math::Vector;
+use crate::world::scene::Scene;
 
 const PI: f32 = std::f32::consts::PI;
-#[derive(Clone)]
+
+pub struct CameraPointer {
+    pub world: Arc<RefCell<Scene>>,
+    pub index: usize,
+}
+#[derive(Clone, Debug)]
 pub struct Camera {
     pub view_matrix: Matrix,
     pub projection_matrix: Matrix,
     pub position: Vector,
     pub target: Vector,
     pub rotation: Vector,
-    pub speed: f32,
-    pub sensitivity: f32,
     pub fov_y: f32,
     pub aspect_ratio: f32,
     pub near: f32,
@@ -25,8 +31,6 @@ impl Camera {
     pub fn new_perspective_rotation(
         position: Vector,
         rotation: Vector,
-        speed: f32,
-        sensitivity: f32,
         fov_y: f32,
         aspect_ratio: f32,
         near: f32,
@@ -40,8 +44,6 @@ impl Camera {
             position,
             target: Vector::new_null(),
             rotation,
-            speed,
-            sensitivity,
             fov_y,
             aspect_ratio,
             near,
@@ -159,7 +161,7 @@ impl Plane {
         center.sub_vec(&self.point).dot(&self.normal) > -radius
     }
 }
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Frustum {
     pub planes: [Plane; 6],
 }

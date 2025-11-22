@@ -2,7 +2,8 @@ use std::cell::RefCell;
 use std::sync::Arc;
 use mlua::{FromLua, Lua, UserData, UserDataFields, Value};
 use crate::math::Vector;
-use crate::physics::player::{MovementMode, Player};
+use crate::physics::player::{MovementMode, PlayerPointer};
+use crate::physics::rigid_body::RigidBodyPointer;
 
 impl MovementMode {
     pub fn register(lua: &Lua) -> mlua::Result<()> {
@@ -37,19 +38,18 @@ impl<'lua> FromLua<'lua> for MovementMode {
     }
 }
 
-pub struct PlayerRef(pub Arc<RefCell<Player>>);
-impl UserData for PlayerRef {
+impl UserData for PlayerPointer {
     fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
         fields.add_field_method_get("movement_mode", |_, this| {
-            Ok(this.0.borrow().movement_mode)
+            Ok(this.physics_engine.borrow().players[this.index].movement_mode)
         });
         fields.add_field_method_set("movement_mode", |lua, this, val: Value| {
-            this.0.borrow_mut().movement_mode = MovementMode::from_lua(val, lua)?;
+            this.physics_engine.borrow_mut().players[this.index].movement_mode = MovementMode::from_lua(val, lua)?;
             Ok(())
         });
 
-        fields.add_field_method_get("position", |lua, this| {
-            Ok(this.0.borrow().rigid_body.position)
+        fields.add_field_method_get("rigid_body", |lua, this| {
+            lua.create_userdata(this.physics_engine.borrow().players[this.index].rigid_body_pointer.clone())
         });
     }
 }

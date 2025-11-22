@@ -3,7 +3,6 @@ use std::sync::Arc;
 use mlua::{UserData, UserDataFields, UserDataMethods};
 use crate::client::controller::{Controller, Flags};
 use crate::physics::player::MovementMode;
-use crate::scripting::engine_api::physics_api::player_api::PlayerRef;
 
 #[derive(Clone)]
 pub struct ControllerRef(pub Arc<RefCell<Controller>>);
@@ -13,28 +12,7 @@ impl UserData for ControllerRef {
             lua.create_userdata(FlagsRef(this.0.borrow_mut().flags.clone()))
         });
         fields.add_field_method_get("player", |lua, this| {
-            lua.create_userdata(PlayerRef(this.0.borrow_mut().player.clone()))
-        });
-    }
-    fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
-        methods.add_method("toggle_player_physics", |_, this, _: ()| {
-            let ctrl = this.0.borrow_mut();
-            let last_state = ctrl.player.borrow().movement_mode.clone();
-            match last_state {
-                MovementMode::PHYSICS => {
-                    ctrl.player.borrow_mut().movement_mode = MovementMode::GHOST
-                }
-                MovementMode::GHOST => {
-                    ctrl.player.borrow_mut().movement_mode = MovementMode::PHYSICS
-                }
-                _ => ()
-            }
-            Ok(())
-        });
-
-        methods.add_method("get_camera_position", |_, this, _: ()| {
-            let pos = this.0.borrow().player.borrow().camera.position;
-            Ok((pos.x, pos.y, pos.z))
+            lua.create_userdata(this.0.borrow().player_pointer.clone())
         });
     }
 }

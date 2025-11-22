@@ -16,6 +16,7 @@ use crate::physics::player::Player;
 use crate::render::render_helper::{Descriptor, DescriptorCreateInfo, DescriptorSetCreateInfo, PassCreateInfo, Renderpass, RenderpassCreateInfo, Texture, TextureCreateInfo};
 use crate::render::scene_renderer::SceneRenderer;
 use crate::render::vulkan_base::{compile_shaders, find_memorytype_index, VkBase};
+use crate::world::camera::{Camera, CameraPointer};
 use crate::world::scene::Scene;
 
 pub const MAX_FRAMES_IN_FLIGHT: usize = 3;
@@ -23,6 +24,8 @@ pub const MAX_FRAMES_IN_FLIGHT: usize = 3;
 pub struct Renderer {
     pub device: ash::Device,
     pub draw_command_buffers: Vec<vk::CommandBuffer>,
+
+    pub camera: CameraPointer,
 
     pub present_renderpass: Renderpass,
     pub compositing_renderpass: Renderpass,
@@ -35,14 +38,18 @@ pub struct Renderer {
     pub present_sampler: Sampler,
 }
 impl Renderer {
-    pub unsafe fn new(base: &VkBase, world: &Scene, controller: Arc<RefCell<Controller>>) -> Renderer { unsafe {
+    pub unsafe fn new(base: &VkBase, controller: Arc<RefCell<Controller>>, primary_camera: CameraPointer) -> Renderer { unsafe {
         Renderer::compile_shaders();
+        let world_ref = primary_camera.world.clone();
+        let world = world_ref.borrow();
         
-        let (scene_renderer, compositing_renderpass, present_renderpass, hitbox_renderpass) = Renderer::create_rendering_objects(base, world);
+        let (scene_renderer, compositing_renderpass, present_renderpass, hitbox_renderpass) = Renderer::create_rendering_objects(base, &world);
 
         let mut renderer = Renderer {
             device: base.device.clone(),
             draw_command_buffers: base.draw_command_buffers.clone(),
+
+            camera: primary_camera,
 
             present_renderpass,
             compositing_renderpass,
@@ -215,8 +222,7 @@ impl Renderer {
         &mut self,
         current_frame: usize,
         present_index: usize,
-        world: &Scene,
-        player: Arc<RefCell<Player>>,
+        world: Arc<RefCell<Scene>>,
         render_hitboxes: bool,
         physics_engine: &PhysicsEngine
     ) { unsafe {
@@ -224,16 +230,20 @@ impl Renderer {
 
         { self.gui.borrow_mut().draw(current_frame, frame_command_buffer); }
 
-        self.scene_renderer.render_world(current_frame, &world, &player.borrow().camera.clone());
+        let mut world = &mut world.borrow_mut();
+        world.update_sun(self.camera.index);
+        let camera = &world.cameras[self.camera.index];
+        //println!("camera data {:?}", camera);
+
+        self.scene_renderer.render_world(current_frame, &world, camera);
 
         self.hitbox_renderpass.begin_renderpass(current_frame, frame_command_buffer, Some(present_index));
         if render_hitboxes {
-            let player = player.borrow();
             for rigid_body in physics_engine.rigid_bodies.iter() {
                 match &rigid_body.hitbox {
                     OBB(a) => {
                         let constants = HitboxPushConstantSendable {
-                            view_proj: (&player.camera.projection_matrix * &player.camera.view_matrix).data,
+                            view_proj: (&camera.projection_matrix * &camera.view_matrix).data,
                             center: (a.center.rotate_by_quat(&rigid_body.orientation) + rigid_body.position).to_array4(),
                             half_extent: a.half_extents.to_array4(),
                             quat: rigid_body.orientation.to_array4(),
@@ -251,7 +261,7 @@ impl Renderer {
                         for constant in constants.iter() {
                             self.device.cmd_push_constants(frame_command_buffer, self.hitbox_renderpass.pipeline_layout, ShaderStageFlags::ALL_GRAPHICS, 0, slice::from_raw_parts(
                                 &HitboxPushConstantSendable {
-                                    view_proj: (&player.camera.projection_matrix * &player.camera.view_matrix).data,
+                                    view_proj: (&camera.projection_matrix * &camera.view_matrix).data,
                                     center: ((constant.0 * a.current_scale_multiplier).rotate_by_quat(&rigid_body.orientation) + rigid_body.position).to_array4(),
                                     half_extent: (constant.1 * a.current_scale_multiplier).to_array4(),
                                     quat: rigid_body.orientation.to_array4(),
@@ -264,25 +274,6 @@ impl Renderer {
                     }
                     _ => { continue }
                 };
-            }
-            let constants_option = match &player.rigid_body.hitbox {
-                OBB(a) => {
-                    Some(HitboxPushConstantSendable {
-                        view_proj: (&player.camera.projection_matrix * &player.camera.view_matrix).data,
-                        center: (a.center.rotate_by_quat(&player.rigid_body.orientation) + player.rigid_body.position).to_array4(),
-                        half_extent: a.half_extents.to_array4(),
-                        quat: player.rigid_body.orientation.to_array4(),
-                        color: Vector::new_vec4(1.0, 0.0, 0.0, 0.5).to_array4()
-                    })
-                }
-                _ => { None }
-            };
-            if let Some(constants) = constants_option {
-                self.device.cmd_push_constants(frame_command_buffer, self.hitbox_renderpass.pipeline_layout, ShaderStageFlags::ALL_GRAPHICS, 0, slice::from_raw_parts(
-                    &constants as *const HitboxPushConstantSendable as *const u8,
-                    size_of::<HitboxPushConstantSendable>(),
-                ));
-                self.device.cmd_draw(frame_command_buffer, 36, 1, 0, 0);
             }
         }
         self.device.cmd_end_render_pass(frame_command_buffer);

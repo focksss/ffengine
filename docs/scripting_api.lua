@@ -46,6 +46,7 @@ Vector = Vector
                 ---@field set_color fun(self:GUIQuad, r:number, g:number, b:number, a:number):void
 
                 ---@class GUIText
+                ---@field text_message string
                 ---@field update_text fun(self:GUIText, text:string):void
 
     ---@class Controller
@@ -62,5 +63,8 @@ Vector = Vector
 
     ---@class Player
     ---@field movement_mode integer
-    ---@field rigid_body
+    ---@field rigid_body RigidBody
+
+        ---@class RigidBody
+        ---@field position Vector
 

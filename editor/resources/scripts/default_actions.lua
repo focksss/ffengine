@@ -47,8 +47,8 @@ end
 
 function update_position_display()
     if time_since_position_update > 0.1 then
-    	local x, y, z = Engine.controller:get_camera_position()
-    	Engine.renderer.gui.ActiveNode.text:update_text(string.format("Cam pos: X: %.2f, Y: %.2f, Z: %.2f", x, y, z))
+    	local x = Engine.controller.player.rigid_body.position
+    	Engine.renderer.gui.ActiveNode.text:update_text(string.format("Cam pos: X: %.2f, Y: %.2f, Z: %.2f", x.x, x.y, x.z))
     	time_since_position_update = 0
     end
 end

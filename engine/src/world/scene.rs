@@ -25,6 +25,8 @@ const MAX_LIGHTS: u64 = 10u64 * 10u64.pow(3);
 pub struct Scene {
     pub device: ash::Device,
 
+    pub cameras: Vec<Camera>,
+
     pub models: Vec<Model>,
     pub lights: Vec<Light>,
     pub sun: Sun,
@@ -65,6 +67,8 @@ impl Scene {
     pub fn new(base: &VkBase) -> Self {
         Self {
             device: base.device.clone(),
+
+            cameras: Vec::new(),
 
             models: Vec::new(),
             lights: Vec::new(),
@@ -249,6 +253,9 @@ impl Scene {
 
         self.lights.push(light);
     } }
+    pub fn add_camera(&mut self, camera: Camera) {
+        self.cameras.push(camera);
+    }
 
     pub unsafe fn update_instances(&mut self, command_buffer: CommandBuffer, frame: usize) { unsafe {
         if frame == 0 {
@@ -290,8 +297,8 @@ impl Scene {
         copy_data_to_memory(self.lights_staging_buffer.2, &lights_send);
         copy_buffer_synchronous(&self.device, command_buffer, &self.lights_staging_buffer.0, &self.lights_buffers[frame].0, None, &self.lights_buffers_size);
     } }
-    pub fn update_sun(&mut self, primary_camera: &Camera) {
-        self.sun.update(primary_camera);
+    pub fn update_sun(&mut self, primary_camera_index: usize) {
+        self.sun.update(&self.cameras[primary_camera_index]);
     }
 
     pub unsafe fn update_instances_all_frames(&mut self, base: &VkBase) { unsafe {

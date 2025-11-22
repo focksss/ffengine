@@ -7,6 +7,7 @@ use crate::physics::hitboxes::capsule::Capsule;
 use crate::physics::hitboxes::hitbox::Hitbox;
 use crate::physics::hitboxes::mesh::{Bvh, MeshCollider};
 use crate::physics::player::{MovementMode, Player};
+pub(crate) use crate::physics::rigid_body::RigidBody;
 use crate::world::scene::{Node, Scene, Vertex};
 
 const MAX_ITERATIONS: usize = 5;
@@ -18,7 +19,7 @@ pub struct PhysicsEngine {
     pub player_horiz_const_resistance: f32,
 
     pub rigid_bodies: Vec<RigidBody>,
-    pub players: Vec<Arc<RefCell<Player>>>
+    pub players: Vec<Player>
 }
 
 impl PhysicsEngine {
@@ -48,7 +49,7 @@ impl PhysicsEngine {
             }
         }
     }
-    pub fn add_player(&mut self, player: Arc<RefCell<Player>>) {
+    pub fn add_player(&mut self, player: Player) {
         self.players.push(player);
     }
 
@@ -211,26 +212,9 @@ impl PhysicsEngine {
                 body.update_coupled_according_to_this(world);
             }
         }
-        for player_ref in &self.players {
-            let mut player = player_ref.borrow_mut();
-            match player.movement_mode {
-                MovementMode::GHOST => {
-                    // println!("{:?}", self.body_cast(&mut player.rigid_body, &Vector::new_empty_quat(), &Vector::new_vec3(0.0, 0.0, -1.0), 1.0));
-                    ///*
-                    // let all_original_collisions = self.get_world_contacts(&player.rigid_body);
-                    //println!("{:?}", all_original_collisions);
-                    //*/
-
-                    continue
-                }
-                MovementMode::EDITOR => {
-
-                }
-                MovementMode::PHYSICS => {
-                    player.rigid_body.position = player.camera.position;
-
-                    self.move_player_with_collision(&mut player, delta_time);
-                }
+        for i in 0..self.players.len() {
+            if let MovementMode::PHYSICS = self.players[i].movement_mode {
+                self.move_player_with_collision(i, delta_time);
             }
         }
     }
@@ -238,64 +222,74 @@ impl PhysicsEngine {
 
     ///* New plan: Implement full physics tick, then make movement force based
     ///            https://www.youtube.com/watch?v=qdskE8PJy6Q
-    fn move_player_with_collision(&self, player: &mut Player, delta_time: f32) {
-        let air_resist = self.air_resistance_coefficient.powf(delta_time);
-        let lerp_f = 1.0 - 0.001_f32.powf(delta_time / self.player_horiz_const_resistance);
-        player.rigid_body.velocity = player.rigid_body.velocity * air_resist.powf(delta_time);
-        let lerp = |a: f32, b: f32, t: f32| -> f32 {
-            a + t * (b - a)
-        };
-        player.rigid_body.velocity.x = lerp(player.rigid_body.velocity.x, 0.0, lerp_f);
-        player.rigid_body.velocity.z = lerp(player.rigid_body.velocity.z, 0.0, lerp_f);
+    fn move_player_with_collision(&mut self, player_index: usize, delta_time: f32) {
+        {
+            let player = &mut self.players[player_index];
+            let rigid_body = &mut self.rigid_bodies[player.rigid_body_pointer.index];
+            let air_resist = self.air_resistance_coefficient.powf(delta_time);
+            let lerp_f = 1.0 - 0.001_f32.powf(delta_time / self.player_horiz_const_resistance);
+            rigid_body.velocity = rigid_body.velocity * air_resist.powf(delta_time);
+            let lerp = |a: f32, b: f32, t: f32| -> f32 {
+                a + t * (b - a)
+            };
+            rigid_body.velocity.x = lerp(rigid_body.velocity.x, 0.0, lerp_f);
+            rigid_body.velocity.z = lerp(rigid_body.velocity.z, 0.0, lerp_f);
 
 
-        player.rigid_body.velocity = player.rigid_body.velocity + self.gravity * delta_time;
-         /*
-        let original_hitbox = player.rigid_body.hitbox.clone();
-        match &mut player.rigid_body.hitbox {
-            Hitbox::OBB(obb) => {
-                obb.half_extents = obb.half_extents - Vector::new_vec(player.skin_width)
-            }
-            Hitbox::CAPSULE(capsule) => {
-                capsule.radius -= player.skin_width;
-            }
-            Hitbox::MESH(_) => panic!("player mesh colliders not yet implemented")
+            rigid_body.velocity = rigid_body.velocity + self.gravity * delta_time;
+            /*
+           let original_hitbox = player.rigid_body.hitbox.clone();
+           match &mut player.rigid_body.hitbox {
+               Hitbox::OBB(obb) => {
+                   obb.half_extents = obb.half_extents - Vector::new_vec(player.skin_width)
+               }
+               Hitbox::CAPSULE(capsule) => {
+                   capsule.radius -= player.skin_width;
+               }
+               Hitbox::MESH(_) => panic!("player mesh colliders not yet implemented")
+           }
+
+           self.collide(player, 0, delta_time);
+           player.rigid_body.hitbox = original_hitbox;
+            */
+
+            let displacement = rigid_body.velocity * delta_time;
+            rigid_body.position += displacement;
+            player.grounded = false;
         }
-
-        self.collide(player, 0, delta_time);
-        player.rigid_body.hitbox = original_hitbox;
-         */
-
-        // /*
         let mut iteration = 0;
-        let displacement = player.rigid_body.velocity * delta_time;
-        player.step(&displacement);
-        player.grounded = false;
-
         while iteration < MAX_ITERATIONS {
-            let contacts = self.get_world_contacts(&player.rigid_body);
+            let mut normal = Vector::new_empty();
+            let mut deepest = ContactInformation { contact_points: Vec::new(), normal, penetration_depth: 0.0 };
+            {
+                let player = &self.players[player_index];
+                let rigid_body = &self.rigid_bodies[player.rigid_body_pointer.index];
+                let contacts = self.get_world_contacts(rigid_body);
 
-            if contacts.is_none() || contacts.as_ref().unwrap().is_empty() {
-                break;
+                if contacts.is_none() || contacts.as_ref().unwrap().is_empty() {
+                    break;
+                }
+
+                deepest = contacts.unwrap().into_iter()
+                    .max_by(|a, b| a.penetration_depth.partial_cmp(&b.penetration_depth).unwrap())
+                    .unwrap();
+
+                normal = deepest.normal.normalize_3d();
+                if normal.dot3(&rigid_body.velocity) > 0.0 {
+                    normal = normal * -1.0;
+                }
             }
 
-            let deepest = contacts.unwrap().into_iter()
-                .max_by(|a, b| a.penetration_depth.partial_cmp(&b.penetration_depth).unwrap())
-                .unwrap();
-
-            let mut normal = deepest.normal.normalize_3d();
-            if normal.dot3(&player.rigid_body.velocity) > 0.0 {
-                normal = normal * -1.0;
-            }
-
+            let player = &mut self.players[player_index];
+            let rigid_body = &mut self.rigid_bodies[player.rigid_body_pointer.index];
             if normal.dot3(&self.gravity.normalize_3d()) < -0.35 {
                 player.grounded = true;
             }
 
             let depenetration = normal * (deepest.penetration_depth);
-            player.step(&depenetration);
+            rigid_body.position += depenetration;
 
-            player.rigid_body.velocity = player.rigid_body.velocity
+            rigid_body.velocity = rigid_body.velocity
                 .project_onto_plane(&normal);
 
             if depenetration.magnitude_3d() < MIN_MOVE_THRESHOLD {
@@ -307,65 +301,6 @@ impl PhysicsEngine {
         if iteration >= MAX_ITERATIONS {
             println!("Resolution exceeded max iterations - stuck in geometry");
             // Optional: Teleport player to last known good position
-        }
-        // */
-
-
-        if player.rigid_body.position.y < -20.0 {
-            player.camera.position.y = 20.0;
-            player.rigid_body.velocity = Vector::new_empty();
-        }
-    }
-    fn collide(&self, player: &mut Player, iteration_depth: i32, delta_time: f32) {
-        if iteration_depth == 0 {
-            player.grounded = false;
-            // println!("starting velocity: {:?}", player.rigid_body.velocity);
-            player.rigid_body.velocity = player.rigid_body.velocity * delta_time; // use velocity field as storage for remaining displacement in step
-        }
-        if iteration_depth > 10 {
-            player.rigid_body.velocity = Vector::new_empty();
-            return // no need to convert remaining displacement to velocity, there is none.
-        }
-
-        let displacement = player.rigid_body.velocity; // use velocity field as storage for remaining displacement in step
-        // println!("iteration: {}", iteration_depth);
-        // println!("    remaining displacement: {:?}", displacement);
-
-        let max_dist = displacement.magnitude_3d() + player.skin_width;
-
-        if let Some(hits) = self.body_cast(&mut player.rigid_body, &Vector::new_empty(), &displacement, max_dist) {
-            for contact in hits.contacts {
-                let mut normal = contact.normal.normalize_3d();
-                if normal.dot3(&displacement) > 0.0 {
-                    normal = normal * -1.0;
-                }
-                if normal.dot3(&self.gravity.normalize_3d()) < -0.35 {
-                    player.grounded = true;
-                }
-                println!("    normal: {:?}", normal);
-                println!("    depth: {:?}", contact.penetration_depth);
-
-                let displacement_direction = displacement.normalize_3d();
-                let mut surface_snap_displacement = displacement_direction * (hits.distance - player.skin_width * 0.5);
-                if surface_snap_displacement.magnitude_3d() >= player.skin_width {
-                    player.step(&surface_snap_displacement);
-                } else {
-                    surface_snap_displacement = Vector::new_empty();
-                }
-
-                let remaining_displacement = displacement - surface_snap_displacement;
-                // println!("    remaining displacement: {:?}", remaining_displacement);
-                let remaining_displacement_rotated_onto_normal = remaining_displacement.project_onto_plane(&normal);
-                //TODO: do or don't do this?: .normalize_3d() * remaining_displacement.magnitude_3d();
-                // println!("    remaining projected: {:?}", remaining_displacement_rotated_onto_normal);
-                player.rigid_body.velocity = remaining_displacement_rotated_onto_normal; // use velocity field as storage for remaining displacement in next step
-            }
-            self.collide(player, iteration_depth + 1, delta_time)
-        } else {
-            // println!("    terminating with step of {:?}", displacement);
-            player.step(&displacement);
-            player.rigid_body.velocity = displacement / delta_time; // convert remaining displacement to velocity
-            // println!("    terminating with final velocity {:?}", player.rigid_body.velocity);
         }
     }
 
@@ -380,489 +315,51 @@ impl PhysicsEngine {
         )
     }
 }
-
-pub struct RigidBody {
-    pub coupled_with_scene_object: Option<(usize, usize)>, // model index, node index
-
-    pub hitbox: Hitbox,
-    is_static: bool,
-    pub restitution_coefficient: f32,
-    pub friction_coefficient: f32,
-    mass: f32,
-    inv_mass: f32,
-
-    pub force: Vector,
-    pub torque: Vector,
-
-    pub position: Vector,
-    pub velocity: Vector,
-    pub orientation: Vector, // quaternion
-    pub angular_velocity: Vector,
-    center_of_mass: Vector,
-
-    inertia_tensor: Matrix, // 3x3
-    inv_inertia_tensor: Matrix,
+#[derive(Clone, Copy)]
+pub(crate) enum AxisType {
+    FaceA(usize),
+    FaceB(usize),
+    Edge(usize, usize),
 }
 
-impl RigidBody {
-    pub fn new_from_node(node: &Node, couple_with_node: Option<(usize, usize)>, hitbox: Hitbox) -> Self {
-        let mut body = RigidBody::default();
-        body.coupled_with_scene_object = couple_with_node;
-        body.position = node.world_transform * Vector::new_vec4(0.0, 0.0, 0.0, 1.0);
-        body.orientation = node.world_transform.extract_quaternion();
-        body.hitbox = hitbox;
-        body.update_shape_properties();
-        body
-    }
-    pub fn update_this_according_to_coupled(&mut self, world: &Scene)  {
-        if let Some(coupled_object) = self.coupled_with_scene_object {
-            let node = &world.models[coupled_object.0].nodes[coupled_object.1];
-
-            self.position = node.world_transform * Vector::new_vec4(0.0, 0.0, 0.0, 1.0);
-            self.orientation = node.world_transform.extract_quaternion();
-            self.hitbox = Hitbox::get_hitbox_from_node(node, match self.hitbox {
-                Hitbox::OBB(_) => 0,
-                Hitbox::MESH(_) => 1,
-                Hitbox::CAPSULE(_) => 2,
-                Hitbox::SPHERE(_) => 3,
-            }).unwrap();
-            self.update_shape_properties();
-        }
-    }
-    pub fn update_coupled_according_to_this(&self, world: &mut Scene) {
-        if let Some(coupled_object) = self.coupled_with_scene_object {
-            let node = &mut world.models[coupled_object.0].nodes[coupled_object.1];
-
-            node.translation = self.position;
-            node.rotation = self.orientation;
-            node.needs_update = true;
-        }
-    }
-    pub fn set_mass(&mut self, mass: f32) {
-        self.mass = mass;
-        self.inv_mass = 1.0 / mass;
-        self.update_shape_properties();
-    }
-    pub fn set_static(&mut self, is_static: bool) {
-        self.is_static = is_static;
-        if is_static {
-            self.inv_mass = 0.0;
-            self.mass = 999.0
-        } else {
-            self.inv_mass = 1.0 / self.mass;
-        }
-        self.update_shape_properties();
-    }
-
-    pub fn update_shape_properties(&mut self) {
-        match self.hitbox {
-            Hitbox::OBB(obb) => {
-                let a = obb.half_extents.x * 2.0;
-                let b = obb.half_extents.y * 2.0;
-                let c = obb.half_extents.z * 2.0;
-
-                self.inertia_tensor = Matrix::new();
-                self.inertia_tensor.set(0, 0, (1.0 / 12.0) * (b * b + c * c));
-                self.inertia_tensor.set(1, 1, (1.0 / 12.0) * (a * a + c * c));
-                self.inertia_tensor.set(2, 2, (1.0 / 12.0) * (a * a + b * b));
-
-                self.center_of_mass = obb.center
-            }
-            Hitbox::MESH(_) => {
-                //TODO inertia tensor and center of mass
-            }
-            Hitbox::CAPSULE(capsule) => {
-                //TODO inertia tensor
-
-                self.center_of_mass = (capsule.a + capsule.b) * 0.5
-            }
-            Hitbox::SPHERE(sphere) => {
-                let r2 = sphere.radius * sphere.radius;
-                let c = 2.0 / 5.0;
-                let v = c * r2;
-                self.inertia_tensor = Matrix::new();
-                self.inertia_tensor.set(0, 0, v);
-                self.inertia_tensor.set(1, 1, v);
-                self.inertia_tensor.set(2, 2, v);
-
-                self.center_of_mass = sphere.center
-            }
-        }
-        self.inv_inertia_tensor = self.inertia_tensor.inverse3().mul_float_into3(self.inv_mass);
-    }
-    fn get_inverse_inertia_tensor_world_space(&self) -> Matrix {
-        let rot = Matrix::new_rotate_quaternion_vec4(&self.orientation);
-        rot * self.inv_inertia_tensor * rot.transpose3()
-    }
-    fn get_center_of_mass_world_space(&self) -> Vector {
-        self.position + Matrix::new_rotate_quaternion_vec4(&self.orientation) * self.center_of_mass
-    }
-
-    pub fn update(&mut self, delta_time: f32) {
-        self.position += self.velocity * delta_time;
-
-        let c = self.get_center_of_mass_world_space();
-        let c_to_pos = self.position - c;
-
-        let rot = Matrix::new_rotate_quaternion_vec4(&self.orientation);
-        let inertia_world = rot * self.inertia_tensor * rot.transpose3();
-        let inv_inertia_world = rot * self.inv_inertia_tensor * rot.transpose3();
-        let torque = self.angular_velocity.cross(&(inertia_world * self.angular_velocity));
-        let alpha = inv_inertia_world * torque;
-        self.angular_velocity += alpha * delta_time;
-
-        let d_theta = self.angular_velocity * delta_time;
-        let dq = Vector::axis_angle_quat(&d_theta, d_theta.magnitude_3d());
-        self.orientation = dq.combine(&self.orientation).normalize_4d();
-
-        self.position = c + Matrix::new_rotate_quaternion_vec4(&dq) * c_to_pos;
-    }
-
-    pub fn apply_impulse(&mut self, impulse: Vector, point: Vector) {
-        if self.inv_mass == 0.0 { return }
-
-        self.velocity += impulse * self.inv_mass;
-
-        let c = self.get_center_of_mass_world_space();
-        let r = point - c;
-        let dl = r.cross(&impulse);
-        self.apply_angular_impulse(dl);
-    }
-    pub fn apply_angular_impulse(&mut self, impulse: Vector) {
-        if self.inv_mass == 0.0 { return }
-        self.angular_velocity += self.get_inverse_inertia_tensor_world_space() * impulse;
-
-        const MAX_ANGULAR_SPEED: f32 = 30.0;
-        if self.angular_velocity.magnitude_3d() > MAX_ANGULAR_SPEED {
-            self.angular_velocity = self.angular_velocity.normalize_3d() * MAX_ANGULAR_SPEED;
-        }
-    }
-
-    fn colliding_with(&self, other: &RigidBody) -> Option<ContactInformation> {
-        let self_collider_info = ColliderInfo {
-            hitbox: &self.hitbox,
-            position: &self.position,
-            orientation: &self.orientation,
-        };
-        let other_collider_info = &ColliderInfo {
-            hitbox: &other.hitbox,
-            position: &other.position,
-            orientation: &other.orientation,
-        };
-
-        match &other.hitbox {
-            Hitbox::SPHERE(_) => self_collider_info.intersects_sphere(other_collider_info),
-            Hitbox::OBB(_) => self_collider_info.intersects_obb(other_collider_info),
-            _ => { panic!("{:?}-{:?} intersection not implemented", self.hitbox.get_type(), other.hitbox.get_type()) }
-        }
-    }
-
-    pub fn obb_intersects_capsule(
-        a_bounds: &BoundingBox, a_orientation: &Vector, a_position: &Vector,
-        b_point_a: &Vector, b_point_b: &Vector, b_radius: f32, b_position: &Vector, b_orientation: &Vector,
-    ) -> Option<ContactInformation> {
-        let rot_mat = Matrix::new_rotate_quaternion_vec4(a_orientation);
-        let inv_rot_mat = rot_mat.inverse4();
-
-        let capsule_rot_mat = Matrix::new_rotate_quaternion_vec4(&b_orientation);
-
-        let world_a = capsule_rot_mat * (b_point_a.unitize_w()) + b_position;
-        let world_b = capsule_rot_mat * (b_point_b.unitize_w()) + b_position;
-
-        let obb_center = a_position + a_bounds.center.rotate_by_quat(a_orientation);
-
-        let p0_local = inv_rot_mat * ((world_a - obb_center).unitize_w());
-        let p1_local = inv_rot_mat * ((world_b - obb_center).unitize_w());
-
-        let closest_point_on_obb_to_segment = |
-            bounds: &BoundingBox,
-            p0: &Vector,
-            p1: &Vector,
-        | -> Vector {
-            let clamped_p0 = p0.clamp3(
-                &(-bounds.half_extents.unitize_w()),
-                &bounds.half_extents.unitize_w()
-            );
-            let clamped_p1 = p1.clamp3(
-                &(-bounds.half_extents.unitize_w()),
-                &bounds.half_extents.unitize_w()
-            );
-            let segment = p1 - p0;
-            let to_p0 = clamped_p0 - p0;
-
-            let t = (to_p0.dot3(&segment) / segment.dot3(&segment)).clamp(0.0, 1.0);
-            let point_on_segment = p0 + (segment * t);
-
-            point_on_segment.clamp3(
-                &(-bounds.half_extents.unitize_w()),
-                &bounds.half_extents.unitize_w()
-            )
-        };
-
-        let closest_on_box = closest_point_on_obb_to_segment(
-            a_bounds,
-            &p0_local,
-            &p1_local
-        );
-
-        let segment = p1_local - p0_local;
-        let t = ((closest_on_box - p0_local).dot3(&segment) / segment.dot3(&segment))
-            .clamp(0.0, 1.0);
-        let closest_on_segment = p0_local + (segment * t);
-
-        let diff = closest_on_segment - closest_on_box;
-        let dist = diff.magnitude_3d();
-
-        if dist > b_radius {
-            return None;
-        }
-
-        let normal_local = if dist > 1e-6 {
-            diff / dist
-        } else {
-            (closest_on_segment - Vector::new_vec3(0.0, 0.0, 0.0)).normalize_3d()
-        };
-
-        let penetration = b_radius - dist;
-
-        let normal_world = (rot_mat * normal_local.unitize_w()).normalize_3d();
-        let contact_point_local = closest_on_box + normal_local * (dist * 0.5);
-        let contact_point_world = obb_center + (rot_mat * contact_point_local.unitize_w());
-
-        Some(ContactInformation {
-            contact_points: vec![ContactPoint { point_on_a: contact_point_world, point_on_b: contact_point_world, penetration }],
-            normal: normal_world,
-            penetration_depth: penetration,
-        })
-    }
-    fn intersects_mesh(&self, mesh_body: &RigidBody) -> Option<Vec<ContactInformation>> {
-        let mesh_collider = if let Hitbox::MESH(ref mesh) = mesh_body.hitbox {
-            mesh
-        } else {
-            return None;
-        };
-
-        let rot_mat = Matrix::new_rotate_quaternion_vec4(&mesh_body.orientation);
-        let rot_mat_inv = rot_mat.inverse4();
-
-        let mut center_offset = Vector::new_vec3(0.0, 0.0, 0.0);
-        let body_hitbox_mesh_space = match self.hitbox {
-            Hitbox::MESH(ref mesh) => panic!("mesh-mesh collision not implemented"),
-            Hitbox::OBB(ref obb) => {
-                center_offset = obb.center;
-                Hitbox::OBB(BoundingBox {
-                center: Vector::new_vec3(0.0, 0.0, 0.0),
-                half_extents: obb.half_extents / mesh_collider.current_scale_multiplier,
-            })},
-            Hitbox::CAPSULE(ref capsule) => Hitbox::CAPSULE(Capsule {
-                a: capsule.a / mesh_collider.current_scale_multiplier,
-                b: capsule.b / mesh_collider.current_scale_multiplier,
-                radius: capsule.radius / mesh_collider.current_scale_multiplier,
-            }),
-            Hitbox::SPHERE(ref sphere) => panic!("sphere-mesh collision not implemented"),
-        };
-        let body_position_mesh_space = rot_mat_inv * ((self.position + center_offset - &mesh_body.position) / mesh_collider.current_scale_multiplier).unitize_w();
-        let body_orientation_mesh_space = self.orientation.combine(&mesh_body.orientation.conjugate());
-
-
-        let mut contact_infos = Self::split_into_bvh(
-            &body_hitbox_mesh_space,
-            &body_position_mesh_space,
-            &body_orientation_mesh_space,
-            &mesh_collider,
-            &mesh_collider.bvh.borrow()
-        );
-
-        if let Some(infos) = &mut contact_infos {
-            for info in infos.iter_mut() {
-                info.normal = rot_mat * info.normal.unitize_w();
-            }
-            return contact_infos;
-        }
-
-        None
-    }
-    fn split_into_bvh(
-        body_hitbox: &Hitbox,
-        body_position: &Vector,
-        body_orientation: &Vector,
-        mesh_collider: &MeshCollider,
-        bvh: &Bvh,
-    ) -> Option<Vec<ContactInformation>> {
-        let intersection = &ColliderInfo {
-            hitbox: body_hitbox,
-            position: body_position,
-            orientation: body_orientation
-        }.intersects_obb(&ColliderInfo {
-            hitbox: &Hitbox::OBB(bvh.bounds),
-            position: &Vector::new_empty_quat(),
-            orientation: &Vector::new_empty_quat(),
-        });
-        if intersection.is_some() {
-            if let Some(triangle_indices) = &bvh.triangle_indices {
-                let mut triangle_intersections = Vec::new();
-                match body_hitbox {
-                    Hitbox::OBB(obb) => {
-                        for triangle_index in triangle_indices {
-                            let triangle_intersection = Self::obb_intersects_triangle(
-                                obb,
-                                body_position,
-                                body_orientation,
-                                Bvh::get_triangle_vertices(&*mesh_collider.mesh.borrow(), *triangle_index, Some(mesh_collider.current_scale_factor))
-                            );
-                            if triangle_intersection.is_some() {
-                                triangle_intersections.push(triangle_intersection.unwrap());
-                            }
-                        }
-                    }
-                    Hitbox::CAPSULE(capsule) => { panic!("capsule-triangle collision not implemented"); }
-                    Hitbox::MESH(mesh) => { panic!("mesh-triangle collision not implemented"); }
-                    Hitbox::SPHERE(sphere) => { panic!("sphere-triangle collision not implemented"); }
-                }
-
-                return Some(triangle_intersections);
-            };
-            let mut left_intersections = if let Some(left) = &bvh.left_child {
-                Self::split_into_bvh(
-                    body_hitbox,
-                    body_position,
-                    body_orientation,
-                    mesh_collider,
-                    &left.borrow()
-                ).unwrap_or(vec![])
-            } else { vec![] };
-            let mut right_intersections = if let Some(right) = &bvh.right_child {
-                Self::split_into_bvh(
-                    body_hitbox,
-                    body_position,
-                    body_orientation,
-                    mesh_collider,
-                    &right.borrow()
-                ).unwrap_or(vec![])
-            } else { vec![] };
-            left_intersections.append(&mut right_intersections);
-            return Some(left_intersections);
-        }
-        None
-    }
-    fn obb_intersects_triangle(
-        obb: &BoundingBox,
-        obb_position: &Vector,
-        obb_orientation: &Vector,
-        vertices: (Vertex, Vertex, Vertex),
-    ) -> Option<ContactInformation> {
-        let rot_mat = Matrix::new_rotate_quaternion_vec4(obb_orientation);
-
-        let v0 = rot_mat.inverse4() * ((Vector::new_from_array(&vertices.0.position) - obb_position).unitize_w());
-        let v1 = rot_mat.inverse4() * ((Vector::new_from_array(&vertices.1.position) - obb_position).unitize_w());
-        let v2 = rot_mat.inverse4() * ((Vector::new_from_array(&vertices.2.position) - obb_position).unitize_w());
-
-        let e0 = v1 - v0;
-        let e1 = v2 - v1;
-        let e2 = v0 - v2;
-
-        let axes = [
-            Vector::new_vec3(1.0, 0.0, 0.0),
-            Vector::new_vec3(0.0, 1.0, 0.0),
-            Vector::new_vec3(0.0, 0.0, 1.0),
-        ];
-
-        let normal = e0.cross(&e1).normalize_3d();
-
-        let project = |axis: &Vector| -> (f32, f32) {
-            let p0 = v0.dot3(axis);
-            let p1 = v1.dot3(axis);
-            let p2 = v2.dot3(axis);
-            (p0.min(p1.min(p2)), p0.max(p1.max(p2)))
-        };
-        let project_bounds = |axis: &Vector| -> (f32, f32) {
-            let r = obb.half_extents.x * axis.x.abs() + obb.half_extents.y * axis.y.abs() + obb.half_extents.z * axis.z.abs();
-            (-r, r)
-        };
-        let test_axis = |axis: &Vector, min_penetration: &mut f32, best_axis: &mut Vector| -> bool {
-            if axis.magnitude_3d() < 1e-6 { return true; }
-            let axis = axis.normalize_3d();
-            let (t_min, t_max) = project(&axis);
-            let (b_min, b_max) = project_bounds(&axis);
-            if t_max < b_min || t_min > b_max {
-                return false;
-            }
-            let penetration = if t_min < b_min {
-                (t_max - b_min).min(b_max - t_min)
-            } else {
-                (b_max - t_min).min(t_max - b_min)
-            };
-            if penetration < *min_penetration {
-                *min_penetration = penetration;
-                *best_axis = axis;
-            }
-            true
-        };
-
-        let mut min_penetration = f32::MAX;
-        let mut best_axis = normal;
-        for axis in &axes {
-            if !test_axis(axis, &mut min_penetration, &mut best_axis) {
-                return None;
-            }
-        }
-        if !test_axis(&normal, &mut min_penetration, &mut best_axis) {
-            return None;
-        }
-        for edge in &[e0, e1, e2] {
-            for axis in &axes {
-                let cross_axis = edge.cross(axis);
-                if !test_axis(&cross_axis, &mut min_penetration, &mut best_axis) {
-                    return None;
-                }
-            }
-        }
-        let tri_center = (v0 + v1 + v2) / 3.0;
-        let closest_point = tri_center.clamp3(
-            &(-obb.half_extents),
-            &obb.half_extents,
-        );
-
-        Some(ContactInformation {
-            contact_points: vec![ContactPoint { point_on_a: Vector::new_empty(), point_on_b: Vector::new_empty(), penetration: min_penetration }],
-            normal: rot_mat * (best_axis.unitize_w()),
-            penetration_depth: min_penetration,
-        })
+struct CastInformation {
+    distance: f32,
+    contacts: Vec<ContactInformation>,
+}
+pub struct ContactInformation {
+    pub contact_points: Vec<ContactPoint>,
+    pub normal: Vector,
+    pub penetration_depth: f32,
+}
+impl ContactInformation {
+    pub fn flip(mut self) -> ContactInformation {
+        for point in &mut self.contact_points { point.flip(); }
+        self.normal = -self.normal;
+        self
     }
 }
-impl Default for RigidBody {
-    fn default() -> Self {
-        Self {
-            coupled_with_scene_object: None,
-            hitbox: Hitbox::OBB(BoundingBox {
-                center: Vector::new_vec(0.0),
-                half_extents: Vector::new_vec(1.0),
-            }),
-            is_static: true,
-            restitution_coefficient: 0.5,
-            friction_coefficient: 0.5,
-            mass: 999.0,
-            inv_mass: 0.0,
-            force: Default::default(),
-            torque: Default::default(),
-            position: Default::default(),
-            velocity: Default::default(),
-            orientation: Vector::new_empty_quat(),
-            angular_velocity: Default::default(),
-            center_of_mass: Vector::new_empty_quat(),
-            inertia_tensor: Matrix::new(),
-            inv_inertia_tensor: Matrix::new(),
-        }
+#[derive(Debug)]
+pub(crate) struct ContactPoint {
+    pub(crate) point_on_a: Vector,
+    pub(crate) point_on_b: Vector,
+
+    pub(crate) penetration: f32,
+}
+impl ContactPoint {
+    fn flip(&mut self) {
+        let temp = self.point_on_b;
+        self.point_on_b = self.point_on_a;
+        self.point_on_a = temp;
     }
 }
 
-struct ColliderInfo<'a> {
-    hitbox: &'a Hitbox,
-    position: &'a Vector,
-    orientation: &'a Vector,
+pub(crate) struct ColliderInfo<'a> {
+    pub(crate) hitbox: &'a Hitbox,
+    pub(crate) position: &'a Vector,
+    pub(crate) orientation: &'a Vector,
 }
 impl ColliderInfo<'_> {
-    fn intersects_sphere(&self, other: &ColliderInfo) -> Option<ContactInformation> {
+    pub(crate) fn intersects_sphere(&self, other: &ColliderInfo) -> Option<ContactInformation> {
         if let Hitbox::SPHERE(sphere) = other.hitbox {
             return match self.hitbox {
                 Hitbox::OBB(obb) => {
@@ -1002,7 +499,7 @@ impl ColliderInfo<'_> {
         }
         None
     }
-    fn intersects_obb(&self, other: &ColliderInfo) -> Option<ContactInformation> {
+    pub(crate) fn intersects_obb(&self, other: &ColliderInfo) -> Option<ContactInformation> {
         if let Hitbox::OBB(obb) = other.hitbox {
             return match self.hitbox {
                 Hitbox::OBB(this_obb) => {
@@ -1148,42 +645,5 @@ impl ColliderInfo<'_> {
         let distance = t.dot3(axis).abs();
 
         ra + rb - distance
-    }
-}
-#[derive(Clone, Copy)]
-enum AxisType {
-    FaceA(usize),
-    FaceB(usize),
-    Edge(usize, usize),
-}
-
-struct CastInformation {
-    distance: f32,
-    contacts: Vec<ContactInformation>,
-}
-pub struct ContactInformation {
-    contact_points: Vec<ContactPoint>,
-    normal: Vector,
-    penetration_depth: f32,
-}
-impl ContactInformation {
-    fn flip(mut self) -> ContactInformation {
-        for point in &mut self.contact_points { point.flip(); }
-        self.normal = -self.normal;
-        self
-    }
-}
-#[derive(Debug)]
-struct ContactPoint {
-    point_on_a: Vector,
-    point_on_b: Vector,
-
-    penetration: f32,
-}
-impl ContactPoint {
-    fn flip(&mut self) {
-        let temp = self.point_on_b;
-        self.point_on_b = self.point_on_a;
-        self.point_on_a = temp;
     }
 }

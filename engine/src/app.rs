@@ -13,9 +13,11 @@ use crate::math::Vector;
 use crate::client::controller::Controller;
 use crate::gui::gui::GUI;
 use crate::physics::physics_engine::PhysicsEngine;
+use crate::physics::player::{MovementMode, Player, PlayerPointer};
 use crate::render::render::{Renderer, MAX_FRAMES_IN_FLIGHT};
 use crate::render::vulkan_base::{record_submit_commandbuffer, VkBase};
 use crate::scripting::lua_engine::Lua;
+use crate::world::camera::{Camera, CameraPointer};
 use crate::world::scene::{Light, Model, Scene};
 
 const PI: f32 = std::f32::consts::PI;
@@ -49,19 +51,48 @@ pub struct EngineRef {
 impl Engine {
     pub unsafe fn new() -> Engine {
         let base = VkBase::new("ffengine".to_string(), 1920, 1080, MAX_FRAMES_IN_FLIGHT).unwrap();
-        let physics_engine = Arc::new(RefCell::new(PhysicsEngine::new(Vector::new_vec3(0.0, -9.8, 0.0), 0.9, 0.5)));
-        let controller = Arc::new(RefCell::new(Controller::new(&base.window, Vector::new_vec3(0.0, 20.0, 0.0), physics_engine)));
         let mut world = Scene::new(&base);
-
         unsafe { world.initialize(&base) }
+        let world = Arc::new(RefCell::new(world));
+        let physics_engine = Arc::new(RefCell::new(PhysicsEngine::new(Vector::new_vec3(0.0, -9.8, 0.0), 0.9, 0.5)));
+
+        let player = Player::new(
+            physics_engine.clone(),
+            world.clone(),
+            Camera::new_perspective_rotation(
+                Vector::new_vec3(0.0, 2.0, 0.0),
+                Vector::new_empty(),
+                100.0,
+                base.window.inner_size().width as f32 / base.window.inner_size().height as f32,
+                0.001,
+                1000.0,
+                true,
+                Vector::new_vec3(0.0, 0.0, 1.0),
+            ),
+            Vector::new_vec3(-0.15, -0.85, -0.15),
+            Vector::new_vec3(0.15, 0.15, 0.15),
+            MovementMode::GHOST,
+            0.2,
+            4.5,
+            0.0015
+        );
+        physics_engine.borrow_mut().add_player(player);
+
+        let controller = Arc::new(RefCell::new(Controller::new(&base.window, PlayerPointer {
+            physics_engine: physics_engine.clone(),
+            index: 0
+        })));
 
         let rw_lock = RwLock::new(base.draw_command_buffers[0]);
         COMMAND_BUFFER.set(rw_lock).expect("Failed to initialize frame command buffer global");
 
         let engine = Engine {
-            physics_engine: Arc::new(RefCell::new(PhysicsEngine::new(Vector::new_vec3(0.0, -9.8, 0.0), 0.9, 0.5))),
-            renderer: unsafe { Arc::new(RefCell::new(Renderer::new(&base, &world, controller.clone()))) },
-            world: Arc::new(RefCell::new(world)),
+            physics_engine,
+            renderer: unsafe { Arc::new(RefCell::new(Renderer::new(&base, controller.clone(), CameraPointer {
+                world: world.clone(),
+                index: 0
+            }))) },
+            world,
             controller,
             base,
         };
@@ -103,7 +134,6 @@ impl Engine {
                         base.needs_swapchain_recreate = true;
                         last_resize = Instant::now();
 
-                        self.controller.borrow_mut().player.borrow_mut().camera.aspect_ratio = base.window.inner_size().width as f32 / base.window.inner_size().height as f32;
                         needs_resize = true;
                     },
                     Event::AboutToWait => {
@@ -129,12 +159,15 @@ impl Engine {
                         {
                             {
                                 let mut controller_mut = self.controller.borrow_mut();
-                                controller_mut.do_controls(delta_time, &base, &mut self.renderer.borrow_mut(), &self.world.borrow(), current_frame)
+                                controller_mut.do_controls(delta_time, &base, &mut self.renderer.borrow_mut(), &mut self.world.borrow_mut(), current_frame)
                             };
 
                             if self.controller.borrow().flags.borrow().do_physics { self.physics_engine.borrow_mut().tick(delta_time, &mut self.world.borrow_mut()); }
 
-                            { self.controller.borrow_mut().update_camera(); }
+                            let physics_engine = &self.physics_engine.borrow();
+                            for player in &physics_engine.players {
+                                player.update_camera(physics_engine);
+                            }
                         }
                         Lua::run_update_methods().expect("Failed to run Update methods");
 
@@ -159,8 +192,6 @@ impl Engine {
                         let current_draw_command_buffer = base.draw_command_buffers[current_frame];
                         let current_fence = base.draw_commands_reuse_fences[current_frame];
 
-                        { if !self.controller.borrow().paused { self.world.borrow_mut().update_sun(&self.controller.borrow().player.borrow().camera) }; };
-
                         record_submit_commandbuffer(
                             &base.device,
                             current_draw_command_buffer,
@@ -175,11 +206,9 @@ impl Engine {
                                     self.world.borrow_mut().update_lights(frame_command_buffer, current_frame);
                                 }
 
-                                let player = { self.controller.borrow().player.clone() };
-
                                 let flags = self.controller.borrow().flags.clone();
                                 {
-                                    self.renderer.borrow_mut().render_frame(current_frame, present_index as usize, &self.world.borrow(), player, flags.borrow().draw_hitboxes, &self.physics_engine.borrow());
+                                    self.renderer.borrow_mut().render_frame(current_frame, present_index as usize, self.world.clone(), flags.borrow().draw_hitboxes, &self.physics_engine.borrow());
                                 }
 
                                 Lua::run_cache(&engine_ref);

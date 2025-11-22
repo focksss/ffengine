@@ -1,8 +1,12 @@
-use crate::world::camera::Camera;
+use std::cell::RefCell;
+use std::sync::Arc;
+use crate::world::camera::{Camera, CameraPointer};
 use crate::math::Vector;
 use crate::physics::hitboxes::bounding_box::BoundingBox;
 use crate::physics::hitboxes::hitbox::Hitbox;
-use crate::physics::physics_engine::RigidBody;
+use crate::physics::physics_engine::{PhysicsEngine, RigidBody};
+use crate::physics::rigid_body::RigidBodyPointer;
+use crate::world::scene::Scene;
 
 #[derive(Copy, Clone, Debug)]
 pub enum MovementMode {
@@ -10,20 +14,25 @@ pub enum MovementMode {
     PHYSICS,
     EDITOR,
 }
-
+#[derive(Clone)]
+pub struct PlayerPointer {
+    pub physics_engine: Arc<RefCell<PhysicsEngine>>,
+    pub index: usize,
+}
 pub struct Player {
     pub movement_mode: MovementMode,
     pub move_power: f32,
     pub jump_power: f32,
     pub skin_width: f32,
     pub grounded: bool,
-    pub rigid_body: RigidBody,
-    pub camera: Camera,
-    pub physics_engine: Arc<RefCell<PhysicsEngine>>,
+    pub fly_speed: f32,
+    pub rigid_body_pointer: RigidBodyPointer,
+    pub camera_pointer: CameraPointer,
 }
 impl Player {
-    pub fn new(physics_engine: Arc<RefCell<PhysicsEngine>>, camera: Camera, eye_to_foot: Vector, eye_to_head: Vector, movement_mode: MovementMode, move_power: f32, jump_power: f32, skin_width: f32) -> Self {
+    pub fn new(physics_engine: Arc<RefCell<PhysicsEngine>>, world: Arc<RefCell<Scene>>, camera: Camera, eye_to_foot: Vector, eye_to_head: Vector, movement_mode: MovementMode, move_power: f32, jump_power: f32, skin_width: f32) -> Self {
         let mut rigid_body = RigidBody::default();
+        rigid_body.owned_by_player = true;
         let max = camera.position + eye_to_head;
         let min = camera.position + eye_to_foot;
         let hitbox_height = max.y - min.y;
@@ -39,7 +48,7 @@ impl Player {
             center: Vector::new_vec3(0.0, -hitbox_height * 0.5 + eye_to_head.y, 0.0),
             radius,
         });
-         */
+        // */
         /*
         rigid_body.hitbox = Hitbox::CAPSULE(Capsule {
              a: Vector::new_vec3(0.0, eye_to_foot.y, 0.0),
@@ -50,19 +59,34 @@ impl Player {
         rigid_body.position = camera.position;
         rigid_body.friction_coefficient = 0.0;
 
+        let rb_index = physics_engine.borrow().rigid_bodies.len();
+        physics_engine.borrow_mut().rigid_bodies.push(rigid_body);
+        let cam_index = world.borrow().cameras.len();
+        world.borrow_mut().add_camera(camera);
+
         Player {
             movement_mode,
             move_power,
             jump_power,
             skin_width,
             grounded: false,
-            rigid_body,
-            camera,
-            physics_engine,
+            fly_speed: 1.0,
+            rigid_body_pointer: RigidBodyPointer {
+                physics_engine,
+                index: rb_index,
+            },
+            camera_pointer: CameraPointer {
+                world,
+                index: cam_index
+            },
         }
     }
-    pub fn step(&mut self, step: &Vector) {
-        self.camera.position = self.camera.position + step;
-        self.rigid_body.position = self.camera.position;
+
+    pub fn update_camera(&self, physics_engine: &PhysicsEngine) {
+        let camera = &mut self.camera_pointer.world.borrow_mut().cameras[self.camera_pointer.index];
+        let pos = physics_engine.rigid_bodies[self.rigid_body_pointer.index].position;
+        camera.update_matrices();
+        camera.update_frustum();
+        camera.position = pos;
     }
 }
