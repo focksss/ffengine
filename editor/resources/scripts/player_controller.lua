@@ -111,7 +111,7 @@ function MouseMoved()
     local player = Engine.physics_engine:get_player(0);
     local camera = player.camera
 
-    local new_rot = Vector.new(0.0, 0.0, 0.0, 0.0)
+    local new_rot = Vector.new()
 
     local rot_x_delta = Engine.controller.mouse_delta.y
     local rot_y_delta = Engine.controller.mouse_delta.x

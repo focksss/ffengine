@@ -1,143 +1,324 @@
 ---@meta
 
+---@type EngineClass
+Engine = nil
+
+---@type number
+dt = dt
+
 ---@class MovementMode
+---@field GHOST integer
+---@field PHYSICS integer
+---@field EDITOR integer
+MovementMode = MovementMode
+
 MovementMode = {
     GHOST = 0,
     PHYSICS = 1,
     EDITOR = 2,
 }
 
----@class GUIQuad
----@field set_color fun(self:GUIQuad, r:number, g:number, b:number, a:number):nil
-
----@class GUIText
----@field text_message string
----@field update_text fun(self:GUIText, text:string):nil
-
----@class GUINode
----@field quad GUIQuad
----@field text GUIText
-
----@class GUI
----@field ActiveNode GUINode
-
----@class Renderer
----@field gui GUI
-
----@class Flags
----@field reload_gui_queued boolean
----@field reload_shaders_queued boolean
----@field pause_rendering boolean
----@field screenshot_queued boolean
----@field draw_hitboxes boolean
----@field do_physics boolean
----@field reload_all_scripts_queued boolean
-
----@class MouseButton
-MouseButton = {
-    Left = 0,
-    Right = 1,
-    Middle = 2,
-    Back = 3,
-    Forward = 4,
-}
-
----@class Controller
----@field flags Flags
----@field cursor_position Vector
----@field scroll_delta Vector
----@field mouse_delta Vector
----@field cursor_locked boolean
----@field window_size Vector
----@field ButtonPressed MouseButton
----@field ButtonReleased MouseButton
----@field new_key_pressed fun(self:Controller, key: number):boolean
----@field key_pressed fun(self:Controller, key: number):boolean
----@field mouse_button_pressed fun(self:Controller, button: number):boolean
-
----@class Camera
----@field position Vector
----@field rotation Vector
----@field fov_y number
----@field aspect_ratio number
----@field near number
----@field far number
-
----@class RigidBody
----@field position Vector
----@field velocity Vector
-
----@class Player
----@field movement_mode number
----@field grounded boolean
----@field rigid_body RigidBody
----@field camera Camera
-
----@class PhysicsEngine
----@field gravity Vector
----@field get_player fun(self:PhysicsEngine, index:number):Player
----@field get_rigid_body fun(self:PhysicsEngine, index:number):RigidBody
-
 ---@class EngineClass
 ---@field renderer Renderer
 ---@field controller Controller
 ---@field physics_engine PhysicsEngine
 
----@type EngineClass
-Engine = nil
+    ---@class Renderer
+    ---@field gui GUI
 
----@type number
-dt = 0
+        ---@class GUI
+        ---@field ActiveNode GUINode
+
+            ---@class GUINode
+            ---@field quad GUIQuad
+            ---@field text GUIText
+
+                ---@class GUIQuad
+                ---@field set_color fun(self:GUIQuad, r:number, g:number, b:number, a:number):nil
+
+                ---@class GUIText
+                ---@field text_message string
+                ---@field update_text fun(self:GUIText, text:string):nil
+
+    ---@class Controller
+    ---@field flags Flags
+    ---@field cursor_position Vector
+    ---@field scroll_delta Vector
+    ---@field mouse_delta Vector
+    ---@field cursor_locked boolean
+    ---@field window_size Vector
+    ---@field ButtonPressed MouseButton
+    ---@field ButtonReleased MouseButton
+    ---@field new_key_pressed fun(self:Controller, key: integer):boolean
+    ---@field key_pressed fun(self:Controller, key: integer):boolean
+    ---@field mouse_button_pressed fun(self:Controller, button: integer):boolean
+
+        ---@class Flags
+        ---@field reload_gui_queued boolean
+        ---@field reload_shaders_queued boolean
+        ---@field pause_rendering boolean
+        ---@field screenshot_queued boolean
+        ---@field draw_hitboxes boolean
+        ---@field do_physics boolean
+        ---@field reload_all_scripts_queued boolean
+
+    ---@class PhysicsEngine
+    ---@field gravity Vector
+    ---@field get_player fun(self:PhysicsEngine, index:integer):Player
+    ---@field get_rigid_body fun(self:PhysicsEngine, index:integer):RigidBody
+
+    ---@class Player
+    ---@field movement_mode integer
+    ---@field grounded boolean
+    ---@field rigid_body RigidBody
+    ---@field camera Camera
+
+        ---@class RigidBody
+        ---@field position Vector
+        ---@field velocity Vector
+
+        ---@class Camera
+        ---@field position Vector
+        ---@field rotation Vector
+        ---@field fov_y number
+        ---@field aspect_ratio number
+        ---@field near number
+        ---@field far number
+
+
 
 ---@class Vector
----@operator add(Vector): Vector
----@operator sub(Vector): Vector
----@operator mul(Vector|number): Vector
----@operator div(Vector): Vector
----@operator unm: Vector
 ---@field x number
 ---@field y number
 ---@field z number
 ---@field w number
-
----@param x number
----@param y number
----@param z number
----@param w number
----@return Vector
-function Vector.new_vec4(x, y, z, w) end
-
----@param x number
----@param y number
----@param z number
----@return Vector
-function Vector.new_vec3(x, y, z) end
-
----@param x number
----@param y number
----@return Vector
-function Vector.new_vec2(x, y) end
-
----@param x number
----@return Vector
-function Vector.new_vec(x) end
-
----@return Vector
-function Vector.new() end
-
----@return Vector
-function Vector.new_empty_quat() end
-
----@return Vector
-function Vector:normalize_3d() end
-
----@param rot Vector
----@return Vector
-function Vector:rotate_by_euler(rot) end
+---@field new_vec4 fun(x:number, y:number, z:number, w:number):Vector
+---@field new_vec3 fun(x:number, y:number, z:number):Vector
+---@field new_vec2 fun(x:number, y:number):Vector
+---@field new_vec fun(x:number):Vector
+---@field new fun():Vector
+---@field new_empty_quat fun():Vector
+---@field normalize_3d fun(self:Vector):Vector
+---@field rotate_by_euler fun(self:Vector, rot:Vector):Vector
 
 Vector = Vector
 
+
+---@class MouseButton
+---@field Left integer
+---@field Right integer
+---@field Middle integer
+---@field Back integer
+---@field Forward integer
+MouseButton = MouseButton
+
+MouseButton = {
+    Left = 0,
+    Right = 1,
+    Middle = 2,
+    Back = 3,
+    Forard = 4,
+}
+
+
 ---@class KeyCode
+---@field Backquote integer
+---@field Section integer
+---@field Backslash integer
+---@field BracketLeft integer
+---@field BracketRight integer
+---@field Comma integer
+---@field Digit0 integer
+---@field Digit1 integer
+---@field Digit2 integer
+---@field Digit3 integer
+---@field Digit4 integer
+---@field Digit5 integer
+---@field Digit6 integer
+---@field Digit7 integer
+---@field Digit8 integer
+---@field Digit9 integer
+---@field Equal integer
+---@field IntlBackslash integer
+---@field IntlRo integer
+---@field IntlYen integer
+---@field KeyA integer
+---@field KeyB integer
+---@field KeyC integer
+---@field KeyD integer
+---@field KeyE integer
+---@field KeyF integer
+---@field KeyG integer
+---@field KeyH integer
+---@field KeyI integer
+---@field KeyJ integer
+---@field KeyK integer
+---@field KeyL integer
+---@field KeyM integer
+---@field KeyN integer
+---@field KeyO integer
+---@field KeyP integer
+---@field KeyQ integer
+---@field KeyR integer
+---@field KeyS integer
+---@field KeyT integer
+---@field KeyU integer
+---@field KeyV integer
+---@field KeyW integer
+---@field KeyX integer
+---@field KeyY integer
+---@field KeyZ integer
+---@field Minus integer
+---@field Period integer
+---@field Quote integer
+---@field Semicolon integer
+---@field Slash integer
+---@field AltLeft integer
+---@field AltRight integer
+---@field Backspace integer
+---@field CapsLock integer
+---@field ContextMenu integer
+---@field ControlLeft integer
+---@field ControlRight integer
+---@field Enter integer
+---@field SuperLeft integer
+---@field SuperRight integer
+---@field ShiftLeft integer
+---@field ShiftRight integer
+---@field Space integer
+---@field Tab integer
+---@field Convert integer
+---@field KanaMode integer
+---@field Lang1 integer
+---@field Lang2 integer
+---@field Lang3 integer
+---@field Lang4 integer
+---@field Lang5 integer
+---@field NonConvert integer
+---@field Delete integer
+---@field End integer
+---@field Help integer
+---@field Home integer
+---@field Insert integer
+---@field PageDown integer
+---@field PageUp integer
+---@field ArrowDown integer
+---@field ArrowLeft integer
+---@field ArrowRight integer
+---@field ArrowUp integer
+---@field NumLock integer
+---@field Numpad0 integer
+---@field Numpad1 integer
+---@field Numpad2 integer
+---@field Numpad3 integer
+---@field Numpad4 integer
+---@field Numpad5 integer
+---@field Numpad6 integer
+---@field Numpad7 integer
+---@field Numpad8 integer
+---@field Numpad9 integer
+---@field NumpadAdd integer
+---@field NumpadBackspace integer
+---@field NumpadClear integer
+---@field NumpadClearEntry integer
+---@field NumpadComma integer
+---@field NumpadDecimal integer
+---@field NumpadDivide integer
+---@field NumpadEnter integer
+---@field NumpadEqual integer
+---@field NumpadHash integer
+---@field NumpadMemoryAdd integer
+---@field NumpadMemoryClear integer
+---@field NumpadMemoryRecall integer
+---@field NumpadMemoryStore integer
+---@field NumpadMemorySubtract integer
+---@field NumpadMultiply integer
+---@field NumpadParenLeft integer
+---@field NumpadParenRight integer
+---@field NumpadStar integer
+---@field NumpadSubtract integer
+---@field Escape integer
+---@field Fn integer
+---@field FnLock integer
+---@field PrintScreen integer
+---@field ScrollLock integer
+---@field Pause integer
+---@field BrowserBack integer
+---@field BrowserFavorites integer
+---@field BrowserForward integer
+---@field BrowserHome integer
+---@field BrowserRefresh integer
+---@field BrowserSearch integer
+---@field BrowserStop integer
+---@field Eject integer
+---@field LaunchApp1 integer
+---@field LaunchApp2 integer
+---@field LaunchMail integer
+---@field MediaPlayPause integer
+---@field MediaSelect integer
+---@field MediaStop integer
+---@field MediaTrackNext integer
+---@field MediaTrackPrevious integer
+---@field Power integer
+---@field Sleep integer
+---@field AudioVolumeDown integer
+---@field AudioVolumeMute integer
+---@field AudioVolumeUp integer
+---@field WakeUp integer
+---@field Meta integer
+---@field Hyper integer
+---@field Turbo integer
+---@field Abort integer
+---@field Resume integer
+---@field Suspend integer
+---@field Again integer
+---@field Copy integer
+---@field Cut integer
+---@field Find integer
+---@field Open integer
+---@field Paste integer
+---@field Props integer
+---@field Select integer
+---@field Undo integer
+---@field Hiragana integer
+---@field Katakana integer
+---@field F1 integer
+---@field F2 integer
+---@field F3 integer
+---@field F4 integer
+---@field F5 integer
+---@field F6 integer
+---@field F7 integer
+---@field F8 integer
+---@field F9 integer
+---@field F10 integer
+---@field F11 integer
+---@field F12 integer
+---@field F13 integer
+---@field F14 integer
+---@field F15 integer
+---@field F16 integer
+---@field F17 integer
+---@field F18 integer
+---@field F19 integer
+---@field F20 integer
+---@field F21 integer
+---@field F22 integer
+---@field F23 integer
+---@field F24 integer
+---@field F25 integer
+---@field F26 integer
+---@field F27 integer
+---@field F28 integer
+---@field F29 integer
+---@field F30 integer
+---@field F31 integer
+---@field F32 integer
+---@field F33 integer
+---@field F34 integer
+---@field F35 integer
+KeyCode = KeyCode
+
 KeyCode = {
     Backquote = 0,
     Section = 1,
