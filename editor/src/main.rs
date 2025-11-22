@@ -53,6 +53,7 @@ fn main() { unsafe {
         //world.models[0].transform_roots(&Vector::new_vec3(1.0, 1.0, 2.0), &Vector::new_vec3(0.0, 0.0, 0.0), &Vector::new_vec3(2.0, 1.0, 1.0));
         //world.preload_model(Model::new(&PathBuf::from("resources/models/coordinateSpace/coordinateSpace.gltf").to_str().unwrap()));
 
+        /*
         world.add_model(base, Model::new(&PathBuf::from("editor/resources/models/collisionTest/collisionTestNoWalls.gltf").to_str().unwrap()));
 
         world.add_model(base, Model::new(&PathBuf::from("editor/resources/models/demoBall/scene.gltf").to_str().unwrap()));
@@ -77,6 +78,34 @@ fn main() { unsafe {
         physics_engine.rigid_bodies[2].set_mass(1.0);
         physics_engine.rigid_bodies[2].position = Vector::new_vec3(0.5, 15.0, 0.5);
         physics_engine.rigid_bodies[2].restitution_coefficient = 1.0;
+        */
+        // /*
+        world.add_model(base, Model::new(&PathBuf::from("editor/resources/models/sphereScene/scene.gltf").to_str().unwrap()));
+
+        world.add_model(base, Model::new(&PathBuf::from("editor/resources/models/demoBall/scene.gltf").to_str().unwrap()));
+        world.add_model(base, Model::new(&PathBuf::from("editor/resources/models/demoBall/scene.gltf").to_str().unwrap()));
+        world.add_model(base, Model::new("C:\\Graphics\\assets\\grassblockGLTF\\grassblock.gltf"));
+
+        physics_engine.add_all_nodes_from_model(&world, 1, 3);
+        physics_engine.add_all_nodes_from_model(&world, 2, 3);
+        physics_engine.add_all_nodes_from_model(&world, 3, 3);
+        physics_engine.add_all_nodes_from_model(&world, 0, 3);
+        physics_engine.rigid_bodies[0].set_static(false);
+        physics_engine.rigid_bodies[0].set_mass(1.0);
+        physics_engine.rigid_bodies[0].position = Vector::new_vec3(0.5, 10.0, 0.5);
+        physics_engine.rigid_bodies[0].restitution_coefficient = 1.0;
+
+        physics_engine.rigid_bodies[1].set_static(false);
+        physics_engine.rigid_bodies[1].set_mass(1.0);
+        physics_engine.rigid_bodies[1].position = Vector::new_vec3(0.5, 5.0, 0.5);
+        physics_engine.rigid_bodies[1].restitution_coefficient = 1.0;
+
+        physics_engine.rigid_bodies[2].set_static(false);
+        physics_engine.rigid_bodies[2].set_mass(1.0);
+        physics_engine.rigid_bodies[2].position = Vector::new_vec3(0.5, 15.0, 0.5);
+        physics_engine.rigid_bodies[2].restitution_coefficient = 1.0;
+        // */
+
 
         renderer.scene_renderer.update_world_textures_all_frames(base, world);
         renderer.gui.borrow_mut().load_from_file(base, "editor\\resources\\gui\\default\\default.gui");
@@ -96,7 +125,7 @@ fn main() { unsafe {
         ),
         Vector::new_vec3(-0.15, -0.85, -0.15),
         Vector::new_vec3(0.15, 0.15, 0.15),
-        MovementMode::GHOST,
+        MovementMode::EDITOR,
         0.2,
         4.5,
         0.0015

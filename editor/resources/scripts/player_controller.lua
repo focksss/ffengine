@@ -73,7 +73,7 @@ function Update()
             rigid_body.velocity = Vector.new()
         end
 
-    else ---editor camera mode
+    else ---editor camera mode this tests
         if Engine.controller:mouse_button_pressed(MouseButton.Middle) then
             local delta_pixels = Engine.controller.cursor_position - initial_mouse_pos;
 

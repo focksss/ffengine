@@ -10,6 +10,7 @@ use crate::gui::gui::GUI;
 use crate::math::Vector;
 use crate::physics::hitboxes::hitbox::Hitbox;
 use crate::physics::hitboxes::hitbox::Hitbox::OBB;
+use crate::physics::hitboxes::hitbox::Hitbox::SPHERE;
 use crate::physics::hitboxes::mesh::Bvh;
 use crate::physics::physics_engine::PhysicsEngine;
 use crate::physics::player::Player;
@@ -246,6 +247,21 @@ impl Renderer {
                             view_proj: (&camera.projection_matrix * &camera.view_matrix).data,
                             center: (a.center.rotate_by_quat(&rigid_body.orientation) + rigid_body.position).to_array4(),
                             half_extent: a.half_extents.to_array4(),
+                            quat: rigid_body.orientation.to_array4(),
+                            color: Vector::new_vec4(0.0, 0.0, 1.0, 0.3).to_array4()
+                        };
+
+                        self.device.cmd_push_constants(frame_command_buffer, self.hitbox_renderpass.pipeline_layout, ShaderStageFlags::ALL_GRAPHICS, 0, slice::from_raw_parts(
+                            &constants as *const HitboxPushConstantSendable as *const u8,
+                            size_of::<HitboxPushConstantSendable>(),
+                        ));
+                        self.device.cmd_draw(frame_command_buffer, 36, 1, 0, 0);
+                    },
+                    SPHERE(a) => {
+                        let constants = HitboxPushConstantSendable {
+                            view_proj: (&camera.projection_matrix * &camera.view_matrix).data,
+                            center: (a.center.rotate_by_quat(&rigid_body.orientation) + rigid_body.position).to_array4(),
+                            half_extent: Vector::new_vec(a.radius).to_array4(),
                             quat: rigid_body.orientation.to_array4(),
                             color: Vector::new_vec4(0.0, 0.0, 1.0, 0.3).to_array4()
                         };

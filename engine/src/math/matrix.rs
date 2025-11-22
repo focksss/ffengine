@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use std::ops::Mul;
+use std::ops::{Add, AddAssign, Mul};
 use crate::math::Vector;
 
 const PI: f32 = std::f32::consts::PI;
@@ -244,6 +244,23 @@ impl Matrix {
     }
     pub fn set_and_mul_mat4(&mut self, other: &Matrix) {
         self.data = self.mul_mat4(other).data;
+    }
+
+    pub fn add_mat4(&self, other: &Matrix) -> Matrix {
+        let mut result = Matrix::new_empty();
+        for row in 0..4 {
+            for col in 0..4 {
+                result.set(row, col, self.get(row, col) + other.get(row, col));
+            }
+        }
+        result
+    }
+    pub fn add_mat4_to_self(&mut self, other: &Matrix) {
+        for row in 0..4 {
+            for col in 0..4 {
+                self.set(row, col, self.get(row, col) + other.get(row, col));
+            }
+        }
     }
 
     pub fn mul_float(&self, v: f32) -> Matrix {
@@ -520,5 +537,42 @@ impl Mul<Vector> for Matrix {
     type Output = Vector;
     fn mul(self, vector: Vector) -> Vector {
         &self * &vector
+    }
+}
+
+impl<'a, 'b> Add<&'b Matrix> for &'a Matrix {
+    type Output = Matrix;
+
+    fn add(self, other: &'b Matrix) -> Matrix {
+        self.add_mat4(other)
+    }
+}
+impl<'a> Add<Matrix> for &'a Matrix {
+    type Output = Matrix;
+    fn add(self, other: Matrix) -> Matrix {
+        self + &other
+    }
+}
+impl<'b> Add<&'b Matrix> for Matrix {
+    type Output = Matrix;
+    fn add(self, other: &'b Matrix) -> Matrix {
+        &self + other
+    }
+}
+impl Add<Matrix> for Matrix {
+    type Output = Matrix;
+    fn add(self, other: Matrix) -> Matrix {
+        &self + &other
+    }
+}
+
+impl AddAssign<&Matrix> for Matrix {
+    fn add_assign(&mut self, other: &Matrix) {
+        self.add_mat4_to_self(other);
+    }
+}
+impl AddAssign<Matrix> for Matrix {
+    fn add_assign(&mut self, other: Matrix) {
+        *self += &other;
     }
 }
