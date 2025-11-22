@@ -38,12 +38,30 @@ impl UserData for Vector {
     }
 
     fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
-        methods.add_function("new", |_, (x, y, z, w): (f32, f32, f32, f32)| {
+        methods.add_function("new_vec4", |_, (x, y, z, w): (f32, f32, f32, f32)| {
             Ok(Vector::new_vec4(x, y, z, w))
         });
+        methods.add_function("new", |_, ()| {
+            Ok(Vector::new_empty())
+        });
+        methods.add_function("new_empty_quat", |_, ()| {
+            Ok(Vector::new_empty_quat())
+        });
+        methods.add_function("new_vec3", |_, (x, y, z): (f32, f32, f32)| {
+            Ok(Vector::new_vec3(x, y, z))
+        });
+        methods.add_function("new_vec2", |_, (x, y): (f32, f32)| {
+            Ok(Vector::new_vec2(x, y))
+        });
+        methods.add_function("new_vec", |_, x: f32| {
+            Ok(Vector::new_vec(x))
+        });
 
-        methods.add_method("normalize3", |_, this, ()| {
+        methods.add_method("normalize_3d", |_, this, ()| {
             Ok(this.normalize_3d())
+        });
+        methods.add_method("rotate_by_euler", |_, this, rot: Vector| {
+            Ok(this.rotate_by_euler(&rot))
         });
 
         methods.add_meta_method(MetaMethod::Add, |_, this, other: Vector| {

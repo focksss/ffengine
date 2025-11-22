@@ -9,7 +9,7 @@ use crate::app::EngineRef;
 use crate::gui::gui::GUI;
 use crate::math::Vector;
 use crate::physics::player::MovementMode;
-use crate::scripting::engine_api::client_api::controller_api::LuaKeyCode;
+use crate::scripting::engine_api::client_api::controller_api::{LuaKeyCode, LuaMouseButton};
 use crate::scripting::engine_api::engine_api;
 use crate::scripting::engine_api::gui_api::gui_api::{GUIRef};
 
@@ -24,6 +24,8 @@ pub struct Script {
     update_fn: Option<mlua::RegistryKey>,
     scroll_fn: Option<mlua::RegistryKey>,
     mouse_moved_fn: Option<mlua::RegistryKey>,
+    mouse_button_pressed_fn: Option<mlua::RegistryKey>,
+    mouse_button_released_fn: Option<mlua::RegistryKey>,
     has_started: bool,
 }
 
@@ -56,6 +58,7 @@ impl Lua {
             let lua = &script_engine_ref.as_ref().unwrap().lua;
 
 
+            LuaMouseButton::register_to_lua(lua)?;
             LuaKeyCode::register_to_lua(lua)?;
             MovementMode::register_to_lua(&lua)?;
             Vector::register_to_lua(&lua)?;
@@ -112,6 +115,12 @@ impl Lua {
         let mouse_moved_fn = environment.get::<_, Option<mlua::Function>>("MouseMoved")?
             .map(|f| self.lua.create_registry_value(f))
             .transpose()?;
+        let mouse_button_pressed_fn = environment.get::<_, Option<mlua::Function>>("MouseButtonPressed")?
+            .map(|f| self.lua.create_registry_value(f))
+            .transpose()?;
+        let mouse_button_released_fn = environment.get::<_, Option<mlua::Function>>("MouseButtonReleased")?
+            .map(|f| self.lua.create_registry_value(f))
+            .transpose()?;
 
         if let Some(awake_fn) = &on_awake_fn {
             self.call_method_by_key(awake_fn).expect("failed to call Awake method");
@@ -124,6 +133,8 @@ impl Lua {
             update_fn,
             scroll_fn,
             mouse_moved_fn,
+            mouse_button_pressed_fn,
+            mouse_button_released_fn,
             has_started: false,
         };
 
@@ -317,6 +328,30 @@ impl Lua {
     }
     pub fn run_mouse_moved_methods() -> Result<(), mlua::Error> {
         Self::with_mut(|lua| {lua.run_mouse_moved_methods_impl()})
+    }
+
+    fn run_mouse_button_pressed_methods_impl(&mut self) -> Result<(), mlua::Error> {
+        for i in 0..self.scripts.len() {
+            if self.scripts[i].mouse_button_pressed_fn.is_some() {
+                self.call_method_by_key(self.scripts[i].mouse_button_pressed_fn.as_ref().unwrap())?
+            }
+        }
+        Ok(())
+    }
+    pub fn run_mouse_button_pressed_methods() -> Result<(), mlua::Error> {
+        Self::with_mut(|lua| {lua.run_mouse_button_pressed_methods_impl()})
+    }
+
+    fn run_mouse_button_released_methods_impl(&mut self) -> Result<(), mlua::Error> {
+        for i in 0..self.scripts.len() {
+            if self.scripts[i].mouse_button_released_fn.is_some() {
+                self.call_method_by_key(self.scripts[i].mouse_button_released_fn.as_ref().unwrap())?
+            }
+        }
+        Ok(())
+    }
+    pub fn run_mouse_button_released_methods() -> Result<(), mlua::Error> {
+        Self::with_mut(|lua| {lua.run_mouse_button_released_methods_impl()})
     }
 
     pub fn with_lua<F, R>(f: F) -> R

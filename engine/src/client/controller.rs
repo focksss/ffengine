@@ -32,6 +32,11 @@ pub struct Controller {
 
     pub pressed_mouse_buttons: HashSet<MouseButton>,
 
+    /// Set to the last pressed button, to be used in scripts responding to MouseButtonPressed
+    pub button_pressed: MouseButton,
+    /// Set to the last released button, to be used in scripts responding to MouseButtonReleased
+    pub button_released: MouseButton,
+
     pub mouse_delta: (f32, f32),
     pub scroll_delta: (f32, f32),
     pub cursor_locked: bool,
@@ -57,6 +62,8 @@ impl Controller {
             cursor_locked: false,
             saved_cursor_pos: Default::default(),
             paused: false,
+            button_pressed: MouseButton::Left,
+            button_released: MouseButton::Left,
         }
     }
     pub(crate) fn window(&self) -> &winit::window::Window {
@@ -223,6 +230,8 @@ impl Controller {
     pub fn handle_event<T>(controller_ref: Arc<RefCell<Controller>>, event: Event<T>, elwp: &EventLoopWindowTarget<T>) {
         let mut should_scroll_event = false;
         let mut should_mouse_move_event = false;
+        let mut should_mouse_button_pressed_event = false;
+        let mut should_mouse_button_released_event = false;
         {
             let controller = &mut controller_ref.borrow_mut();
             match event {
@@ -264,9 +273,13 @@ impl Controller {
                 } => {
                     match state {
                         ElementState::Pressed => {
+                            controller.button_pressed = button;
+                            should_mouse_button_pressed_event = true;
                             if !controller.pressed_mouse_buttons.contains(&button) { controller.pressed_mouse_buttons.insert(button.clone()); }
                         }
                         ElementState::Released => {
+                            controller.button_released = button;
+                            should_mouse_button_released_event = true;
                             if controller.pressed_mouse_buttons.contains(&button) { controller.pressed_mouse_buttons.remove(&button); }
                         }
                     }
@@ -332,7 +345,13 @@ impl Controller {
             Lua::run_scroll_methods().expect("failed to run scroll methods");
         }
         if should_mouse_move_event {
-            Lua::run_mouse_moved_methods().expect("failed to run scroll methods");
+            Lua::run_mouse_moved_methods().expect("failed to run mouse moved methods");
+        }
+        if should_mouse_button_pressed_event {
+            Lua::run_mouse_button_pressed_methods().expect("failed to run mouse button pressed methods");
+        }
+        if should_mouse_button_released_event {
+            Lua::run_mouse_button_released_methods().expect("failed to run mouse button pressed methods");
         }
     }
 }

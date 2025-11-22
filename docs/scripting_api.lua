@@ -18,17 +18,6 @@ MovementMode = {
     EDITOR = 2,
 }
 
----@class Vector
----@field x number
----@field y number
----@field z number
----@field w number
-
----@field new fun(x:number, y:number, z:number, w:number):Vector
----@field normalize3d fun(in:Vector):Vector
-
-Vector = Vector
-
 ---@class EngineClass
 ---@field renderer Renderer
 ---@field controller Controller
@@ -58,8 +47,11 @@ Vector = Vector
     ---@field mouse_delta Vector
     ---@field cursor_locked boolean
     ---@field window_size Vector
+    ---@field ButtonPressed MouseButton
+    ---@field ButtonReleased MouseButton
     ---@field new_key_pressed fun(self:Controller, key: integer):boolean
     ---@field key_pressed fun(self:Controller, key: integer):boolean
+    ---@field mouse_button_pressed fun(self:Controller, button: integer):boolean
 
         ---@class Flags
         ---@field reload_gui_queued boolean
@@ -92,6 +84,41 @@ Vector = Vector
         ---@field aspect_ratio number
         ---@field near number
         ---@field far number
+
+
+
+---@class Vector
+---@field x number
+---@field y number
+---@field z number
+---@field w number
+---@field new_vec4 fun(x:number, y:number, z:number, w:number):Vector
+---@field new_vec3 fun(x:number, y:number, z:number):Vector
+---@field new_vec2 fun(x:number, y:number):Vector
+---@field new_vec fun(x:number):Vector
+---@field new fun():Vector
+---@field new_empty_quat fun():Vector
+---@field normalize_3d fun(self:Vector):Vector
+---@field rotate_by_euler fun(self:Vector, rot:Vector):Vector
+
+Vector = Vector
+
+
+---@class MouseButton
+---@field Left integer
+---@field Right integer
+---@field Middle integer
+---@field Back integer
+---@field Forward integer
+MouseButton = MouseButton
+
+MouseButton = {
+    Left = 0,
+    Right = 1,
+    Middle = 2,
+    Back = 3,
+    Forard = 4,
+}
 
 
 ---@class KeyCode

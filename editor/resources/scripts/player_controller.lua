@@ -1,5 +1,16 @@
 local fly_speed = 1.0
 local sense = 0.001
+local editor_cam_move_sense = 0.002
+local editor_cam_rot_sense = 0.005
+--- editor camera vars
+local editor_target = Vector.new()
+local editor_rotation = Vector.new()
+local editor_distance = 5.0
+--- for tracking mouse when moving editor camera with middle click
+local initial_mouse_pos = Vector.new()
+local initial_value = Vector.new()
+--- false signifies changing position (for editor camera)
+local changing_rotation = false
 
 function Update()
     local player = Engine.physics_engine:get_player(0);
@@ -13,57 +24,87 @@ function Update()
         Engine.controller.cursor_locked = not Engine.controller.cursor_locked
     end
 
-    local move_direction = Vector.new(0.0, 0.0, 0.0, 0.0)
-    local rot = camera.rotation
-    if Engine.controller:key_pressed(KeyCode.KeyW) then
-        move_direction.x = move_direction.x + math.cos(rot.y + math.pi * 0.5)
-        move_direction.z = move_direction.z - math.sin(rot.y + math.pi * 0.5)
-    end
-    if Engine.controller:key_pressed(KeyCode.KeyA) then
-        move_direction.x = move_direction.x - math.cos(rot.y)
-        move_direction.z = move_direction.z + math.sin(rot.y)
-    end
-    if Engine.controller:key_pressed(KeyCode.KeyS) then
-        move_direction.x = move_direction.x - math.cos(rot.y + math.pi * 0.5)
-        move_direction.z = move_direction.z + math.sin(rot.y + math.pi * 0.5)
-    end
-    if Engine.controller:key_pressed(KeyCode.KeyD) then
-        move_direction.x = move_direction.x + math.cos(rot.y)
-        move_direction.z = move_direction.z - math.sin(rot.y)
-    end
+    if player.movement_mode ~= MovementMode.EDITOR then
+        local move_direction = Vector.new()
+        local rot = camera.rotation
+        if Engine.controller:key_pressed(KeyCode.KeyW) then
+            move_direction.x = move_direction.x + math.cos(rot.y + math.pi * 0.5)
+            move_direction.z = move_direction.z - math.sin(rot.y + math.pi * 0.5)
+        end
+        if Engine.controller:key_pressed(KeyCode.KeyA) then
+            move_direction.x = move_direction.x - math.cos(rot.y)
+            move_direction.z = move_direction.z + math.sin(rot.y)
+        end
+        if Engine.controller:key_pressed(KeyCode.KeyS) then
+            move_direction.x = move_direction.x - math.cos(rot.y + math.pi * 0.5)
+            move_direction.z = move_direction.z + math.sin(rot.y + math.pi * 0.5)
+        end
+        if Engine.controller:key_pressed(KeyCode.KeyD) then
+            move_direction.x = move_direction.x + math.cos(rot.y)
+            move_direction.z = move_direction.z - math.sin(rot.y)
+        end
 
-    if Engine.controller:key_pressed(KeyCode.Space) then
-        if player.movement_mode == MovementMode.PHYSICS then
-            if player.grounded then
+        if Engine.controller:key_pressed(KeyCode.Space) then
+            if player.movement_mode == MovementMode.PHYSICS then
+                if player.grounded then
+                    move_direction.y = move_direction.y + 1.0
+                end
+            else
                 move_direction.y = move_direction.y + 1.0
             end
-        else
-            move_direction.y = move_direction.y + 1.0
-        end
-    end
-
-    if player.movement_mode == MovementMode.GHOST then
-        rigid_body.velocity = Vector.new(0.0, 0.0, 0.0, 0.0)
-
-        if Engine.controller:key_pressed(KeyCode.ShiftLeft) then
-            move_direction.y = move_direction.y - 1.0
         end
 
-        rigid_body.position = rigid_body.position + (move_direction:normalize3() * fly_speed * dt)
-    elseif player.movement_mode == MovementMode.PHYSICS then
-        local dimensional_speed = Vector.new(1.0, 3.0, 1.0, 0.0)
+        if player.movement_mode == MovementMode.GHOST then
+            rigid_body.velocity = Vector.new()
 
-        rigid_body.velocity = rigid_body.velocity + (move_direction * dimensional_speed * dt)
-    end
+            if Engine.controller:key_pressed(KeyCode.ShiftLeft) then
+                move_direction.y = move_direction.y - 1.0
+            end
 
-    if rigid_body.position.y < -20.0 then
-        rigid_body.position = Vector.new(0.0, 10.0, 0.0, 0.0)
-        rigid_body.velocity = Vector.new(0.0, 0.0, 0.0, 0.0)
+            rigid_body.position = rigid_body.position + (move_direction:normalize_3d() * fly_speed * dt)
+        elseif player.movement_mode == MovementMode.PHYSICS then
+            local dimensional_speed = Vector.new_vec3(1.0, 3.0, 1.0)
+
+            rigid_body.velocity = rigid_body.velocity + (move_direction:normalize_3d() * dimensional_speed * dt)
+        end
+
+        if rigid_body.position.y < -20.0 then
+            rigid_body.position = Vector.new_vec3(0.0, 10.0, 0.0)
+            rigid_body.velocity = Vector.new()
+        end
+
+    else ---editor camera mode
+        if Engine.controller:mouse_button_pressed(MouseButton.Middle) then
+            local delta_pixels = Engine.controller.cursor_position - initial_mouse_pos;
+
+            if changing_rotation then
+                editor_rotation = initial_value - Vector.new_vec2(delta_pixels.y, delta_pixels.x) * editor_cam_rot_sense
+            else
+                local horizontal_axis = Vector.new_vec3(1.0, 0.0, 0.0):rotate_by_euler(editor_rotation)
+                local vertical_axis = Vector.new_vec3(0.0, 1.0, 0.0):rotate_by_euler(editor_rotation)
+                local horiz_add = horizontal_axis * delta_pixels.x * editor_distance * editor_cam_move_sense * -1.0
+                local vert_add = vertical_axis * delta_pixels.y * editor_distance * editor_cam_move_sense
+                editor_target = initial_value + horiz_add + vert_add
+            end
+        end
+
+        editor_rotation.z = 0.0
+        rigid_body.velocity = Vector.new()
+        camera.position = editor_target + (Vector.new_vec3(0.0, 0.0, 1.0):rotate_by_euler(editor_rotation) * editor_distance)
+        camera.rotation = editor_rotation
     end
 end
 
 function MouseScrolled()
-    fly_speed = fly_speed + 0.1 * Engine.controller.scroll_delta.y
+    local player = Engine.physics_engine:get_player(0);
+    if player.movement_mode == MovementMode.GHOST then
+        fly_speed = fly_speed * math.pow(1.1, Engine.controller.scroll_delta.y)
+                fly_speed = math.max(0.01, fly_speed)
+    elseif player.movement_mode == MovementMode.EDITOR then
+        local zoom_factor = 1.0 - (Engine.controller.scroll_delta.y * 0.1)
+        editor_distance = editor_distance * zoom_factor
+        editor_distance = math.max(0.01, editor_distance)
+    end
 end
 
 function MouseMoved()
@@ -80,4 +121,18 @@ function MouseMoved()
     new_rot.x = math.max(-math.pi * 0.5, math.min(new_rot.x, math.pi * 0.5))
 
     camera.rotation = new_rot
+end
+
+function MouseButtonPressed()
+    local player = Engine.physics_engine:get_player(0);
+    if (Engine.controller.ButtonPressed == MouseButton.Middle) and (player.movement_mode == MovementMode.EDITOR) then
+        initial_mouse_pos = Engine.controller.cursor_position
+        if Engine.controller:key_pressed(KeyCode.ShiftLeft) then
+            initial_value = editor_target
+            changing_rotation = false
+        else
+            initial_value = player.camera.rotation
+            changing_rotation = true
+        end
+    end
 end

@@ -2,7 +2,9 @@ use std::cell::RefCell;
 use std::sync::Arc;
 use mlua::{FromLua, IntoLua, UserData, UserDataFields, UserDataMethods, Value};
 use winit::dpi::PhysicalPosition;
+use winit::event::MouseButton;
 use winit::keyboard::{KeyCode, PhysicalKey};
+use winit::keyboard::NativeKey::MacOS;
 use winit::window::CursorGrabMode;
 use crate::client::controller::{Controller, Flags};
 use crate::math::Vector;
@@ -59,6 +61,13 @@ impl UserData for ControllerRef {
             let window = borrowed.window();
             Ok(Vector::new_vec2(window.inner_size().width as f32, window.inner_size().height as f32))
         });
+
+        fields.add_field_method_get("ButtonPressed", |_, this| {
+            Ok(LuaMouseButton(this.0.borrow().button_pressed))
+        });
+        fields.add_field_method_get("ButtonReleased", |_, this| {
+            Ok(LuaMouseButton(this.0.borrow().button_released))
+        });
     }
     fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
         methods.add_method("new_key_pressed", |_, this, key: LuaKeyCode| {
@@ -68,6 +77,11 @@ impl UserData for ControllerRef {
         methods.add_method("key_pressed", |_, this, key: LuaKeyCode| {
             let physical_key = PhysicalKey::from(key.0);
             Ok(this.0.borrow().pressed_keys.contains(&physical_key))
+        });
+
+        methods.add_method("mouse_button_pressed", |_, this, key: LuaMouseButton| {
+            let mouse_button = MouseButton::from(key.0);
+            Ok(this.0.borrow().pressed_mouse_buttons.contains(&mouse_button))
         });
     }
 }
@@ -119,6 +133,45 @@ impl UserData for FlagsRef {
     }
 }
 
+pub struct LuaMouseButton(pub MouseButton);
+impl RegisterToLua for LuaMouseButton {
+    fn register_to_lua(lua: &mlua::Lua) -> mlua::Result<()> {
+        let globals = lua.globals();
+        let table = lua.create_table()?;
+        for (idx, key) in ALL_MOUSE_BUTTONS.iter().enumerate() {
+            table.set(format!("{:?}", key), idx as u32)?;
+        }
+        globals.set("MouseButton", table)?;
+        Ok(())
+    }
+}
+impl<'lua> IntoLua<'lua> for LuaMouseButton {
+    fn into_lua(self, lua: &'lua mlua::Lua) -> mlua::Result<Value<'lua>> {
+        let index = ALL_MOUSE_BUTTONS
+            .iter()
+            .position(|k| *k == self.0)
+            .ok_or_else(|| mlua::Error::ToLuaConversionError {
+                from: "LuaMouseButton",
+                to: "Value",
+                message: Some("MouseButton not found in ALL_MOUSE_BUTTONS".into()),
+            })?;
+        (index as u32).into_lua(lua)
+    }
+}
+impl<'lua> FromLua<'lua> for LuaMouseButton {
+    fn from_lua(value: Value<'lua>, _: &'lua mlua::Lua) -> mlua::Result<Self> {
+        if let Value::Integer(i) = value {
+            if i >= 0 && (i as usize) < ALL_MOUSE_BUTTONS.len() {
+                return Ok(LuaMouseButton(ALL_MOUSE_BUTTONS[i as usize]));
+            }
+        }
+        Err(mlua::Error::FromLuaConversionError {
+            from: value.type_name(),
+            to: "LuaMouseButton",
+            message: Some("invalid MouseButton value".into()),
+        })
+    }
+}
 pub struct LuaKeyCode(pub KeyCode);
 impl RegisterToLua for LuaKeyCode {
     fn register_to_lua(lua: &mlua::Lua) -> mlua::Result<()> {
@@ -158,6 +211,13 @@ impl<'lua> FromLua<'lua> for LuaKeyCode {
         })
     }
 }
+const ALL_MOUSE_BUTTONS: &[MouseButton] = &[
+    MouseButton::Left,
+    MouseButton::Right,
+    MouseButton::Middle,
+    MouseButton::Back,
+    MouseButton::Forward,
+];
 const ALL_KEYS: &[KeyCode] = &[
     KeyCode::Backquote,
     KeyCode::Backslash,
