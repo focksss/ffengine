@@ -656,6 +656,7 @@ dependencies = [
  "jpeg-decoder",
  "json",
  "mlua",
+ "num-traits",
  "png",
  "rand 0.10.0-rc.0",
  "rayon",

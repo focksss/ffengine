@@ -6,6 +6,10 @@ function Update()
     fps_counter = fps_counter + 1
 
     time_since_position_update = time_since_position_update + dt
+
+    if Engine.controller:key_pressed(KeyCode.KeyG) then
+        Engine.physics_engine:get_player(0).rigid_body.position = Vector.new(0.0, 2.0, 0.0, 0.0)
+    end
 end
 
 function color_quad_bright()

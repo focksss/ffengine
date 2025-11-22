@@ -1,8 +1,9 @@
 use mlua::{FromLua, IntoLua, Lua, UserData, UserDataMethods, Value};
 use crate::math::Vector;
+use crate::scripting::lua_engine::RegisterToLua;
 
-impl Vector {
-    pub fn register(lua: &Lua) -> mlua::Result<()> {
+impl RegisterToLua for Vector {
+    fn register_to_lua(lua: &Lua) -> mlua::Result<()> {
         let globals = lua.globals();
         globals.set("Vector", lua.create_proxy::<Vector>()?)?;
         Ok(())

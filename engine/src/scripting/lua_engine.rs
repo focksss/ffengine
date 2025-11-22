@@ -9,6 +9,7 @@ use crate::app::EngineRef;
 use crate::gui::gui::GUI;
 use crate::math::Vector;
 use crate::physics::player::MovementMode;
+use crate::scripting::engine_api::client_api::controller_api::LuaKeyCode;
 use crate::scripting::engine_api::engine_api;
 use crate::scripting::engine_api::gui_api::gui_api::{GUIRef};
 
@@ -32,6 +33,10 @@ pub struct Lua {
     cached_calls: Vec<(usize, String, usize)>, // cached script calls, stores script index, method name, and call index. Maybe add a parameter cache using a sort of heap?
 }
 
+pub trait RegisterToLua {
+    fn register_to_lua(lua: &mlua::Lua) -> mlua::Result<()>;
+}
+
 impl Lua {
     pub fn initialize(engine: EngineRef) -> Result<(), mlua::Error> {
         LUA.with(|script_engine| {
@@ -49,8 +54,9 @@ impl Lua {
             let lua = &script_engine_ref.as_ref().unwrap().lua;
 
 
-            MovementMode::register(&lua)?;
-            Vector::register(&lua)?;
+            LuaKeyCode::register_to_lua(lua)?;
+            MovementMode::register_to_lua(&lua)?;
+            Vector::register_to_lua(&lua)?;
 
 
             let engine_ud = lua.create_userdata(engine)?;

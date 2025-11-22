@@ -4,9 +4,10 @@ use mlua::{FromLua, Lua, UserData, UserDataFields, Value};
 use crate::math::Vector;
 use crate::physics::player::{MovementMode, PlayerPointer};
 use crate::physics::rigid_body::RigidBodyPointer;
+use crate::scripting::lua_engine::RegisterToLua;
 
-impl MovementMode {
-    pub fn register(lua: &Lua) -> mlua::Result<()> {
+impl RegisterToLua for MovementMode {
+    fn register_to_lua(lua: &Lua) -> mlua::Result<()> {
         let globals = lua.globals();
 
         let movement_mode = lua.create_table()?;

@@ -1,8 +1,11 @@
 use std::cell::RefCell;
 use std::sync::Arc;
-use mlua::{UserData, UserDataFields, UserDataMethods};
+use mlua::{FromLua, IntoLua, UserData, UserDataFields, UserDataMethods, Value};
+use winit::keyboard::{KeyCode, PhysicalKey};
 use crate::client::controller::{Controller, Flags};
-use crate::physics::player::MovementMode;
+use crate::math::Vector;
+use crate::physics::player::PlayerPointer;
+use crate::scripting::lua_engine::RegisterToLua;
 
 #[derive(Clone)]
 pub struct ControllerRef(pub Arc<RefCell<Controller>>);
@@ -13,6 +16,19 @@ impl UserData for ControllerRef {
         });
         fields.add_field_method_get("player", |lua, this| {
             lua.create_userdata(this.0.borrow().player_pointer.clone())
+        });
+        fields.add_field_method_get("cursor_position", |lua, this| {
+            lua.create_userdata(Vector::new_vec2(this.0.borrow().cursor_position.x as f32, this.0.borrow().cursor_position.y as f32))
+        });
+    }
+    fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
+        methods.add_method("new_key_pressed", |_, this, key: LuaKeyCode| {
+            let physical_key = PhysicalKey::from(key.0);
+            Ok(this.0.borrow().new_pressed_keys.contains(&physical_key))
+        });
+        methods.add_method("key_pressed", |_, this, key: LuaKeyCode| {
+            let physical_key = PhysicalKey::from(key.0);
+            Ok(this.0.borrow().pressed_keys.contains(&physical_key))
         });
     }
 }
@@ -57,3 +73,254 @@ impl UserData for FlagsRef {
         });
     }
 }
+
+pub struct LuaKeyCode(pub KeyCode);
+impl RegisterToLua for LuaKeyCode {
+    fn register_to_lua(lua: &mlua::Lua) -> mlua::Result<()> {
+        let globals = lua.globals();
+        let table = lua.create_table()?;
+        for (idx, key) in ALL_KEYS.iter().enumerate() {
+            table.set(format!("{:?}", key), idx as u32)?;
+        }
+        globals.set("KeyCode", table)?;
+        Ok(())
+    }
+}
+impl<'lua> IntoLua<'lua> for LuaKeyCode {
+    fn into_lua(self, lua: &'lua mlua::Lua) -> mlua::Result<Value<'lua>> {
+        let index = ALL_KEYS
+            .iter()
+            .position(|k| *k == self.0)
+            .ok_or_else(|| mlua::Error::ToLuaConversionError {
+                from: "LuaKeyCode",
+                to: "Value",
+                message: Some("KeyCode not found in ALL_KEYS".into()),
+            })?;
+        (index as u32).into_lua(lua)
+    }
+}
+impl<'lua> FromLua<'lua> for LuaKeyCode {
+    fn from_lua(value: Value<'lua>, _: &'lua mlua::Lua) -> mlua::Result<Self> {
+        if let Value::Integer(i) = value {
+            if i >= 0 && (i as usize) < ALL_KEYS.len() {
+                return Ok(LuaKeyCode(ALL_KEYS[i as usize]));
+            }
+        }
+        Err(mlua::Error::FromLuaConversionError {
+            from: value.type_name(),
+            to: "LuaKeyCode",
+            message: Some("invalid KeyCode value".into()),
+        })
+    }
+}
+const ALL_KEYS: &[KeyCode] = &[
+    KeyCode::Backquote,
+    KeyCode::Backslash,
+    KeyCode::BracketLeft,
+    KeyCode::BracketRight,
+    KeyCode::Comma,
+    KeyCode::Digit0,
+    KeyCode::Digit1,
+    KeyCode::Digit2,
+    KeyCode::Digit3,
+    KeyCode::Digit4,
+    KeyCode::Digit5,
+    KeyCode::Digit6,
+    KeyCode::Digit7,
+    KeyCode::Digit8,
+    KeyCode::Digit9,
+    KeyCode::Equal,
+    KeyCode::IntlBackslash,
+    KeyCode::IntlRo,
+    KeyCode::IntlYen,
+    KeyCode::KeyA,
+    KeyCode::KeyB,
+    KeyCode::KeyC,
+    KeyCode::KeyD,
+    KeyCode::KeyE,
+    KeyCode::KeyF,
+    KeyCode::KeyG,
+    KeyCode::KeyH,
+    KeyCode::KeyI,
+    KeyCode::KeyJ,
+    KeyCode::KeyK,
+    KeyCode::KeyL,
+    KeyCode::KeyM,
+    KeyCode::KeyN,
+    KeyCode::KeyO,
+    KeyCode::KeyP,
+    KeyCode::KeyQ,
+    KeyCode::KeyR,
+    KeyCode::KeyS,
+    KeyCode::KeyT,
+    KeyCode::KeyU,
+    KeyCode::KeyV,
+    KeyCode::KeyW,
+    KeyCode::KeyX,
+    KeyCode::KeyY,
+    KeyCode::KeyZ,
+    KeyCode::Minus,
+    KeyCode::Period,
+    KeyCode::Quote,
+    KeyCode::Semicolon,
+    KeyCode::Slash,
+
+    KeyCode::AltLeft,
+    KeyCode::AltRight,
+    KeyCode::Backspace,
+    KeyCode::CapsLock,
+    KeyCode::ContextMenu,
+    KeyCode::ControlLeft,
+    KeyCode::ControlRight,
+    KeyCode::Enter,
+    KeyCode::SuperLeft,
+    KeyCode::SuperRight,
+    KeyCode::ShiftLeft,
+    KeyCode::ShiftRight,
+    KeyCode::Space,
+    KeyCode::Tab,
+
+    KeyCode::Convert,
+    KeyCode::KanaMode,
+    KeyCode::Lang1,
+    KeyCode::Lang2,
+    KeyCode::Lang3,
+    KeyCode::Lang4,
+    KeyCode::Lang5,
+    KeyCode::NonConvert,
+
+    KeyCode::Delete,
+    KeyCode::End,
+    KeyCode::Help,
+    KeyCode::Home,
+    KeyCode::Insert,
+    KeyCode::PageDown,
+    KeyCode::PageUp,
+
+    KeyCode::ArrowDown,
+    KeyCode::ArrowLeft,
+    KeyCode::ArrowRight,
+    KeyCode::ArrowUp,
+
+    KeyCode::NumLock,
+    KeyCode::Numpad0,
+    KeyCode::Numpad1,
+    KeyCode::Numpad2,
+    KeyCode::Numpad3,
+    KeyCode::Numpad4,
+    KeyCode::Numpad5,
+    KeyCode::Numpad6,
+    KeyCode::Numpad7,
+    KeyCode::Numpad8,
+    KeyCode::Numpad9,
+    KeyCode::NumpadAdd,
+    KeyCode::NumpadBackspace,
+    KeyCode::NumpadClear,
+    KeyCode::NumpadClearEntry,
+    KeyCode::NumpadComma,
+    KeyCode::NumpadDecimal,
+    KeyCode::NumpadDivide,
+    KeyCode::NumpadEnter,
+    KeyCode::NumpadEqual,
+    KeyCode::NumpadHash,
+    KeyCode::NumpadMemoryAdd,
+    KeyCode::NumpadMemoryClear,
+    KeyCode::NumpadMemoryRecall,
+    KeyCode::NumpadMemoryStore,
+    KeyCode::NumpadMemorySubtract,
+    KeyCode::NumpadMultiply,
+    KeyCode::NumpadParenLeft,
+    KeyCode::NumpadParenRight,
+    KeyCode::NumpadStar,
+    KeyCode::NumpadSubtract,
+
+    KeyCode::Escape,
+    KeyCode::Fn,
+    KeyCode::FnLock,
+    KeyCode::PrintScreen,
+    KeyCode::ScrollLock,
+    KeyCode::Pause,
+
+    KeyCode::BrowserBack,
+    KeyCode::BrowserFavorites,
+    KeyCode::BrowserForward,
+    KeyCode::BrowserHome,
+    KeyCode::BrowserRefresh,
+    KeyCode::BrowserSearch,
+    KeyCode::BrowserStop,
+
+    KeyCode::Eject,
+    KeyCode::LaunchApp1,
+    KeyCode::LaunchApp2,
+    KeyCode::LaunchMail,
+
+    KeyCode::MediaPlayPause,
+    KeyCode::MediaSelect,
+    KeyCode::MediaStop,
+    KeyCode::MediaTrackNext,
+    KeyCode::MediaTrackPrevious,
+
+    KeyCode::Power,
+    KeyCode::Sleep,
+
+    KeyCode::AudioVolumeDown,
+    KeyCode::AudioVolumeMute,
+    KeyCode::AudioVolumeUp,
+    KeyCode::WakeUp,
+
+    KeyCode::Meta,
+    KeyCode::Hyper,
+    KeyCode::Turbo,
+    KeyCode::Abort,
+    KeyCode::Resume,
+    KeyCode::Suspend,
+
+    KeyCode::Again,
+    KeyCode::Copy,
+    KeyCode::Cut,
+    KeyCode::Find,
+    KeyCode::Open,
+    KeyCode::Paste,
+    KeyCode::Props,
+    KeyCode::Select,
+    KeyCode::Undo,
+
+    KeyCode::Hiragana,
+    KeyCode::Katakana,
+
+    KeyCode::F1,
+    KeyCode::F2,
+    KeyCode::F3,
+    KeyCode::F4,
+    KeyCode::F5,
+    KeyCode::F6,
+    KeyCode::F7,
+    KeyCode::F8,
+    KeyCode::F9,
+    KeyCode::F10,
+    KeyCode::F11,
+    KeyCode::F12,
+    KeyCode::F13,
+    KeyCode::F14,
+    KeyCode::F15,
+    KeyCode::F16,
+    KeyCode::F17,
+    KeyCode::F18,
+    KeyCode::F19,
+    KeyCode::F20,
+    KeyCode::F21,
+    KeyCode::F22,
+    KeyCode::F23,
+    KeyCode::F24,
+    KeyCode::F25,
+    KeyCode::F26,
+    KeyCode::F27,
+    KeyCode::F28,
+    KeyCode::F29,
+    KeyCode::F30,
+    KeyCode::F31,
+    KeyCode::F32,
+    KeyCode::F33,
+    KeyCode::F34,
+    KeyCode::F35,
+];
