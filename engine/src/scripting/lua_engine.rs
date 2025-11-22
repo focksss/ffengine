@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use ash::vk;
 use mlua;
 use std::cell::RefCell;
@@ -18,10 +18,12 @@ thread_local! {
 }
 
 pub struct Script {
-    name: String,
+    path: PathBuf,
     environment: mlua::RegistryKey,
     start_fn: Option<mlua::RegistryKey>,
     update_fn: Option<mlua::RegistryKey>,
+    scroll_fn: Option<mlua::RegistryKey>,
+    mouse_moved_fn: Option<mlua::RegistryKey>,
     has_started: bool,
 }
 
@@ -104,16 +106,24 @@ impl Lua {
         let on_awake_fn = environment.get::<_, Option<mlua::Function>>("Awake")?
             .map(|f| self.lua.create_registry_value(f))
             .transpose()?;
+        let scroll_fn = environment.get::<_, Option<mlua::Function>>("MouseScrolled")?
+            .map(|f| self.lua.create_registry_value(f))
+            .transpose()?;
+        let mouse_moved_fn = environment.get::<_, Option<mlua::Function>>("MouseMoved")?
+            .map(|f| self.lua.create_registry_value(f))
+            .transpose()?;
 
         if let Some(awake_fn) = &on_awake_fn {
             self.call_method_by_key(awake_fn).expect("failed to call Awake method");
         }
 
         let script = Script {
-            name: path.name().unwrap(),
+            path: PathBuf::from(path),
             environment: self.lua.create_registry_value(environment).unwrap(),
             start_fn,
             update_fn,
+            scroll_fn,
+            mouse_moved_fn,
             has_started: false,
         };
 
@@ -140,8 +150,21 @@ impl Lua {
     pub fn load_scripts(scripts_dir: Vec<&Path>) -> Result<Vec<usize>, Box<dyn std::error::Error>> {
         Self::with_mut(|lua| lua.load_scripts_impl(scripts_dir))
     }
-    fn load_scripts_impl(&mut self, scripts_dir: Vec<&Path>) -> Result<Vec<usize>, Box<dyn std::error::Error>> {
-        for script in self.scripts.drain(..) {
+    fn load_scripts_impl(
+        &mut self,
+        scripts_dir: Vec<&Path>,
+    ) -> Result<Vec<usize>, Box<dyn std::error::Error>> {
+        let scripts_dir_bufs: Vec<PathBuf> = scripts_dir.iter().map(|p| p.to_path_buf()).collect();
+
+        let to_remove: Vec<usize> = self.scripts
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| scripts_dir_bufs.contains(&s.path))
+            .map(|(i, _)| i)
+            .collect();
+
+        for &i in to_remove.iter().rev() {
+            let script = self.scripts.remove(i);
             self.lua.remove_registry_value(script.environment)?;
             if let Some(start_fn) = script.start_fn {
                 self.lua.remove_registry_value(start_fn)?;
@@ -152,13 +175,38 @@ impl Lua {
         }
 
         let mut indices = Vec::new();
-
         for path in scripts_dir {
             if path.extension().and_then(|s| s.to_str()) == Some("lua") {
                 indices.push(self.load_script_impl(path)?);
             }
         }
         Ok(indices)
+    }
+
+    pub fn reload_scripts() -> Result<(), mlua::Error> {
+        Self::with_mut(|lua| lua.reload_scripts_impl())
+    }
+    fn reload_scripts_impl(
+        &mut self,
+    ) -> Result<(), mlua::Error> {
+        let mut scripts_dir = Vec::new();
+        for script in self.scripts.drain(..) {
+            scripts_dir.push(script.path);
+            self.lua.remove_registry_value(script.environment)?;
+            if let Some(start_fn) = script.start_fn {
+                self.lua.remove_registry_value(start_fn)?;
+            }
+            if let Some(update_fn) = script.update_fn {
+                self.lua.remove_registry_value(update_fn)?;
+            }
+        }
+
+        for path in scripts_dir {
+            if path.extension().and_then(|s| s.to_str()) == Some("lua") {
+                self.load_script_impl(Path::new(&path)).expect("failed to load script");
+            }
+        }
+        Ok(())
     }
 
     pub fn call_script(
@@ -189,7 +237,7 @@ impl Lua {
             }
             None => {
                 Err(mlua::Error::RuntimeError(
-                    format!("Method '{}' not found in script '{}'", method_name, script.name)
+                    format!("Method '{}' not found in script '{}'", method_name, script.path.display()).into(),
                 ))
             }
         }
@@ -245,6 +293,30 @@ impl Lua {
     }
     pub fn run_update_methods() -> Result<(), mlua::Error> {
         Self::with_mut(|lua| {lua.run_update_methods_impl()})
+    }
+
+    fn run_scroll_methods_impl(&mut self) -> Result<(), mlua::Error> {
+        for i in 0..self.scripts.len() {
+            if self.scripts[i].scroll_fn.is_some() {
+                self.call_method_by_key(self.scripts[i].scroll_fn.as_ref().unwrap())?
+            }
+        }
+        Ok(())
+    }
+    pub fn run_scroll_methods() -> Result<(), mlua::Error> {
+        Self::with_mut(|lua| {lua.run_scroll_methods_impl()})
+    }
+
+    fn run_mouse_moved_methods_impl(&mut self) -> Result<(), mlua::Error> {
+        for i in 0..self.scripts.len() {
+            if self.scripts[i].mouse_moved_fn.is_some() {
+                self.call_method_by_key(self.scripts[i].mouse_moved_fn.as_ref().unwrap())?
+            }
+        }
+        Ok(())
+    }
+    pub fn run_mouse_moved_methods() -> Result<(), mlua::Error> {
+        Self::with_mut(|lua| {lua.run_mouse_moved_methods_impl()})
     }
 
     pub fn with_lua<F, R>(f: F) -> R

@@ -1,6 +1,6 @@
 #![warn(unused_qualifications)]
 use std::default::Default;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use ffengine::app::Engine;
 use ffengine::math::Vector;
 use ffengine::physics::player::{MovementMode, Player};
@@ -9,6 +9,8 @@ use ffengine::world::scene::{Light, Model};
 
 fn main() { unsafe {
     let mut app = Engine::new();
+
+    app.load_script(Path::new("editor\\resources\\scripts\\player_controller.lua"));
 
     {
         let world = &mut app.world.borrow_mut();
@@ -79,6 +81,27 @@ fn main() { unsafe {
         renderer.scene_renderer.update_world_textures_all_frames(base, world);
         renderer.gui.borrow_mut().load_from_file(base, "editor\\resources\\gui\\default\\default.gui");
     }
+    let player = Player::new(
+        app.physics_engine.clone(),
+        app.world.clone(),
+        Camera::new_perspective_rotation(
+            Vector::new_vec3(0.0, 2.0, 0.0),
+            Vector::new_empty(),
+            100.0,
+            1.0,
+            0.001,
+            1000.0,
+            true,
+            Vector::new_vec3(0.0, 0.0, 1.0),
+        ),
+        Vector::new_vec3(-0.15, -0.85, -0.15),
+        Vector::new_vec3(0.15, 0.15, 0.15),
+        MovementMode::GHOST,
+        0.2,
+        4.5,
+        0.0015
+    );
+    app.physics_engine.borrow_mut().add_player(player);
 
     app.run()
 } }

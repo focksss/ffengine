@@ -48,9 +48,16 @@ impl UserData for PlayerPointer {
             this.physics_engine.borrow_mut().players[this.index].movement_mode = MovementMode::from_lua(val, lua)?;
             Ok(())
         });
+        fields.add_field_method_get("grounded", |_, this| {
+            Ok(this.physics_engine.borrow().players[this.index].grounded)
+        });
 
         fields.add_field_method_get("rigid_body", |lua, this| {
             lua.create_userdata(this.physics_engine.borrow().players[this.index].rigid_body_pointer.clone())
+        });
+
+        fields.add_field_method_get("camera", |lua, this| {
+            lua.create_userdata(this.physics_engine.borrow().players[this.index].camera_pointer.clone())
         });
     }
 }

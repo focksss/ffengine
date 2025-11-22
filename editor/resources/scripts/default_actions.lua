@@ -6,10 +6,6 @@ function Update()
     fps_counter = fps_counter + 1
 
     time_since_position_update = time_since_position_update + dt
-
-    if Engine.controller:key_pressed(KeyCode.KeyG) then
-        Engine.physics_engine:get_player(0).rigid_body.position = Vector.new(0.0, 2.0, 0.0, 0.0)
-    end
 end
 
 function color_quad_bright()
@@ -50,8 +46,9 @@ function update_fps_display()
 end
 
 function update_position_display()
+    local player = Engine.physics_engine:get_player(0);
     if time_since_position_update > 0.1 then
-    	local x = Engine.controller.player.rigid_body.position
+    	local x = player.rigid_body.position
     	Engine.renderer.gui.ActiveNode.text:update_text(string.format("Cam pos: X: %.2f, Y: %.2f, Z: %.2f", x.x, x.y, x.z))
     	time_since_position_update = 0
     end
@@ -66,14 +63,16 @@ function toggle_physics_tick()
 end
 
 function toggle_player_physics()
-    if Engine.controller.player.movement_mode == MovementMode.GHOST then
-        Engine.controller.player.movement_mode = MovementMode.EDITOR
+    local player = Engine.physics_engine:get_player(0);
+
+    if player.movement_mode == MovementMode.GHOST then
+        player.movement_mode = MovementMode.EDITOR
         Engine.renderer.gui.ActiveNode.text:update_text("Editor")
-    elseif Engine.controller.player.movement_mode == MovementMode.EDITOR then
-        Engine.controller.player.movement_mode = MovementMode.PHYSICS
+    elseif player.movement_mode == MovementMode.EDITOR then
+        player.movement_mode = MovementMode.PHYSICS
         Engine.renderer.gui.ActiveNode.text:update_text("Physics")
     else
-        Engine.controller.player.movement_mode = MovementMode.GHOST
+        player.movement_mode = MovementMode.GHOST
         Engine.renderer.gui.ActiveNode.text:update_text("Ghost")
     end
 end
@@ -85,4 +84,8 @@ function toggle_text()
     else
     	Engine.renderer.gui.ActiveNode.text:update_text("On")
     end
+end
+
+function reload_all_scripts()
+    Engine.controller.flags.reload_all_scripts_queued = true
 end

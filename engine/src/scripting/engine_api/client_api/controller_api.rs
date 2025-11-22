@@ -1,7 +1,9 @@
 use std::cell::RefCell;
 use std::sync::Arc;
 use mlua::{FromLua, IntoLua, UserData, UserDataFields, UserDataMethods, Value};
+use winit::dpi::PhysicalPosition;
 use winit::keyboard::{KeyCode, PhysicalKey};
+use winit::window::CursorGrabMode;
 use crate::client::controller::{Controller, Flags};
 use crate::math::Vector;
 use crate::physics::player::PlayerPointer;
@@ -14,11 +16,48 @@ impl UserData for ControllerRef {
         fields.add_field_method_get("flags", |lua, this| {
             lua.create_userdata(FlagsRef(this.0.borrow_mut().flags.clone()))
         });
-        fields.add_field_method_get("player", |lua, this| {
-            lua.create_userdata(this.0.borrow().player_pointer.clone())
-        });
+
         fields.add_field_method_get("cursor_position", |lua, this| {
             lua.create_userdata(Vector::new_vec2(this.0.borrow().cursor_position.x as f32, this.0.borrow().cursor_position.y as f32))
+        });
+
+        fields.add_field_method_get("scroll_delta", |lua, this| {
+            let borrowed = this.0.borrow();
+            lua.create_userdata(Vector::new_vec2(borrowed.scroll_delta.0, borrowed.scroll_delta.1))
+        });
+
+        fields.add_field_method_get("mouse_delta", |lua, this| {
+            let borrowed = this.0.borrow();
+            lua.create_userdata(Vector::new_vec2(borrowed.mouse_delta.0, borrowed.mouse_delta.1))
+        });
+
+        fields.add_field_method_get("cursor_locked", |_, this| {
+            Ok(this.0.borrow().cursor_locked)
+        });
+        fields.add_field_method_set("cursor_locked", |_, this, val: bool| {
+            let borrowed = &mut this.0.borrow_mut();
+            borrowed.cursor_locked = val;
+            if borrowed.cursor_locked {
+                if let Err(err) = borrowed.window().set_cursor_grab(CursorGrabMode::Confined) {} else {
+                    borrowed.window().set_cursor_visible(false);
+                }
+                borrowed.window().set_cursor_position(PhysicalPosition::new(
+                    borrowed.window().inner_size().width as f32 * 0.5,
+                    borrowed.window().inner_size().height as f32 * 0.5))
+                    .expect("failed to reset mouse position");
+            } else {
+                if let Err(err) = borrowed.window().set_cursor_grab(CursorGrabMode::None) {} else {
+                    borrowed.window().set_cursor_visible(true);
+                }
+                borrowed.window().set_cursor_position(borrowed.saved_cursor_pos).expect("Cursor pos reset failed");
+            }
+            Ok(())
+        });
+
+        fields.add_field_method_get("window_size", |_, this| {
+            let borrowed = this.0.borrow();
+            let window = borrowed.window();
+            Ok(Vector::new_vec2(window.inner_size().width as f32, window.inner_size().height as f32))
         });
     }
     fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
@@ -69,6 +108,12 @@ impl UserData for FlagsRef {
         fields.add_field_method_get("do_physics", |_, this| Ok(this.0.borrow().do_physics));
         fields.add_field_method_set("do_physics", |_, this, val: bool| {
             this.0.borrow_mut().do_physics = val;
+            Ok(())
+        });
+
+        fields.add_field_method_get("reload_all_scripts_queued", |_, this| Ok(this.0.borrow().reload_all_scripts_queued));
+        fields.add_field_method_set("reload_all_scripts_queued", |_, this, val: bool| {
+            this.0.borrow_mut().reload_all_scripts_queued = val;
             Ok(())
         });
     }

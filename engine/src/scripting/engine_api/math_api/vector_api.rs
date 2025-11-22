@@ -1,4 +1,4 @@
-use mlua::{FromLua, IntoLua, Lua, UserData, UserDataMethods, Value};
+use mlua::{FromLua, IntoLua, Lua, MetaMethod, UserData, UserDataMethods, Value};
 use crate::math::Vector;
 use crate::scripting::lua_engine::RegisterToLua;
 
@@ -40,6 +40,36 @@ impl UserData for Vector {
     fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
         methods.add_function("new", |_, (x, y, z, w): (f32, f32, f32, f32)| {
             Ok(Vector::new_vec4(x, y, z, w))
+        });
+
+        methods.add_method("normalize3", |_, this, ()| {
+            Ok(this.normalize_3d())
+        });
+
+        methods.add_meta_method(MetaMethod::Add, |_, this, other: Vector| {
+            Ok(*this + other)
+        });
+        methods.add_meta_method(MetaMethod::Sub, |_, this, other: Vector| {
+            Ok(*this - other)
+        });
+        methods.add_meta_method(MetaMethod::Mul, |_, this, rhs: Value| {
+            match rhs {
+                Value::UserData(ud) => {
+                    let other = ud.borrow::<Vector>()?;
+                    Ok(*this * *other)
+                }
+                Value::Number(n) => {
+                    let f = n as f32;
+                    Ok(Vector::new_vec4(this.x * f, this.y * f, this.z * f, this.w * f))
+                }
+                _ => Err(mlua::Error::runtime("Vector can only be multiplied by Vector or number")),
+            }
+        });
+        methods.add_meta_method(MetaMethod::Div, |_, this, other: Vector| {
+            Ok(*this / other)
+        });
+        methods.add_meta_method(MetaMethod::Unm, |_, this, ()| {
+            Ok(Vector::new_vec4(-this.x, -this.y, -this.z, -this.w))
         });
     }
 }

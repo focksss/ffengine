@@ -25,6 +25,7 @@ MovementMode = {
 ---@field w number
 
 ---@field new fun(x:number, y:number, z:number, w:number):Vector
+---@field normalize3d fun(in:Vector):Vector
 
 Vector = Vector
 
@@ -52,8 +53,11 @@ Vector = Vector
 
     ---@class Controller
     ---@field flags Flags
-    ---@field player Player
-    ---@field cursor_position fun(self:Controller):Vector
+    ---@field cursor_position Vector
+    ---@field scroll_delta Vector
+    ---@field mouse_delta Vector
+    ---@field cursor_locked boolean
+    ---@field window_size Vector
     ---@field new_key_pressed fun(self:Controller, key: integer):boolean
     ---@field key_pressed fun(self:Controller, key: integer):boolean
 
@@ -64,6 +68,7 @@ Vector = Vector
         ---@field screenshot_queued boolean
         ---@field draw_hitboxes boolean
         ---@field do_physics boolean
+        ---@field reload_all_scripts_queued boolean
 
     ---@class PhysicsEngine
     ---@field gravity Vector
@@ -72,10 +77,21 @@ Vector = Vector
 
     ---@class Player
     ---@field movement_mode integer
+    ---@field grounded boolean
     ---@field rigid_body RigidBody
+    ---@field camera Camera
 
         ---@class RigidBody
         ---@field position Vector
+        ---@field velocity Vector
+
+        ---@class Camera
+        ---@field position Vector
+        ---@field rotation Vector
+        ---@field fov_y number
+        ---@field aspect_ratio number
+        ---@field near number
+        ---@field far number
 
 
 ---@class KeyCode

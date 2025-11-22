@@ -1,7 +1,7 @@
 #![warn(unused_qualifications)]
 use std::cell::RefCell;
 use std::default::Default;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock, RwLock};
 use std::time::{Duration, Instant};
 use ash::vk;
@@ -56,32 +56,7 @@ impl Engine {
         let world = Arc::new(RefCell::new(world));
         let physics_engine = Arc::new(RefCell::new(PhysicsEngine::new(Vector::new_vec3(0.0, -9.8, 0.0), 0.9, 0.5)));
 
-        let player = Player::new(
-            physics_engine.clone(),
-            world.clone(),
-            Camera::new_perspective_rotation(
-                Vector::new_vec3(0.0, 2.0, 0.0),
-                Vector::new_empty(),
-                100.0,
-                base.window.inner_size().width as f32 / base.window.inner_size().height as f32,
-                0.001,
-                1000.0,
-                true,
-                Vector::new_vec3(0.0, 0.0, 1.0),
-            ),
-            Vector::new_vec3(-0.15, -0.85, -0.15),
-            Vector::new_vec3(0.15, 0.15, 0.15),
-            MovementMode::GHOST,
-            0.2,
-            4.5,
-            0.0015
-        );
-        physics_engine.borrow_mut().add_player(player);
-
-        let controller = Arc::new(RefCell::new(Controller::new(&base.window, PlayerPointer {
-            physics_engine: physics_engine.clone(),
-            index: 0
-        })));
+        let controller = Arc::new(RefCell::new(Controller::new(&base.window)));
 
         let rw_lock = RwLock::new(base.draw_command_buffers[0]);
         COMMAND_BUFFER.set(rw_lock).expect("Failed to initialize frame command buffer global");
@@ -107,6 +82,10 @@ impl Engine {
             physics_engine: self.physics_engine.clone(),
             controller: self.controller.clone(),
         }
+    }
+
+    pub fn load_script(&self, path: &Path) {
+        Lua::load_scripts(vec![path]).expect("failed to load scripts");
     }
 
     pub unsafe fn run(&mut self) {
@@ -151,11 +130,18 @@ impl Engine {
                             return;
                         }
 
+                        let reload_scripts_queued = self.controller.borrow().flags.borrow().reload_all_scripts_queued;
+                        if reload_scripts_queued {
+                            Lua::reload_scripts().expect("failed to reload scripts");
+                            self.controller.borrow_mut().flags.borrow_mut().reload_all_scripts_queued = false;
+                        }
+
                         let now = Instant::now();
                         let delta_time = now.duration_since(last_frame_time).as_secs_f32();
                         Lua::with_lua(|lua| lua.globals().set("dt", delta_time)).expect("Failed to set lua deltatime global");
                         last_frame_time = now;
 
+                        Lua::run_update_methods().expect("Failed to run Update methods");
                         {
                             {
                                 let mut controller_mut = self.controller.borrow_mut();
@@ -169,7 +155,6 @@ impl Engine {
                                 player.update_camera(physics_engine);
                             }
                         }
-                        Lua::run_update_methods().expect("Failed to run Update methods");
 
                         let current_fence = base.draw_commands_reuse_fences[current_frame];
                         {
@@ -231,7 +216,7 @@ impl Engine {
 
                         current_frame = (current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
                     },
-                    _ => { self.controller.borrow_mut().handle_event(event, elwp) },
+                    _ => { Controller::handle_event(self.controller.clone(), event, elwp) },
                 }
             }).expect("Failed to initiate render loop");
 

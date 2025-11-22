@@ -15,13 +15,12 @@ use crate::physics::physics_engine::PhysicsEngine;
 use crate::physics::player::{MovementMode, Player, PlayerPointer};
 use crate::render::render::{screenshot_texture, Renderer};
 use crate::render::vulkan_base::VkBase;
+use crate::scripting::lua_engine::Lua;
 use crate::world::camera::Camera;
 use crate::world::scene::Scene;
 
 pub struct Controller {
     pub window_ptr: *const winit::window::Window,
-
-    pub player_pointer: PlayerPointer,
 
     pub sensitivity: f32,
 
@@ -40,14 +39,13 @@ pub struct Controller {
     pub paused: bool,
 }
 impl Controller {
-    pub fn new(window: &winit::window::Window, player_pointer: PlayerPointer) -> Controller {
+    pub fn new(window: &winit::window::Window) -> Controller {
         window.set_cursor_position(PhysicalPosition::new(
             window.inner_size().width as f32 * 0.5,
             window.inner_size().height as f32 * 0.5))
             .expect("failed to reset mouse position");
         Controller {
             window_ptr: window as *const _,
-            player_pointer,
             sensitivity: 0.001,
             cursor_position: Default::default(),
             flags: Arc::new(RefCell::new(Flags::default())),
@@ -61,7 +59,7 @@ impl Controller {
             paused: false,
         }
     }
-    fn window(&self) -> &winit::window::Window {
+    pub(crate) fn window(&self) -> &winit::window::Window {
         unsafe { &*self.window_ptr }
     }
 
@@ -73,6 +71,7 @@ impl Controller {
         world: &mut Scene,
         frame: usize,
     ) { unsafe {
+        /*
         let mut move_direction = Vector::new_vec(0.0);
         {
             let physics_engine = &mut self.player_pointer.physics_engine.borrow_mut();
@@ -215,126 +214,125 @@ impl Controller {
                 MovementMode::EDITOR => {}
             }
         }
+*/
 
         self.scroll_delta = (0.0, 0.0);
         self.new_pressed_keys.clear();
     } }
 
-    pub fn handle_event<T>(&mut self, event: Event<T>, elwp: &EventLoopWindowTarget<T>) {
-        match event {
-            Event::WindowEvent {
-                event: WindowEvent::CloseRequested,
-                ..
-            } => {
-                elwp.exit();
-            }
-            Event::WindowEvent {
-                event: WindowEvent::KeyboardInput {
-                    event: KeyEvent {
-                        state,
-                        physical_key,
+    pub fn handle_event<T>(controller_ref: Arc<RefCell<Controller>>, event: Event<T>, elwp: &EventLoopWindowTarget<T>) {
+        let mut should_scroll_event = false;
+        let mut should_mouse_move_event = false;
+        {
+            let controller = &mut controller_ref.borrow_mut();
+            match event {
+                Event::WindowEvent {
+                    event: WindowEvent::CloseRequested,
+                    ..
+                } => {
+                    elwp.exit();
+                }
+                Event::WindowEvent {
+                    event: WindowEvent::KeyboardInput {
+                        event: KeyEvent {
+                            state,
+                            physical_key,
+                            ..
+                        },
                         ..
                     },
                     ..
-                },
-                ..
-            } => {
-                match state {
-                    ElementState::Pressed => {
-                        if !self.pressed_keys.contains(&physical_key) { self.new_pressed_keys.insert(physical_key.clone()); }
-                        self.pressed_keys.insert(physical_key.clone());
-                    }
-                    ElementState::Released => {
-                        self.pressed_keys.remove(&physical_key);
-                        self.new_pressed_keys.remove(&physical_key);
+                } => {
+                    match state {
+                        ElementState::Pressed => {
+                            if !controller.pressed_keys.contains(&physical_key) { controller.new_pressed_keys.insert(physical_key.clone()); }
+                            controller.pressed_keys.insert(physical_key.clone());
+                        }
+                        ElementState::Released => {
+                            controller.pressed_keys.remove(&physical_key);
+                            controller.new_pressed_keys.remove(&physical_key);
+                        }
                     }
                 }
-            }
-            Event::WindowEvent {
-                event: WindowEvent::MouseInput {
-                    state,
-                    button,
+                Event::WindowEvent {
+                    event: WindowEvent::MouseInput {
+                        state,
+                        button,
+                        ..
+                    },
                     ..
-                },
-                ..
-            } => {
-                match state {
-                    ElementState::Pressed => {
-                        if !self.pressed_mouse_buttons.contains(&button) { self.pressed_mouse_buttons.insert(button.clone()); }
-                    }
-                    ElementState::Released => {
-                        if self.pressed_mouse_buttons.contains(&button) { self.pressed_mouse_buttons.remove(&button); }
-                    }
-                }
-            }
-            Event::WindowEvent {
-                event: WindowEvent::MouseWheel { delta, .. },
-                ..
-            } => {
-                if self.window().has_focus() {
-                    if let MouseScrollDelta::LineDelta(x, y) = delta {
-                        self.scroll_delta = (x, y);
+                } => {
+                    match state {
+                        ElementState::Pressed => {
+                            if !controller.pressed_mouse_buttons.contains(&button) { controller.pressed_mouse_buttons.insert(button.clone()); }
+                        }
+                        ElementState::Released => {
+                            if controller.pressed_mouse_buttons.contains(&button) { controller.pressed_mouse_buttons.remove(&button); }
+                        }
                     }
                 }
-            }
-            Event::WindowEvent {
-                event: WindowEvent::CursorMoved { position, .. },
-                ..
-            } => {
-                if self.window().has_focus() && self.cursor_locked {
-                    self.mouse_delta = (
-                        -position.x as f32 + 0.5 * self.window().inner_size().width as f32,
-                        position.y as f32 - 0.5 * self.window().inner_size().height as f32,
-                    );
-                    self.window().set_cursor_position(PhysicalPosition::new(
-                        self.window().inner_size().width as f32 * 0.5,
-                        self.window().inner_size().height as f32 * 0.5))
-                        .expect("failed to reset mouse position");
-                    self.do_mouse();
-                } else {
-                    self.saved_cursor_pos = position;
+                Event::WindowEvent {
+                    event: WindowEvent::MouseWheel { delta, .. },
+                    ..
+                } => {
+                    if controller.window().has_focus() {
+                        if let MouseScrollDelta::LineDelta(x, y) = delta {
+                            controller.scroll_delta = (x, y);
+                        }
+                        should_scroll_event = true;
+                    }
                 }
-                self.cursor_position = position;
-            }
-            Event::WindowEvent {
-                event: WindowEvent::Focused(true),
-                ..
-            } => {
-                if !self.cursor_locked {
-                    if let Err(err) = self.window().set_cursor_grab(CursorGrabMode::Confined) {
-                        eprintln!("Cursor lock failed: {:?}", err);
+                Event::WindowEvent {
+                    event: WindowEvent::CursorMoved { position, .. },
+                    ..
+                } => {
+                    if controller.window().has_focus() && controller.cursor_locked {
+                        controller.mouse_delta = (
+                            -position.x as f32 + 0.5 * controller.window().inner_size().width as f32,
+                            position.y as f32 - 0.5 * controller.window().inner_size().height as f32,
+                        );
+                        controller.window().set_cursor_position(PhysicalPosition::new(
+                            controller.window().inner_size().width as f32 * 0.5,
+                            controller.window().inner_size().height as f32 * 0.5))
+                            .expect("failed to reset mouse position");
+                        should_mouse_move_event = true
                     } else {
-                        self.window().set_cursor_visible(false);
-                        self.cursor_locked = true;
+                        controller.saved_cursor_pos = position;
+                    }
+                    controller.cursor_position = position;
+                }
+                Event::WindowEvent {
+                    event: WindowEvent::Focused(true),
+                    ..
+                } => {
+                    if !controller.cursor_locked {
+                        if let Err(err) = controller.window().set_cursor_grab(CursorGrabMode::Confined) {
+                            eprintln!("Cursor lock failed: {:?}", err);
+                        } else {
+                            controller.window().set_cursor_visible(false);
+                            controller.cursor_locked = true;
+                        }
                     }
                 }
-            }
-            Event::WindowEvent {
-                event: WindowEvent::Focused(false),
-                ..
-            } => {
-                self.cursor_locked = false;
-                if let Err(err) = self.window().set_cursor_grab(CursorGrabMode::None) {
-                    eprintln!("Cursor unlock failed: {:?}", err);
-                } else {
-                    self.window().set_cursor_visible(true);
+                Event::WindowEvent {
+                    event: WindowEvent::Focused(false),
+                    ..
+                } => {
+                    controller.cursor_locked = false;
+                    if let Err(err) = controller.window().set_cursor_grab(CursorGrabMode::None) {
+                        eprintln!("Cursor unlock failed: {:?}", err);
+                    } else {
+                        controller.window().set_cursor_visible(true);
+                    }
                 }
+                _ => {}
             }
-            _ => {}
         }
-    }
-
-    fn do_mouse(&mut self) {
-        if self.cursor_locked {
-            let player = &self.player_pointer.physics_engine.borrow().players[self.player_pointer.index];
-            let camera = &mut player.camera_pointer.world.borrow_mut().cameras[self.player_pointer.index];
-            let rotation_x_delta = self.mouse_delta.1;
-            let rotation_y_delta = self.mouse_delta.0;
-            let sense = self.sensitivity;
-            camera.rotation.y += rotation_y_delta * sense;
-            camera.rotation.x -= rotation_x_delta * sense;
-            let new_rotation_x = camera.rotation.x;
-            camera.rotation.x = new_rotation_x.clamp(-PI * 0.5, PI * 0.5);
+        if should_scroll_event {
+            Lua::run_scroll_methods().expect("failed to run scroll methods");
+        }
+        if should_mouse_move_event {
+            Lua::run_mouse_moved_methods().expect("failed to run scroll methods");
         }
     }
 }
@@ -347,4 +345,5 @@ pub struct Flags {
     pub screenshot_queued: bool,
     pub draw_hitboxes: bool,
     pub do_physics: bool,
+    pub reload_all_scripts_queued: bool,
 }

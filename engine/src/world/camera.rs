@@ -6,6 +6,7 @@ use crate::world::scene::Scene;
 
 const PI: f32 = std::f32::consts::PI;
 
+#[derive(Clone)]
 pub struct CameraPointer {
     pub world: Arc<RefCell<Scene>>,
     pub index: usize,

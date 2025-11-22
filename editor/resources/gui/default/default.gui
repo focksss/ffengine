@@ -127,6 +127,16 @@
 			"absolute_scale": false,
 			"color": [0.3, 0.3, 0.3, 1.0],
 			"corner_radius": 5.0
+		},
+		{
+			"position": [0.0, 0.0],
+			"scale": [1.0, 1.0],
+			"clip_min": [0.0, 0.0],
+			"clip_max": [1.0, 1.0],
+			"absolute_position": false,
+			"absolute_scale": false,
+			"color": [0.3, 0.3, 0.3, 1.0],
+			"corner_radius": 5.0
 		}
 	],
 	"texts": [
@@ -313,6 +323,22 @@
 		"absolute_position": false,
 		"absolute_scale": false,
 		"color": [1.0, 1.0, 1.0, 1.0]
+	},
+	{
+		"text_information": {
+			"font": 0,
+			"text": "Reload Scripts",
+			"font_size": 38.0,
+			"newline_distance": 1720.0
+		},
+		"position": [0.05, 0.2],
+		"scale": [1.0, 1.0],
+		"clip_min": [0.0, 0.0],
+		"clip_max": [
+			1.0, 1.0],
+		"absolute_position": false,
+		"absolute_scale": false,
+		"color": [1.0, 1.0, 1.0, 1.0]
 	}
 ],
 	"nodes": [
@@ -360,7 +386,7 @@
 		},
 		{
 			"name": "settings",
-			"children": [3, 4, 5, 6, 8, 10],
+			"children": [3, 4, 5, 6, 8, 10, 12],
 			"position": [0.8, 0.0],
 			"scale": [0.2, 1.0],
 			"absolute_position": false,
@@ -585,6 +611,36 @@
 				"absolute_scale": false,
 				"quad": 10,
 				"text": 11
-			}
+			},
+			{
+			"name": "Reload all scripts button",
+			"interactable_information": {
+				"hover_actions": [
+					{
+						"method": "color_quad_bright",
+						"script": 0
+					}
+				],
+				"unhover_actions": [
+					{
+						"method": "color_quad_normal",
+						"script": 0
+					}
+				],
+				"left_tap_actions": [
+					{
+						"method": "reload_all_scripts",
+						"script": 0
+					}
+				]
+			},
+			"children": [],
+			"position": [0.1, 0.43],
+			"scale": [0.8, 0.05],
+			"absolute_position": false,
+			"absolute_scale": false,
+			"quad": 11,
+			"text": 12
+		}
 	]
 }
