@@ -199,7 +199,7 @@ impl Bvh {
         (min, max)
     }
 
-    pub(crate) fn get_triangle_vertices(mesh: &Mesh, triangle_index: usize, scale_factor: Option<Vector>) -> (Vertex, Vertex, Vertex) {
+    pub fn get_triangle_vertices(mesh: &Mesh, triangle_index: usize, scale_factor: Option<Vector>) -> (Vertex, Vertex, Vertex) {
         let primitive = &mesh.primitives[0];
 
         let idx0;

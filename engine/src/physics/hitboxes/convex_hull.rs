@@ -53,9 +53,8 @@ impl ConvexHull {
         }
         (furthest_point.clone(), furthest_index)
     }
-
-    /// Returns hull points and triangles
-    fn new(mut points: Vec<Vector>) -> ConvexHull {
+    
+    pub fn new(mut points: Vec<Vector>) -> ConvexHull {
         let dist_from_line = |point: &Vector, a: &Vector, b: &Vector| -> f32 {
             let ab = (b - a).normalize_3d();
             let ray = point - a;
@@ -106,19 +105,19 @@ impl ConvexHull {
         hull_tris.push((2, 1, 3));
         hull_tris.push((1, 0, 3));
 
-
-
         // expand tetrahedron into full hull
         // prune contained points (make a hull convex)
         Self::remove_internal_points(&mut points, &mut hull_points, &hull_tris);
-        // remove unused points
+        // expand
         while points.len() > 0 {
+            println!("points left: {}", points.len());
             let (point, point_index) = Self::furthest_point(&points, &points[0]);
 
-            points.remove(point_index);
+            points.swap_remove(point_index);
             Self::add_point(&mut hull_points, &mut hull_tris, point);
             Self::remove_internal_points(&mut points, &mut hull_points, &hull_tris);
         }
+        // remove unused points
         let mut i = 0;
         while i < hull_points.len() {
             let mut used = false;
@@ -144,7 +143,7 @@ impl ConvexHull {
                     tri.2 -= 1;
                 }
             }
-            hull_points.remove(i);
+            hull_points.swap_remove(i);
         }
 
         ConvexHull {
@@ -192,7 +191,7 @@ impl ConvexHull {
                 if dist > 0.0 { inside = false; break; }
             }
             if inside {
-                points.remove(i);
+                points.swap_remove(i);
             } else {
                 i += 1;
             }
@@ -210,7 +209,7 @@ impl ConvexHull {
                 }
             }
             if too_close {
-                points.remove(i);
+                points.swap_remove(i);
             } else {
                 i += 1;
             }
@@ -243,10 +242,12 @@ impl ConvexHull {
             }
         }
         // remove old tris facing point
-        tris_facing.sort_unstable_by(|a, b| b.cmp(a));  // sort descending to avoid index shifting issues
-        for tri_facing in &tris_facing {
-            hull_tris.remove(*tri_facing);
-        }
+        let tris_facing_set: std::collections::HashSet<_> = tris_facing.into_iter().collect();
+        *hull_tris = hull_tris.iter()
+            .enumerate()
+            .filter(|(i, _)| !tris_facing_set.contains(i))
+            .map(|(_, tri)| *tri)
+            .collect();
         // add
         let new_id = hull_points.len();
         hull_points.push(point);

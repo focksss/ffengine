@@ -1,9 +1,9 @@
 use ash::vk;
-use ash::vk::{DescriptorType, DeviceSize, Format, ImageAspectFlags, ImageSubresourceRange, MemoryPropertyFlags, Sampler, ShaderStageFlags};
+use ash::vk::{DescriptorType, DeviceSize, Format, ImageAspectFlags, ImageSubresourceRange, MemoryPropertyFlags, PipelineInputAssemblyStateCreateInfo, PipelineRasterizationStateCreateInfo, Sampler, ShaderStageFlags};
 use std::cell::RefCell;
 use std::fs::File;
 use std::io::BufWriter;
-use std::slice;
+use std::{iter, slice};
 use std::sync::Arc;
 use crate::client::controller::Controller;
 use crate::gui::gui::GUI;
@@ -114,14 +114,26 @@ impl Renderer {
         let hitbox_descriptor_set_create_info = DescriptorSetCreateInfo::new(base);
         let hitbox_renderpass_create_info = RenderpassCreateInfo::new(base)
             .pass_create_info(hitbox_pass_create_info)
+            .pipeline_input_assembly_state(PipelineInputAssemblyStateCreateInfo {
+                topology: vk::PrimitiveTopology::LINE_LIST,
+                primitive_restart_enable: vk::FALSE,
+                ..Default::default()
+            })
+            .pipeline_rasterization_state(PipelineRasterizationStateCreateInfo {
+                front_face: vk::FrontFace::COUNTER_CLOCKWISE,
+                cull_mode: vk::CullModeFlags::NONE,
+                line_width: 5.0,
+                polygon_mode: vk::PolygonMode::FILL,
+                ..Default::default()
+            })
             .descriptor_set_create_info(hitbox_descriptor_set_create_info)
-            .vertex_shader_uri(String::from("hitbox_display\\cube.vert.spv"))
+            .vertex_shader_uri(String::from("hitbox_display\\hitbox.vert.spv"))
             .fragment_shader_uri(String::from("hitbox_display\\hitbox.frag.spv"))
             .pipeline_color_blend_state_create_info(color_blend_state)
             .push_constant_range(vk::PushConstantRange {
                 stage_flags: ShaderStageFlags::ALL_GRAPHICS,
                 offset: 0,
-                size: size_of::<HitboxPushConstantSendable>() as u32,
+                size: size_of::<LinePushConstantSendable>() as u32,
             });
         let hitbox_renderpass = Renderpass::new(hitbox_renderpass_create_info);
 
@@ -243,49 +255,49 @@ impl Renderer {
             for rigid_body in physics_engine.rigid_bodies.iter() {
                 match &rigid_body.hitbox {
                     OBB(a, _) => {
-                        let constants = HitboxPushConstantSendable {
-                            view_proj: (&camera.projection_matrix * &camera.view_matrix).data,
-                            center: (a.center.rotate_by_quat(&rigid_body.orientation) + rigid_body.position).to_array4(),
-                            half_extent: a.half_extents.to_array4(),
-                            quat: rigid_body.orientation.to_array4(),
-                            color: Vector::new_vec4(0.0, 0.0, 1.0, 0.3).to_array4()
-                        };
+                        for (i, j) in EDGES.iter() {
+                            let corner_a = CORNERS[*i] * a.half_extents;
+                            let corner_b = CORNERS[*j] * a.half_extents;
 
-                        self.device.cmd_push_constants(frame_command_buffer, self.hitbox_renderpass.pipeline_layout, ShaderStageFlags::ALL_GRAPHICS, 0, slice::from_raw_parts(
-                            &constants as *const HitboxPushConstantSendable as *const u8,
-                            size_of::<HitboxPushConstantSendable>(),
-                        ));
-                        self.device.cmd_draw(frame_command_buffer, 36, 1, 0, 0);
-                    },
-                    Sphere(a) => {
-                        let constants = HitboxPushConstantSendable {
-                            view_proj: (&camera.projection_matrix * &camera.view_matrix).data,
-                            center: (a.center.rotate_by_quat(&rigid_body.orientation) + rigid_body.position).to_array4(),
-                            half_extent: Vector::new_vec(a.radius).to_array4(),
-                            quat: rigid_body.orientation.to_array4(),
-                            color: Vector::new_vec4(0.0, 0.0, 1.0, 0.3).to_array4()
-                        };
+                            let constants = LinePushConstantSendable {
+                                view_proj: (&camera.projection_matrix * &camera.view_matrix).data,
+                                a: ((a.center + corner_a).rotate_by_quat(&rigid_body.orientation) + rigid_body.position).to_array4(),
+                                b: ((a.center + corner_b).rotate_by_quat(&rigid_body.orientation) + rigid_body.position).to_array4(),
+                                color: Vector::new_vec4(0.0, 0.0, 1.0, 1.0).to_array4()
+                            };
 
-                        self.device.cmd_push_constants(frame_command_buffer, self.hitbox_renderpass.pipeline_layout, ShaderStageFlags::ALL_GRAPHICS, 0, slice::from_raw_parts(
-                            &constants as *const HitboxPushConstantSendable as *const u8,
-                            size_of::<HitboxPushConstantSendable>(),
-                        ));
-                        self.device.cmd_draw(frame_command_buffer, 36, 1, 0, 0);
-                    }
-                    Hitbox::Mesh(a) => {
-                        let constants = Bvh::get_bounds_info(&a.bvh);
-                        for constant in constants.iter() {
                             self.device.cmd_push_constants(frame_command_buffer, self.hitbox_renderpass.pipeline_layout, ShaderStageFlags::ALL_GRAPHICS, 0, slice::from_raw_parts(
-                                &HitboxPushConstantSendable {
-                                    view_proj: (&camera.projection_matrix * &camera.view_matrix).data,
-                                    center: ((constant.0 * a.current_scale_multiplier).rotate_by_quat(&rigid_body.orientation) + rigid_body.position).to_array4(),
-                                    half_extent: (constant.1 * a.current_scale_multiplier).to_array4(),
-                                    quat: rigid_body.orientation.to_array4(),
-                                    color: Vector::new_vec4(0.0, 0.0, 1.0, 0.01).to_array4()
-                                } as *const HitboxPushConstantSendable as *const u8,
-                                size_of::<HitboxPushConstantSendable>(),
+                                &constants as *const LinePushConstantSendable as *const u8,
+                                size_of::<LinePushConstantSendable>(),
                             ));
-                            self.device.cmd_draw(frame_command_buffer, 36, 1, 0, 0);
+                            self.device.cmd_draw(frame_command_buffer, 2, 1, 0, 0);
+                        }
+                    },
+                    Hitbox::ConvexHull(a) => {
+                        for tri in &a.triangle_vert_indices {
+                            let edges = [
+                                (tri.0, tri.1),
+                                (tri.1, tri.2),
+                                (tri.2, tri.0),
+                            ];
+
+                            for (i, j) in edges.iter() {
+                                let corner_a = a.points[*i];
+                                let corner_b = a.points[*j];
+
+                                let constants = LinePushConstantSendable {
+                                    view_proj: (&camera.projection_matrix * &camera.view_matrix).data,
+                                    a: (corner_a.rotate_by_quat(&rigid_body.orientation) + rigid_body.position).to_array4(),
+                                    b: (corner_b.rotate_by_quat(&rigid_body.orientation) + rigid_body.position).to_array4(),
+                                    color: Vector::new_vec4(0.0, 1.0, 0.0, 1.0).to_array4()
+                                };
+
+                                self.device.cmd_push_constants(frame_command_buffer, self.hitbox_renderpass.pipeline_layout, ShaderStageFlags::ALL_GRAPHICS, 0, slice::from_raw_parts(
+                                    &constants as *const LinePushConstantSendable as *const u8,
+                                    size_of::<LinePushConstantSendable>(),
+                                ));
+                                self.device.cmd_draw(frame_command_buffer, 2, 1, 0, 0);
+                            }
                         }
                     }
                     _ => { continue }
@@ -501,3 +513,26 @@ pub struct HitboxPushConstantSendable {
     quat: [f32; 4],
     color: [f32; 4],
 }
+pub struct LinePushConstantSendable {
+    view_proj: [f32; 16],
+    a: [f32; 4],
+    b: [f32; 4],
+    color: [f32; 4],
+}
+//TODO REMOVE THIS GRAPHICS CRIME AND REPLACE WITH VERTEX BUFFERS FOR HITBOXES
+// LOOKING AT THIS MAKES ME WANT TO DIE AND I WROTE IT
+const CORNERS: [Vector; 8] = [
+Vector { x: 1.0, y: 1.0, z: 1.0, w: 1.0 },
+Vector { x: 1.0, y: 1.0, z: -1.0, w: 1.0 },
+Vector { x: 1.0, y: -1.0, z: 1.0, w: 1.0 },
+Vector { x: 1.0, y: -1.0, z: -1.0, w: 1.0 },
+Vector { x: -1.0, y: 1.0, z: 1.0, w: 1.0 },
+Vector { x: -1.0, y: 1.0, z: -1.0, w: 1.0 },
+Vector { x: -1.0, y: -1.0, z: 1.0, w: 1.0 },
+Vector { x: -1.0, y: -1.0, z: -1.0, w: 1.0 },
+];
+const EDGES: [(usize, usize); 12] = [
+(0, 1), (0, 2), (1, 3), (2, 3),
+(4, 5), (4, 6), (5, 7), (6, 7),
+(0, 4), (1, 5), (2, 6), (3, 7),
+];

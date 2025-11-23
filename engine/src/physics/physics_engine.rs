@@ -38,8 +38,9 @@ impl PhysicsEngine {
     /// * 1 = Mesh
     /// * 2 = Capsule
     /// * 3 = Sphere
+    /// * 4 = ConvexHull
     pub fn add_all_nodes_from_model(&mut self, world: &Scene, model_index: usize, hitbox_type: usize) {
-        assert!(hitbox_type < 4);
+        assert!(hitbox_type < 5);
         let model = &world.models[model_index];
         for (node_index, node) in model.nodes.iter().enumerate() {
             if let Some(hitbox) = Hitbox::get_hitbox_from_node(node, hitbox_type) {

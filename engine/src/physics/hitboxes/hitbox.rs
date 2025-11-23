@@ -16,7 +16,7 @@ pub enum Hitbox {
 }
 impl Hitbox {
     pub fn get_hitbox_from_node(node: &Node, hitbox_type: usize) -> Option<Hitbox> {
-        assert!(hitbox_type < 4);
+        assert!(hitbox_type < 5);
         if let Some(mesh) = &node.mesh {
             let scale = node.scale * node.user_scale;
             let (min, max) = mesh.borrow().get_min_max();
@@ -52,6 +52,16 @@ impl Hitbox {
                         center: (min + max) * scale * 0.5,
                         radius: half_extent.max_of(),
                     })
+                }
+                4 => {
+                    let mut vertices = Vec::new();
+
+                    for primitive in &mesh.borrow().primitives {
+                        for vertex in primitive.vertex_data.iter() {
+                            vertices.push(Vector::new_from_array(&vertex.position));
+                        }
+                    }
+                    Hitbox::ConvexHull(ConvexHull::new(vertices))
                 }
                 _ => unreachable!()
             })
