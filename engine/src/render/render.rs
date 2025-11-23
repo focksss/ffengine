@@ -10,7 +10,7 @@ use crate::gui::gui::GUI;
 use crate::math::Vector;
 use crate::physics::hitboxes::hitbox::Hitbox;
 use crate::physics::hitboxes::hitbox::Hitbox::OBB;
-use crate::physics::hitboxes::hitbox::Hitbox::SPHERE;
+use crate::physics::hitboxes::hitbox::Hitbox::Sphere;
 use crate::physics::hitboxes::mesh::Bvh;
 use crate::physics::physics_engine::PhysicsEngine;
 use crate::physics::player::Player;
@@ -242,7 +242,7 @@ impl Renderer {
         if render_hitboxes {
             for rigid_body in physics_engine.rigid_bodies.iter() {
                 match &rigid_body.hitbox {
-                    OBB(a) => {
+                    OBB(a, _) => {
                         let constants = HitboxPushConstantSendable {
                             view_proj: (&camera.projection_matrix * &camera.view_matrix).data,
                             center: (a.center.rotate_by_quat(&rigid_body.orientation) + rigid_body.position).to_array4(),
@@ -257,7 +257,7 @@ impl Renderer {
                         ));
                         self.device.cmd_draw(frame_command_buffer, 36, 1, 0, 0);
                     },
-                    SPHERE(a) => {
+                    Sphere(a) => {
                         let constants = HitboxPushConstantSendable {
                             view_proj: (&camera.projection_matrix * &camera.view_matrix).data,
                             center: (a.center.rotate_by_quat(&rigid_body.orientation) + rigid_body.position).to_array4(),
@@ -272,7 +272,7 @@ impl Renderer {
                         ));
                         self.device.cmd_draw(frame_command_buffer, 36, 1, 0, 0);
                     }
-                    Hitbox::MESH(a) => {
+                    Hitbox::Mesh(a) => {
                         let constants = Bvh::get_bounds_info(&a.bvh);
                         for constant in constants.iter() {
                             self.device.cmd_push_constants(frame_command_buffer, self.hitbox_renderpass.pipeline_layout, ShaderStageFlags::ALL_GRAPHICS, 0, slice::from_raw_parts(

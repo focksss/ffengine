@@ -4,7 +4,9 @@ use crate::math::matrix::Matrix;
 use crate::math::Vector;
 use crate::physics::hitboxes::bounding_box::BoundingBox;
 use crate::physics::hitboxes::capsule::Capsule;
+use crate::physics::hitboxes::hitbox;
 use crate::physics::hitboxes::hitbox::{Hitbox, HitboxType};
+use crate::physics::hitboxes::hitbox::Hitbox::ConvexHull;
 use crate::physics::hitboxes::mesh::{Bvh, MeshCollider};
 use crate::physics::hitboxes::sphere::Sphere;
 use crate::physics::physics_engine::{AxisType, ContactInformation, ContactPoint, PhysicsEngine};
@@ -57,10 +59,11 @@ impl RigidBody {
             self.position = node.world_transform * Vector::new_vec4(0.0, 0.0, 0.0, 1.0);
             self.orientation = node.world_transform.extract_quaternion();
             self.hitbox = Hitbox::get_hitbox_from_node(node, match self.hitbox {
-                Hitbox::OBB(_) => 0,
-                Hitbox::MESH(_) => 1,
-                Hitbox::CAPSULE(_) => 2,
-                Hitbox::SPHERE(_) => 3,
+                Hitbox::OBB(_, _) => 0,
+                Hitbox::Mesh(_) => 1,
+                Hitbox::Capsule(_) => 2,
+                Hitbox::Sphere(_) => 3,
+                Hitbox::ConvexHull(_) => 4,
             }).unwrap();
             self.update_shape_properties();
         }
@@ -91,11 +94,12 @@ impl RigidBody {
     }
 
     pub fn update_shape_properties(&mut self) {
-        match self.hitbox {
-            Hitbox::OBB(obb) => {
+        match &mut self.hitbox {
+            Hitbox::OBB(obb, _) => {
                 let a = obb.half_extents.x * 2.0;
                 let b = obb.half_extents.y * 2.0;
                 let c = obb.half_extents.z * 2.0;
+
 
                 self.inertia_tensor = Matrix::new();
                 self.inertia_tensor.set(0, 0, (1.0 / 12.0) * (b * b + c * c));
@@ -117,15 +121,15 @@ impl RigidBody {
 
                 self.center_of_mass = obb.center
             }
-            Hitbox::MESH(_) => {
+            Hitbox::Mesh(_) => {
                 //TODO inertia tensor and center of mass
             }
-            Hitbox::CAPSULE(capsule) => {
+            Hitbox::Capsule(capsule) => {
                 //TODO inertia tensor
 
                 self.center_of_mass = (capsule.a + capsule.b) * 0.5
             }
-            Hitbox::SPHERE(sphere) => {
+            Hitbox::Sphere(sphere) => {
                 let r2 = sphere.radius * sphere.radius;
                 let c = 2.0 / 5.0;
                 let v = c * r2;
@@ -135,6 +139,9 @@ impl RigidBody {
                 self.inertia_tensor.set(2, 2, v);
 
                 self.center_of_mass = sphere.center
+            }
+            Hitbox::ConvexHull(convex) => {
+                //TODO
             }
         }
         self.inv_inertia_tensor = self.inertia_tensor.inverse3().mul_float_into3(self.inv_mass);
@@ -199,9 +206,9 @@ impl RigidBody {
     }
 
     fn intersects_sphere(&mut self, other: &mut RigidBody, dt: f32) -> Option<ContactInformation> {
-        if let Hitbox::SPHERE(sphere) = other.hitbox {
+        if let Hitbox::Sphere(sphere) = other.hitbox {
             return match self.hitbox {
-                Hitbox::OBB(obb) => {
+                Hitbox::OBB(obb, _) => {
                     let obb_position = self.position;
                     let sphere_position = other.position;
                     let obb_orientation = self.orientation;
@@ -312,7 +319,7 @@ impl RigidBody {
                         time_of_impact: 0.0
                     })
                 }
-                Hitbox::SPHERE(a) => {
+                Hitbox::Sphere(a) => {
                     let p_a = a.center.rotate_by_quat(&self.orientation) + self.position;
                     let p_b = sphere.center.rotate_by_quat(&other.orientation) + other.position;
 
@@ -388,9 +395,9 @@ impl RigidBody {
         None
     }
     pub fn intersects_obb(&mut self, other: &mut RigidBody, dt: f32) -> Option<ContactInformation> {
-        if let Hitbox::OBB(obb) = other.hitbox {
+        if let Hitbox::OBB(obb, _) = other.hitbox {
             return match self.hitbox {
-                Hitbox::OBB(this_obb) => {
+                Hitbox::OBB(this_obb, _) => {
                     let (a, b) = (this_obb, obb);
 
                     let a_center = a.center.rotate_by_quat(&self.orientation) + self.position;
@@ -477,7 +484,7 @@ impl RigidBody {
                         time_of_impact: 0.0,
                     })
                 }
-                Hitbox::SPHERE(_) => {
+                Hitbox::Sphere(_) => {
                     if let Some(contact) = other.intersects_sphere(self, dt) {
                         Some(contact.flip())
                     } else { None }
@@ -538,9 +545,9 @@ impl Default for RigidBody {
         Self {
             owned_by_player: false,
             coupled_with_scene_object: None,
-            hitbox: Hitbox::OBB(BoundingBox {
+            hitbox: Hitbox::Sphere(Sphere {
                 center: Vector::new_vec(0.0),
-                half_extents: Vector::new_vec(1.0),
+                radius: 1.0,
             }),
             is_static: true,
             restitution_coefficient: 0.5,

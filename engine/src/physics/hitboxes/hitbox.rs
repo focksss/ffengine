@@ -3,13 +3,16 @@ use crate::physics::hitboxes::sphere::Sphere;
 use crate::world::scene::Node;
 use crate::math::Vector;
 use crate::physics::hitboxes::bounding_box::BoundingBox;
+use crate::physics::hitboxes::convex_hull::ConvexHull;
+use crate::physics::hitboxes::hitbox;
 use crate::physics::hitboxes::mesh::MeshCollider;
 
 pub enum Hitbox {
-    OBB(BoundingBox),
-    MESH(MeshCollider),
-    CAPSULE(Capsule),
-    SPHERE(Sphere),
+    OBB(BoundingBox, ConvexHull),
+    Mesh(MeshCollider),
+    Capsule(Capsule),
+    Sphere(Sphere),
+    ConvexHull(ConvexHull),
 }
 impl Hitbox {
     pub fn get_hitbox_from_node(node: &Node, hitbox_type: usize) -> Option<Hitbox> {
@@ -21,14 +24,15 @@ impl Hitbox {
 
             return Some(match hitbox_type {
                 0 => {
-                    Hitbox::OBB(BoundingBox {
+                    let bounds = BoundingBox {
                         center: (min + max) * scale * 0.5,
                         half_extents: half_extent,
-                    })
+                    };
+                    Hitbox::OBB(bounds, ConvexHull::from_bounds(&bounds))
                 }
                 1 => {
                     let mesh_collider = MeshCollider::new(mesh.clone(), scale);
-                    Hitbox::MESH(mesh_collider)
+                    Hitbox::Mesh(mesh_collider)
                 }
                 2 => {
                     let mid = (min + max) * 0.5 * scale;
@@ -37,14 +41,14 @@ impl Hitbox {
                     let min_s = min * scale;
                     let max_s = max * scale;
 
-                    Hitbox::CAPSULE(Capsule {
+                    Hitbox::Capsule(Capsule {
                         a: Vector::new_vec3(mid.x, max_s.y - radius, mid.z),
                         b: Vector::new_vec3(mid.x, min_s.y + radius, mid.z),
                         radius,
                     })
                 }
                 3 => {
-                    Hitbox::SPHERE(Sphere {
+                    Hitbox::Sphere(Sphere {
                         center: (min + max) * scale * 0.5,
                         radius: half_extent.max_of(),
                     })
@@ -57,20 +61,53 @@ impl Hitbox {
 
     pub fn get_type(&self) -> HitboxType {
         match self {
-            Hitbox::OBB(_) => HitboxType::OBB,
-            Hitbox::MESH(_) => HitboxType::MESH,
-            Hitbox::CAPSULE(_) => HitboxType::CAPSULE,
-            Hitbox::SPHERE(_) => HitboxType::SPHERE,
+            Hitbox::OBB(_, _) => HitboxType::OBB,
+            Hitbox::Mesh(_) => HitboxType::MESH,
+            Hitbox::Capsule(_) => HitboxType::CAPSULE,
+            Hitbox::Sphere(_) => HitboxType::SPHERE,
+            Hitbox::ConvexHull(_) => HitboxType::CONVEX
+        }
+    }
+
+    /// Direction must be normalized
+    pub fn get_furthest_point(&self, direction: &Vector, position: &Vector, bias: f32) -> Vector {
+        match self {
+            Hitbox::Sphere(sphere) => {
+                position + sphere.center + direction * (sphere.radius + bias)
+            }
+            Hitbox::OBB(_, convex) => {
+                position + ConvexHull::furthest_point(&convex.points, direction).0
+            }
+            Hitbox::ConvexHull(convex) => {
+                position + ConvexHull::furthest_point(&convex.points, direction).0
+            }
+            _ => *position
+        }
+    }
+
+    pub fn fastest_linear_speed(&self, center_of_mass: &Vector, angular_velocity: &Vector, direction: &Vector) -> f32 {
+        match self {
+            Hitbox::Sphere(sphere) => {
+                0.0
+            }
+            Hitbox::OBB(_, convex) => {
+                convex.largest_linear_speed(center_of_mass, angular_velocity, direction)
+            }
+            Hitbox::ConvexHull(convex) => {
+                convex.largest_linear_speed(center_of_mass, angular_velocity, direction)
+            }
+            _ => 0.0
         }
     }
 }
 impl Clone for Hitbox {
     fn clone(&self) -> Self {
         match self {
-            Hitbox::OBB(bounding_box) => Hitbox::OBB(bounding_box.clone()),
-            Hitbox::MESH(collider) => Hitbox::MESH(collider.clone()),
-            Hitbox::CAPSULE(capsule) => Hitbox::CAPSULE(capsule.clone()),
-            Hitbox::SPHERE(sphere) => Hitbox::SPHERE(sphere.clone()),
+            Hitbox::OBB(bounding_box, convex_hull) => Hitbox::OBB(bounding_box.clone(), convex_hull.clone()),
+            Hitbox::Mesh(collider) => Hitbox::Mesh(collider.clone()),
+            Hitbox::Capsule(capsule) => Hitbox::Capsule(capsule.clone()),
+            Hitbox::Sphere(sphere) => Hitbox::Sphere(sphere.clone()),
+            Hitbox::ConvexHull(convex) => Hitbox::ConvexHull(convex.clone()),
         }
     }
 }
@@ -80,4 +117,5 @@ pub enum HitboxType {
     MESH,
     CAPSULE,
     SPHERE,
+    CONVEX
 }

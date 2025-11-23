@@ -3,6 +3,7 @@ use std::sync::Arc;
 use crate::world::camera::{Camera, CameraPointer};
 use crate::math::Vector;
 use crate::physics::hitboxes::bounding_box::BoundingBox;
+use crate::physics::hitboxes::convex_hull::ConvexHull;
 use crate::physics::hitboxes::hitbox::Hitbox;
 use crate::physics::physics_engine::{PhysicsEngine, RigidBody};
 use crate::physics::rigid_body::RigidBodyPointer;
@@ -41,6 +42,9 @@ impl Player {
         rigid_body.hitbox = Hitbox::OBB(BoundingBox {
              half_extents: (max - min) * 0.5,
              center: Vector::new_vec3(0.0, -hitbox_height * 0.5 + eye_to_head.y, 0.0),
+        }, ConvexHull {
+            points: Vec::new(),
+            triangle_vert_indices: Vec::new(),
         });
         // */
         /*
