@@ -77,6 +77,20 @@ impl UserData for GUINodePointer {
             };
             lua.create_userdata(text)
         });
+
+        fields.add_field_method_get("position", |_, this| Ok(
+            this.gui.borrow().gui_nodes[this.index].position
+        ));
+        fields.add_field_method_set("position", |_, this, val: Vector| {
+            Ok(this.gui.borrow_mut().gui_nodes[this.index].position = val)
+        });
+
+        fields.add_field_method_get("scale", |_, this| Ok(
+            this.gui.borrow().gui_nodes[this.index].scale
+        ));
+        fields.add_field_method_set("scale", |_, this, val: Vector| {
+            Ok(this.gui.borrow_mut().gui_nodes[this.index].scale = val)
+        });
     }
 }
 

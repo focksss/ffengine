@@ -9,7 +9,7 @@
 | clip_max          | `[float; 2]` | Clipping bound maximum of the object.<br/>Normalized to parents scale                                                                                                                                                           |
 | absolute_position | `[bool; 2]`  | Refer to description of position, each bool corresponds to the axis matching its index. Both default to false.                                                                                                                  |
 | absolute_scale    | `[bool; 2] ` | Refer to description of scale, each bool corresponds to the axis matching its index. Both default to false.                                                                                                                     |
-| color             | `[float; 4]` | Color of the object in RGBA, normalized                                                                                                                                                                                         |
+| color             | `[float; 4]` | Color of the object in RGBA, normalized. If the object has an image, this will be treated as an additive tint                                                                                                                   |
 | anchor_point      | `String`     | One of "top_left", "top_middle", "right", "left", "center", "bottom_left", etc. This represents where, relative to the parent node, the objects coordinate space will be centered. If not given, "bottom_left", will be assumed |
 
 ## Root Structure
@@ -18,6 +18,7 @@
 | guis    | `[GUI]`    | List of all GUI layouts |
 | scripts | `[script]` | List of all scripts     |
 | fonts   | `[font]`   | List of all fonts       |
+| images  | `[image]`  | List of all images      |
 | quads   | `[quad]`   | List of all quads       |
 | texts   | `[text]`   | List of all texts       |
 | nodes   | `[node]`   | List of all nodes       |
@@ -33,6 +34,12 @@
 |---------------------------|-----------|-------------------------------|
 | uri                       | `String`  | Path to the scripts .lua file |
 
+### Image Structure
+| Key             | Type     | Description                                                             |
+|-----------------|----------|-------------------------------------------------------------------------|
+| uri             | `String` | Path to the images file                                                 |
+| alpha_threshold | `float`  | The minimum alpha value allowed before discarding a sample of the image |
+
 ### Quad Structure
 | Key               | Type      | Description                                                           |
 |-------------------|-----------|-----------------------------------------------------------------------|
@@ -45,6 +52,7 @@
 | color             | Common    | Common                                                                |
 | anchor_point      | Common    | Common                                                                |
 | corner_radius     | `integer` | The radius of the corner rounding to be applied to the quad in pixels |
+| image             | `integer` | Optional index of an image to be rendered on the quad                 |
 
 ### Text Structure
 | Key               | Type              | Description                        |

@@ -1,9 +1,14 @@
 #version 460
+#extension GL_ARB_separate_shader_objects : enable
+#extension GL_ARB_shading_language_420pack : enable
+#extension GL_EXT_nonuniform_qualifier : enable
 
 layout (location = 0) out vec4 frag_color;
 
 layout (location = 0) in vec2 uv;
 layout (location = 1) in vec2 pos;
+
+layout(set = 0, binding = 0) uniform sampler2D textures[];
 
 layout(push_constant) uniform constants {
     vec4 color;
@@ -13,6 +18,7 @@ layout(push_constant) uniform constants {
     vec2 position;
     vec2 scale;
     float corner_radius;
+    int image;
 } ubo;
 
 void main() {
@@ -33,4 +39,8 @@ void main() {
     discard;
 
     frag_color = ubo.color;
+    if (ubo.image > -1) {
+        vec4 tex_col = vec4(texture(textures[ubo.image], uv).a);
+        frag_color += tex_col;
+    }
 }

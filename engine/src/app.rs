@@ -10,7 +10,7 @@ use winit::event::{Event, WindowEvent};
 use winit::event_loop::ControlFlow;
 use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
 use crate::math::Vector;
-use crate::client::controller::Controller;
+use crate::client::client::Client;
 use crate::gui::gui::GUI;
 use crate::physics::physics_engine::PhysicsEngine;
 use crate::physics::player::{MovementMode, Player, PlayerPointer};
@@ -22,9 +22,6 @@ use crate::world::scene::{Light, Model, Scene};
 
 const PI: f32 = std::f32::consts::PI;
 
-//TODO: Create static OnceLock frame_command_buffer instead of passing as parameter everywhere
-// update it at start of render loop. 
-// (can keep the parameter system, just ALSO create the OnceLock, so that independent methods (update_text) don't need it passed)
 static COMMAND_BUFFER: OnceLock<RwLock<vk::CommandBuffer>> = OnceLock::new();
 pub fn get_command_buffer() -> vk::CommandBuffer {
     *COMMAND_BUFFER
@@ -34,20 +31,19 @@ pub fn get_command_buffer() -> vk::CommandBuffer {
         .unwrap()
 }
 
-//TODO collapse engine and engineref into one struct
 pub struct Engine {
     pub base: VkBase,
     pub world: Arc<RefCell<Scene>>,
     pub renderer: Arc<RefCell<Renderer>>,
     pub physics_engine: Arc<RefCell<PhysicsEngine>>,
-    pub controller: Arc<RefCell<Controller>>,
+    pub client: Arc<RefCell<Client>>,
 }
 #[derive(Clone)]
 pub struct EngineRef {
     pub world: Arc<RefCell<Scene>>,
     pub renderer: Arc<RefCell<Renderer>>,
     pub physics_engine: Arc<RefCell<PhysicsEngine>>,
-    pub controller: Arc<RefCell<Controller>>,
+    pub client: Arc<RefCell<Client>>,
 }
 impl Engine {
     pub unsafe fn new() -> Engine {
@@ -57,7 +53,7 @@ impl Engine {
         let world = Arc::new(RefCell::new(world));
         let physics_engine = Arc::new(RefCell::new(PhysicsEngine::new(Vector::new3(0.0, -9.8, 0.0), 0.9, 0.5)));
 
-        let controller = Arc::new(RefCell::new(Controller::new(&base.window)));
+        let controller = Arc::new(RefCell::new(Client::new(&base.window)));
 
         let rw_lock = RwLock::new(base.draw_command_buffers[0]);
         COMMAND_BUFFER.set(rw_lock).expect("Failed to initialize frame command buffer global");
@@ -69,7 +65,7 @@ impl Engine {
                 index: 0
             }))) },
             world,
-            controller,
+            client: controller,
             base,
         };
         Lua::initialize(engine.as_ref()).expect("failed to initialize lua");
@@ -81,7 +77,7 @@ impl Engine {
             world: self.world.clone(),
             renderer: self.renderer.clone(),
             physics_engine: self.physics_engine.clone(),
-            controller: self.controller.clone(),
+            client: self.client.clone(),
         }
     }
 
@@ -116,7 +112,7 @@ impl Engine {
                     },
                     Event::AboutToWait => {
                         {
-                            let controller_ref = &mut self.controller.borrow_mut();
+                            let controller_ref = &mut self.client.borrow_mut();
                             let flag_ref = &mut controller_ref.flags.borrow_mut();
                             if flag_ref.close_requested {
                                 elwp.exit();
@@ -175,11 +171,11 @@ impl Engine {
                         Lua::run_update_methods().expect("Failed to run Update methods");
                         {
                             {
-                                let mut controller_mut = self.controller.borrow_mut();
+                                let mut controller_mut = self.client.borrow_mut();
                                 controller_mut.reset_deltas()
                             };
 
-                            if self.controller.borrow().flags.borrow().do_physics { self.physics_engine.borrow_mut().tick(delta_time, &mut self.world.borrow_mut()); }
+                            if self.client.borrow().flags.borrow().do_physics { self.physics_engine.borrow_mut().tick(delta_time, &mut self.world.borrow_mut()); }
                         }
 
                         let current_fence = base.draw_commands_reuse_fences[current_frame];
@@ -219,7 +215,7 @@ impl Engine {
                                     world_ref.update_cameras()
                                 }
 
-                                let flags = self.controller.borrow().flags.clone();
+                                let flags = self.client.borrow().flags.clone();
                                 {
                                     self.renderer.borrow_mut().render_frame(current_frame, present_index as usize, self.world.clone(), flags.borrow().draw_hitboxes, &self.physics_engine.borrow());
                                 }
@@ -243,7 +239,7 @@ impl Engine {
                         // frametime_manager.reset();
                         current_frame = (current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
                     },
-                    _ => { Controller::handle_event(self.controller.clone(), event) },
+                    _ => { Client::handle_event(self.client.clone(), event) },
                 }
             }).expect("Failed to initiate render loop");
 

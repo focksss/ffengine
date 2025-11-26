@@ -5,7 +5,7 @@ use std::fs::File;
 use std::io::BufWriter;
 use std::{iter, slice};
 use std::sync::Arc;
-use crate::client::controller::Controller;
+use crate::client::client::Client;
 use crate::gui::gui::GUI;
 use crate::math::Vector;
 use crate::physics::hitboxes::hitbox::Hitbox;
@@ -39,12 +39,21 @@ pub struct Renderer {
     pub present_sampler: Sampler,
 }
 impl Renderer {
-    pub unsafe fn new(base: &VkBase, controller: Arc<RefCell<Controller>>, primary_camera: CameraPointer) -> Renderer { unsafe {
+    pub unsafe fn new(base: &VkBase, controller: Arc<RefCell<Client>>, primary_camera: CameraPointer) -> Renderer { unsafe {
         Renderer::compile_shaders();
         let world_ref = primary_camera.world.clone();
         let world = world_ref.borrow();
 
-        let (scene_renderer, compositing_renderpass, present_renderpass, hitbox_renderpass) = Renderer::create_rendering_objects(base, &world);
+        let (scene_renderer, compositing_renderpass, present_renderpass, hitbox_renderpass) = Renderer::create_rendering_objects(base, &world,
+            vk::Viewport {
+                width: base.surface_resolution.width as f32,
+                height: base.surface_resolution.height as f32,
+                x: 0.0,
+                y: 0.0,
+                min_depth: 0.0,
+                max_depth: 1.0
+            }
+        );
 
         let mut renderer = Renderer {
             device: base.device.clone(),
@@ -55,8 +64,8 @@ impl Renderer {
             present_renderpass,
             compositing_renderpass,
 
+            gui: Arc::new(RefCell::new(GUI::new(base, controller, scene_renderer.null_tex_sampler, scene_renderer.null_texture.image_view))),
             scene_renderer,
-            gui: Arc::new(RefCell::new(GUI::new(base, controller))),
 
             hitbox_renderpass,
 
@@ -90,7 +99,7 @@ impl Renderer {
 
         renderer
     } }
-    unsafe fn create_rendering_objects(base: &VkBase, world: &Scene) -> (SceneRenderer, Renderpass, Renderpass, Renderpass) { unsafe {
+    unsafe fn create_rendering_objects(base: &VkBase, world: &Scene, scene_viewport: vk::Viewport) -> (SceneRenderer, Renderpass, Renderpass, Renderpass) { unsafe {
         let texture_sampler_create_info = DescriptorCreateInfo::new(base)
             .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
             .shader_stages(ShaderStageFlags::FRAGMENT);
@@ -158,7 +167,7 @@ impl Renderer {
             .descriptor_set_create_info(compositing_descriptor_set_create_info)
             .vertex_shader_uri(String::from("quad\\quad.vert.spv"))
             .fragment_shader_uri(String::from("composite.frag.spv")) };
-        (SceneRenderer::new(base, world), Renderpass::new(compositing_renderpass_create_info), Renderpass::new(present_renderpass_create_info), hitbox_renderpass)
+        (SceneRenderer::new(base, world, scene_viewport), Renderpass::new(compositing_renderpass_create_info), Renderpass::new(present_renderpass_create_info), hitbox_renderpass)
     } }
     pub unsafe fn reload(&mut self, base: &VkBase, world: &Scene) { unsafe {
         self.device.device_wait_idle().unwrap();
@@ -169,7 +178,11 @@ impl Renderer {
         self.compositing_renderpass.destroy();
         self.present_renderpass.destroy();
         self.hitbox_renderpass.destroy();
-        (self.scene_renderer, self.compositing_renderpass, self.present_renderpass, self.hitbox_renderpass) = Renderer::create_rendering_objects(base, world);
+        (self.scene_renderer, self.compositing_renderpass, self.present_renderpass, self.hitbox_renderpass) = Renderer::create_rendering_objects(
+            base,
+            world,
+            self.scene_renderer.viewport.borrow().clone()
+        );
 
         self.set_present_textures(self.compositing_renderpass.pass.borrow().textures.iter().map(|frame_textures| {
             &frame_textures[0]

@@ -42,22 +42,22 @@ impl UserData for Vector {
             Ok(Vector::new4(x, y, z, w))
         });
         methods.add_function("new", |_, ()| {
-            Ok(Vector::empty())
-        });
-        methods.add_function("new_empty_quat", |_, ()| {
             Ok(Vector::new())
         });
-        methods.add_function("new_vec3", |_, (x, y, z): (f32, f32, f32)| {
+        methods.add_function("new3", |_, (x, y, z): (f32, f32, f32)| {
             Ok(Vector::new3(x, y, z))
         });
-        methods.add_function("new_vec2", |_, (x, y): (f32, f32)| {
+        methods.add_function("new4", |_, (x, y, z, w): (f32, f32, f32, f32)| {
+            Ok(Vector::new4(x, y, z, w))
+        });
+        methods.add_function("new2", |_, (x, y): (f32, f32)| {
             Ok(Vector::new2(x, y))
         });
-        methods.add_function("new_vec", |_, x: f32| {
+        methods.add_function("fill", |_, x: f32| {
             Ok(Vector::fill(x))
         });
 
-        methods.add_method("normalize_3d", |_, this, ()| {
+        methods.add_method("normalize3", |_, this, ()| {
             Ok(this.normalize3())
         });
         methods.add_method("rotate_by_euler", |_, this, rot: Vector| {

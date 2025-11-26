@@ -2,7 +2,7 @@
   "guis": [
     {
       "name": "editor",
-      "nodes": [0]
+      "nodes": [0, 3]
     }
   ],
   "scripts": [
@@ -15,6 +15,16 @@
       "uri": "editor\\resources\\fonts\\Oxygen-Regular.ttf",
       "glyph_msdf_size": 32,
       "glyph_msdf_distance_range": 2.0
+    }
+  ],
+  "images": [
+    {
+      "uri": "editor\\resources\\gui\\images\\reload.png",
+      "alpha_threshold": 0.1
+    },
+    {
+      "uri": "editor\\resources\\gui\\images\\close.png",
+      "alpha_threshold": 0.1
     }
   ],
   "quads": [
@@ -32,7 +42,8 @@
       "clip_min": [0.0, 0.0],
       "clip_max": [1.0, 1.0],
       "color": [0.3, 0.3, 0.3, 0.0],
-      "corner_radius": 5.0
+      "corner_radius": 5.0,
+      "image": 1
     },
     {
       "position": [0.0, 0.0],
@@ -40,6 +51,15 @@
       "clip_min": [0.0, 0.0],
       "clip_max": [1.0, 1.0],
       "color": [0.3, 0.3, 0.3, 0.0],
+      "corner_radius": 5.0,
+      "image": 0
+    },
+    {
+      "position": [0.0, 0.0],
+      "scale": [1.0, 1.0],
+      "clip_min": [0.0, 0.0],
+      "clip_max": [1.0, 1.0],
+      "color": [0.3, 0.3, 0.3, 0.8],
       "corner_radius": 5.0
     }
   ],
@@ -80,7 +100,7 @@
           ],
           "unhover_actions": [
             {
-              "method": "close_unhovered",
+              "method": "color_unhovered",
               "script": 0
             }
           ],
@@ -123,10 +143,20 @@
         "children": [],
         "position": [40, 0],
         "scale": [40.0, 1.0],
-        "anchor_point": "top_right",
+        "anchor_point": "top_middle",
         "absolute_scale": [true, false],
         "absolute_position": [true, false],
         "quad": 2
-      }
+      },
+    {
+      "name": "scene_graph",
+      "children": [],
+      "position": [0, 40],
+      "scale": [200.0, 1000.0],
+      "anchor_point": "top_right",
+      "absolute_scale": [true, true],
+      "absolute_position": [false, true],
+      "quad": 3
+    }
   ]
 }

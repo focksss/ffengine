@@ -6,13 +6,13 @@ use winit::event::MouseButton;
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::keyboard::NativeKey::MacOS;
 use winit::window::CursorGrabMode;
-use crate::client::controller::{Controller, Flags};
+use crate::client::client::{Client, Flags};
 use crate::math::Vector;
 use crate::physics::player::PlayerPointer;
 use crate::scripting::lua_engine::RegisterToLua;
 
 #[derive(Clone)]
-pub struct ControllerRef(pub Arc<RefCell<Controller>>);
+pub struct ControllerRef(pub Arc<RefCell<Client>>);
 impl UserData for ControllerRef {
     fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
         fields.add_field_method_get("flags", |lua, this| {

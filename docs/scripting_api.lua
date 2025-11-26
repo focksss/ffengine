@@ -20,18 +20,24 @@ MovementMode = {
 
 ---@class EngineClass
 ---@field renderer Renderer
----@field controller Controller
+---@field client Client
 ---@field physics_engine PhysicsEngine
 
     ---@class Renderer
     ---@field gui GUI
+    ---@field scene_renderer SceneRenderer
 
         ---@class GUI
         ---@field ActiveNode GUINode
+        ---@field get_node fun(self:GUI, index:integer):GUINode
+        ---@field get_quad fun(self:GUI, index:integer):GUIQuad
+        ---@field get_text fun(self:GUI, index:integer):GUIText
 
             ---@class GUINode
             ---@field quad GUIQuad
             ---@field text GUIText
+            ---@field position Vector
+            ---@field scale Vector
 
                 ---@class GUIQuad
                 ---@field set_color fun(self:GUIQuad, r:number, g:number, b:number, a:number):nil
@@ -39,8 +45,17 @@ MovementMode = {
                 ---@class GUIText
                 ---@field text_message string
                 ---@field update_text fun(self:GUIText, text:string):nil
+                
+        ---@class SceneRenderer
+        ---@field viewport Viewport
 
-    ---@class Controller
+            ---@class Viewport
+            ---@field x number
+            ---@field y number
+            ---@field width number
+            ---@field height number
+
+    ---@class Client
     ---@field flags Flags
     ---@field cursor_position Vector
     ---@field scroll_delta Vector
@@ -49,9 +64,9 @@ MovementMode = {
     ---@field window_size Vector
     ---@field ButtonPressed MouseButton
     ---@field ButtonReleased MouseButton
-    ---@field new_key_pressed fun(self:Controller, key: integer):boolean
-    ---@field key_pressed fun(self:Controller, key: integer):boolean
-    ---@field mouse_button_pressed fun(self:Controller, button: integer):boolean
+    ---@field new_key_pressed fun(self:Client, key: integer):boolean
+    ---@field key_pressed fun(self:Client, key: integer):boolean
+    ---@field mouse_button_pressed fun(self:Client, button: integer):boolean
 
         ---@class Flags
         ---@field pause_rendering boolean
@@ -91,13 +106,12 @@ MovementMode = {
 ---@field y number
 ---@field z number
 ---@field w number
----@field new_vec4 fun(x:number, y:number, z:number, w:number):Vector
----@field new_vec3 fun(x:number, y:number, z:number):Vector
----@field new_vec2 fun(x:number, y:number):Vector
----@field new_vec fun(x:number):Vector
+---@field new4 fun(x:number, y:number, z:number, w:number):Vector
+---@field new3 fun(x:number, y:number, z:number):Vector
+---@field new2 fun(x:number, y:number):Vector
+---@field fill fun(x:number):Vector
 ---@field new fun():Vector
----@field new_empty_quat fun():Vector
----@field normalize_3d fun(self:Vector):Vector
+---@field normalize3 fun(self:Vector):Vector
 ---@field rotate_by_euler fun(self:Vector, rot:Vector):Vector
 
 Vector = Vector

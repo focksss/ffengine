@@ -10,19 +10,21 @@ use json::JsonValue;
 use mlua::{UserData, UserDataFields, UserDataMethods};
 use winit::event::MouseButton;
 use crate::app::get_command_buffer;
-use crate::client::controller::*;
+use crate::client::client::*;
 use crate::math::*;
 use crate::physics::player::MovementMode;
-use crate::render::render_helper::{Descriptor, DescriptorCreateInfo, DescriptorSetCreateInfo, Pass, PassCreateInfo, Renderpass, RenderpassCreateInfo, TextureCreateInfo};
+use crate::render::render_helper::{Descriptor, DescriptorCreateInfo, DescriptorSetCreateInfo, Pass, PassCreateInfo, Renderpass, RenderpassCreateInfo, Texture, TextureCreateInfo};
 use crate::gui::text::font::Font;
 use crate::gui::text::text_render::{TextInformation, TextRenderer};
+use crate::render::render::MAX_FRAMES_IN_FLIGHT;
 use crate::render::vulkan_base::VkBase;
 use crate::scripting::lua_engine::Lua;
 
 pub struct GUI {
     device: ash::Device,
     window: Arc<winit::window::Window>,
-    pub controller: Arc<RefCell<Controller>>,
+    pub controller: Arc<RefCell<Client>>,
+    null_tex_info: vk::DescriptorImageInfo,
 
     pub pass: Arc<RefCell<Pass>>,
     pub text_renderer: TextRenderer,
@@ -33,6 +35,7 @@ pub struct GUI {
 
     pub gui_quads: Vec<GUIQuad>,
     pub gui_texts: Vec<GUIText>,
+    pub gui_images: Vec<GUIImage>,
 
     pub interactable_node_indices: Vec<usize>,
 
@@ -102,23 +105,30 @@ impl GUI {
         }
     }
 
-    pub unsafe fn new(base: &VkBase, controller: Arc<RefCell<Controller>>) -> GUI { unsafe {
-        let (pass_ref, quad_renderpass, text_renderer) = GUI::create_rendering_objects(&base);
-
+    pub unsafe fn new(base: &VkBase, controller: Arc<RefCell<Client>>, null_tex_sampler: vk::Sampler, null_tex_img_view: vk::ImageView) -> GUI { unsafe {
+        let null_info = vk::DescriptorImageInfo {
+            sampler: null_tex_sampler,
+            image_view: null_tex_img_view,
+            image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+        };
+        let (pass_ref, quad_renderpass, text_renderer) = GUI::create_rendering_objects(&base, null_info);
 
         GUI {
             device: base.device.clone(),
             window: base.window.clone(),
             controller,
+            null_tex_info: null_info,
 
             pass: pass_ref.clone(),
             quad_renderpass,
+
             gui_nodes: Vec::new(),
-
             gui_root_node_indices: Vec::new(),
-            gui_quads: Vec::new(),
 
+            gui_quads: Vec::new(),
             gui_texts: Vec::new(),
+            gui_images: Vec::new(),
+
             interactable_node_indices: Vec::new(),
 
             fonts: vec![text_renderer.default_font.clone()],
@@ -128,18 +138,18 @@ impl GUI {
             active_node: 0,
         }
     } }
-    pub unsafe fn create_rendering_objects(base: &VkBase) -> (Arc<RefCell<Pass>>, Renderpass, TextRenderer) { unsafe {
+    pub unsafe fn create_rendering_objects(base: &VkBase, null_info: vk::DescriptorImageInfo) -> (Arc<RefCell<Pass>>, Renderpass, TextRenderer) { unsafe {
         let pass_create_info = PassCreateInfo::new(base)
             .add_color_attachment_info(TextureCreateInfo::new(base).format(Format::R16G16B16A16_SFLOAT).add_usage_flag(vk::ImageUsageFlags::TRANSFER_SRC));
         let pass_ref = Arc::new(RefCell::new(Pass::new(pass_create_info)));
 
         let color_blend_attachment_states = [vk::PipelineColorBlendAttachmentState {
-            blend_enable: 0,
-            src_color_blend_factor: vk::BlendFactor::SRC_COLOR,
-            dst_color_blend_factor: vk::BlendFactor::ONE_MINUS_DST_COLOR,
+            blend_enable: 1,
+            src_color_blend_factor: vk::BlendFactor::SRC_ALPHA,
+            dst_color_blend_factor: vk::BlendFactor::ONE_MINUS_SRC_ALPHA,
             color_blend_op: vk::BlendOp::ADD,
-            src_alpha_blend_factor: vk::BlendFactor::ZERO,
-            dst_alpha_blend_factor: vk::BlendFactor::ZERO,
+            src_alpha_blend_factor: vk::BlendFactor::ONE,
+            dst_alpha_blend_factor: vk::BlendFactor::ONE_MINUS_SRC_ALPHA,
             alpha_blend_op: vk::BlendOp::ADD,
             color_write_mask: vk::ColorComponentFlags::RGBA,
         }];
@@ -147,11 +157,14 @@ impl GUI {
             .logic_op(vk::LogicOp::CLEAR)
             .attachments(&color_blend_attachment_states);
 
-        let texture_sampler_create_info = DescriptorCreateInfo::new(base)
+        let image_infos: Vec<vk::DescriptorImageInfo> = vec![null_info; 1024];
+        let image_texture_samplers_create_info = DescriptorCreateInfo::new(base)
             .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
-            .shader_stages(ShaderStageFlags::FRAGMENT);
+            .shader_stages(ShaderStageFlags::FRAGMENT)
+            .dynamic(true)
+            .image_infos(image_infos.clone());
         let quad_descriptor_set_create_info = DescriptorSetCreateInfo::new(base)
-            .add_descriptor(Descriptor::new(&texture_sampler_create_info));
+            .add_descriptor(Descriptor::new(&image_texture_samplers_create_info));
         let quad_renderpass_create_info = { RenderpassCreateInfo::new(base)
             .pass_ref(pass_ref.clone())
             .descriptor_set_create_info(quad_descriptor_set_create_info)
@@ -174,7 +187,7 @@ impl GUI {
     pub unsafe fn reload_rendering(&mut self, base: &VkBase) { unsafe {
         self.text_renderer.destroy();
         self.quad_renderpass.destroy();
-        (self.pass, self.quad_renderpass, self.text_renderer) = GUI::create_rendering_objects(base);
+        (self.pass, self.quad_renderpass, self.text_renderer) = GUI::create_rendering_objects(base, self.null_tex_info);
     } }
 
     /**
@@ -182,10 +195,16 @@ impl GUI {
     * * Refer to default.gui in resources/gui
     * * Nodes are drawn recursively and without depth testing. To make a node appear in front of another, define it after another.
     */
-    pub fn load_from_file(&mut self, base: &VkBase, path: &str) {
+    pub unsafe fn load_from_file(&mut self, base: &VkBase, path: &str) {
         for text in self.gui_texts.iter() {
             text.text_information.as_ref().unwrap().destroy();
         }
+        unsafe {
+            for image in self.gui_images.iter() {
+                image.destroy(&self.device);
+            }
+        }
+        self.gui_images.clear();
 
         let json = json::parse(fs::read_to_string(path).expect("failed to load json file").as_str()).expect("json parse error");
 
@@ -222,6 +241,68 @@ impl GUI {
             fonts.push(Arc::new(Font::new(base, uri.as_str(), Some(glyph_msdf_size), Some(glyph_msdf_distance_range))));
         }
         unsafe { self.set_fonts(fonts) };
+
+        let mut image_uris = Vec::new();
+        let mut image_alpha_thresholds = Vec::new();
+        for image in json["images"].members() {
+            let mut uri = None;
+            if let JsonValue::String(ref uri_json) = image["uri"] {
+                uri = Some((*uri_json).as_str());
+            }
+            image_uris.push(uri);
+
+            let mut alpha_threshold = 0.1;
+            if let JsonValue::Number(ref alpha_threshold_json) = image["alpha_threshold"] {
+                if let Ok(v) = alpha_threshold_json.to_string().parse::<f32>() {
+                    alpha_threshold = v;
+                }
+            }
+            image_alpha_thresholds.push(alpha_threshold);
+        }
+        unsafe {
+            let uris: Vec<PathBuf> = image_uris.iter().map(|uri| { PathBuf::from(uri.expect("gui image did not have uri")) }).collect();
+            let textures = base.load_textures_batched(uris.as_slice(), true);
+            let gui_images: Vec<GUIImage> = textures.iter().enumerate().map(|(i, texture)| {
+                GUIImage {
+                    image: texture.1.0,
+                    image_view: texture.0.0,
+                    memory: texture.1.1,
+                    sampler: texture.0.1,
+
+                    alpha_threshold: image_alpha_thresholds[i]
+                }
+            }).collect();
+
+            let mut image_infos: Vec<vk::DescriptorImageInfo> = Vec::with_capacity(1024);
+
+            for texture in &gui_images {
+                image_infos.push(vk::DescriptorImageInfo {
+                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                    image_view: texture.image_view,
+                    sampler: texture.sampler,
+                })
+            }
+            let missing = 1024 - image_infos.len();
+            for _ in 0..missing {
+                image_infos.push(self.null_tex_info.clone());
+            }
+            let image_infos = image_infos.as_slice().as_ptr();
+
+            for frame in 0..MAX_FRAMES_IN_FLIGHT {
+                let descriptor_write = vk::WriteDescriptorSet {
+                    s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
+                    dst_set: self.quad_renderpass.descriptor_set.descriptor_sets[frame],
+                    dst_binding: 0,
+                    dst_array_element: 0,
+                    descriptor_type: DescriptorType::COMBINED_IMAGE_SAMPLER,
+                    descriptor_count: 1024,
+                    p_image_info: image_infos,
+                    ..Default::default()
+                };
+                base.device.update_descriptor_sets(&[descriptor_write], &[]);
+            }
+            self.gui_images = gui_images;
+        };
 
         let mut guis = Vec::new();
         for gui in json["guis"].members() {
@@ -462,6 +543,13 @@ impl GUI {
                 }
             }
 
+            let mut image = None;
+            if let JsonValue::Number(ref image_json) = quad["image"] {
+                if let Ok(v) = image_json.to_string().parse::<i32>() {
+                    image = Some(v);
+                }
+            }
+
             gui_quads.push(GUIQuad {
                 position,
                 scale,
@@ -472,6 +560,7 @@ impl GUI {
                 anchor_point,
                 color,
                 corner_radius,
+                image
             })
         }
         self.gui_quads = gui_quads;
@@ -853,7 +942,7 @@ impl GUI {
             position: position.to_array2(),
             scale: scale.to_array2(),
             corner_radius: quad.corner_radius,
-            _pad: [0.0; 1],
+            image: quad.image.unwrap_or(-1)
         };
 
         let device = self.device.clone();
@@ -914,6 +1003,9 @@ impl GUI {
         for font in &self.fonts {
             font.destroy();
         }
+        for image in &self.gui_images {
+            image.destroy(&self.device)
+        }
     } }
 }
 #[derive(Clone)]
@@ -961,6 +1053,24 @@ impl AnchorPoint {
 impl Default for AnchorPoint {
     fn default() -> Self { AnchorPoint::BottomLeft }
 }
+
+struct GUIImage {
+    image_view: vk::ImageView,
+    sampler: vk::Sampler,
+    image: vk::Image,
+    memory: vk::DeviceMemory,
+
+    alpha_threshold: f32,
+}
+impl GUIImage {
+    unsafe fn destroy(&self, device: &ash::Device) { unsafe {
+        device.destroy_sampler(self.sampler, None);
+        device.destroy_image_view(self.image_view, None);
+        device.destroy_image(self.image, None);
+        device.free_memory(self.memory, None);
+    } }
+}
+
 /**
 * Position and scale are relative and normalized.
 */
@@ -993,6 +1103,7 @@ pub struct GUIInteractableInformation {
     pub right_hold_actions: Vec<(String, usize)>,
     pub hitbox_diversion: Option<usize>,
 }
+
 /**
 * Position and scale are relative and normalized.
 */
@@ -1007,6 +1118,7 @@ pub struct GUIQuad {
     pub anchor_point: AnchorPoint,
     pub color: Vector,
     pub corner_radius: f32,
+    image: Option<i32>
 }
 impl Default for GUIQuad {
     fn default() -> Self {
@@ -1020,9 +1132,11 @@ impl Default for GUIQuad {
             anchor_point: AnchorPoint::default(),
             color: Default::default(),
             corner_radius: 0.0,
+            image: None
         }
     }
 }
+
 pub struct GUIText {
     pub text_information: Option<TextInformation>,
 
@@ -1058,6 +1172,7 @@ impl Default for GUIText {
         }
     }
 }
+
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct GUIQuadSendable {
@@ -1074,5 +1189,5 @@ pub struct GUIQuadSendable {
 
     pub corner_radius: f32,
 
-    pub _pad: [f32; 1],
+    pub image: i32,
 }

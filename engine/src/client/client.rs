@@ -19,7 +19,7 @@ use crate::scripting::lua_engine::Lua;
 use crate::world::camera::Camera;
 use crate::world::scene::Scene;
 
-pub struct Controller {
+pub struct Client {
     pub window_ptr: *const winit::window::Window,
 
     pub sensitivity: f32,
@@ -43,13 +43,13 @@ pub struct Controller {
     pub saved_cursor_pos: PhysicalPosition<f64>,
     pub paused: bool,
 }
-impl Controller {
-    pub fn new(window: &winit::window::Window) -> Controller {
+impl Client {
+    pub fn new(window: &winit::window::Window) -> Client {
         window.set_cursor_position(PhysicalPosition::new(
             window.inner_size().width as f32 * 0.5,
             window.inner_size().height as f32 * 0.5))
             .expect("failed to reset mouse position");
-        Controller {
+        Client {
             window_ptr: window as *const _,
             sensitivity: 0.001,
             cursor_position: Default::default(),
@@ -66,7 +66,7 @@ impl Controller {
             button_released: MouseButton::Left,
         }
     }
-    pub(crate) fn window(&self) -> &winit::window::Window {
+    pub fn window(&self) -> &winit::window::Window {
         unsafe { &*self.window_ptr }
     }
 
@@ -77,7 +77,7 @@ impl Controller {
         self.new_pressed_keys.clear();
     }
 
-    pub fn handle_event<T>(controller_ref: Arc<RefCell<Controller>>, event: Event<T>) {
+    pub fn handle_event<T>(controller_ref: Arc<RefCell<Client>>, event: Event<T>) {
         let mut should_scroll_event = false;
         let mut should_mouse_move_event = false;
         let mut should_mouse_button_pressed_event = false;

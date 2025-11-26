@@ -1,6 +1,6 @@
 use mlua::{UserData, UserDataFields, UserDataMethods};
 use crate::app::EngineRef;
-use crate::scripting::engine_api::client_api::controller_api::ControllerRef;
+use crate::scripting::engine_api::client_api::client_api::ControllerRef;
 use crate::scripting::engine_api::physics_api::physics_engine_api::PhysicsEngineRef;
 use crate::scripting::engine_api::render_api::render_api::RendererRef;
 use crate::scripting::lua_engine::Lua;
@@ -11,8 +11,8 @@ impl UserData for EngineRef {
             let object = RendererRef(this.renderer.clone());
             lua.create_userdata(object)
         });
-        fields.add_field_method_get("controller", |lua, this| {
-            let object = ControllerRef(this.controller.clone());
+        fields.add_field_method_get("client", |lua, this| {
+            let object = ControllerRef(this.client.clone());
             lua.create_userdata(object)
         });
         fields.add_field_method_get("physics_engine", |lua, this| {

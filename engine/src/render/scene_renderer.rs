@@ -1,10 +1,12 @@
+use std::cell::RefCell;
 use std::mem;
 use crate::offset_of;
 use ash::vk;
-use ash::vk::{DescriptorType, Format, ShaderStageFlags};
+use ash::vk::{DescriptorType, Extent2D, Format, ShaderStageFlags};
 use rand::{rng, Rng};
 use std::path::PathBuf;
 use std::slice;
+use std::sync::Arc;
 use crate::math::Vector;
 use crate::render::render::MAX_FRAMES_IN_FLIGHT;
 use crate::render::render_helper::{Descriptor, DescriptorCreateInfo, DescriptorSetCreateInfo, PassCreateInfo, Renderpass, RenderpassCreateInfo, Texture, TextureCreateInfo};
@@ -21,6 +23,8 @@ pub const SHADOW_RES: u32 = 4096;
 pub struct SceneRenderer {
     pub device: ash::Device,
     pub draw_command_buffers: Vec<vk::CommandBuffer>,
+
+    pub viewport: Arc<RefCell<vk::Viewport>>,
 
     pub null_texture: Texture,
     pub null_tex_sampler: vk::Sampler,
@@ -42,7 +46,7 @@ pub struct SceneRenderer {
     pub ssao_noise_texture: Texture,
 }
 impl SceneRenderer {
-    pub unsafe fn new(base: &VkBase, world: &Scene) -> SceneRenderer { unsafe {
+    pub unsafe fn new(base: &VkBase, world: &Scene, viewport: vk::Viewport) -> SceneRenderer { unsafe {
         let null_tex_info = base.create_2d_texture_image(&PathBuf::from("").join("engine\\resources\\checker_2x2.png"), true) ;
         base.device.destroy_sampler(null_tex_info.0.1, None);
         let sampler_info = vk::SamplerCreateInfo {
@@ -85,7 +89,7 @@ impl SceneRenderer {
             ssao_blur_vertical_renderpass,
             ssao_upsample_renderpass,
             lighting_renderpass
-        ) = SceneRenderer::create_rendering_objects(base, &null_texture, &null_tex_sampler, world);
+        ) = SceneRenderer::create_rendering_objects(base, &null_texture, &null_tex_sampler, world, viewport);
 
         //<editor-fold desc = "ssao sampling setup">
         let mut rng = rng();
@@ -350,6 +354,8 @@ impl SceneRenderer {
             device: base.device.clone(),
             draw_command_buffers: base.draw_command_buffers.clone(),
 
+            viewport: Arc::new(RefCell::new(viewport)),
+
             null_texture,
             null_tex_sampler,
 
@@ -372,8 +378,10 @@ impl SceneRenderer {
         base: &VkBase,
         null_tex: &Texture,
         null_tex_sampler: &vk::Sampler,
-        world: &Scene
+        world: &Scene,
+        viewport: vk::Viewport
     ) -> (Renderpass, Renderpass, Renderpass, Renderpass, Renderpass, Renderpass, Renderpass, Renderpass) { unsafe {
+        let resolution = Extent2D { width: viewport.width as u32, height: viewport.height as u32 };
         let image_infos: Vec<vk::DescriptorImageInfo> = vec![vk::DescriptorImageInfo {
             image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
             image_view: null_tex.image_view,
@@ -385,20 +393,30 @@ impl SceneRenderer {
             .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
             .shader_stages(ShaderStageFlags::FRAGMENT);
         //<editor-fold desc = "passes">
-        let ssao_res_color_tex_create_info = TextureCreateInfo::new(base).format(Format::R8_UNORM).resolution_denominator((1.0 / SSAO_RESOLUTION_MULTIPLIER) as u32);
+        let ssao_res_color_tex_create_info = TextureCreateInfo::new(base).format(Format::R8_UNORM)
+            .width(resolution.width as u32).height(resolution.height as u32)
+            .resolution_denominator((1.0 / SSAO_RESOLUTION_MULTIPLIER) as u32);
         let geometry_pass_create_info = PassCreateInfo::new(base)
             // .add_color_attachment_info(TextureCreateInfo::new(base).format(Format::R16_SINT)) // material
-            .add_color_attachment_info(TextureCreateInfo::new(base).format(Format::R8G8B8A8_UNORM)) // albedo
-            .add_color_attachment_info(TextureCreateInfo::new(base).format(Format::R8G8B8A8_UNORM)) // metallic roughness
-            .add_color_attachment_info(TextureCreateInfo::new(base).format(Format::R8G8B8A8_UNORM)) // extra properties
-            .add_color_attachment_info(TextureCreateInfo::new(base).format(Format::R16G16B16A16_SFLOAT)) // view normal
-            .depth_attachment_info(TextureCreateInfo::new(base).format(Format::D32_SFLOAT).is_depth(true).clear_value([0.0, 0.0, 0.0, 0.0])); // depth
+            .add_color_attachment_info(TextureCreateInfo::new(base).format(Format::R8G8B8A8_UNORM)
+                .width(resolution.width).height(resolution.height)) // albedo
+            .add_color_attachment_info(TextureCreateInfo::new(base).format(Format::R8G8B8A8_UNORM)
+                .width(resolution.width).height(resolution.height)) // metallic roughness
+            .add_color_attachment_info(TextureCreateInfo::new(base).format(Format::R8G8B8A8_UNORM)
+                .width(resolution.width).height(resolution.height)) // extra properties
+            .add_color_attachment_info(TextureCreateInfo::new(base).format(Format::R16G16B16A16_SFLOAT)
+                .width(resolution.width).height(resolution.height)) // view normal
+            .depth_attachment_info(TextureCreateInfo::new(base).format(Format::D32_SFLOAT)
+                .width(resolution.width).height(resolution.height)
+                .is_depth(true).clear_value([0.0, 0.0, 0.0, 0.0])); // depth
 
         let shadow_pass_create_info = PassCreateInfo::new(base)
             .depth_attachment_info(TextureCreateInfo::new(base).format(Format::D16_UNORM).is_depth(true).clear_value([0.0, 0.0, 0.0, 0.0]).width(SHADOW_RES).height(SHADOW_RES).array_layers(5)); // depth;
 
         let ssao_depth_downsample_pass_create_info = PassCreateInfo::new(base)
-            .add_color_attachment_info(TextureCreateInfo::new(base).format(Format::R16G16B16A16_SFLOAT).resolution_denominator((1.0 / SSAO_RESOLUTION_MULTIPLIER) as u32));
+            .add_color_attachment_info(TextureCreateInfo::new(base).format(Format::R16G16B16A16_SFLOAT)
+                .width(resolution.width as u32).height(resolution.height as u32)
+                .resolution_denominator((1.0 / SSAO_RESOLUTION_MULTIPLIER) as u32));
         let ssao_pass_create_info = PassCreateInfo::new(base)
             .add_color_attachment_info(ssao_res_color_tex_create_info);
         let ssao_blur_horizontal_pass_create_info = PassCreateInfo::new(base)
@@ -406,8 +424,10 @@ impl SceneRenderer {
         let ssao_blur_vertical_pass_create_info = PassCreateInfo::new(base)
             .add_color_attachment_info(ssao_res_color_tex_create_info);
         let ssao_upsample_pass_create_info = PassCreateInfo::new(base)
-            .add_color_attachment_info(TextureCreateInfo::new(base).format(Format::R8_UNORM));
+            .add_color_attachment_info(TextureCreateInfo::new(base).format(Format::R8_UNORM)
+                .width(resolution.width).height(resolution.height));
 
+        // set to window size, not the scene viewport size
         let lighting_pass_create_info = PassCreateInfo::new(base)
             .add_color_attachment_info(TextureCreateInfo::new(base).format(Format::R16G16B16A16_SFLOAT).add_usage_flag(vk::ImageUsageFlags::TRANSFER_SRC));
         //</editor-fold>
@@ -732,6 +752,7 @@ impl SceneRenderer {
 
         let geometry_renderpass_create_info = { RenderpassCreateInfo::new(base)
             .pass_create_info(geometry_pass_create_info)
+            .resolution(resolution)
             .descriptor_set_create_info(geometry_descriptor_set_create_info)
             .vertex_shader_uri(String::from("geometry\\geometry.vert.spv"))
             .fragment_shader_uri(String::from("geometry\\geometry.frag.spv"))
@@ -762,39 +783,26 @@ impl SceneRenderer {
             .scissor(vk::Rect2D { offset: vk::Offset2D { x: 0, y: 0 }, extent: vk::Extent2D { width: SHADOW_RES, height: SHADOW_RES } }) };
         let shadow_renderpass = Renderpass::new(shadow_renderpass_create_info);
 
-        let ssao_pre_downsample_renderpass_create_info = { RenderpassCreateInfo::new(base)
-            .pass_create_info(ssao_depth_downsample_pass_create_info)
-            .descriptor_set_create_info(ssao_depth_downsample_descriptor_set_create_info)
-            .vertex_shader_uri(String::from("quad\\quad.vert.spv"))
-            .fragment_shader_uri(String::from("ssao\\pre_downsample.frag.spv"))
-            .viewport(vk::Viewport {
-                x: 0.0,
-                y: 0.0,
-                width: base.surface_resolution.width as f32 * SSAO_RESOLUTION_MULTIPLIER,
-                height: base.surface_resolution.height as f32 * SSAO_RESOLUTION_MULTIPLIER,
-                min_depth: 0.0,
-                max_depth: 1.0,
-            })
-            .scissor(vk::Rect2D { offset: vk::Offset2D { x: 0, y: 0 }, extent: vk::Extent2D { width: (base.surface_resolution.width as f32 * SSAO_RESOLUTION_MULTIPLIER) as u32,
-                height: (base.surface_resolution.height as f32 * SSAO_RESOLUTION_MULTIPLIER) as u32
-            } }) };
+        let ssao_pre_downsample_renderpass_create_info = {
+            RenderpassCreateInfo::new(base)
+                .pass_create_info(ssao_depth_downsample_pass_create_info)
+                .descriptor_set_create_info(ssao_depth_downsample_descriptor_set_create_info)
+                .vertex_shader_uri(String::from("quad\\quad.vert.spv"))
+                .fragment_shader_uri(String::from("ssao\\pre_downsample.frag.spv"))
+                .resolution(vk::Extent2D {
+                    width: (resolution.width as f32 * SSAO_RESOLUTION_MULTIPLIER) as u32,
+                    height: (resolution.height as f32 * SSAO_RESOLUTION_MULTIPLIER) as u32,
+                }) };
         let ssao_pre_downsample_renderpass = Renderpass::new(ssao_pre_downsample_renderpass_create_info);
         let ssao_renderpass_create_info = { RenderpassCreateInfo::new(base)
             .pass_create_info(ssao_pass_create_info)
             .descriptor_set_create_info(ssao_descriptor_set_create_info)
             .vertex_shader_uri(String::from("quad\\quad.vert.spv"))
             .fragment_shader_uri(String::from("ssao\\ssao.frag.spv"))
-            .viewport(vk::Viewport {
-                x: 0.0,
-                y: 0.0,
-                width: base.surface_resolution.width as f32 * SSAO_RESOLUTION_MULTIPLIER,
-                height: base.surface_resolution.height as f32 * SSAO_RESOLUTION_MULTIPLIER,
-                min_depth: 0.0,
-                max_depth: 1.0,
-            })
-            .scissor(vk::Rect2D { offset: vk::Offset2D { x: 0, y: 0 }, extent: vk::Extent2D { width: (base.surface_resolution.width as f32 * SSAO_RESOLUTION_MULTIPLIER) as u32,
-                height: (base.surface_resolution.height as f32 * SSAO_RESOLUTION_MULTIPLIER) as u32
-            } }) };
+            .resolution(vk::Extent2D {
+                width: (resolution.width as f32 * SSAO_RESOLUTION_MULTIPLIER) as u32,
+                height: (resolution.height as f32 * SSAO_RESOLUTION_MULTIPLIER) as u32,
+            }) };
         let ssao_renderpass = Renderpass::new(ssao_renderpass_create_info);
         let ssao_blur_horizontal_renderpass_create_info = { RenderpassCreateInfo::new(base)
             .pass_create_info(ssao_blur_horizontal_pass_create_info)
@@ -806,17 +814,10 @@ impl SceneRenderer {
                 offset: 0,
                 size: size_of::<BlurPassData>() as _,
             })
-            .viewport(vk::Viewport {
-                x: 0.0,
-                y: 0.0,
-                width: base.surface_resolution.width as f32 * SSAO_RESOLUTION_MULTIPLIER,
-                height: base.surface_resolution.height as f32 * SSAO_RESOLUTION_MULTIPLIER,
-                min_depth: 0.0,
-                max_depth: 1.0,
-            })
-            .scissor(vk::Rect2D { offset: vk::Offset2D { x: 0, y: 0 }, extent: vk::Extent2D { width: (base.surface_resolution.width as f32 * SSAO_RESOLUTION_MULTIPLIER) as u32,
-                height: (base.surface_resolution.height as f32 * SSAO_RESOLUTION_MULTIPLIER) as u32
-            } })};
+            .resolution(vk::Extent2D {
+                width: (resolution.width as f32 * SSAO_RESOLUTION_MULTIPLIER) as u32,
+                height: (resolution.height as f32 * SSAO_RESOLUTION_MULTIPLIER) as u32,
+            }) };
         let ssao_blur_horizontal_renderpass = Renderpass::new(ssao_blur_horizontal_renderpass_create_info);
         let ssao_blur_vertical_renderpass_create_info = { RenderpassCreateInfo::new(base)
             .pass_create_info(ssao_blur_vertical_pass_create_info)
@@ -828,17 +829,10 @@ impl SceneRenderer {
                 offset: 0,
                 size: size_of::<BlurPassData>() as _,
             })
-            .viewport(vk::Viewport {
-                x: 0.0,
-                y: 0.0,
-                width: base.surface_resolution.width as f32 * SSAO_RESOLUTION_MULTIPLIER,
-                height: base.surface_resolution.height as f32 * SSAO_RESOLUTION_MULTIPLIER,
-                min_depth: 0.0,
-                max_depth: 1.0,
-            })
-            .scissor(vk::Rect2D { offset: vk::Offset2D { x: 0, y: 0 }, extent: vk::Extent2D { width: (base.surface_resolution.width as f32 * SSAO_RESOLUTION_MULTIPLIER) as u32,
-                height: (base.surface_resolution.height as f32 * SSAO_RESOLUTION_MULTIPLIER) as u32
-            } })};
+            .resolution(vk::Extent2D {
+                width: (resolution.width as f32 * SSAO_RESOLUTION_MULTIPLIER) as u32,
+                height: (resolution.height as f32 * SSAO_RESOLUTION_MULTIPLIER) as u32,
+            }) };
         let ssao_blur_vertical_renderpass = Renderpass::new(ssao_blur_vertical_renderpass_create_info);
         let ssao_upsample_renderpass_create_info = { RenderpassCreateInfo::new(base)
             .pass_create_info(ssao_upsample_pass_create_info)
@@ -850,6 +844,7 @@ impl SceneRenderer {
                 offset: 0,
                 size: size_of::<DepthAwareUpsamplePassData>() as _,
             })
+            .resolution(resolution)
         };
         let ssao_upsample_renderpass = Renderpass::new(ssao_upsample_renderpass_create_info);
 
@@ -858,7 +853,9 @@ impl SceneRenderer {
             .descriptor_set_create_info(lighting_descriptor_set_create_info)
             .vertex_shader_uri(String::from("quad\\quad.vert.spv"))
             .fragment_shader_uri(String::from("lighting.frag.spv"))
-            .push_constant_range(camera_push_constant_range_fragment) };
+            .push_constant_range(camera_push_constant_range_fragment)
+            .viewport(viewport)
+        };
         let lighting_renderpass = Renderpass::new(lighting_renderpass_create_info);
         
         (

@@ -241,6 +241,15 @@ impl<'a> RenderpassCreateInfo<'a> {
         }
     }
 
+    pub fn resolution(mut self, resolution: vk::Extent2D) -> Self {
+        self.viewport.width = resolution.width as f32;
+        self.viewport.height = resolution.height as f32;
+        self.scissor = vk::Rect2D {
+            offset: vk::Offset2D { x: 0, y: 0 },
+            extent: resolution,
+        };
+        self
+    }
     pub fn pass_create_info(mut self, pass_create_info: PassCreateInfo<'a>) -> Self {
         self.pass_create_info = Some(pass_create_info);
         self.pass_ref = None;
