@@ -93,8 +93,8 @@ impl SceneRenderer {
         for i in 0..SSAO_KERNAL_SIZE {
             let mut scale = i as f32 / SSAO_KERNAL_SIZE as f32;
             scale = 0.1 + ((scale * scale) * (1.0 - 0.1));
-            ssao_kernal[i] = (Vector::new_from_array(&[rng.random::<f32>() * 2.0 - 1.0, rng.random::<f32>() * 2.0 - 1.0, rng.random::<f32>()])
-                .normalize_3d() * rng.random::<f32>() * scale).to_array4();
+            ssao_kernal[i] = (Vector::from_array(&[rng.random::<f32>() * 2.0 - 1.0, rng.random::<f32>() * 2.0 - 1.0, rng.random::<f32>()])
+                .normalize3() * rng.random::<f32>() * scale).to_array4();
         }
 
         let mut noise_data = Vec::<[f32; 2]>::with_capacity(16);
@@ -111,7 +111,7 @@ impl SceneRenderer {
             .format(Format::R16G16_SFLOAT)
             .usage_flags(
                 vk::ImageUsageFlags::SAMPLED |
-                    vk::ImageUsageFlags::TRANSFER_DST
+                vk::ImageUsageFlags::TRANSFER_DST
             );
         let ssao_noise_texture = Texture::new(&ssao_noise_tex_info);
 

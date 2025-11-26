@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use std::ops::{Add, AddAssign, Mul};
+use std::ops::{Add, AddAssign, DivAssign, Mul, MulAssign};
 use crate::math::Vector;
 
 const PI: f32 = std::f32::consts::PI;
@@ -166,6 +166,11 @@ impl Matrix {
             + sub[2] * (sub[3] * sub[7] - sub[4] * sub[6])
     }
 
+    pub fn cofactor(&self, row: usize, col: usize) -> f32 {
+        let minor = self.minor(row, col);
+        if (row + col) % 2 == 0 { minor } else { -minor }
+    }
+
     pub fn extract_quaternion(&self) -> Vector {
         let m = &self.data;
         let mut r = [
@@ -209,7 +214,7 @@ impl Matrix {
             z = 0.25 * s;
         }
         let len = (x * x + y * y + z * z + w * w).sqrt();
-        Vector::new_vec4(x / len, y / len, z / len, w / len)
+        Vector::new4(x / len, y / len, z / len, w / len)
     }
 
     pub fn extract_scale(&self) -> Vector {
@@ -219,7 +224,7 @@ impl Matrix {
         let scale_y = (m[4] * m[4] + m[5] * m[5] + m[6] * m[6]).sqrt();
         let scale_z = (m[8] * m[8] + m[9] * m[9] + m[10] * m[10]).sqrt();
 
-        Vector::new_vec3(scale_x, scale_y, scale_z)
+        Vector::new3(scale_x, scale_y, scale_z)
     }
 
     pub fn set(&mut self, row: usize, col: usize, v: f32) {
@@ -287,7 +292,7 @@ impl Matrix {
         let y = self.data[1] * other.x + self.data[5] * other.y + self.data[9] * other.z + self.data[13] * other.w;
         let z = self.data[2] * other.x + self.data[6] * other.y + self.data[10] * other.z + self.data[14] * other.w;
         let w = self.data[3] * other.x + self.data[7] * other.y + self.data[11] * other.z + self.data[15] * other.w;
-        Vector::new_vec4(x, y, z, w)
+        Vector::new4(x, y, z, w)
     }
     //</editor-fold>
 
@@ -454,9 +459,9 @@ impl Matrix {
     pub fn new_look_at(position: &Vector, target: &Vector, up: &Vector) -> Self {
         let mut result = Matrix::new();
 
-        let f = target.sub_vec(position).normalize_3d();
-        let s = f.cross(up).normalize_3d();
-        let u = s.cross(&f).normalize_3d();
+        let f = target.sub_vec(position).normalize3();
+        let s = f.cross(up).normalize3();
+        let u = s.cross(&f).normalize3();
 
         result.data[0] = s.x;
         result.data[4] = s.y;
@@ -539,6 +544,12 @@ impl Mul<Vector> for Matrix {
         &self * &vector
     }
 }
+impl Mul<f32> for Matrix {
+    type Output = Matrix;
+    fn mul(self, v: f32) -> Matrix {
+        self.mul_float(v)
+    }
+}
 
 impl<'a, 'b> Add<&'b Matrix> for &'a Matrix {
     type Output = Matrix;
@@ -574,5 +585,15 @@ impl AddAssign<&Matrix> for Matrix {
 impl AddAssign<Matrix> for Matrix {
     fn add_assign(&mut self, other: Matrix) {
         *self += &other;
+    }
+}
+impl MulAssign<f32> for Matrix {
+    fn mul_assign(&mut self, v: f32) {
+        self.data.iter_mut().for_each(|x| *x *= v)
+    }
+}
+impl DivAssign<f32> for Matrix {
+    fn div_assign(&mut self, v: f32) {
+        self.data.iter_mut().for_each(|x| *x /= v)
     }
 }

@@ -22,7 +22,8 @@ use crate::scripting::lua_engine::Lua;
 pub struct GUI {
     device: ash::Device,
     window: Arc<winit::window::Window>,
-    pub(crate) controller: Arc<RefCell<Controller>>,
+    pub controller: Arc<RefCell<Controller>>,
+    pub base: Arc<RefCell<VkBase>>,
 
     pub pass: Arc<RefCell<Pass>>,
     pub text_renderer: TextRenderer,
@@ -102,12 +103,14 @@ impl GUI {
         }
     }
 
-    pub unsafe fn new(base: &VkBase, controller: Arc<RefCell<Controller>>) -> GUI { unsafe {
-        let (pass_ref, quad_renderpass, text_renderer) = GUI::create_rendering_objects(base);
+    pub unsafe fn new(base: Arc<RefCell<VkBase>>, controller: Arc<RefCell<Controller>>) -> GUI { unsafe {
+        let (pass_ref, quad_renderpass, text_renderer) = GUI::create_rendering_objects(&base.borrow());
+
 
         GUI {
-            device: base.device.clone(),
-            window: base.window.clone(),
+            device: base.borrow().device.clone(),
+            window: base.borrow().window.clone(),
+            base: base.clone(),
             controller,
 
             pass: pass_ref.clone(),
@@ -181,8 +184,9 @@ impl GUI {
     * * Refer to default.gui in resources/gui
     * * Nodes are drawn recursively and without depth testing. To make a node appear in front of another, define it after another.
     */
-    pub fn load_from_file(&mut self, base: &VkBase, path: &str) {
+    pub fn load_from_file(&mut self, path: &str) {
         unsafe {
+            let base = &self.base.borrow();
             base.device.device_wait_idle().unwrap();
         }
         for text in self.gui_texts.iter() {
@@ -202,6 +206,7 @@ impl GUI {
 
         let mut fonts = Vec::new();
         for font in json["fonts"].members() {
+            let base = &self.base.borrow();
             let mut uri = String::from("engine\\resources\\fonts\\Oxygen-Regular.ttf");
             if let JsonValue::String(ref uri_json) = font["uri"] {
                 uri = (*uri_json).parse().expect("font uri parse error");
@@ -239,10 +244,12 @@ impl GUI {
 
         let mut gui_texts = Vec::new();
         for text in json["texts"].members() {
+            let base = &self.base.borrow();
             let mut text_font = 0usize;
             let mut text_text = "placeholder text";
             let mut text_font_size = 32.0;
             let mut text_newline_size = 1720.0;
+
             if let JsonValue::Object(ref text_information_json) = text["text_information"] {
                 if let JsonValue::Number(ref text_information_font_json) = text_information_json["font"] {
                     if let Ok(v) = text_information_font_json.to_string().parse::<usize>() {
@@ -270,60 +277,81 @@ impl GUI {
                 }
             }
 
-            let mut position = Vector::new_empty();
+            let mut position = Vector::empty();
             if let JsonValue::Array(ref position_json) = text["position"] {
                 if position_json.len() >= 2 {
-                    position = Vector::new_vec2(
+                    position = Vector::new2(
                         position_json[0].as_f32().unwrap(),
                         position_json[1].as_f32().unwrap(),
                     );
                 }
             }
 
-            let mut scale = Vector::new_empty();
+            let mut scale = Vector::empty();
             if let JsonValue::Array(ref scale_json) = text["scale"] {
                 if scale_json.len() >= 2 {
-                    scale = Vector::new_vec2(
+                    scale = Vector::new2(
                         scale_json[0].as_f32().unwrap(),
                         scale_json[1].as_f32().unwrap(),
                     );
                 }
             }
 
-            let mut clip_min = Vector::new_empty();
+            let mut clip_min = Vector::empty();
             if let JsonValue::Array(ref clip_min_json) = text["clip_min"] {
                 if clip_min_json.len() >= 2 {
-                    clip_min = Vector::new_vec2(
+                    clip_min = Vector::new2(
                         clip_min_json[0].as_f32().unwrap(),
                         clip_min_json[1].as_f32().unwrap(),
                     );
                 }
             }
 
-            let mut clip_max = Vector::new_empty();
+            let mut clip_max = Vector::empty();
             if let JsonValue::Array(ref clip_max_json) = text["clip_max"] {
                 if clip_max_json.len() >= 2 {
-                    clip_max = Vector::new_vec2(
+                    clip_max = Vector::new2(
                         clip_max_json[0].as_f32().unwrap(),
                         clip_max_json[1].as_f32().unwrap(),
                     );
                 }
             }
 
-            let mut absolute_position = false;
-            if let JsonValue::Boolean(ref absolute_position_json) = text["absolute_position"] {
-                absolute_position = *absolute_position_json;
+            let mut absolute_scale = (false, false);
+            if let JsonValue::Array(ref absolute_scale_json) = text["absolute_scale"] {
+                if absolute_scale_json.len() >= 2 {
+                    absolute_scale = (
+                        absolute_scale_json[0].as_bool().unwrap(),
+                        absolute_scale_json[1].as_bool().unwrap(),
+                    )
+                }
             }
 
-            let mut absolute_scale = false;
-            if let JsonValue::Boolean(ref absolute_scale_json) = text["absolute_scale"] {
-                absolute_scale = *absolute_scale_json;
+            let mut absolute_position = (false, false);
+            if let JsonValue::Array(ref absolute_position_json) = text["absolute_position"] {
+                if absolute_position_json.len() >= 2 {
+                    absolute_position = (
+                        absolute_position_json[0].as_bool().unwrap(),
+                        absolute_position_json[1].as_bool().unwrap(),
+                    )
+                }
             }
 
-            let mut color = Vector::new_empty();
+            let mut anchor_point = AnchorPoint::default();
+            match &text["anchor_point"] {
+                JsonValue::String(s) => {
+                    anchor_point = AnchorPoint::from_string(s.as_str());
+                }
+                JsonValue::Short(s) => {
+                    anchor_point = AnchorPoint::from_string(s.as_str());
+                }
+                _ => ()
+            }
+
+            let mut color = Vector::empty();
             if let JsonValue::Array(ref color_json) = text["color"] {
                 if color_json.len() >= 4 {
-                    color = Vector::new_vec4(
+                    color = Vector::new4(
                         color_json[0].as_f32().unwrap(),
                         color_json[1].as_f32().unwrap(),
                         color_json[2].as_f32().unwrap(),
@@ -344,6 +372,7 @@ impl GUI {
                 clip_max,
                 absolute_position,
                 absolute_scale,
+                anchor_point,
                 color,
             })
         }
@@ -351,60 +380,81 @@ impl GUI {
 
         let mut gui_quads = Vec::new();
         for quad in json["quads"].members() {
-            let mut position = Vector::new_empty();
+            let mut position = Vector::empty();
             if let JsonValue::Array(ref position_json) = quad["position"] {
                 if position_json.len() >= 2 {
-                    position = Vector::new_vec2(
+                    position = Vector::new2(
                         position_json[0].as_f32().unwrap(),
                         position_json[1].as_f32().unwrap(),
                     );
                 }
             }
 
-            let mut scale = Vector::new_empty();
+            let mut scale = Vector::empty();
             if let JsonValue::Array(ref scale_json) = quad["scale"] {
                 if scale_json.len() >= 2 {
-                    scale = Vector::new_vec2(
+                    scale = Vector::new2(
                         scale_json[0].as_f32().unwrap(),
                         scale_json[1].as_f32().unwrap(),
                     );
                 }
             }
 
-            let mut clip_min = Vector::new_empty();
+            let mut clip_min = Vector::empty();
             if let JsonValue::Array(ref clip_min_json) = quad["clip_min"] {
                 if clip_min_json.len() >= 2 {
-                    clip_min = Vector::new_vec2(
+                    clip_min = Vector::new2(
                         clip_min_json[0].as_f32().unwrap(),
                         clip_min_json[1].as_f32().unwrap(),
                     );
                 }
             }
 
-            let mut clip_max = Vector::new_empty();
+            let mut clip_max = Vector::empty();
             if let JsonValue::Array(ref clip_max_json) = quad["clip_max"] {
                 if clip_max_json.len() >= 2 {
-                    clip_max = Vector::new_vec2(
+                    clip_max = Vector::new2(
                         clip_max_json[0].as_f32().unwrap(),
                         clip_max_json[1].as_f32().unwrap(),
                     );
                 }
             }
 
-            let mut absolute_position = false;
-            if let JsonValue::Boolean(ref absolute_position_json) = quad["absolute_position"] {
-                absolute_position = *absolute_position_json;
+            let mut absolute_scale = (false, false);
+            if let JsonValue::Array(ref absolute_scale_json) = quad["absolute_scale"] {
+                if absolute_scale_json.len() >= 2 {
+                    absolute_scale = (
+                        absolute_scale_json[0].as_bool().unwrap(),
+                        absolute_scale_json[1].as_bool().unwrap(),
+                    )
+                }
             }
 
-            let mut absolute_scale = false;
-            if let JsonValue::Boolean(ref absolute_scale_json) = quad["absolute_scale"] {
-                absolute_scale = *absolute_scale_json;
+            let mut absolute_position = (false, false);
+            if let JsonValue::Array(ref absolute_position_json) = quad["absolute_position"] {
+                if absolute_position_json.len() >= 2 {
+                    absolute_position = (
+                        absolute_position_json[0].as_bool().unwrap(),
+                        absolute_position_json[1].as_bool().unwrap(),
+                    )
+                }
             }
 
-            let mut color = Vector::new_empty();
+            let mut anchor_point = AnchorPoint::default();
+            match &quad["anchor_point"] {
+                JsonValue::String(s) => {
+                    anchor_point = AnchorPoint::from_string(s.as_str());
+                }
+                JsonValue::Short(s) => {
+                    anchor_point = AnchorPoint::from_string(s.as_str());
+                }
+                _ => ()
+            }
+
+            let mut color = Vector::empty();
             if let JsonValue::Array(ref color_json) = quad["color"] {
                 if color_json.len() >= 4 {
-                    color = Vector::new_vec4(
+                    color = Vector::new4(
                         color_json[0].as_f32().unwrap(),
                         color_json[1].as_f32().unwrap(),
                         color_json[2].as_f32().unwrap(),
@@ -427,6 +477,7 @@ impl GUI {
                 clip_max,
                 absolute_position,
                 absolute_scale,
+                anchor_point,
                 color,
                 corner_radius,
             })
@@ -624,34 +675,55 @@ impl GUI {
                 }
             }
 
-            let mut position = Vector::new_empty();
+            let mut position = Vector::empty();
             if let JsonValue::Array(ref position_json) = node["position"] {
                 if position_json.len() >= 2 {
-                    position = Vector::new_vec2(
+                    position = Vector::new2(
                         position_json[0].as_f32().unwrap(),
                         position_json[1].as_f32().unwrap(),
                     );
                 }
             }
 
-            let mut scale = Vector::new_empty();
+            let mut scale = Vector::empty();
             if let JsonValue::Array(ref scale_json) = node["scale"] {
                 if scale_json.len() >= 2 {
-                    scale = Vector::new_vec2(
+                    scale = Vector::new2(
                         scale_json[0].as_f32().unwrap(),
                         scale_json[1].as_f32().unwrap(),
                     );
                 }
             }
 
-            let mut absolute_position = false;
-            if let JsonValue::Boolean(ref absolute_position_json) = node["absolute_position"] {
-                absolute_position = *absolute_position_json;
+            let mut absolute_scale = (false, false);
+            if let JsonValue::Array(ref absolute_scale_json) = node["absolute_scale"] {
+                if absolute_scale_json.len() >= 2 {
+                    absolute_scale = (
+                        absolute_scale_json[0].as_bool().unwrap(),
+                        absolute_scale_json[1].as_bool().unwrap(),
+                    )
+                }
             }
 
-            let mut absolute_scale = false;
-            if let JsonValue::Boolean(ref absolute_scale_json) = node["absolute_scale"] {
-                absolute_scale = *absolute_scale_json;
+            let mut absolute_position = (false, false);
+            if let JsonValue::Array(ref absolute_position_json) = node["absolute_position"] {
+                if absolute_position_json.len() >= 2 {
+                    absolute_position = (
+                        absolute_position_json[0].as_bool().unwrap(),
+                        absolute_position_json[1].as_bool().unwrap(),
+                    )
+                }
+            }
+
+            let mut anchor_point = AnchorPoint::default();
+            match &node["anchor_point"] {
+                JsonValue::String(s) => {
+                    anchor_point = AnchorPoint::from_string(s.as_str());
+                }
+                JsonValue::Short(s) => {
+                    anchor_point = AnchorPoint::from_string(s.as_str());
+                }
+                _ => ()
             }
 
             let mut text = None;
@@ -678,6 +750,7 @@ impl GUI {
                 children_indices,
                 absolute_position,
                 absolute_scale,
+                anchor_point,
                 text,
                 quad,
             })
@@ -699,8 +772,8 @@ impl GUI {
                 *node_index,
                 current_frame,
                 command_buffer,
-                Vector::new_vec(0.0),
-                Vector::new_vec2(self.window.inner_size().width as f32, self.window.inner_size().height as f32),
+                Vector::fill(0.0),
+                Vector::new2(self.window.inner_size().width as f32, self.window.inner_size().height as f32),
                 &mut interactable_action_parameter_sets,
             );
         }
@@ -725,8 +798,17 @@ impl GUI {
         let node = &mut self.gui_nodes[node_index].clone();
         if node.hidden { return };
 
-        let position = parent_position + if node.absolute_position { node.position } else { node.position * parent_scale };
-        let scale = if node.absolute_scale { node.scale } else { parent_scale * node.scale };
+        let offset_factor = node.anchor_point.offset_factor();
+        let scale = Vector::new2(
+            if node.absolute_scale.0 { node.scale.x } else { parent_scale.x * node.scale.x },
+            if node.absolute_scale.1 { node.scale.y } else { parent_scale.y * node.scale.y }
+        );
+        let position = offset_factor * parent_scale - scale * offset_factor
+            + parent_position
+            + Vector::new2(
+                if node.absolute_position.0 { node.position.x } else { parent_position.x * node.position.x },
+                if node.absolute_position.1 { node.position.y } else { parent_position.y * node.position.y }
+            );
 
         if let Some(quad) = &node.quad {
             self.draw_quad(*quad, current_frame, command_buffer, position, scale);
@@ -748,14 +830,24 @@ impl GUI {
         quad: usize,
         current_frame: usize,
         command_buffer: CommandBuffer,
-        position: Vector,
-        scale: Vector,
+        parent_position: Vector,
+        parent_scale: Vector,
     ) { unsafe {
         let quad = &self.gui_quads[quad];
-        let clip_min = position + scale * quad.clip_min; // + if quad.absolute_clip_min { quad.clip_min } else { scale * quad.clip_min }
-        let clip_max = position + scale * quad.clip_max; // + if quad.absolute_clip_max { quad.clip_max } else { scale * quad.clip_max }
-        let position = position + if quad.absolute_position { quad.position } else { quad.position * scale };
-        let scale = if quad.absolute_scale { quad.scale } else { scale * quad.scale };
+        let clip_min = parent_position + parent_scale * quad.clip_min; // + if quad.absolute_clip_min { quad.clip_min } else { scale * quad.clip_min }
+        let clip_max = parent_position + parent_scale * quad.clip_max; // + if quad.absolute_clip_max { quad.clip_max } else { scale * quad.clip_max }
+
+        let offset_factor = quad.anchor_point.offset_factor();
+        let scale = Vector::new2(
+            if quad.absolute_scale.0 { quad.scale.x } else { parent_scale.x * quad.scale.x },
+            if quad.absolute_scale.1 { quad.scale.y } else { parent_scale.y * quad.scale.y }
+        );
+        let position = offset_factor * parent_scale - scale * offset_factor
+            + parent_position
+            + Vector::new2(
+            if quad.absolute_position.0 { quad.position.x } else { parent_position.x * quad.position.x },
+            if quad.absolute_position.1 { quad.position.y } else { parent_position.y * quad.position.y }
+        );
 
         let quad_constants = GUIQuadSendable {
             color: quad.color.to_array4(),
@@ -794,15 +886,25 @@ impl GUI {
         &self,
         text: usize,
         current_frame: usize,
-        position: Vector,
-        scale: Vector,
+        parent_position: Vector,
+        parent_scale: Vector,
     ) { unsafe {
         let text = &self.gui_texts[text];
 
-        let clip_min = position + scale * text.clip_min; // + if quad.absolute_clip_min { quad.clip_min } else { scale * quad.clip_min }
-        let clip_max = position + scale * text.clip_max; // + if quad.absolute_clip_max { quad.clip_max } else { scale * quad.clip_max }
-        let position = position + if text.absolute_position { text.position } else { text.position * scale };
-        let scale = if text.absolute_scale { text.scale } else { scale * text.scale };
+        let clip_min = parent_position + parent_scale * text.clip_min; // + if quad.absolute_clip_min { quad.clip_min } else { scale * quad.clip_min }
+        let clip_max = parent_position + parent_scale * text.clip_max; // + if quad.absolute_clip_max { quad.clip_max } else { scale * quad.clip_max }
+
+        let offset_factor = text.anchor_point.offset_factor();
+        let scale = Vector::new2(
+            if text.absolute_scale.0 { text.scale.x } else { parent_scale.x * text.scale.x },
+            if text.absolute_scale.1 { text.scale.y } else { parent_scale.y * text.scale.y }
+        );
+        let position = offset_factor * parent_scale - scale * offset_factor
+            + parent_position
+            + Vector::new2(
+            if text.absolute_position.0 { text.position.x } else { parent_scale.x * text.position.x },
+            if text.absolute_position.1 { text.position.y } else { parent_scale.y * text.position.y }
+        );
 
         self.text_renderer.draw_gui_text(current_frame, &text.text_information.as_ref().unwrap(), position, scale, clip_min, clip_max);
     } }
@@ -818,7 +920,51 @@ impl GUI {
         }
     } }
 }
-
+#[derive(Clone)]
+enum AnchorPoint {
+    TopLeft,
+    TopMiddle,
+    TopRight,
+    BottomLeft,
+    BottomMiddle,
+    BottomRight,
+    Right,
+    Left,
+    Center
+}
+impl AnchorPoint {
+    pub fn from_string(string: &str) -> AnchorPoint {
+        match string {
+            "top_left" => AnchorPoint::TopLeft,
+            "top_middle" => AnchorPoint::TopMiddle,
+            "top_right" => AnchorPoint::TopRight,
+            "bottom_left" => AnchorPoint::BottomLeft,
+            "bottom_middle" => AnchorPoint::BottomMiddle,
+            "bottom_right" => AnchorPoint::BottomRight,
+            "right" => AnchorPoint::Right,
+            "left" => AnchorPoint::Left,
+            "center" => AnchorPoint::Center,
+            _ => AnchorPoint::default()
+        }
+    }
+    pub fn offset_factor(&self) -> Vector {
+        let (rx, ry) = match self {
+            AnchorPoint::BottomLeft   => (0.0, 0.0),
+            AnchorPoint::BottomMiddle => (0.5, 0.0),
+            AnchorPoint::BottomRight => (1.0, 0.0),
+            AnchorPoint::TopLeft => (0.0, 1.0),
+            AnchorPoint::TopMiddle => (0.5, 1.0),
+            AnchorPoint::TopRight => (1.0, 1.0),
+            AnchorPoint::Left => (0.0, 0.5),
+            AnchorPoint::Right => (1.0, 0.5),
+            AnchorPoint::Center => (0.5, 0.5),
+        };
+        Vector::new2(rx, ry)
+    }
+}
+impl Default for AnchorPoint {
+    fn default() -> Self { AnchorPoint::BottomLeft }
+}
 /**
 * Position and scale are relative and normalized.
 */
@@ -831,8 +977,9 @@ pub struct GUINode {
     pub position: Vector,
     pub scale: Vector,
     pub children_indices: Vec<usize>,
-    pub absolute_position: bool,
-    pub absolute_scale: bool,
+    pub absolute_position: (bool, bool),
+    pub absolute_scale: (bool, bool),
+    pub anchor_point: AnchorPoint,
 
     pub text: Option<usize>,
     pub quad: Option<usize>
@@ -859,8 +1006,9 @@ pub struct GUIQuad {
     pub scale: Vector,
     pub clip_min: Vector,
     pub clip_max: Vector,
-    pub absolute_position: bool,
-    pub absolute_scale: bool,
+    pub absolute_position: (bool, bool),
+    pub absolute_scale: (bool, bool),
+    pub anchor_point: AnchorPoint,
     pub color: Vector,
     pub corner_radius: f32,
 }
@@ -871,8 +1019,9 @@ impl Default for GUIQuad {
             scale: Default::default(),
             clip_min: Default::default(),
             clip_max: Default::default(),
-            absolute_position: false,
-            absolute_scale: false,
+            absolute_position: (false, false),
+            absolute_scale: (false, false),
+            anchor_point: AnchorPoint::default(),
             color: Default::default(),
             corner_radius: 0.0,
         }
@@ -885,8 +1034,9 @@ pub struct GUIText {
     pub scale: Vector,
     pub clip_min: Vector,
     pub clip_max: Vector,
-    pub absolute_position: bool,
-    pub absolute_scale: bool,
+    pub absolute_position: (bool, bool),
+    pub absolute_scale: (bool, bool),
+    pub anchor_point: AnchorPoint,
     pub color: Vector,
 }
 impl GUIText {
@@ -905,8 +1055,9 @@ impl Default for GUIText {
             scale: Default::default(),
             clip_min: Default::default(),
             clip_max: Default::default(),
-            absolute_position: false,
-            absolute_scale: false,
+            absolute_position: (false, false),
+            absolute_scale: (false, false),
+            anchor_point: AnchorPoint::default(),
             color: Default::default(),
         }
     }

@@ -38,7 +38,7 @@ impl UserData for GUIQuadPointer {
     }
     fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
         methods.add_method_mut("set_color", |_, this, color: (f32, f32, f32, f32)| {
-            this.gui.borrow_mut().gui_quads[this.index].color = Vector::new_vec4(color.0, color.1, color.2, color.3);
+            this.gui.borrow_mut().gui_quads[this.index].color = Vector::new4(color.0, color.1, color.2, color.3);
             Ok(())
         });
     }
@@ -102,6 +102,11 @@ impl UserData for GUIRef {
         methods.add_method("get_text", |lua, this, index: usize| {
             let text = GUITextPointer { gui: this.0.clone(), index };
             lua.create_userdata(text)
+        });
+
+        methods.add_method_mut("load_from_file", |_, this, path: String| {
+            this.0.borrow_mut().load_from_file(path.as_str());
+            Ok(())
         });
     }
 }

@@ -2,12 +2,7 @@ use std::cell::RefCell;
 use std::sync::Arc;
 use crate::math::matrix::Matrix;
 use crate::math::Vector;
-use crate::physics::hitboxes::bounding_box::BoundingBox;
-use crate::physics::hitboxes::capsule::Capsule;
-use crate::physics::hitboxes::hitbox;
 use crate::physics::hitboxes::hitbox::{Hitbox, HitboxType};
-use crate::physics::hitboxes::hitbox::Hitbox::ConvexHull;
-use crate::physics::hitboxes::mesh::{Bvh, MeshCollider};
 use crate::physics::hitboxes::sphere::Sphere;
 use crate::physics::physics_engine::{AxisType, ContactInformation, ContactPoint, PhysicsEngine};
 use crate::world::scene::{Node, Scene, Vertex};
@@ -40,32 +35,37 @@ pub struct RigidBody {
 
     inertia_tensor: Matrix, // 3x3
     inv_inertia_tensor: Matrix,
+
+    stored_hitbox_scale: Vector,
 }
 
 impl RigidBody {
-    pub fn new_from_node(node: &Node, couple_with_node: Option<(usize, usize)>, hitbox: Hitbox) -> Self {
+    pub fn new_from_node(node: &Node, couple_with_node: Option<(usize, usize)>, hitbox: (Hitbox, Vector)) -> Self {
         let mut body = RigidBody::default();
         body.coupled_with_scene_object = couple_with_node;
-        body.position = node.world_transform * Vector::new_vec4(0.0, 0.0, 0.0, 1.0);
+        body.position = node.world_transform * Vector::new4(0.0, 0.0, 0.0, 1.0);
         body.orientation = node.world_transform.extract_quaternion();
-        body.hitbox = hitbox;
+        (body.hitbox, body.stored_hitbox_scale) = hitbox;
         body.update_shape_properties();
         body
     }
     pub fn update_this_according_to_coupled(&mut self, world: &Scene)  {
         if let Some(coupled_object) = self.coupled_with_scene_object {
             let node = &world.models[coupled_object.0].nodes[coupled_object.1];
+            let node_scale = node.world_transform.extract_scale();
 
-            self.position = node.world_transform * Vector::new_vec4(0.0, 0.0, 0.0, 1.0);
+            self.position = node.world_transform * Vector::new4(0.0, 0.0, 0.0, 1.0);
             self.orientation = node.world_transform.extract_quaternion();
-            self.hitbox = Hitbox::get_hitbox_from_node(node, match self.hitbox {
-                Hitbox::OBB(_, _) => 0,
-                Hitbox::Mesh(_) => 1,
-                Hitbox::Capsule(_) => 2,
-                Hitbox::Sphere(_) => 3,
-                Hitbox::ConvexHull(_) => 4,
-            }).unwrap();
-            self.update_shape_properties();
+            if !node_scale.equals(&self.stored_hitbox_scale, 0.01) {
+                (self.hitbox, self.stored_hitbox_scale) = Hitbox::get_hitbox_from_node(node, match self.hitbox {
+                    Hitbox::OBB(_, _) => 0,
+                    Hitbox::Mesh(_) => 1,
+                    Hitbox::Capsule(_) => 2,
+                    Hitbox::Sphere(_) => 3,
+                    Hitbox::ConvexHull(_) => 4,
+                }).unwrap();
+                self.update_shape_properties();
+            }
         }
     }
     pub fn update_coupled_according_to_this(&self, world: &mut Scene) {
@@ -141,7 +141,8 @@ impl RigidBody {
                 self.center_of_mass = sphere.center
             }
             Hitbox::ConvexHull(convex) => {
-                //TODO
+                self.center_of_mass = convex.center_of_mass(10);
+                self.inertia_tensor = convex.inertia_tensor(&self.center_of_mass, 10);
             }
         }
         self.inv_inertia_tensor = self.inertia_tensor.inverse3().mul_float_into3(self.inv_mass);
@@ -168,8 +169,8 @@ impl RigidBody {
         self.angular_velocity += alpha * delta_time;
 
         let d_theta = self.angular_velocity * delta_time;
-        let dq = Vector::axis_angle_quat(&d_theta, d_theta.magnitude_3d());
-        self.orientation = dq.combine(&self.orientation).normalize_4d();
+        let dq = Vector::axis_angle_quat(&d_theta, d_theta.magnitude3());
+        self.orientation = dq.combine(&self.orientation).normalize4();
 
         self.position = c + Matrix::new_rotate_quaternion_vec4(&dq) * c_to_pos;
     }
@@ -190,8 +191,8 @@ impl RigidBody {
         self.angular_velocity += self.get_inverse_inertia_tensor_world_space() * impulse;
 
         const MAX_ANGULAR_SPEED: f32 = 30.0;
-        if self.angular_velocity.magnitude_3d() > MAX_ANGULAR_SPEED {
-            self.angular_velocity = self.angular_velocity.normalize_3d() * MAX_ANGULAR_SPEED;
+        if self.angular_velocity.magnitude3() > MAX_ANGULAR_SPEED {
+            self.angular_velocity = self.angular_velocity.normalize3() * MAX_ANGULAR_SPEED;
         }
     }
 
@@ -201,6 +202,7 @@ impl RigidBody {
         match other_type {
             HitboxType::SPHERE => self.intersects_sphere(other, dt),
             HitboxType::OBB => self.intersects_obb(other, dt),
+            HitboxType::CONVEX => self.intersects_convex_hull(other, dt),
             _ => { panic!("{:?}-{:?} intersection not implemented", self.hitbox.get_type(), other.hitbox.get_type()) }
         }
     }
@@ -219,13 +221,13 @@ impl RigidBody {
                     let obb_center = (rot * obb.center.with('w', 1.0)) + obb_position;
 
                     let axes = [
-                        rot * Vector::new_vec4(1.0, 0.0, 0.0, 1.0),
-                        rot * Vector::new_vec4(0.0, 1.0, 0.0, 1.0),
-                        rot * Vector::new_vec4(0.0, 0.0, 1.0, 1.0),
+                        rot * Vector::new4(1.0, 0.0, 0.0, 1.0),
+                        rot * Vector::new4(0.0, 1.0, 0.0, 1.0),
+                        rot * Vector::new4(0.0, 0.0, 1.0, 1.0),
                     ];
 
                     let delta = sphere_center - obb_center;
-                    let local_sphere_center = Vector::new_vec3(delta.dot3(&axes[0]), delta.dot3(&axes[1]), delta.dot3(&axes[2]));
+                    let local_sphere_center = Vector::new3(delta.dot3(&axes[0]), delta.dot3(&axes[1]), delta.dot3(&axes[2]));
 
                     let closest_local = local_sphere_center.clamp3(&(-obb.half_extents), &obb.half_extents);
                     let closest_world = obb_center + (axes[0] * closest_local.x) + (axes[1] * closest_local.y) + (axes[2] * closest_local.z);
@@ -293,11 +295,11 @@ impl RigidBody {
                     // additional contact points for edge/corner
                     if faces_count >= 2 && dist > 1e-6 {
                         let tangent1 = if normal.x.abs() < 0.9 {
-                            Vector::new_vec3(1.0, 0.0, 0.0).cross(&normal).normalize_3d()
+                            Vector::new3(1.0, 0.0, 0.0).cross(&normal).normalize3()
                         } else {
-                            Vector::new_vec3(0.0, 1.0, 0.0).cross(&normal).normalize_3d()
+                            Vector::new3(0.0, 1.0, 0.0).cross(&normal).normalize3()
                         };
-                        let tangent2 = normal.cross(&tangent1).normalize_3d();
+                        let tangent2 = normal.cross(&tangent1).normalize3();
 
                         // contact points in a circle around the main contact
                         let num_additional = if faces_count == 3 { 3 } else { 2 }; // corner/edge
@@ -331,10 +333,10 @@ impl RigidBody {
 
                         let mut t0 = 0.0;
                         let mut t1 = 0.0;
-                        if dir.magnitude_3d() < 0.001 {
+                        if dir.magnitude3() < 0.001 {
                             let ab = p_b - p_a;
                             let radius = a.radius + sphere.radius + 0.001;
-                            if ab.magnitude_3d() > radius {
+                            if ab.magnitude3() > radius {
                                 return None
                             }
                         } else if let Some((i_t0, i_t1)) = Sphere::ray_sphere(&p_a, &dir, &p_b, a.radius + sphere.radius) {
@@ -359,7 +361,7 @@ impl RigidBody {
                         let new_pos_a = p_a + self.velocity * toi;
                         let new_pos_b = p_b + other.velocity * toi;
 
-                        let ab = (new_pos_b - new_pos_a).normalize_3d();
+                        let ab = (new_pos_b - new_pos_a).normalize3();
 
                         Some((ContactPoint {
                             point_on_a: new_pos_a + ab * a.radius,
@@ -372,13 +374,13 @@ impl RigidBody {
                         self.update(time_of_impact);
                         other.update(time_of_impact);
 
-                        let normal = (self.position - other.position).normalize_3d();
+                        let normal = (self.position - other.position).normalize3();
 
                         self.update(-time_of_impact);
                         other.update(-time_of_impact);
 
                         let ab = other.position - self.position;
-                        let r = ab.magnitude_3d() - (a.radius + sphere.radius);
+                        let r = ab.magnitude3() - (a.radius + sphere.radius);
 
                         Some(ContactInformation {
                             contact_points: vec![point],
@@ -407,25 +409,25 @@ impl RigidBody {
                     let b_quat = other.orientation;
 
                     let a_axes = [
-                        Vector::new_vec3(1.0, 0.0, 0.0).rotate_by_quat(&a_quat),
-                        Vector::new_vec3(0.0, 1.0, 0.0).rotate_by_quat(&a_quat),
-                        Vector::new_vec3(0.0, 0.0, 1.0).rotate_by_quat(&a_quat),
+                        Vector::new3(1.0, 0.0, 0.0).rotate_by_quat(&a_quat),
+                        Vector::new3(0.0, 1.0, 0.0).rotate_by_quat(&a_quat),
+                        Vector::new3(0.0, 0.0, 1.0).rotate_by_quat(&a_quat),
                     ];
                     let b_axes = [
-                        Vector::new_vec3(1.0, 0.0, 0.0).rotate_by_quat(&b_quat),
-                        Vector::new_vec3(0.0, 1.0, 0.0).rotate_by_quat(&b_quat),
-                        Vector::new_vec3(0.0, 0.0, 1.0).rotate_by_quat(&b_quat),
+                        Vector::new3(1.0, 0.0, 0.0).rotate_by_quat(&b_quat),
+                        Vector::new3(0.0, 1.0, 0.0).rotate_by_quat(&b_quat),
+                        Vector::new3(0.0, 0.0, 1.0).rotate_by_quat(&b_quat),
                     ];
 
                     let t = b_center - a_center;
 
                     let mut min_penetration = f32::MAX;
-                    let mut collision_normal = Vector::new_empty();
+                    let mut collision_normal = Vector::empty();
                     let mut best_axis_type = AxisType::FaceA(0);
                     for i in 0..3 {
                         { // a_normals
                             let axis = a_axes[i];
-                            let penetration = Self::test_axis(&axis, &t, &a.half_extents, &b.half_extents, &a_axes, &b_axes, true);
+                            let penetration = test_axis(&axis, &t, &a.half_extents, &b.half_extents, &a_axes, &b_axes, true);
                             if penetration < 0.0 {
                                 return None
                             }
@@ -437,7 +439,7 @@ impl RigidBody {
                         }
                         { // b_normals
                             let axis = b_axes[i];
-                            let penetration = Self::test_axis(&axis, &t, &a.half_extents, &b.half_extents, &a_axes, &b_axes, true);
+                            let penetration = test_axis(&axis, &t, &a.half_extents, &b.half_extents, &a_axes, &b_axes, true);
                             if penetration < 0.0 {
                                 return None
                             }
@@ -449,14 +451,14 @@ impl RigidBody {
                         }
                         for j in 0..3 { // edge-edge cross-products
                             let axis = a_axes[i].cross(&b_axes[j]);
-                            let axis_length = axis.magnitude_3d();
+                            let axis_length = axis.magnitude3();
 
                             if axis_length < 1e-6 {
                                 continue;
                             }
 
                             let axis_normalized = axis / axis_length;
-                            let penetration = Self::test_axis_cross(&axis_normalized, &t, &a.half_extents, &b.half_extents, &a_axes, &b_axes);
+                            let penetration = test_axis_cross(&axis_normalized, &t, &a.half_extents, &b.half_extents, &a_axes, &b_axes);
 
                             if penetration < 0.0 {
                                 return None;
@@ -470,7 +472,7 @@ impl RigidBody {
                         }
                     }
 
-                    if collision_normal.dot(&t) < 0.0 {
+                    if collision_normal.dot4(&t) < 0.0 {
                         collision_normal = -collision_normal;
                     }
 
@@ -494,50 +496,9 @@ impl RigidBody {
         }
         None
     }
-
-    fn test_axis(
-        axis: &Vector,
-        t: &Vector,
-        half_a: &Vector,
-        half_b: &Vector,
-        axes_a: &[Vector; 3],
-        axes_b: &[Vector; 3],
-        is_a: bool,
-    ) -> f32 {
-        let ra = if is_a {
-            half_a.x * axes_a[0].dot3(axis).abs() +
-                half_a.y * axes_a[1].dot3(axis).abs() +
-                half_a.z * axes_a[2].dot3(axis).abs()
-        } else {
-            half_a.x * axes_a[0].dot3(axis).abs() +
-                half_a.y * axes_a[1].dot3(axis).abs() +
-                half_a.z * axes_a[2].dot3(axis).abs()
-        };
-        let rb = half_b.x * axes_b[0].dot3(axis).abs() +
-            half_b.y * axes_b[1].dot3(axis).abs() +
-            half_b.z * axes_b[2].dot3(axis).abs();
-        let distance = t.dot3(axis).abs();
-        ra + rb - distance
-    }
-    fn test_axis_cross(
-        axis: &Vector,
-        t: &Vector,
-        half_a: &Vector,
-        half_b: &Vector,
-        axes_a: &[Vector; 3],
-        axes_b: &[Vector; 3],
-    ) -> f32 {
-        let ra = half_a.x * axes_a[0].dot3(axis).abs() +
-            half_a.y * axes_a[1].dot3(axis).abs() +
-            half_a.z * axes_a[2].dot3(axis).abs();
-
-        let rb = half_b.x * axes_b[0].dot3(axis).abs() +
-            half_b.y * axes_b[1].dot3(axis).abs() +
-            half_b.z * axes_b[2].dot3(axis).abs();
-
-        let distance = t.dot3(axis).abs();
-
-        ra + rb - distance
+    fn intersects_convex_hull(&mut self, other: &mut RigidBody, dt: f32) -> Option<ContactInformation> {
+        // TODO
+        None
     }
 }
 impl Default for RigidBody {
@@ -546,7 +507,7 @@ impl Default for RigidBody {
             owned_by_player: false,
             coupled_with_scene_object: None,
             hitbox: Hitbox::Sphere(Sphere {
-                center: Vector::new_vec(0.0),
+                center: Vector::fill(0.0),
                 radius: 1.0,
             }),
             is_static: true,
@@ -558,11 +519,204 @@ impl Default for RigidBody {
             torque: Default::default(),
             position: Default::default(),
             velocity: Default::default(),
-            orientation: Vector::new_empty_quat(),
+            orientation: Vector::new(),
             angular_velocity: Default::default(),
-            center_of_mass: Vector::new_empty_quat(),
+            center_of_mass: Vector::new(),
             inertia_tensor: Matrix::new(),
             inv_inertia_tensor: Matrix::new(),
+            stored_hitbox_scale: Vector::fill(1.0),
         }
     }
+}
+
+fn test_axis(
+    axis: &Vector,
+    t: &Vector,
+    half_a: &Vector,
+    half_b: &Vector,
+    axes_a: &[Vector; 3],
+    axes_b: &[Vector; 3],
+    is_a: bool,
+) -> f32 {
+    let ra = if is_a {
+        half_a.x * axes_a[0].dot3(axis).abs() +
+            half_a.y * axes_a[1].dot3(axis).abs() +
+            half_a.z * axes_a[2].dot3(axis).abs()
+    } else {
+        half_a.x * axes_a[0].dot3(axis).abs() +
+            half_a.y * axes_a[1].dot3(axis).abs() +
+            half_a.z * axes_a[2].dot3(axis).abs()
+    };
+    let rb = half_b.x * axes_b[0].dot3(axis).abs() +
+        half_b.y * axes_b[1].dot3(axis).abs() +
+        half_b.z * axes_b[2].dot3(axis).abs();
+    let distance = t.dot3(axis).abs();
+    ra + rb - distance
+}
+fn test_axis_cross(
+    axis: &Vector,
+    t: &Vector,
+    half_a: &Vector,
+    half_b: &Vector,
+    axes_a: &[Vector; 3],
+    axes_b: &[Vector; 3],
+) -> f32 {
+    let ra = half_a.x * axes_a[0].dot3(axis).abs() +
+        half_a.y * axes_a[1].dot3(axis).abs() +
+        half_a.z * axes_a[2].dot3(axis).abs();
+
+    let rb = half_b.x * axes_b[0].dot3(axis).abs() +
+        half_b.y * axes_b[1].dot3(axis).abs() +
+        half_b.z * axes_b[2].dot3(axis).abs();
+
+    let distance = t.dot3(axis).abs();
+
+    ra + rb - distance
+}
+fn signed_volume1(a: Vector, b: Vector) -> (f32, f32) {
+    let ab = b - a; // segment
+    let ap = Vector::fill(0.0) - a; // a to origin
+    let p = a + ab * ab.dot3(&ap) / ab.magnitude3_sq(); // origin projected onto the segment
+
+    // get axis with the greatest length
+    let mut index = 0;
+    let mut max_mu: f32 = 0.0;
+    for i in 0..3 {
+        let mu = ab.get(i);
+        if mu.abs() > max_mu.abs() {
+            max_mu = mu;
+            index = i;
+        }
+    }
+    // project all to found axis
+    let a = a.get(index);
+    let b = b.get(index);
+    let p = p.get(index);
+    // signed distance from a to p and p to b
+    let c0 = p - a;
+    let c1 = b - p;
+    // p on segment
+    if (p > a && p < b) || (p < a && p > b) {
+        return (c1 / max_mu, c0 / max_mu)
+    }
+    // p off the segment on a-side
+    if (a <= b && p <= a) || (a >= b && p <= a) {
+        return (1.0, 0.0)
+    }
+    // p off the segment on b-side
+    (0.0, 1.0)
+}
+fn signed_volume2(a: Vector, b: Vector, c: Vector) -> Vector {
+    let n = (b - a).cross(&(c - a)); // normal
+    let p = n * a.dot3(&n) / n.magnitude3_sq(); // origin projected onto the triangle
+
+    // find axis with the largest area
+    let mut index = 0;
+    let mut max_area: f32 = 0.0;
+    for i in 0..3 {
+        let j = (i + 1) % 3;
+        let k = (i + 2) % 3;
+
+        let a = Vector::new2(a.get(j), a.get(k));
+        let b = Vector::new2(b.get(j), b.get(k));
+        let c = Vector::new2(c.get(j), c.get(k));
+        let ab = b - a;
+        let ac = c - a;
+        let area = ab.x * ac.y - ab.y * ac.x;
+        if area.abs() > max_area.abs() {
+            max_area = area;
+            index = i;
+        }
+    }
+
+    // project onto axis with the largest area
+    let x = (index + 1) % 3;
+    let y = (index + 2) % 3;
+    let vertices = [
+        Vector::new2(a.get(x), a.get(y)),
+        Vector::new2(b.get(x), b.get(y)),
+        Vector::new2(c.get(x), c.get(y)),
+    ];
+    let p = Vector::new2(p.get(x), p.get(y));
+
+    // areas of all tris formed by projected origin and edges
+    let mut areas = Vector::empty();
+    for i in 0..3 {
+        let j = (i + 1) % 3;
+        let k = (i + 2) % 3;
+
+        let a = p;
+        let b = vertices[j];
+        let c = vertices[k];
+        let ab = b - a;
+        let ac = c - a;
+        areas.set(i, ab.x * ac.y - ab.y * ac.x);
+    }
+
+    // if the projected origin is inside the triangle, return barycentric coords of it
+    if same_sign(max_area, areas.x) && same_sign(max_area, areas.y) && same_sign(max_area, areas.z) {
+        return areas / max_area
+    }
+
+    // project onto edges, return barycentric coords of the closest point to origin
+    let mut min_dist = f32::MAX;
+    let mut lambdas = Vector::new3(1.0, 0.0, 0.0);
+    for i in 0..3 {
+        let j = (i + 1) % 3;
+        let k = (i + 2) % 3;
+
+        let edge_points = [a, b, c];
+        let lambda_edge = signed_volume1(edge_points[j], edge_points[k]);
+        let point = edge_points[j] * lambda_edge.0 + edge_points[k] * lambda_edge.1;
+        let dist = point.magnitude3_sq();
+        if dist < min_dist {
+            min_dist = dist;
+            lambdas.set(i, 0.0);
+            lambdas.set(j, lambda_edge.0);
+            lambdas.set(k, lambda_edge.1);
+        }
+    }
+    lambdas
+}
+fn signed_volume3(a: Vector, b: Vector, c: Vector, d: Vector) -> Vector {
+    let m = Matrix::new_manual([
+        a.x, b.x, c.x, d.x,
+        a.y, b.y, c.y, d.y,
+        a.z, b.z, c.z, d.z,
+        1.0, 1.0, 1.0, 1.0,
+    ]);
+    let c = Vector::new4(
+        m.cofactor(3, 0),
+        m.cofactor(3, 1),
+        m.cofactor(3, 2),
+        m.cofactor(3, 3),
+    );
+    let det = c.x + c.y + c.z + c.w;
+
+    // origin already inside tetrahedron
+    if same_sign(det, c.x) && same_sign(det, c.y) && same_sign(det, c.z) && same_sign(det, c.w) {
+        return c / det
+    }
+
+    // project origin onto faces, find closest, return its barycentric coords
+    let mut lambdas = Vector::empty();
+    let mut min_dist = f32::MAX;
+    for i in 0..4 {
+        let j = (i + 1) % 4;
+        let k = (i + 2) % 4;
+
+        let face_points = [a, b, c, d];
+        let lambda_face = signed_volume2(face_points[i], face_points[j], face_points[k]);
+        let point = face_points[i] * lambda_face.x + face_points[j] * lambda_face.y + face_points[k] * lambda_face.z;
+        let dist = point.magnitude3_sq();
+        if dist < min_dist {
+            min_dist = dist;
+            lambdas = lambda_face;
+        }
+    }
+
+    lambdas
+}
+fn same_sign(a: f32, b: f32) -> bool {
+    a*b > 0.0
 }

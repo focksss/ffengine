@@ -63,7 +63,7 @@ function Update()
 
             rigid_body.position = rigid_body.position + (move_direction:normalize_3d() * fly_speed * dt)
         elseif player.movement_mode == MovementMode.PHYSICS then
-            local dimensional_speed = Vector.new_vec3(1.0, 3.0, 1.0)
+            local dimensional_speed = Vector.new_vec3(25.0, 1000.0, 25.0)
 
             rigid_body.velocity = rigid_body.velocity + (move_direction:normalize_3d() * dimensional_speed * dt)
         end
@@ -73,6 +73,7 @@ function Update()
             rigid_body.velocity = Vector.new()
         end
 
+        camera.position = rigid_body.position
     else ---editor camera mode this tests
         if Engine.controller:mouse_button_pressed(MouseButton.Middle) then
             local delta_pixels = Engine.controller.cursor_position - initial_mouse_pos;

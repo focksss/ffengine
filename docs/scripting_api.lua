@@ -28,6 +28,7 @@ MovementMode = {
 
         ---@class GUI
         ---@field ActiveNode GUINode
+        ---@field load_from_file fun(self:GUI, path:string):nil
 
             ---@class GUINode
             ---@field quad GUIQuad
@@ -61,6 +62,7 @@ MovementMode = {
         ---@field draw_hitboxes boolean
         ---@field do_physics boolean
         ---@field reload_all_scripts_queued boolean
+        ---@field close_requested boolean
 
     ---@class PhysicsEngine
     ---@field gravity Vector

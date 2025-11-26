@@ -39,26 +39,26 @@ impl UserData for Vector {
 
     fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
         methods.add_function("new_vec4", |_, (x, y, z, w): (f32, f32, f32, f32)| {
-            Ok(Vector::new_vec4(x, y, z, w))
+            Ok(Vector::new4(x, y, z, w))
         });
         methods.add_function("new", |_, ()| {
-            Ok(Vector::new_empty())
+            Ok(Vector::empty())
         });
         methods.add_function("new_empty_quat", |_, ()| {
-            Ok(Vector::new_empty_quat())
+            Ok(Vector::new())
         });
         methods.add_function("new_vec3", |_, (x, y, z): (f32, f32, f32)| {
-            Ok(Vector::new_vec3(x, y, z))
+            Ok(Vector::new3(x, y, z))
         });
         methods.add_function("new_vec2", |_, (x, y): (f32, f32)| {
-            Ok(Vector::new_vec2(x, y))
+            Ok(Vector::new2(x, y))
         });
         methods.add_function("new_vec", |_, x: f32| {
-            Ok(Vector::new_vec(x))
+            Ok(Vector::fill(x))
         });
 
         methods.add_method("normalize_3d", |_, this, ()| {
-            Ok(this.normalize_3d())
+            Ok(this.normalize3())
         });
         methods.add_method("rotate_by_euler", |_, this, rot: Vector| {
             Ok(this.rotate_by_euler(&rot))
@@ -78,7 +78,7 @@ impl UserData for Vector {
                 }
                 Value::Number(n) => {
                     let f = n as f32;
-                    Ok(Vector::new_vec4(this.x * f, this.y * f, this.z * f, this.w * f))
+                    Ok(Vector::new4(this.x * f, this.y * f, this.z * f, this.w * f))
                 }
                 _ => Err(mlua::Error::runtime("Vector can only be multiplied by Vector or number")),
             }
@@ -87,7 +87,7 @@ impl UserData for Vector {
             Ok(*this / other)
         });
         methods.add_meta_method(MetaMethod::Unm, |_, this, ()| {
-            Ok(Vector::new_vec4(-this.x, -this.y, -this.z, -this.w))
+            Ok(Vector::new4(-this.x, -this.y, -this.z, -this.w))
         });
     }
 }

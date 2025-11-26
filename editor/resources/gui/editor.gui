@@ -1,0 +1,94 @@
+{
+  "guis": [
+    {
+      "name": "editor",
+      "nodes": [0]
+    }
+  ],
+  "scripts": [
+    {
+      "uri": "editor\\resources\\scripts\\editor.lua"
+    }
+  ],
+  "fonts": [
+    {
+      "uri": "editor\\resources\\fonts\\Oxygen-Regular.ttf",
+      "glyph_msdf_size": 32,
+      "glyph_msdf_distance_range": 2.0
+    }
+  ],
+  "quads": [
+    {
+      "position": [0.0, 0.0],
+      "scale": [1.0, 1.0],
+      "clip_min": [0.0, 0.0],
+      "clip_max": [1.0, 1.0],
+      "color": [0.3, 0.3, 0.3, 0.8],
+      "corner_radius": 5.0
+    },
+    {
+      "position": [0.0, 0.0],
+      "scale": [1.0, 1.0],
+      "clip_min": [0.0, 0.0],
+      "clip_max": [1.0, 1.0],
+      "color": [0.3, 0.3, 0.3, 0.0],
+      "corner_radius": 5.0
+    }
+  ],
+  "texts": [
+    {
+      "text_information": {
+        "font": 0,
+        "text": "ffengine",
+        "font_size": 32.0,
+        "newline_distance": 1720.0
+      },
+      "position": [0.01, 0.2],
+      "scale": [1.0, 1.0],
+      "clip_min": [0.0, 0.0],
+      "clip_max": [1.0, 1.0],
+      "color": [1.0, 1.0, 1.0, 1.0]
+    }
+  ],
+  "nodes": [
+    {
+      "name": "top_bar",
+      "children": [1],
+      "position": [0, 0],
+      "scale": [1.0, 40.0],
+      "anchor_point": "top_left",
+      "absolute_scale": [false, true],
+      "text": 0,
+      "quad": 0
+    },
+      {
+        "name": "close_button",
+        "interactable_information": {
+          "hover_actions": [
+            {
+              "method": "close_hovered",
+              "script": 0
+            }
+          ],
+          "unhover_actions": [
+            {
+              "method": "close_unhovered",
+              "script": 0
+            }
+          ],
+          "left_tap_actions": [
+            {
+              "method": "close_window",
+              "script": 0
+            }
+          ]
+        },
+        "children": [],
+        "position": [0, 0],
+        "scale": [40.0, 1.0],
+        "anchor_point": "top_right",
+        "absolute_scale": [true, false],
+        "quad": 1
+      }
+  ]
+}

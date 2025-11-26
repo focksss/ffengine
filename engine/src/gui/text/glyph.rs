@@ -37,8 +37,8 @@ impl Glyph {
                                        color.clone()
         );
         let tl = GlyphQuadVertex::new(
-            p + (self.plane_min * scale_factor) + Vector::new_vec2(0.0, position_extent.y),
-            self.uv_min + Vector::new_vec2(0.0, uv_extent.y),
+            p + (self.plane_min * scale_factor) + Vector::new2(0.0, position_extent.y),
+            self.uv_min + Vector::new2(0.0, uv_extent.y),
             color.clone()
         );
         let tr = GlyphQuadVertex::new( // max
@@ -47,8 +47,8 @@ impl Glyph {
                                        color.clone()
         );
         let br = GlyphQuadVertex::new(
-            p + (self.plane_min * scale_factor) + Vector::new_vec2(position_extent.x, 0.0),
-            self.uv_min + Vector::new_vec2(uv_extent.x, 0.0),
+            p + (self.plane_min * scale_factor) + Vector::new2(position_extent.x, 0.0),
+            self.uv_min + Vector::new2(uv_extent.x, 0.0),
             color.clone()
         );
         [bl, tl, tr, br]

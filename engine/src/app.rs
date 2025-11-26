@@ -34,8 +34,9 @@ pub fn get_command_buffer() -> vk::CommandBuffer {
         .unwrap()
 }
 
+//TODO collapse engine and engineref into one struct
 pub struct Engine {
-    pub base: VkBase,
+    pub base: Arc<RefCell<VkBase>>,
     pub world: Arc<RefCell<Scene>>,
     pub renderer: Arc<RefCell<Renderer>>,
     pub physics_engine: Arc<RefCell<PhysicsEngine>>,
@@ -43,10 +44,16 @@ pub struct Engine {
 }
 #[derive(Clone)]
 pub struct EngineRef {
+    pub base: Arc<RefCell<VkBase>>,
     pub world: Arc<RefCell<Scene>>,
     pub renderer: Arc<RefCell<Renderer>>,
     pub physics_engine: Arc<RefCell<PhysicsEngine>>,
     pub controller: Arc<RefCell<Controller>>,
+}
+impl EngineRef {
+    pub unsafe fn recompile_shaders(&self) { unsafe {
+        self.renderer.borrow_mut().reload(&self.base.borrow(), &self.world.borrow())
+    } }
 }
 impl Engine {
     pub unsafe fn new() -> Engine {
@@ -54,22 +61,23 @@ impl Engine {
         let mut world = Scene::new(&base);
         unsafe { world.initialize(&base) }
         let world = Arc::new(RefCell::new(world));
-        let physics_engine = Arc::new(RefCell::new(PhysicsEngine::new(Vector::new_vec3(0.0, -9.8, 0.0), 0.9, 0.5)));
+        let physics_engine = Arc::new(RefCell::new(PhysicsEngine::new(Vector::new3(0.0, -9.8, 0.0), 0.9, 0.5)));
 
         let controller = Arc::new(RefCell::new(Controller::new(&base.window)));
 
         let rw_lock = RwLock::new(base.draw_command_buffers[0]);
         COMMAND_BUFFER.set(rw_lock).expect("Failed to initialize frame command buffer global");
 
+        let base = Arc::new(RefCell::new(base));
         let engine = Engine {
             physics_engine,
-            renderer: unsafe { Arc::new(RefCell::new(Renderer::new(&base, controller.clone(), CameraPointer {
+            renderer: unsafe { Arc::new(RefCell::new(Renderer::new(base.clone(), controller.clone(), CameraPointer {
                 world: world.clone(),
                 index: 0
             }))) },
             world,
             controller,
-            base,
+            base: base,
         };
         Lua::initialize(engine.as_ref()).expect("failed to initialize lua");
         engine
@@ -77,6 +85,7 @@ impl Engine {
 
     pub fn as_ref(&self) -> EngineRef {
         EngineRef {
+            base: self.base.clone(),
             world: self.world.clone(),
             renderer: self.renderer.clone(),
             physics_engine: self.physics_engine.clone(),
@@ -90,17 +99,15 @@ impl Engine {
 
     pub unsafe fn run(&mut self) {
         let engine_ref = self.as_ref();
-        let base = &mut self.base;
 
         let mut current_frame = 0usize;
         let mut last_frame_time = Instant::now();
         let mut needs_resize = false;
 
-        let mut frametime_manager = FrametimeManager::new(&base);
-
         let mut last_resize = Instant::now();
-        let event_loop_ptr = base.event_loop.as_ptr();
+        let event_loop_ptr = self.base.borrow().event_loop.as_ptr();
         let mut first_frame = true;
+        let mut closing = false;
         unsafe {
             (*event_loop_ptr).run_on_demand(|event, elwp| {
                 elwp.set_control_flow(ControlFlow::Poll);
@@ -109,6 +116,7 @@ impl Engine {
                         event: WindowEvent::Resized(_),
                         ..
                     } => {
+                        let base = &mut self.base.borrow_mut();
                         if first_frame { return }
                         base.needs_swapchain_recreate = true;
                         last_resize = Instant::now();
@@ -116,23 +124,34 @@ impl Engine {
                         needs_resize = true;
                     },
                     Event::AboutToWait => {
-                        let lock = COMMAND_BUFFER.get().expect("not initialized");
-                        *lock.write().unwrap() = base.draw_command_buffers[current_frame];
+                        {
+                            let base = &mut self.base.borrow_mut();
+                            
+                            if self.controller.borrow().flags.borrow().close_requested {
+                                base.device.device_wait_idle().unwrap();
+                                closing = true;
+                                elwp.exit();
+                                return;
+                            }
 
-                        first_frame = false;
-                        if base.needs_swapchain_recreate {
-                            base.device.device_wait_idle().unwrap();
-                            base.set_surface_and_present_images();
-                            self.renderer.borrow_mut().reload(&base, &self.world.borrow());
+                            let lock = COMMAND_BUFFER.get().expect("not initialized");
+                            *lock.write().unwrap() = base.draw_command_buffers[current_frame];
 
-                            base.needs_swapchain_recreate = false;
-                            frametime_manager.reset();
-                            return;
+                            first_frame = false;
+                            if base.needs_swapchain_recreate {
+                                base.device.device_wait_idle().unwrap();
+                                base.set_surface_and_present_images();
+                                self.renderer.borrow_mut().reload(&base, &self.world.borrow());
+
+                                base.needs_swapchain_recreate = false;
+                                // frametime_manager.reset();
+                                return;
+                            }
                         }
 
                         let reload_scripts_queued = self.controller.borrow().flags.borrow().reload_all_scripts_queued;
                         if reload_scripts_queued {
-                            Lua::reload_scripts().expect("failed to reload scripts");
+                            Lua::reload_scripts();
                             self.controller.borrow_mut().flags.borrow_mut().reload_all_scripts_queued = false;
                         }
 
@@ -145,16 +164,12 @@ impl Engine {
                         {
                             {
                                 let mut controller_mut = self.controller.borrow_mut();
-                                controller_mut.do_controls(delta_time, &base, &mut self.renderer.borrow_mut(), &mut self.world.borrow_mut(), current_frame)
+                                controller_mut.reset_deltas()
                             };
 
                             if self.controller.borrow().flags.borrow().do_physics { self.physics_engine.borrow_mut().tick(delta_time, &mut self.world.borrow_mut()); }
-
-                            let physics_engine = &self.physics_engine.borrow();
-                            for player in &physics_engine.players {
-                                player.update_camera(physics_engine);
-                            }
                         }
+                        let base = &mut self.base.borrow_mut();
 
                         let current_fence = base.draw_commands_reuse_fences[current_frame];
                         {
@@ -187,8 +202,10 @@ impl Engine {
                             &[current_rendering_complete_semaphore],
                             |_device, frame_command_buffer| {
                                 {
-                                    self.world.borrow_mut().update_nodes(frame_command_buffer, current_frame);
-                                    self.world.borrow_mut().update_lights(frame_command_buffer, current_frame);
+                                    let world_ref = &mut self.world.borrow_mut();
+                                    world_ref.update_nodes(frame_command_buffer, current_frame);
+                                    world_ref.update_lights(frame_command_buffer, current_frame);
+                                    world_ref.update_cameras()
                                 }
 
                                 let flags = self.controller.borrow().flags.clone();
@@ -212,19 +229,19 @@ impl Engine {
                             .queue_present(base.present_queue, &present_info)
                             .unwrap();
 
-                        frametime_manager.reset();
-
+                        // frametime_manager.reset();
                         current_frame = (current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
                     },
-                    _ => { Controller::handle_event(self.controller.clone(), event, elwp) },
+                    _ => { Controller::handle_event(self.controller.clone(), event) },
                 }
             }).expect("Failed to initiate render loop");
+            let base = &mut self.base.borrow_mut();
 
             base.device.device_wait_idle().unwrap();
 
             self.renderer.borrow_mut().destroy();
             self.world.borrow_mut().destroy(&base);
-            frametime_manager.destroy(&base);
+            // frametime_manager.destroy(&base);
         }
     }
 }

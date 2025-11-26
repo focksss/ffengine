@@ -86,11 +86,11 @@ impl Font {
 
             let (plane_min, plane_max) = if let Some(bounds) = glyph.get("planeBounds") {
                 (
-                    Vector::new_vec2(bounds["left"].as_f64().unwrap_or(0.0) as f32, bounds["bottom"].as_f64().unwrap_or(0.0) as f32),
-                    Vector::new_vec2(bounds["right"].as_f64().unwrap_or(0.0) as f32, bounds["top"].as_f64().unwrap_or(0.0) as f32)
+                    Vector::new2(bounds["left"].as_f64().unwrap_or(0.0) as f32, bounds["bottom"].as_f64().unwrap_or(0.0) as f32),
+                    Vector::new2(bounds["right"].as_f64().unwrap_or(0.0) as f32, bounds["top"].as_f64().unwrap_or(0.0) as f32)
                 )
             } else {
-                (Vector::new_vec2(0.0, 0.0), Vector::new_vec2(0.0, 0.0))
+                (Vector::new2(0.0, 0.0), Vector::new2(0.0, 0.0))
             };
 
             let (uv_min, uv_max) = if let Some(bounds) = glyph.get("atlasBounds") {
@@ -98,9 +98,9 @@ impl Font {
                 let r = bounds["right"].as_f64().unwrap_or(0.0) as f32 / atlas_w;
                 let b = bounds["bottom"].as_f64().unwrap_or(0.0) as f32 / atlas_h;
                 let t = bounds["top"].as_f64().unwrap_or(0.0) as f32 / atlas_h;
-                (Vector::new_vec2(l, 1.0 - b), Vector::new_vec2(r, 1.0 - t))
+                (Vector::new2(l, 1.0 - b), Vector::new2(r, 1.0 - t))
             } else {
-                (Vector::new_vec2(0.0, 0.0), Vector::new_vec2(0.0, 0.0))
+                (Vector::new2(0.0, 0.0), Vector::new2(0.0, 0.0))
             };
 
             glyphs.insert(ch, Glyph { uv_min, uv_max, plane_min, plane_max, advance });
@@ -112,7 +112,7 @@ impl Font {
             texture: atlas_texture,
             sampler: atlas.0.1,
             glyphs,
-            atlas_size: Vector::new_vec2(atlas_w, atlas_h),
+            atlas_size: Vector::new2(atlas_w, atlas_h),
             glyph_size: glyph_size_final,
             distance_range: distance_range_final,
             ascent,

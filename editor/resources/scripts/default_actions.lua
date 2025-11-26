@@ -1,7 +1,14 @@
 local fps_counter = 0
 local time_since_fps_update = 0.0
 local time_since_position_update = 0.0
+local gui_path = "editor\\resources\\gui\\default\\default.gui"
+local gui_reload_queued = false
 function Update()
+    if gui_reload_queued then 
+        Engine.renderer.gui:load_from_file("editor\\resources\\gui\\default\\default.gui")
+        gui_reload_queued = false
+    end
+
     time_since_fps_update = time_since_fps_update + dt
     fps_counter = fps_counter + 1
 
@@ -26,6 +33,7 @@ end
 
 function reload_gui()
     Engine.controller.flags.reload_gui_queued = true
+    ---gui_reload_queued = true
 end
 
 function reload_shaders()

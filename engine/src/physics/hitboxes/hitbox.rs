@@ -15,14 +15,14 @@ pub enum Hitbox {
     ConvexHull(ConvexHull),
 }
 impl Hitbox {
-    pub fn get_hitbox_from_node(node: &Node, hitbox_type: usize) -> Option<Hitbox> {
+    pub fn get_hitbox_from_node(node: &Node, hitbox_type: usize) -> Option<(Hitbox, Vector)> {
         assert!(hitbox_type < 5);
         if let Some(mesh) = &node.mesh {
             let scale = node.scale * node.user_scale;
             let (min, max) = mesh.borrow().get_min_max();
             let half_extent = (max - min) * 0.5 * scale;
 
-            return Some(match hitbox_type {
+            return Some((match hitbox_type {
                 0 => {
                     let bounds = BoundingBox {
                         center: (min + max) * scale * 0.5,
@@ -36,14 +36,14 @@ impl Hitbox {
                 }
                 2 => {
                     let mid = (min + max) * 0.5 * scale;
-                    let radius = half_extent.with('y', 0.0).magnitude_3d();
+                    let radius = half_extent.with('y', 0.0).magnitude3();
 
                     let min_s = min * scale;
                     let max_s = max * scale;
 
                     Hitbox::Capsule(Capsule {
-                        a: Vector::new_vec3(mid.x, max_s.y - radius, mid.z),
-                        b: Vector::new_vec3(mid.x, min_s.y + radius, mid.z),
+                        a: Vector::new3(mid.x, max_s.y - radius, mid.z),
+                        b: Vector::new3(mid.x, min_s.y + radius, mid.z),
                         radius,
                     })
                 }
@@ -58,13 +58,13 @@ impl Hitbox {
 
                     for primitive in &mesh.borrow().primitives {
                         for vertex in primitive.vertex_data.iter() {
-                            vertices.push(Vector::new_from_array(&vertex.position));
+                            vertices.push(scale * Vector::from_array(&vertex.position));
                         }
                     }
                     Hitbox::ConvexHull(ConvexHull::new(vertices))
                 }
                 _ => unreachable!()
-            })
+            }, scale))
         }
         None
     }

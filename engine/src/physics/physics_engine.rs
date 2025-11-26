@@ -145,7 +145,7 @@ impl PhysicsEngine {
             let velocity_normal = normal * normal.dot3(&v_diff);
             let velocity_tangent = v_diff - velocity_normal;
 
-            let relative_tangent_vel = velocity_tangent.normalize_3d();
+            let relative_tangent_vel = velocity_tangent.normalize3();
             let inertia_a = (inv_inertia_a * ra.cross(&relative_tangent_vel)).cross(&ra);
             let inertia_b = (inv_inertia_b * rb.cross(&relative_tangent_vel)).cross(&rb);
             let inv_inertia = (inertia_a + inertia_b).dot3(&relative_tangent_vel);
@@ -250,14 +250,14 @@ impl PhysicsEngine {
                 max_a.partial_cmp(&max_b).unwrap()
             }).unwrap();
 
-            let mut normal = deepest.normal.normalize_3d();
+            let mut normal = deepest.normal.normalize3();
             if normal.dot3(&player_body.velocity) > 0.0 {
                 normal = normal * -1.0;
             }
 
             let player = &mut self.players[player_index];
             let rigid_body = &mut self.rigid_bodies[player.rigid_body_pointer.index];
-            if normal.dot3(&self.gravity.normalize_3d()) < -0.35 {
+            if normal.dot3(&self.gravity.normalize3()) < -0.35 {
                 player.grounded = true;
             }
 
@@ -267,7 +267,7 @@ impl PhysicsEngine {
             rigid_body.velocity = rigid_body.velocity
                 .project_onto_plane(&normal);
 
-            if depenetration.magnitude_3d() < MIN_MOVE_THRESHOLD {
+            if depenetration.magnitude3() < MIN_MOVE_THRESHOLD {
                 break;
             }
 
@@ -282,7 +282,7 @@ impl PhysicsEngine {
     fn axis_angle_to_quat(axis: &Vector, angle: f32) -> Vector {
         let half_angle = angle * 0.5;
         let s = half_angle.sin();
-        Vector::new_vec4(
+        Vector::new4(
             axis.x * s,
             axis.y * s,
             axis.z * s,

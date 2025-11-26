@@ -170,6 +170,7 @@ impl VkBase {
             let event_loop = EventLoop::new()?;
             let window = WindowBuilder::new()
                 .with_title(window_title)
+                .with_decorations(false)
                 .with_inner_size(winit::dpi::LogicalSize::new(
                     f64::from(window_width),
                     f64::from(window_height),

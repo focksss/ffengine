@@ -179,21 +179,21 @@ impl Bvh {
         start: usize,
         end: usize
     ) -> (Vector, Vector) {
-        let mut min = Vector::new_vec(f32::MAX);
-        let mut max = Vector::new_vec(f32::MIN);
+        let mut min = Vector::fill(f32::MAX);
+        let mut max = Vector::fill(f32::MIN);
 
         let mesh_borrow = mesh.borrow();
 
         for (triangle_idx, _) in &triangles[start..end] {
             let (v0, v1, v2) = Self::get_triangle_vertices(&mesh_borrow, *triangle_idx, None);
 
-            min = Vector::min(&min, &Vector::new_from_array(&v0.position));
-            min = Vector::min(&min, &Vector::new_from_array(&v1.position));
-            min = Vector::min(&min, &Vector::new_from_array(&v2.position));
+            min = Vector::min(&min, &Vector::from_array(&v0.position));
+            min = Vector::min(&min, &Vector::from_array(&v1.position));
+            min = Vector::min(&min, &Vector::from_array(&v2.position));
 
-            max = Vector::max(&max, &Vector::new_from_array(&v0.position));
-            max = Vector::max(&max, &Vector::new_from_array(&v1.position));
-            max = Vector::max(&max, &Vector::new_from_array(&v2.position));
+            max = Vector::max(&max, &Vector::from_array(&v0.position));
+            max = Vector::max(&max, &Vector::from_array(&v1.position));
+            max = Vector::max(&max, &Vector::from_array(&v2.position));
         }
 
         (min, max)
@@ -227,14 +227,14 @@ impl Bvh {
         let mut v2 = primitive.vertex_data[idx2].clone();
 
         if let Some(scale) = scale_factor {
-            v0.position = (Vector::new_from_array(&v0.position) * scale).to_array3();
-            v0.normal = (Vector::new_from_array(&v0.normal) * scale).normalize_3d().to_array3();
+            v0.position = (Vector::from_array(&v0.position) * scale).to_array3();
+            v0.normal = (Vector::from_array(&v0.normal) * scale).normalize3().to_array3();
 
-            v1.position = (Vector::new_from_array(&v1.position) * scale).to_array3();
-            v1.normal = (Vector::new_from_array(&v1.normal) * scale).normalize_3d().to_array3();
+            v1.position = (Vector::from_array(&v1.position) * scale).to_array3();
+            v1.normal = (Vector::from_array(&v1.normal) * scale).normalize3().to_array3();
 
-            v2.position = (Vector::new_from_array(&v2.position) * scale).to_array3();
-            v2.normal = (Vector::new_from_array(&v2.normal) * scale).normalize_3d().to_array3();
+            v2.position = (Vector::from_array(&v2.position) * scale).to_array3();
+            v2.normal = (Vector::from_array(&v2.normal) * scale).normalize3().to_array3();
         }
 
         (v0, v1, v2)
@@ -250,9 +250,9 @@ impl Bvh {
     }
 
     fn centroid(a: &Vertex, b: &Vertex, c: &Vertex) -> Vector {
-        (Vector::new_from_array(&a.position)
-            + Vector::new_from_array(&b.position)
-            + Vector::new_from_array(&c.position)) / 3.0
+        (Vector::from_array(&a.position)
+            + Vector::from_array(&b.position)
+            + Vector::from_array(&c.position)) / 3.0
     }
 }
 impl Clone for Bvh {

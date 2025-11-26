@@ -20,17 +20,17 @@ impl UserData for ControllerRef {
         });
 
         fields.add_field_method_get("cursor_position", |lua, this| {
-            lua.create_userdata(Vector::new_vec2(this.0.borrow().cursor_position.x as f32, this.0.borrow().cursor_position.y as f32))
+            lua.create_userdata(Vector::new2(this.0.borrow().cursor_position.x as f32, this.0.borrow().cursor_position.y as f32))
         });
 
         fields.add_field_method_get("scroll_delta", |lua, this| {
             let borrowed = this.0.borrow();
-            lua.create_userdata(Vector::new_vec2(borrowed.scroll_delta.0, borrowed.scroll_delta.1))
+            lua.create_userdata(Vector::new2(borrowed.scroll_delta.0, borrowed.scroll_delta.1))
         });
 
         fields.add_field_method_get("mouse_delta", |lua, this| {
             let borrowed = this.0.borrow();
-            lua.create_userdata(Vector::new_vec2(borrowed.mouse_delta.0, borrowed.mouse_delta.1))
+            lua.create_userdata(Vector::new2(borrowed.mouse_delta.0, borrowed.mouse_delta.1))
         });
 
         fields.add_field_method_get("cursor_locked", |_, this| {
@@ -59,7 +59,7 @@ impl UserData for ControllerRef {
         fields.add_field_method_get("window_size", |_, this| {
             let borrowed = this.0.borrow();
             let window = borrowed.window();
-            Ok(Vector::new_vec2(window.inner_size().width as f32, window.inner_size().height as f32))
+            Ok(Vector::new2(window.inner_size().width as f32, window.inner_size().height as f32))
         });
 
         fields.add_field_method_get("ButtonPressed", |_, this| {
@@ -128,6 +128,12 @@ impl UserData for FlagsRef {
         fields.add_field_method_get("reload_all_scripts_queued", |_, this| Ok(this.0.borrow().reload_all_scripts_queued));
         fields.add_field_method_set("reload_all_scripts_queued", |_, this, val: bool| {
             this.0.borrow_mut().reload_all_scripts_queued = val;
+            Ok(())
+        });
+
+        fields.add_field_method_get("close_requested", |_, this| Ok(this.0.borrow().close_requested));
+        fields.add_field_method_set("close_requested", |_, this, val: bool| {
+            this.0.borrow_mut().close_requested = val;
             Ok(())
         });
     }

@@ -194,8 +194,8 @@ impl TextRenderer {
         self.renderpass.do_renderpass(frame, frame_command_buffer, Some(|| {
             device.cmd_push_constants(frame_command_buffer, self.renderpass.pipeline_layout, ShaderStageFlags::ALL_GRAPHICS, 0, slice::from_raw_parts(
                 &TextPushConstants {
-                    clip_min: Vector::new_vec(0.0).to_array2(),
-                    clip_max: Vector::new_vec2(1920.0, 1080.0).to_array2(),
+                    clip_min: Vector::fill(0.0).to_array2(),
+                    clip_max: Vector::new2(1920.0, 1080.0).to_array2(),
                     position: position.to_array2(),
                     resolution: [self.renderpass.viewport.width as i32, self.renderpass.viewport.height as i32],
                     glyph_size: font.glyph_size,
@@ -323,8 +323,8 @@ impl TextInformation {
 
             text: String::new(),
             font_size: 0.1,
-            scale_vector: Vector::new_vec(1.0),
-            color: Vector::new_vec(1.0),
+            scale_vector: Vector::fill(1.0),
+            color: Vector::fill(1.0),
             auto_wrap_distance: 20.0,
             bold: false,
             italic: false,
@@ -409,7 +409,7 @@ impl TextInformation {
                     line_shift -= per_line_shift;
                     advance_sum = 0.0;
                 }
-                let p = Vector::new_vec2(advance_sum, line_shift);
+                let p = Vector::new2(advance_sum, line_shift);
                 glyph.push_to_buffers(&mut vertices, &mut indices, p, &scale_factor, &self.color);
                 self.glyph_count += 1;
                 advance_sum += glyph.advance;

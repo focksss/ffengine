@@ -1,8 +1,9 @@
-use mlua::{UserData, UserDataFields};
+use mlua::{UserData, UserDataFields, UserDataMethods};
 use crate::app::EngineRef;
 use crate::scripting::engine_api::client_api::controller_api::ControllerRef;
 use crate::scripting::engine_api::physics_api::physics_engine_api::PhysicsEngineRef;
 use crate::scripting::engine_api::render_api::render_api::RendererRef;
+use crate::scripting::lua_engine::Lua;
 
 impl UserData for EngineRef {
     fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
@@ -18,6 +19,12 @@ impl UserData for EngineRef {
             let object = PhysicsEngineRef(this.physics_engine.clone());
             lua.create_userdata(object)
         });
+    }
+    fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
+        methods.add_method_mut("queue_script_reload", |lua, this, ()| {
+            Lua::reload_scripts();
+            Ok(())
+        })
     }
 }
 

@@ -137,6 +137,16 @@
 			"absolute_scale": false,
 			"color": [0.3, 0.3, 0.3, 1.0],
 			"corner_radius": 5.0
+		},
+		{
+			"position": [0.0, 0.0],
+			"scale": [0.2, 1.0],
+			"clip_min": [0.0, 0.0],
+			"clip_max": [0.2, 1.0],
+			"absolute_position": false,
+			"absolute_scale": false,
+			"color": [0.3, 0.3, 0.3, 1.0],
+			"corner_radius": 5.0
 		}
 	],
 	"texts": [
@@ -282,7 +292,7 @@
 	{
 		"text_information": {
 			"font": 0,
-			"text": "Ghost   ",
+			"text": "Editor   ",
 			"font_size": 22.0,
 			"newline_distance": 1720.0
 		},

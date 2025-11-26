@@ -5,6 +5,7 @@ use crate::math::Vector;
 use crate::physics::hitboxes::bounding_box::BoundingBox;
 use crate::physics::hitboxes::convex_hull::ConvexHull;
 use crate::physics::hitboxes::hitbox::Hitbox;
+use crate::physics::hitboxes::sphere::Sphere;
 use crate::physics::physics_engine::{PhysicsEngine, RigidBody};
 use crate::physics::rigid_body::RigidBodyPointer;
 use crate::world::scene::Scene;
@@ -37,19 +38,20 @@ impl Player {
         let max = camera.position + eye_to_head;
         let min = camera.position + eye_to_foot;
         let hitbox_height = max.y - min.y;
-        let radius = (Vector::new_vec3(max.x, 0.0, max.z) - Vector::new_vec3(min.x, 0.0, min.z)).magnitude_3d();
-        // /*
+        let radius = (Vector::new3(max.x, 0.0, max.z) - Vector::new3(min.x, 0.0, min.z)).magnitude3();
+        /*
         rigid_body.hitbox = Hitbox::OBB(BoundingBox {
              half_extents: (max - min) * 0.5,
-             center: Vector::new_vec3(0.0, -hitbox_height * 0.5 + eye_to_head.y, 0.0),
+             center: Vector::new3(0.0, -hitbox_height * 0.5 + eye_to_head.y, 0.0),
         }, ConvexHull {
             points: Vec::new(),
             triangle_vert_indices: Vec::new(),
+            min_max: (min, max),
         });
-        // */
-        /*
-        rigid_body.hitbox = Hitbox::SPHERE(Sphere {
-            center: Vector::new_vec3(0.0, -hitbox_height * 0.5 + eye_to_head.y, 0.0),
+        */
+        // /*
+        rigid_body.hitbox = Hitbox::Sphere(Sphere {
+            center: Vector::new3(0.0, -hitbox_height * 0.5 + eye_to_head.y, 0.0),
             radius,
         });
         // */
@@ -84,13 +86,5 @@ impl Player {
                 index: cam_index
             },
         }
-    }
-
-    pub fn update_camera(&self, physics_engine: &PhysicsEngine) {
-        let camera = &mut self.camera_pointer.world.borrow_mut().cameras[self.camera_pointer.index];
-        let pos = physics_engine.rigid_bodies[self.rigid_body_pointer.index].position;
-        camera.update_matrices();
-        camera.update_frustum();
-        camera.position = pos;
     }
 }

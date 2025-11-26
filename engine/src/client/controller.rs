@@ -70,14 +70,9 @@ impl Controller {
         unsafe { &*self.window_ptr }
     }
 
-    pub unsafe fn do_controls(
+    pub unsafe fn reset_deltas(
         &mut self,
-        delta_time: f32,
-        base: &VkBase,
-        renderer: &mut Renderer,
-        world: &mut Scene,
-        frame: usize,
-    ) { unsafe {
+    ) {
         /*
         let mut move_direction = Vector::new_vec(0.0);
         {
@@ -225,9 +220,9 @@ impl Controller {
 
         self.scroll_delta = (0.0, 0.0);
         self.new_pressed_keys.clear();
-    } }
+    }
 
-    pub fn handle_event<T>(controller_ref: Arc<RefCell<Controller>>, event: Event<T>, elwp: &EventLoopWindowTarget<T>) {
+    pub fn handle_event<T>(controller_ref: Arc<RefCell<Controller>>, event: Event<T>) {
         let mut should_scroll_event = false;
         let mut should_mouse_move_event = false;
         let mut should_mouse_button_pressed_event = false;
@@ -239,7 +234,7 @@ impl Controller {
                     event: WindowEvent::CloseRequested,
                     ..
                 } => {
-                    elwp.exit();
+                    controller.flags.borrow_mut().close_requested = true;
                 }
                 Event::WindowEvent {
                     event: WindowEvent::KeyboardInput {
@@ -365,4 +360,5 @@ pub struct Flags {
     pub draw_hitboxes: bool,
     pub do_physics: bool,
     pub reload_all_scripts_queued: bool,
+    pub close_requested: bool,
 }

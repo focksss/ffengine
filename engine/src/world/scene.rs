@@ -72,7 +72,7 @@ impl Scene {
 
             models: Vec::new(),
             lights: Vec::new(),
-            sun: Sun::new_sun(Vector::new_vec3(-1.0, -5.0, -1.0), Vector::new_vec3(0.98, 0.84, 0.64)),
+            sun: Sun::new_sun(Vector::new3(-1.0, -5.0, -1.0), Vector::new3(0.98, 0.84, 0.64)),
 
             texture_count: 0,
             index_buffer: (vk::Buffer::null(), DeviceMemory::null()),
@@ -300,6 +300,12 @@ impl Scene {
     pub fn update_sun(&mut self, primary_camera_index: usize) {
         self.sun.update(&self.cameras[primary_camera_index]);
     }
+    pub fn update_cameras(&mut self) {
+        for camera in self.cameras.iter_mut() {
+            camera.update_matrices();
+            camera.update_frustum();
+        }
+    }
 
     pub unsafe fn update_instances_all_frames(&mut self, base: &VkBase) { unsafe {
         for model in self.models.iter_mut() {
@@ -491,13 +497,13 @@ pub struct Sun {
 impl Sun {
     pub fn new_sun(vector: Vector, color: Vector) -> Sun {
         Sun {
-            vector: Vector::new_vec4(vector.x, vector.y, vector.z, 1.0).normalize_3d(),
+            vector: Vector::new4(vector.x, vector.y, vector.z, 1.0).normalize3(),
             color,
             projections: [Matrix::new_ortho(-10.0, 10.0, -10.0, 10.0, 0.01, 1000.0); 5],
             views: [Matrix::new_look_at(
-                &Vector::new_vec3(vector.x * -100.0, vector.y * -100.0, vector.z * -100.0),
-                &Vector::new_vec3(0.0, 0.0, 0.0),
-                &Vector::new_vec3(0.0, 1.0, 0.0),
+                &Vector::new3(vector.x * -100.0, vector.y * -100.0, vector.z * -100.0),
+                &Vector::new3(0.0, 0.0, 0.0),
+                &Vector::new3(0.0, 1.0, 0.0),
             ); 5],
         }
     }
@@ -537,7 +543,7 @@ impl Sun {
     fn get_cascade_matrix(&self, camera: &Camera, near: f32, far: f32) -> [Matrix; 2] {
         let corners = camera.get_frustum_corners_with_near_far(near, far);
 
-        let mut sum = Vector::new_empty();
+        let mut sum = Vector::empty();
         for corner in corners.iter() {
             sum = sum + corner;
         }
@@ -547,7 +553,7 @@ impl Sun {
         let mut max_radius_squared = 0.0f32;
         for corner in &corners {
             let v = *corner - frustum_center;
-            let radius_squared = v.dot(&v);
+            let radius_squared = v.dot4(&v);
             if radius_squared > max_radius_squared { max_radius_squared = radius_squared; }
         }
         let radius = max_radius_squared.sqrt();
@@ -556,8 +562,8 @@ impl Sun {
         let scalar_matrix = Matrix::new_scalar(texels_per_unit);
         let temp_view = Matrix::new_look_at(
             &(-1.0 * self.vector),
-            &Vector::new_empty(),
-            &Vector::new_vec3(0.0, 1.0, 0.0)
+            &Vector::empty(),
+            &Vector::new3(0.0, 1.0, 0.0)
         ) * scalar_matrix;
         frustum_center = temp_view * frustum_center;
         frustum_center.x = frustum_center.x.floor();
@@ -568,7 +574,7 @@ impl Sun {
         let view = Matrix::new_look_at(
             &(frustum_center - (self.vector * 2.0 * radius)),
             &frustum_center,
-            &Vector::new_vec3(0.0, 1.0, 0.0)
+            &Vector::new3(0.0, 1.0, 0.0)
         );
 
         let mut min_x = f32::MAX; let mut min_y = f32::MAX; let mut min_z = f32::MAX;
@@ -647,7 +653,7 @@ impl Model {
             let mut max: Option<Vector> = None;
             if let JsonValue::Array(ref min_data) = accessor["min"] {
                 if min_data.len() >= 3 {
-                    min = Some(Vector::new_vec3(
+                    min = Some(Vector::new3(
                         min_data[0].as_f32().unwrap(),
                         min_data[1].as_f32().unwrap(),
                         min_data[2].as_f32().unwrap()));
@@ -655,7 +661,7 @@ impl Model {
             }
             if let JsonValue::Array(ref max_data) = accessor["max"] {
                 if max_data.len() >= 3 {
-                    max = Some(Vector::new_vec3(
+                    max = Some(Vector::new3(
                         max_data[0].as_f32().unwrap(), 
                         max_data[1].as_f32().unwrap(), 
                         max_data[2].as_f32().unwrap()));
@@ -1083,9 +1089,9 @@ impl Model {
                         index_data_u32: Vec::new(),
                         vertex_data: Vec::new(),
                         material_index,
-                        min: Vector::new_null(),
-                        max: Vector::new_null(),
-                        corners: [Vector::new_null(); 8],
+                        min: Vector::new(),
+                        max: Vector::new(),
+                        corners: [Vector::new(); 8],
                         id: primitive_count,
                     });
                     primitive_count += 1;
@@ -1123,22 +1129,22 @@ impl Model {
                 None => (),
             }
 
-            let mut rotation = Vector::new_empty();
+            let mut rotation = Vector::empty();
             if let JsonValue::Array(ref rotation_json) = node["rotation"] {
                 if rotation_json.len() >= 4 {
-                    rotation = Vector::new_vec4(
+                    rotation = Vector::new4(
                         rotation_json[0].as_f32().unwrap(),
                         rotation_json[1].as_f32().unwrap(),
                         rotation_json[2].as_f32().unwrap(),
                         rotation_json[3].as_f32().unwrap()
-                    ).normalize_4d();
+                    ).normalize4();
                 };
             }
 
-            let mut scale = Vector::new_vec(1.0);
+            let mut scale = Vector::fill(1.0);
             if let JsonValue::Array(ref scale_json) = node["scale"] {
                 if scale_json.len() >= 3 {
-                    scale = Vector::new_vec3(
+                    scale = Vector::new3(
                         scale_json[0].as_f32().unwrap(),
                         scale_json[1].as_f32().unwrap(),
                         scale_json[2].as_f32().unwrap()
@@ -1146,10 +1152,10 @@ impl Model {
                 }
             }
 
-            let mut translation = Vector::new_empty();
+            let mut translation = Vector::empty();
             if let JsonValue::Array(ref translation_json) = node["translation"] {
                 if translation_json.len() >= 3 {
-                    translation = Vector::new_vec3(
+                    translation = Vector::new3(
                         translation_json[0].as_f32().unwrap(),
                         translation_json[1].as_f32().unwrap(),
                         translation_json[2].as_f32().unwrap()
@@ -1173,9 +1179,9 @@ impl Model {
                     scale,
                     translation,
                     needs_update: true,
-                    user_rotation: Vector::new_empty_quat(),
-                    user_scale: Vector::new_vec(1.0),
-                    user_translation: Vector::new_empty(),
+                    user_rotation: Vector::new(),
+                    user_scale: Vector::fill(1.0),
+                    user_translation: Vector::empty(),
                     original_rotation: rotation,
                     original_scale: scale,
                     original_translation: translation,
@@ -1306,7 +1312,7 @@ impl Model {
         for node_index in self.scene.nodes.iter() {
             let node = &mut self.nodes[*node_index];
             node.user_translation.add_vec_to_self(translation);
-            node.user_rotation.combine_to_self(&rotation.euler_to_quat().normalize_4d());
+            node.user_rotation.combine_to_self(&rotation.euler_to_quat().normalize4());
             node.user_scale.mul_by_vec_to_self(scale);
             node.needs_update = true;
         }
@@ -1860,8 +1866,8 @@ impl Primitive {
         for vertex in vertices.iter() {
             let mut v = vertex.borrow_mut();
 
-            let tangent_vec = Vector::new_vec3(v.tangent[0], v.tangent[1], v.tangent[2]);
-            let bitangent_vec = Vector::new_vec3(v.bitangent[0], v.bitangent[1], v.bitangent[2]);
+            let tangent_vec = Vector::new3(v.tangent[0], v.tangent[1], v.tangent[2]);
+            let bitangent_vec = Vector::new3(v.bitangent[0], v.bitangent[1], v.bitangent[2]);
 
             let tangent_len_sq = v.tangent[0] * v.tangent[0] +
                 v.tangent[1] * v.tangent[1] +
@@ -1871,13 +1877,13 @@ impl Primitive {
                 v.bitangent[2] * v.bitangent[2];
 
             if tangent_len_sq > 1e-6 {
-                v.tangent = tangent_vec.normalize_3d().to_array3();
+                v.tangent = tangent_vec.normalize3().to_array3();
             } else {
                 v.tangent = [1.0, 0.0, 0.0];
             }
 
             if bitangent_len_sq > 1e-6 {
-                v.bitangent = bitangent_vec.normalize_3d().to_array3();
+                v.bitangent = bitangent_vec.normalize3().to_array3();
             } else {
                 v.bitangent = [0.0, 1.0, 0.0];
             }
@@ -1885,23 +1891,23 @@ impl Primitive {
     }
 
     fn construct_min_max(&mut self) {
-        let mut min = Vector::new_vec(f32::MAX);
-        let mut max = Vector::new_vec(f32::MIN);
+        let mut min = Vector::fill(f32::MAX);
+        let mut max = Vector::fill(f32::MIN);
         for vertex in self.vertex_data.iter() {
-            min = Vector::min(&Vector::new_from_array(&vertex.position), &min);
-            max = Vector::max(&Vector::new_from_array(&vertex.position), &max);
+            min = Vector::min(&Vector::from_array(&vertex.position), &min);
+            max = Vector::max(&Vector::from_array(&vertex.position), &max);
         }
         self.min = min;
         self.max = max;
         self.corners = [
             self.min,
-            Vector::new_vec3(max.x, min.y, min.z),
-            Vector::new_vec3(max.x, min.y, max.z),
-            Vector::new_vec3(min.x, min.y, max.z),
-            Vector::new_vec3(min.x, max.y, min.z),
-            Vector::new_vec3(max.x, max.y, min.z),
+            Vector::new3(max.x, min.y, min.z),
+            Vector::new3(max.x, min.y, max.z),
+            Vector::new3(min.x, min.y, max.z),
+            Vector::new3(min.x, max.y, min.z),
+            Vector::new3(max.x, max.y, min.z),
             self.max,
-            Vector::new_vec3(min.x, max.y, max.z),
+            Vector::new3(min.x, max.y, max.z),
         ]
     }
 }
@@ -1956,8 +1962,8 @@ pub struct Mesh {
 }
 impl Mesh {
     pub fn get_min_max(&self) -> (Vector, Vector) {
-        let mut min = Vector::new_vec(f32::MAX);
-        let mut max = Vector::new_vec(f32::MIN);
+        let mut min = Vector::fill(f32::MAX);
+        let mut max = Vector::fill(f32::MIN);
         for primitive in self.primitives.iter() {
             if primitive.max.x > max.x { max.x = primitive.max.x; }
             if primitive.max.y > max.y { max.y = primitive.max.y; }
@@ -2003,7 +2009,7 @@ impl Node {
                         let mut all_outside_this_plane = true;
 
                         for corner in primitive.corners.iter() {
-                            let world_pos = self.world_transform * Vector::new_vec4(corner.x, corner.y, corner.z, 1.0);
+                            let world_pos = self.world_transform * Vector::new4(corner.x, corner.y, corner.z, 1.0);
 
                             if frustum.unwrap().planes[plane_idx].test_point_within(&world_pos) {
                                 all_outside_this_plane = false;
@@ -2130,13 +2136,13 @@ impl Animation {
             if sampler.2.r#type.eq("VEC3") {
                 let vec3s: &[[f32; 3]] = bytemuck::cast_slice(bytes);
                 for vec3 in vec3s.iter() {
-                    vectors.push(Vector::new_vec3(vec3[0], vec3[1], vec3[2]));
+                    vectors.push(Vector::new3(vec3[0], vec3[1], vec3[2]));
                 }
                 compiled_samplers.push((times.to_vec(), sampler.1.clone(), vectors));
             } else if sampler.2.r#type.eq("VEC4") {
                 let vec4s: &[[f32; 4]] = bytemuck::cast_slice(bytes);
                 for vec4 in vec4s.iter() {
-                    vectors.push(Vector::new_vec4(vec4[0], vec4[1], vec4[2], vec4[3]));
+                    vectors.push(Vector::new4(vec4[0], vec4[1], vec4[2], vec4[3]));
                 }
                 compiled_samplers.push((times.to_vec(), sampler.1.clone(), vectors));
             } else {
@@ -2211,7 +2217,7 @@ impl Animation {
             let vector2 = &sampler.2[current_time_index + 1];
             let new_vector;
             if channel.2.eq("translation") || channel.2.eq("scale") {
-                new_vector = Vector::new_vec3(
+                new_vector = Vector::new3(
                     vector1.x + interpolation_factor * (vector2.x - vector1.x),
                     vector1.y + interpolation_factor * (vector2.y - vector1.y),
                     vector1.z + interpolation_factor * (vector2.z - vector1.z),

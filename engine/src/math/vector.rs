@@ -16,10 +16,10 @@ pub struct Vector {
 
 impl Vector {
     //<editor-fold desc = "constructors">
-    pub fn new_vec4(x: f32, y: f32, z: f32, w: f32) -> Self {
+    pub fn new4(x: f32, y: f32, z: f32, w: f32) -> Self {
         Self { x, y, z, w }
     }
-    pub fn new_empty_quat() -> Self {
+    pub fn new() -> Self {
         Vector {
             x: 0.0,
             y: 0.0,
@@ -27,44 +27,40 @@ impl Vector {
             w: 1.0,
         }
     }
-    pub fn new_vec3(x: f32, y: f32, z: f32) -> Self {
+    pub fn new3(x: f32, y: f32, z: f32) -> Self {
         Self { x, y, z, w: 1.0 }
     }
-    pub fn new_vec2(x: f32, y: f32) -> Self {
+    pub fn new2(x: f32, y: f32) -> Self {
         Self { x, y, z: 1.0, w: 1.0 }
     }
-    pub fn new_vec(v: f32) -> Self {
+    pub fn fill(v: f32) -> Self {
         Self { x: v, y: v, z: v, w: v }
     }
-    pub fn new_empty() -> Self {
+    pub fn empty() -> Self {
         Self { x: 0.0, y: 0.0, z: 0.0, w: 0.0 }
     }
 
-    pub fn new_null() -> Self {
-        Self { x: 0.0, y: 0.0, z: 0.0, w: 0.0 }
-    }
-
-    pub fn new_from_vec(vals: &Vec<f32>) -> Self {
+    pub fn from_vec(vals: &Vec<f32>) -> Self {
         match vals.len() {
-            1 => Vector::new_vec(vals[0]),
-            2 => Vector::new_vec2(vals[0], vals[1]),
-            3 => Vector::new_vec3(vals[0], vals[1], vals[2]),
-            4 => Vector::new_vec4(vals[0], vals[1], vals[2], vals[3]),
+            1 => Vector::fill(vals[0]),
+            2 => Vector::new2(vals[0], vals[1]),
+            3 => Vector::new3(vals[0], vals[1], vals[2]),
+            4 => Vector::new4(vals[0], vals[1], vals[2], vals[3]),
             _ => {
                 eprintln!("\n--- PROBLEM ---\ninvalid number of values for new_from_vec: {}\nfrom {:?}\n", vals.len(), vals);
-                Vector::new_empty()
+                Vector::empty()
             }
         }
     }
-    pub fn new_from_array(vals: &[f32]) -> Self {
+    pub fn from_array(vals: &[f32]) -> Self {
         match vals.len() {
-            1 => Vector::new_vec(vals[0]),
-            2 => Vector::new_vec2(vals[0], vals[1]),
-            3 => Vector::new_vec3(vals[0], vals[1], vals[2]),
-            4 => Vector::new_vec4(vals[0], vals[1], vals[2], vals[3]),
+            1 => Vector::fill(vals[0]),
+            2 => Vector::new2(vals[0], vals[1]),
+            3 => Vector::new3(vals[0], vals[1], vals[2]),
+            4 => Vector::new4(vals[0], vals[1], vals[2], vals[3]),
             _ => {
                 eprintln!("\n--- PROBLEM ---\ninvalid number of values for new_from_array: {}\nfrom {:?}\n", vals.len(), vals);
-                Vector::new_empty()
+                Vector::empty()
             }
         }
     }
@@ -72,8 +68,8 @@ impl Vector {
     pub fn axis_angle_quat(n: &Vector, theta: f32) -> Vector {
         let half_angle = theta * 0.5;
         let half_sine = half_angle.sin();
-        let a = n.normalize_3d();
-        Vector::new_vec4(
+        let a = n.normalize3();
+        Vector::new4(
             a.x * half_sine,
             a.y * half_sine,
             a.z * half_sine,
@@ -95,14 +91,21 @@ impl Vector {
     //</editor-fold>
 
     //<editor-fold desc = "vector operations"
-    pub fn magnitude_3d(&self) -> f32 {
+    pub fn magnitude3(&self) -> f32 {
         (
             self.x * self.x +
             self.y * self.y +
             self.z * self.z
             ).sqrt().max(1e-10)
     }
-    pub fn magnitude_4d(&self) -> f32 {
+    pub fn magnitude3_sq(&self) -> f32 {
+        (
+            self.x * self.x +
+            self.y * self.y +
+            self.z * self.z
+        ).max(1e-10)
+    }
+    pub fn magnitude4(&self) -> f32 {
         (
             self.x * self.x +
             self.y * self.y +
@@ -110,12 +113,20 @@ impl Vector {
             self.w * self.w
             ).sqrt().max(1e-10)
     }
-
-    pub fn normalize_3d(&self) -> Vector {
-        self / self.magnitude_3d()
+    pub fn magnitude4_sq(&self) -> f32 {
+        (
+            self.x * self.x +
+            self.y * self.y +
+            self.z * self.z +
+            self.w * self.w
+        ).max(1e-10)
     }
-    pub fn normalize_4d(&self) -> Vector {
-        self / self.magnitude_4d()
+
+    pub fn normalize3(&self) -> Vector {
+        self / self.magnitude3()
+    }
+    pub fn normalize4(&self) -> Vector {
+        self / self.magnitude4()
     }
 
     pub fn euler_to_quat(&self) -> Vector {
@@ -126,7 +137,7 @@ impl Vector {
         let cy = (self.z * 0.5).cos();
         let sy = (self.z * 0.5).sin();
 
-        Vector::new_vec4(
+        Vector::new4(
             sr * cp * cy - cr * sp * sy,
             cr * sp * cy + sr * cp * sy,
             cr * cp * sy - sr * sp * cy,
@@ -135,7 +146,7 @@ impl Vector {
     }
 
     pub fn conjugate(&self) -> Vector {
-        Vector::new_vec4(-self.x, -self.y, -self.z, self.w)
+        Vector::new4(-self.x, -self.y, -self.z, self.w)
     }
 
     pub fn unitize_w(mut self) -> Self {
@@ -165,49 +176,49 @@ impl Vector {
     //</editor-fold>
 
     //<editor-fold desc = "vector vector operations">
-    pub fn dot(&self, other: &Vector) -> f32 {
+    pub fn dot4(&self, other: &Vector) -> f32 {
         self.x * other.x + self.y * other.y + self.z * other.z + self.w * other.w
     }
     pub fn dot3(&self, other: &Vector) -> f32 {
         self.x * other.x + self.y * other.y + self.z * other.z
     }
     pub fn cross(&self, other: &Vector) -> Vector {
-        Vector::new_vec3(
+        Vector::new3(
             self.y * other.z - self.z * other.y,
             self.z * other.x - self.x * other.z,
             self.x * other.y - self.y * other.x)
     }
 
     pub fn add_vec_to_self(&mut self, vec: &Vector) {
-        let temp = Vector::new_vec4(self.x + vec.x, self.y + vec.y, self.z + vec.z, self.w + vec.w);
+        let temp = Vector::new4(self.x + vec.x, self.y + vec.y, self.z + vec.z, self.w + vec.w);
         self.x = temp.x;
         self.y = temp.y;
         self.z = temp.z;
         self.w = temp.w;
     }
     pub fn sub_vec(&self, vec: &Vector) -> Vector {
-        Vector::new_vec4(self.x - vec.x, self.y - vec.y, self.z - vec.z, self.w - vec.w)
+        Vector::new4(self.x - vec.x, self.y - vec.y, self.z - vec.z, self.w - vec.w)
     }
     pub fn mul_by_vec(&self, vec: &Vector) -> Vector {
-        Vector::new_vec4(self.x * vec.x, self.y * vec.y, self.z * vec.z, self.w * vec.w)
+        Vector::new4(self.x * vec.x, self.y * vec.y, self.z * vec.z, self.w * vec.w)
     }
 
     pub fn mul_by_vec_to_self(&mut self, vec: &Vector) {
-        let temp = Vector::new_vec4(self.x * vec.x, self.y * vec.y, self.z * vec.z, self.w * vec.w);
+        let temp = Vector::new4(self.x * vec.x, self.y * vec.y, self.z * vec.z, self.w * vec.w);
         self.x = temp.x;
         self.y = temp.y;
         self.z = temp.z;
         self.w = temp.w;
     }
     pub fn div_by_vec(&self, vec: &Vector) -> Vector {
-        Vector::new_vec4(self.x / vec.x, self.y / vec.y, self.z / vec.z, self.w / vec.w)
+        Vector::new4(self.x / vec.x, self.y / vec.y, self.z / vec.z, self.w / vec.w)
     }
 
     /**
     * self * other
      */
     pub fn combine(&self, other: &Vector) -> Vector {
-        Vector::new_vec4(
+        Vector::new4(
             self.w * other.x + self.x * other.w + self.y * other.z - self.z * other.y,
             self.w * other.y - self.x * other.z + self.y * other.w + self.z * other.x,
             self.w * other.z + self.x * other.y - self.y * other.x + self.z * other.w,
@@ -223,7 +234,7 @@ impl Vector {
     }
     
     pub fn max(a: &Vector, b: &Vector) -> Vector {
-        return Vector::new_vec4(
+        return Vector::new4(
             a.x.max(b.x),
             a.y.max(b.y),
             a.z.max(b.z),
@@ -231,7 +242,7 @@ impl Vector {
         )
     }
     pub fn min(a: &Vector, b: &Vector) -> Vector {
-        return Vector::new_vec4(
+        return Vector::new4(
             a.x.min(b.x),
             a.y.min(b.y),
             a.z.min(b.z),
@@ -240,7 +251,7 @@ impl Vector {
     }
 
     pub fn mix(a: &Vector, b: &Vector, t: f32) -> Vector {
-        Vector::new_vec4(
+        Vector::new4(
             a.x + (b.x - a.x) * t,
             a.y + (b.y - a.y) * t,
             a.z + (b.z - a.z) * t,
@@ -249,10 +260,10 @@ impl Vector {
     }
 
     pub fn spherical_lerp(a: &Vector, b: &Vector, t: f32) -> Vector {
-        let a = a.normalize_4d();
-        let mut b = b.normalize_4d();
+        let a = a.normalize4();
+        let mut b = b.normalize4();
 
-        let mut dot = a.dot(&b).clamp(-1.0, 1.0);
+        let mut dot = a.dot4(&b).clamp(-1.0, 1.0);
 
         if dot < 0.0 {
             b = b * -1.0;
@@ -263,13 +274,13 @@ impl Vector {
         let sin_theta = theta.sin();
 
         if sin_theta < 1e-10 {
-            return Vector::mix(&a, &b, t).normalize_4d();
+            return Vector::mix(&a, &b, t).normalize4();
         }
 
         let w1 = ((1.0 - t) * theta).sin() / sin_theta;
         let w2 = (t * theta).sin() / sin_theta;
 
-        (a * w1 + b * w2).normalize_4d()
+        (a * w1 + b * w2).normalize4()
     }
 
     pub fn rotate_by_euler(&self, rot: &Vector) -> Vector {
@@ -295,7 +306,7 @@ impl Vector {
         new_x = cos_z * x - sin_z * y;
         new_y = sin_z * x + cos_z * y;
     
-        Vector::new_vec3(new_x, new_y, new_z)
+        Vector::new3(new_x, new_y, new_z)
     }
     pub fn rotate_by_quat(&self, rot: &Vector) -> Vector {
         let qw = rot.w;
@@ -316,23 +327,23 @@ impl Vector {
         let new_y = iy * qw + iw * -qy + iz * -qx - ix * -qz;
         let new_z = iz * qw + iw * -qz + ix * -qy - iy * -qx;
 
-        Vector::new_vec3(new_x, new_y, new_z)
+        Vector::new3(new_x, new_y, new_z)
     }
 
     pub fn project_onto_plane(&self, other: &Vector) -> Vector {
-        let n = other.normalize_3d();
+        let n = other.normalize3();
         self - n * self.dot3(&n)
     }
 
     pub fn clamp3(&self, min: &Vector, max: &Vector) -> Vector {
-        Vector::new_vec3(
+        Vector::new3(
             self.x.clamp(min.x, max.x),
             self.y.clamp(min.y, max.y),
             self.z.clamp(min.z, max.z),
         )
     }
     pub fn clamp4(&self, min: &Vector, max: &Vector) -> Vector {
-        Vector::new_vec4(
+        Vector::new4(
             self.x.clamp(min.x, max.x),
             self.y.clamp(min.y, max.y),
             self.z.clamp(min.z, max.z),
@@ -350,15 +361,15 @@ impl Vector {
 
     //<editor-fold desc = "vector float operations"
     pub fn add_float(&self, v: f32) -> Vector {
-        Vector::new_vec4(self.x + v, self.y + v, self.z + v, self.w + v)
+        Vector::new4(self.x + v, self.y + v, self.z + v, self.w + v)
     }
     pub fn sub_float(&self, v: f32) -> Vector {
-        Vector::new_vec4(self.x - v, self.y - v, self.z - v, self.w - v)
+        Vector::new4(self.x - v, self.y - v, self.z - v, self.w - v)
     }
 
     ///* Threshold is not direction dependent.
     pub fn nullify_threshold(&self, threshold: f32) -> Vector {
-        Vector::new_vec4(
+        Vector::new4(
             if self.x.abs() > threshold { self.x } else { 0.0 },
             if self.y.abs() > threshold { self.y } else { 0.0 },
             if self.z.abs() > threshold { self.z } else { 0.0 },
@@ -367,7 +378,7 @@ impl Vector {
     }
     ///* Threshold is not direction dependent.
     pub fn nullify_horizontal_threshold(&self, threshold: f32) -> Vector {
-        Vector::new_vec4(
+        Vector::new4(
             if self.x.abs() > threshold { self.x } else { 0.0 },
             self.y,
             if self.z.abs() > threshold { self.z } else { 0.0 },
@@ -385,7 +396,7 @@ impl<'a, 'b> Add<&'b Vector> for &'a Vector {
     type Output = Vector;
 
     fn add(self, other: &'b Vector) -> Vector {
-        Vector::new_vec4(self.x + other.x, self.y + other.y, self.z + other.z, self.w + other.w)
+        Vector::new4(self.x + other.x, self.y + other.y, self.z + other.z, self.w + other.w)
     }
 }
 impl<'a> Add<Vector> for &'a Vector {
@@ -422,7 +433,7 @@ impl<'a, 'b> Sub<&'b Vector> for &'a Vector {
     type Output = Vector;
 
     fn sub(self, other: &'b Vector) -> Vector {
-        Vector::new_vec4(self.x - other.x, self.y - other.y, self.z - other.z, self.w - other.w)
+        Vector::new4(self.x - other.x, self.y - other.y, self.z - other.z, self.w - other.w)
     }
 }
 impl<'a> Sub<Vector> for &'a Vector {
@@ -462,7 +473,7 @@ impl<'a, 'b> Mul<&'b Vector> for &'a Vector {
     type Output = Vector;
 
     fn mul(self, other: &'b Vector) -> Vector {
-        Vector::new_vec4(self.x * other.x, self.y * other.y, self.z * other.z, self.w * other.w)
+        Vector::new4(self.x * other.x, self.y * other.y, self.z * other.z, self.w * other.w)
     }
 }
 impl<'a> Mul<Vector> for &'a Vector {
@@ -486,7 +497,7 @@ impl Mul<Vector> for Vector {
 impl<'a> Mul<f32> for &'a Vector {
     type Output = Vector;
     fn mul(self, scalar: f32) -> Vector {
-        Vector::new_vec4(self.x * scalar, self.y * scalar, self.z * scalar, self.w * scalar)
+        Vector::new4(self.x * scalar, self.y * scalar, self.z * scalar, self.w * scalar)
     }
 }
 impl Mul<f32> for Vector {
@@ -496,7 +507,7 @@ impl Mul<f32> for Vector {
 impl<'a> Mul<&'a Vector> for f32 {
     type Output = Vector;
     fn mul(self, vector: &'a Vector) -> Vector {
-        Vector::new_vec4(vector.x * self, vector.y * self, vector.z * self, vector.w * self)
+        Vector::new4(vector.x * self, vector.y * self, vector.z * self, vector.w * self)
     }
 }
 impl Mul<Vector> for f32 {
@@ -519,7 +530,7 @@ impl<'a, 'b> Div<&'b Vector> for &'a Vector {
     type Output = Vector;
 
     fn div(self, other: &'b Vector) -> Vector {
-        Vector::new_vec4(self.x / other.x, self.y / other.y, self.z / other.z, self.w / other.w)
+        Vector::new4(self.x / other.x, self.y / other.y, self.z / other.z, self.w / other.w)
     }
 }
 impl<'a> Div<Vector> for &'a Vector {
@@ -543,7 +554,7 @@ impl Div<Vector> for Vector {
 impl<'a> Div<f32> for &'a Vector {
     type Output = Vector;
     fn div(self, scalar: f32) -> Vector {
-        Vector::new_vec4(self.x / scalar, self.y / scalar, self.z / scalar, self.w / scalar)
+        Vector::new4(self.x / scalar, self.y / scalar, self.z / scalar, self.w / scalar)
     }
 }
 impl Div<f32> for Vector {
@@ -553,7 +564,7 @@ impl Div<f32> for Vector {
 impl<'a> Div<&'a Vector> for f32 {
     type Output = Vector;
     fn div(self, vector: &'a Vector) -> Vector {
-        Vector::new_vec4(vector.x / self, vector.y / self, vector.z / self, vector.w / self)
+        Vector::new4(vector.x / self, vector.y / self, vector.z / self, vector.w / self)
     }
 }
 impl Div<Vector> for f32 {
@@ -578,7 +589,7 @@ impl DivAssign<Vector> for Vector {
 impl Neg for Vector {
     type Output = Vector;
     fn neg(self) -> Vector {
-        Vector::new_vec4(-self.x, -self.y, -self.z, -self.w)
+        Vector::new4(-self.x, -self.y, -self.z, -self.w)
     }
 }
 

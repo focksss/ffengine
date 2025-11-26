@@ -14,14 +14,14 @@ fn main() { unsafe {
 
     {
         let world = &mut app.world.borrow_mut();
-        let base = &mut app.base;
+        let base = &mut app.base.borrow_mut();
         let renderer = &mut app.renderer.borrow_mut();
         let physics_engine = &mut app.physics_engine.borrow_mut();
 
         world.add_light(base, Light {
-            position: Vector::new_vec3(0.0, 3.0, 0.0),
+            position: Vector::new3(0.0, 3.0, 0.0),
             direction: Default::default(),
-            color: Vector::new_vec3(1.0, 0.0, 1.0),
+            color: Vector::new3(1.0, 0.0, 1.0),
             light_type: 0,
             quadratic_falloff: 0.1,
             linear_falloff: 0.1,
@@ -53,9 +53,9 @@ fn main() { unsafe {
         //world.models[0].transform_roots(&Vector::new_vec3(1.0, 1.0, 2.0), &Vector::new_vec3(0.0, 0.0, 0.0), &Vector::new_vec3(2.0, 1.0, 1.0));
         //world.preload_model(Model::new(&PathBuf::from("resources/models/coordinateSpace/coordinateSpace.gltf").to_str().unwrap()));
 
-
-        // /*
-        world.add_model(base, Model::new(&PathBuf::from("editor/resources/models/collisionTest/collisionTestNoWalls.gltf").to_str().unwrap()));
+        //physics_engine.add_all_nodes_from_model(&world, 0, 4);
+        /*
+        world.add_model(base, Model::new(&PathBuf::from("editor/resources/models/sphereScene/scene.gltf").to_str().unwrap()));
 
         world.add_model(base, Model::new("C:\\Graphics\\assets\\grassblockGLTF\\grassblock.gltf"));
 
@@ -63,10 +63,10 @@ fn main() { unsafe {
         physics_engine.add_all_nodes_from_model(&world, 0, 4);
         physics_engine.rigid_bodies[0].set_static(false);
         physics_engine.rigid_bodies[0].set_mass(1.0);
-        physics_engine.rigid_bodies[0].position = Vector::new_vec3(0.5, 10.0, 0.5);
+        physics_engine.rigid_bodies[0].position = Vector::new3(0.5, 10.0, 0.5);
         physics_engine.rigid_bodies[0].restitution_coefficient = 1.0;
-        // */
-        /*
+        */
+        // /*
         world.add_model(base, Model::new(&PathBuf::from("editor/resources/models/collisionTest/collisionTestNoWalls.gltf").to_str().unwrap()));
 
         world.add_model(base, Model::new(&PathBuf::from("editor/resources/models/demoBall/scene.gltf").to_str().unwrap()));
@@ -75,23 +75,23 @@ fn main() { unsafe {
 
         physics_engine.add_all_nodes_from_model(&world, 1, 3);
         physics_engine.add_all_nodes_from_model(&world, 2, 3);
-        physics_engine.add_all_nodes_from_model(&world, 3, 0);
+        physics_engine.add_all_nodes_from_model(&world, 3, 3);
         physics_engine.add_all_nodes_from_model(&world, 0, 0);
         physics_engine.rigid_bodies[0].set_static(false);
         physics_engine.rigid_bodies[0].set_mass(1.0);
-        physics_engine.rigid_bodies[0].position = Vector::new_vec3(0.5, 10.0, 0.5);
+        physics_engine.rigid_bodies[0].position = Vector::new3(0.5, 10.0, 0.5);
         physics_engine.rigid_bodies[0].restitution_coefficient = 1.0;
 
         physics_engine.rigid_bodies[1].set_static(false);
         physics_engine.rigid_bodies[1].set_mass(1.0);
-        physics_engine.rigid_bodies[1].position = Vector::new_vec3(0.5, 5.0, 0.5);
+        physics_engine.rigid_bodies[1].position = Vector::new3(0.5, 5.0, 0.5);
         physics_engine.rigid_bodies[1].restitution_coefficient = 1.0;
 
         physics_engine.rigid_bodies[2].set_static(false);
         physics_engine.rigid_bodies[2].set_mass(1.0);
-        physics_engine.rigid_bodies[2].position = Vector::new_vec3(0.5, 15.0, 0.5);
+        physics_engine.rigid_bodies[2].position = Vector::new3(0.5, 15.0, 0.5);
         physics_engine.rigid_bodies[2].restitution_coefficient = 1.0;
-        */
+        // */
         /*
         world.add_model(base, Model::new(&PathBuf::from("editor/resources/models/sphereScene/scene.gltf").to_str().unwrap()));
 
@@ -121,23 +121,23 @@ fn main() { unsafe {
 
 
         renderer.scene_renderer.update_world_textures_all_frames(base, world);
-        renderer.gui.borrow_mut().load_from_file(base, "editor\\resources\\gui\\default\\default.gui");
     }
+    app.renderer.borrow_mut().gui.borrow_mut().load_from_file("editor\\resources\\gui\\editor.gui");
     let player = Player::new(
         app.physics_engine.clone(),
         app.world.clone(),
         Camera::new_perspective_rotation(
-            Vector::new_vec3(0.0, 2.0, 0.0),
-            Vector::new_empty(),
+            Vector::new3(0.0, 2.0, 0.0),
+            Vector::empty(),
             100.0,
             1.0,
             0.001,
             1000.0,
             true,
-            Vector::new_vec3(0.0, 0.0, 1.0),
+            Vector::new3(0.0, 0.0, 1.0),
         ),
-        Vector::new_vec3(-0.15, -0.85, -0.15),
-        Vector::new_vec3(0.15, 0.15, 0.15),
+        Vector::new3(-0.15, -0.85, -0.15),
+        Vector::new3(0.15, 0.15, 0.15),
         MovementMode::EDITOR,
         0.2,
         4.5,

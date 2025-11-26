@@ -43,7 +43,7 @@ impl Camera {
             view_matrix: Matrix::new(),
             projection_matrix: Matrix::new(),
             position,
-            target: Vector::new_null(),
+            target: Vector::new(),
             rotation,
             fov_y,
             aspect_ratio,
@@ -77,10 +77,10 @@ impl Camera {
     }
 
     pub fn update_frustum(&mut self) {
-        let rotation = &self.rotation.mul_by_vec(&Vector::new_vec3(-1.0, 1.0, 1.0)) + Vector::new_vec3(0.0,-PI,0.0);
-        let cam_front = Vector::new_vec3(0.0,0.0,1.0).rotate_by_euler(&rotation);
-        let cam_up = Vector::new_vec3(0.0,1.0,0.0).rotate_by_euler(&rotation);
-        let cam_right = cam_up.cross(&cam_front).normalize_3d();
+        let rotation = &self.rotation.mul_by_vec(&Vector::new3(-1.0, 1.0, 1.0)) + Vector::new3(0.0, -PI, 0.0);
+        let cam_front = Vector::new3(0.0, 0.0, 1.0).rotate_by_euler(&rotation);
+        let cam_up = Vector::new3(0.0, 1.0, 0.0).rotate_by_euler(&rotation);
+        let cam_right = cam_up.cross(&cam_front).normalize3();
 
         let half_v = self.far * (self.fov_y*0.5).to_radians().tan();
         let half_h = half_v*self.aspect_ratio;
@@ -122,14 +122,14 @@ impl Camera {
     pub fn get_frustum_corners_with_near_far(&self, near: f32, far: f32) -> [Vector; 8] {
         let inverse_view_projection = (Matrix::new_projection(self.fov_y.to_radians(), self.aspect_ratio, near, far) * self.view_matrix).inverse4();
         let mut corners = [
-            Vector::new_vec4(-1.0,1.0,0.0, 1.0),
-            Vector::new_vec4(1.0,1.0,0.0, 1.0),
-            Vector::new_vec4(1.0,-1.0,0.0, 1.0),
-            Vector::new_vec4(-1.0,-1.0,0.0, 1.0),
-            Vector::new_vec4(-1.0,1.0,1.0, 1.0),
-            Vector::new_vec4(1.0,1.0,1.0, 1.0),
-            Vector::new_vec4(1.0,-1.0,1.0, 1.0),
-            Vector::new_vec4(-1.0,-1.0,1.0, 1.0),
+            Vector::new4(-1.0, 1.0, 0.0, 1.0),
+            Vector::new4(1.0, 1.0, 0.0, 1.0),
+            Vector::new4(1.0, -1.0, 0.0, 1.0),
+            Vector::new4(-1.0, -1.0, 0.0, 1.0),
+            Vector::new4(-1.0, 1.0, 1.0, 1.0),
+            Vector::new4(1.0, 1.0, 1.0, 1.0),
+            Vector::new4(1.0, -1.0, 1.0, 1.0),
+            Vector::new4(-1.0, -1.0, 1.0, 1.0),
         ];
         for i in 0..corners.len() {
             corners[i] = inverse_view_projection * corners[i];
@@ -148,8 +148,8 @@ pub struct Plane {
 impl Plane {
     pub fn null() -> Self {
         Self {
-            normal: Vector::new_null(),
-            point: Vector::new_null(),
+            normal: Vector::empty(),
+            point: Vector::empty(),
         }
     }
 
@@ -159,7 +159,7 @@ impl Plane {
     }
 
     pub fn test_sphere_within(&self, center: &Vector, radius: f32) -> bool {
-        center.sub_vec(&self.point).dot(&self.normal) > -radius
+        center.sub_vec(&self.point).dot4(&self.normal) > -radius
     }
 }
 #[derive(Clone, Debug)]

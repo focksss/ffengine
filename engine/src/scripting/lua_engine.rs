@@ -35,6 +35,8 @@ pub struct Lua {
     free_script_indices: Vec<usize>,
 
     cached_calls: Vec<(usize, String, usize)>, // cached script calls, stores script index, method name, and call index. Maybe add a parameter cache using a sort of heap?
+    reload_scripts_requested: bool,
+    load_scripts_requested: bool,
 }
 
 pub trait RegisterToLua {
@@ -52,6 +54,8 @@ impl Lua {
                 scripts: Vec::new(),
                 free_script_indices: Vec::new(),
                 cached_calls: Vec::new(),
+                reload_scripts_requested: false,
+                load_scripts_requested: false,
             });
 
             let script_engine_ref = script_engine.borrow();
@@ -194,8 +198,8 @@ impl Lua {
         Ok(indices)
     }
 
-    pub fn reload_scripts() -> Result<(), mlua::Error> {
-        Self::with_mut(|lua| lua.reload_scripts_impl())
+    pub fn reload_scripts() {
+        Self::with_mut(|lua| lua.reload_scripts_impl()).expect("failed to reload scripts");
     }
     fn reload_scripts_impl(
         &mut self,
@@ -230,7 +234,7 @@ impl Lua {
     }
 
     fn call_method_impl(
-        &self,
+        &mut self,
         script_index: usize,
         method_name: &str,
     ) -> Result<(), mlua::Error> {
