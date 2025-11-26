@@ -116,13 +116,12 @@ impl Engine {
                     },
                     Event::AboutToWait => {
                         {
-                            if self.controller.borrow().flags.borrow().close_requested {
+                            let controller_ref = &mut self.controller.borrow_mut();
+                            let flag_ref = &mut controller_ref.flags.borrow_mut();
+                            if flag_ref.close_requested {
                                 elwp.exit();
                                 return;
                             }
-
-                            let lock = COMMAND_BUFFER.get().expect("not initialized");
-                            *lock.write().unwrap() = base.draw_command_buffers[current_frame];
 
                             first_frame = false;
                             if base.needs_swapchain_recreate {
@@ -134,12 +133,38 @@ impl Engine {
                                 // frametime_manager.reset();
                                 return;
                             }
-                        }
 
-                        let reload_scripts_queued = self.controller.borrow().flags.borrow().reload_all_scripts_queued;
-                        if reload_scripts_queued {
-                            Lua::reload_scripts();
-                            self.controller.borrow_mut().flags.borrow_mut().reload_all_scripts_queued = false;
+                            if flag_ref.recompile_queued {
+                                base.device.device_wait_idle().unwrap();
+                                Lua::reload_scripts();
+                                Renderer::compile_shaders();
+                                base.device.device_wait_idle().unwrap();
+
+                                let renderer = &mut self.renderer.borrow_mut();
+
+                                renderer.reload(base, &self.world.borrow());
+                                
+                                renderer.gui.borrow_mut().load_from_file(base, "editor\\resources\\gui\\editor.gui");
+                                
+                                flag_ref.recompile_queued = false;
+                            }
+
+                            let lock = COMMAND_BUFFER.get().expect("not initialized");
+                            *lock.write().unwrap() = base.draw_command_buffers[current_frame];
+
+                            /*
+                                flags.screenshot_queued = false;
+                                let timestamp = std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap()
+                                    .as_secs();
+                                screenshot_texture(
+                                    &base,
+                                    &renderer.compositing_renderpass.pass.borrow().textures[frame][0],
+                                    vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                                    format!("screenshots\\screenshot_{}.png", timestamp).as_str()
+                                );
+                            */
                         }
 
                         let now = Instant::now();

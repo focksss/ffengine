@@ -28,7 +28,6 @@ MovementMode = {
 
         ---@class GUI
         ---@field ActiveNode GUINode
-        ---@field load_from_file fun(self:GUI, path:string):nil
 
             ---@class GUINode
             ---@field quad GUIQuad
@@ -55,13 +54,11 @@ MovementMode = {
     ---@field mouse_button_pressed fun(self:Controller, button: integer):boolean
 
         ---@class Flags
-        ---@field reload_gui_queued boolean
-        ---@field reload_shaders_queued boolean
         ---@field pause_rendering boolean
         ---@field screenshot_queued boolean
         ---@field draw_hitboxes boolean
         ---@field do_physics boolean
-        ---@field reload_all_scripts_queued boolean
+        ---@field recompile_queued boolean
         ---@field close_requested boolean
 
     ---@class PhysicsEngine

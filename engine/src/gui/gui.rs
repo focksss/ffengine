@@ -790,6 +790,10 @@ impl GUI {
         let node = &mut self.gui_nodes[node_index].clone();
         if node.hidden { return };
 
+        /*
+        let position = parent_position + if node.absolute_position { node.position } else { node.position * parent_scale };
+        let scale = if node.absolute_scale { node.scale } else { parent_scale * node.scale };
+         */
         let offset_factor = node.anchor_point.offset_factor();
         let scale = Vector::new2(
             if node.absolute_scale.0 { node.scale.x } else { parent_scale.x * node.scale.x },
@@ -798,8 +802,8 @@ impl GUI {
         let position = offset_factor * parent_scale - scale * offset_factor
             + parent_position
             + Vector::new2(
-                if node.absolute_position.0 { node.position.x } else { parent_position.x * node.position.x },
-                if node.absolute_position.1 { node.position.y } else { parent_position.y * node.position.y }
+                if node.absolute_position.0 { node.position.x } else { parent_scale.x * node.position.x } * -offset_factor.x,
+                if node.absolute_position.1 { node.position.y } else { parent_scale.y * node.position.y } * -offset_factor.y
             );
 
         if let Some(quad) = &node.quad {
@@ -837,8 +841,8 @@ impl GUI {
         let position = offset_factor * parent_scale - scale * offset_factor
             + parent_position
             + Vector::new2(
-            if quad.absolute_position.0 { quad.position.x } else { parent_position.x * quad.position.x },
-            if quad.absolute_position.1 { quad.position.y } else { parent_position.y * quad.position.y }
+            if quad.absolute_position.0 { quad.position.x } else { parent_scale.x * quad.position.x },
+            if quad.absolute_position.1 { quad.position.y } else { parent_scale.y * quad.position.y }
         );
 
         let quad_constants = GUIQuadSendable {

@@ -89,15 +89,9 @@ impl UserData for ControllerRef {
 struct FlagsRef(pub Arc<RefCell<Flags>>);
 impl UserData for FlagsRef {
     fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
-        fields.add_field_method_get("reload_gui_queued", |_, this| Ok(this.0.borrow().reload_gui_queued));
-        fields.add_field_method_set("reload_gui_queued", |_, this, val: bool| {
-            this.0.borrow_mut().reload_gui_queued = val;
-            Ok(())
-        });
-
-        fields.add_field_method_get("reload_shaders_queued", |_, this| Ok(this.0.borrow().reload_shaders_queued));
-        fields.add_field_method_set("reload_shaders_queued", |_, this, val: bool| {
-            this.0.borrow_mut().reload_shaders_queued = val;
+        fields.add_field_method_get("recompile_queued", |_, this| Ok(this.0.borrow().recompile_queued));
+        fields.add_field_method_set("recompile_queued", |_, this, val: bool| {
+            this.0.borrow_mut().recompile_queued = val;
             Ok(())
         });
 
@@ -122,12 +116,6 @@ impl UserData for FlagsRef {
         fields.add_field_method_get("do_physics", |_, this| Ok(this.0.borrow().do_physics));
         fields.add_field_method_set("do_physics", |_, this, val: bool| {
             this.0.borrow_mut().do_physics = val;
-            Ok(())
-        });
-
-        fields.add_field_method_get("reload_all_scripts_queued", |_, this| Ok(this.0.borrow().reload_all_scripts_queued));
-        fields.add_field_method_set("reload_all_scripts_queued", |_, this, val: bool| {
-            this.0.borrow_mut().reload_all_scripts_queued = val;
             Ok(())
         });
 

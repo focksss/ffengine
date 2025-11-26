@@ -33,6 +33,14 @@
       "clip_max": [1.0, 1.0],
       "color": [0.3, 0.3, 0.3, 0.0],
       "corner_radius": 5.0
+    },
+    {
+      "position": [0.0, 0.0],
+      "scale": [1.0, 1.0],
+      "clip_min": [0.0, 0.0],
+      "clip_max": [1.0, 1.0],
+      "color": [0.3, 0.3, 0.3, 0.0],
+      "corner_radius": 5.0
     }
   ],
   "texts": [
@@ -53,7 +61,7 @@
   "nodes": [
     {
       "name": "top_bar",
-      "children": [1],
+      "children": [1, 2],
       "position": [0, 0],
       "scale": [1.0, 40.0],
       "anchor_point": "top_left",
@@ -89,6 +97,36 @@
         "anchor_point": "top_right",
         "absolute_scale": [true, false],
         "quad": 1
+      },
+      {
+        "name": "run_button",
+        "interactable_information": {
+          "hover_actions": [
+            {
+              "method": "color_hovered",
+              "script": 0
+            }
+          ],
+          "unhover_actions": [
+            {
+              "method": "color_unhovered",
+              "script": 0
+            }
+          ],
+          "left_tap_actions": [
+            {
+              "method": "recompile",
+              "script": 0
+            }
+          ]
+        },
+        "children": [],
+        "position": [40, 0],
+        "scale": [40.0, 1.0],
+        "anchor_point": "top_right",
+        "absolute_scale": [true, false],
+        "absolute_position": [true, false],
+        "quad": 2
       }
   ]
 }
