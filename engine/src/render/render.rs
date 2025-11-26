@@ -23,7 +23,6 @@ use crate::world::scene::Scene;
 pub const MAX_FRAMES_IN_FLIGHT: usize = 3;
 
 pub struct Renderer {
-    pub base: Arc<RefCell<VkBase>>,
     pub device: ash::Device,
     pub draw_command_buffers: Vec<vk::CommandBuffer>,
 
@@ -40,18 +39,16 @@ pub struct Renderer {
     pub present_sampler: Sampler,
 }
 impl Renderer {
-    pub unsafe fn new(base: Arc<RefCell<VkBase>>, controller: Arc<RefCell<Controller>>, primary_camera: CameraPointer) -> Renderer { unsafe {
+    pub unsafe fn new(base: &VkBase, controller: Arc<RefCell<Controller>>, primary_camera: CameraPointer) -> Renderer { unsafe {
         Renderer::compile_shaders();
         let world_ref = primary_camera.world.clone();
         let world = world_ref.borrow();
-        let base_ref = &base.borrow();
 
-        let (scene_renderer, compositing_renderpass, present_renderpass, hitbox_renderpass) = Renderer::create_rendering_objects(base_ref, &world);
+        let (scene_renderer, compositing_renderpass, present_renderpass, hitbox_renderpass) = Renderer::create_rendering_objects(base, &world);
 
         let mut renderer = Renderer {
-            base: base.clone(),
-            device: base_ref.device.clone(),
-            draw_command_buffers: base_ref.draw_command_buffers.clone(),
+            device: base.device.clone(),
+            draw_command_buffers: base.draw_command_buffers.clone(),
 
             camera: primary_camera,
 
@@ -59,11 +56,11 @@ impl Renderer {
             compositing_renderpass,
 
             scene_renderer,
-            gui: Arc::new(RefCell::new(GUI::new(base.clone(), controller))),
+            gui: Arc::new(RefCell::new(GUI::new(base, controller))),
 
             hitbox_renderpass,
 
-            present_sampler: base_ref.device.create_sampler(&vk::SamplerCreateInfo {
+            present_sampler: base.device.create_sampler(&vk::SamplerCreateInfo {
                 mag_filter: vk::Filter::LINEAR,
                 min_filter: vk::Filter::LINEAR,
                 address_mode_u: vk::SamplerAddressMode::CLAMP_TO_BORDER,
@@ -89,7 +86,7 @@ impl Renderer {
                 &frame_textures[0]
             }).collect::<Vec<&Texture>>()
         ]);
-        renderer.scene_renderer.update_world_textures_all_frames(&base_ref, &world);
+        renderer.scene_renderer.update_world_textures_all_frames(&base, &world);
 
         renderer
     } }

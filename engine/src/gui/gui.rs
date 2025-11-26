@@ -23,7 +23,6 @@ pub struct GUI {
     device: ash::Device,
     window: Arc<winit::window::Window>,
     pub controller: Arc<RefCell<Controller>>,
-    pub base: Arc<RefCell<VkBase>>,
 
     pub pass: Arc<RefCell<Pass>>,
     pub text_renderer: TextRenderer,
@@ -103,14 +102,13 @@ impl GUI {
         }
     }
 
-    pub unsafe fn new(base: Arc<RefCell<VkBase>>, controller: Arc<RefCell<Controller>>) -> GUI { unsafe {
-        let (pass_ref, quad_renderpass, text_renderer) = GUI::create_rendering_objects(&base.borrow());
+    pub unsafe fn new(base: &VkBase, controller: Arc<RefCell<Controller>>) -> GUI { unsafe {
+        let (pass_ref, quad_renderpass, text_renderer) = GUI::create_rendering_objects(&base);
 
 
         GUI {
-            device: base.borrow().device.clone(),
-            window: base.borrow().window.clone(),
-            base: base.clone(),
+            device: base.device.clone(),
+            window: base.window.clone(),
             controller,
 
             pass: pass_ref.clone(),
@@ -184,11 +182,7 @@ impl GUI {
     * * Refer to default.gui in resources/gui
     * * Nodes are drawn recursively and without depth testing. To make a node appear in front of another, define it after another.
     */
-    pub fn load_from_file(&mut self, path: &str) {
-        unsafe {
-            let base = &self.base.borrow();
-            base.device.device_wait_idle().unwrap();
-        }
+    pub fn load_from_file(&mut self, base: &VkBase, path: &str) {
         for text in self.gui_texts.iter() {
             text.text_information.as_ref().unwrap().destroy();
         }
@@ -206,7 +200,6 @@ impl GUI {
 
         let mut fonts = Vec::new();
         for font in json["fonts"].members() {
-            let base = &self.base.borrow();
             let mut uri = String::from("engine\\resources\\fonts\\Oxygen-Regular.ttf");
             if let JsonValue::String(ref uri_json) = font["uri"] {
                 uri = (*uri_json).parse().expect("font uri parse error");
@@ -244,7 +237,6 @@ impl GUI {
 
         let mut gui_texts = Vec::new();
         for text in json["texts"].members() {
-            let base = &self.base.borrow();
             let mut text_font = 0usize;
             let mut text_text = "placeholder text";
             let mut text_font_size = 32.0;

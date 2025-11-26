@@ -14,7 +14,7 @@ fn main() { unsafe {
 
     {
         let world = &mut app.world.borrow_mut();
-        let base = &mut app.base.borrow_mut();
+        let base = &mut app.base;
         let renderer = &mut app.renderer.borrow_mut();
         let physics_engine = &mut app.physics_engine.borrow_mut();
 
@@ -121,8 +121,8 @@ fn main() { unsafe {
 
 
         renderer.scene_renderer.update_world_textures_all_frames(base, world);
+        renderer.gui.borrow_mut().load_from_file(base, "editor\\resources\\gui\\editor.gui");
     }
-    app.renderer.borrow_mut().gui.borrow_mut().load_from_file("editor\\resources\\gui\\editor.gui");
     let player = Player::new(
         app.physics_engine.clone(),
         app.world.clone(),

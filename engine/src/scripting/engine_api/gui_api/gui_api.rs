@@ -103,10 +103,5 @@ impl UserData for GUIRef {
             let text = GUITextPointer { gui: this.0.clone(), index };
             lua.create_userdata(text)
         });
-
-        methods.add_method_mut("load_from_file", |_, this, path: String| {
-            this.0.borrow_mut().load_from_file(path.as_str());
-            Ok(())
-        });
     }
 }

@@ -36,7 +36,7 @@ pub fn get_command_buffer() -> vk::CommandBuffer {
 
 //TODO collapse engine and engineref into one struct
 pub struct Engine {
-    pub base: Arc<RefCell<VkBase>>,
+    pub base: VkBase,
     pub world: Arc<RefCell<Scene>>,
     pub renderer: Arc<RefCell<Renderer>>,
     pub physics_engine: Arc<RefCell<PhysicsEngine>>,
@@ -44,16 +44,10 @@ pub struct Engine {
 }
 #[derive(Clone)]
 pub struct EngineRef {
-    pub base: Arc<RefCell<VkBase>>,
     pub world: Arc<RefCell<Scene>>,
     pub renderer: Arc<RefCell<Renderer>>,
     pub physics_engine: Arc<RefCell<PhysicsEngine>>,
     pub controller: Arc<RefCell<Controller>>,
-}
-impl EngineRef {
-    pub unsafe fn recompile_shaders(&self) { unsafe {
-        self.renderer.borrow_mut().reload(&self.base.borrow(), &self.world.borrow())
-    } }
 }
 impl Engine {
     pub unsafe fn new() -> Engine {
@@ -68,16 +62,15 @@ impl Engine {
         let rw_lock = RwLock::new(base.draw_command_buffers[0]);
         COMMAND_BUFFER.set(rw_lock).expect("Failed to initialize frame command buffer global");
 
-        let base = Arc::new(RefCell::new(base));
         let engine = Engine {
             physics_engine,
-            renderer: unsafe { Arc::new(RefCell::new(Renderer::new(base.clone(), controller.clone(), CameraPointer {
+            renderer: unsafe { Arc::new(RefCell::new(Renderer::new(&base, controller.clone(), CameraPointer {
                 world: world.clone(),
                 index: 0
             }))) },
             world,
             controller,
-            base: base,
+            base,
         };
         Lua::initialize(engine.as_ref()).expect("failed to initialize lua");
         engine
@@ -85,7 +78,6 @@ impl Engine {
 
     pub fn as_ref(&self) -> EngineRef {
         EngineRef {
-            base: self.base.clone(),
             world: self.world.clone(),
             renderer: self.renderer.clone(),
             physics_engine: self.physics_engine.clone(),
@@ -99,15 +91,15 @@ impl Engine {
 
     pub unsafe fn run(&mut self) {
         let engine_ref = self.as_ref();
+        let base = &mut self.base;
 
         let mut current_frame = 0usize;
         let mut last_frame_time = Instant::now();
         let mut needs_resize = false;
 
         let mut last_resize = Instant::now();
-        let event_loop_ptr = self.base.borrow().event_loop.as_ptr();
+        let event_loop_ptr = base.event_loop.as_ptr();
         let mut first_frame = true;
-        let mut closing = false;
         unsafe {
             (*event_loop_ptr).run_on_demand(|event, elwp| {
                 elwp.set_control_flow(ControlFlow::Poll);
@@ -116,7 +108,6 @@ impl Engine {
                         event: WindowEvent::Resized(_),
                         ..
                     } => {
-                        let base = &mut self.base.borrow_mut();
                         if first_frame { return }
                         base.needs_swapchain_recreate = true;
                         last_resize = Instant::now();
@@ -125,11 +116,7 @@ impl Engine {
                     },
                     Event::AboutToWait => {
                         {
-                            let base = &mut self.base.borrow_mut();
-                            
                             if self.controller.borrow().flags.borrow().close_requested {
-                                base.device.device_wait_idle().unwrap();
-                                closing = true;
                                 elwp.exit();
                                 return;
                             }
@@ -169,7 +156,6 @@ impl Engine {
 
                             if self.controller.borrow().flags.borrow().do_physics { self.physics_engine.borrow_mut().tick(delta_time, &mut self.world.borrow_mut()); }
                         }
-                        let base = &mut self.base.borrow_mut();
 
                         let current_fence = base.draw_commands_reuse_fences[current_frame];
                         {
@@ -235,7 +221,6 @@ impl Engine {
                     _ => { Controller::handle_event(self.controller.clone(), event) },
                 }
             }).expect("Failed to initiate render loop");
-            let base = &mut self.base.borrow_mut();
 
             base.device.device_wait_idle().unwrap();
 
