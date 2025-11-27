@@ -169,7 +169,7 @@ impl Client {
                     event: WindowEvent::Focused(true),
                     ..
                 } => {
-                    if !controller.cursor_locked {
+                    if controller.cursor_locked {
                         if let Err(err) = controller.window.set_cursor_grab(CursorGrabMode::Confined) {
                             eprintln!("Cursor lock failed: {:?}", err);
                         } else {
@@ -182,7 +182,6 @@ impl Client {
                     event: WindowEvent::Focused(false),
                     ..
                 } => {
-                    controller.cursor_locked = false;
                     if let Err(err) = controller.window.set_cursor_grab(CursorGrabMode::None) {
                         eprintln!("Cursor unlock failed: {:?}", err);
                     } else {

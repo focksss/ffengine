@@ -421,7 +421,11 @@ impl TextInformation {
         }
         (vertices, indices)
     }
-    pub fn set_buffers(mut self, base: &VkBase) -> Self {
+    pub fn build_set_buffers(mut self, base: &VkBase) -> Self {
+        self.set_buffers(base);
+        self
+    }
+    pub fn set_buffers(&mut self, base: &VkBase) {
         let (vertices, indices) = self.get_vertex_and_index_data();
         unsafe {
             for i in 0..MAX_FRAMES_IN_FLIGHT {
@@ -452,8 +456,8 @@ impl TextInformation {
                 }
             }
         }
-        self
     }
+
     pub fn update_buffers(&mut self, command_buffer: CommandBuffer, frame: usize) { unsafe {
         let (vertices, indices) = self.get_vertex_and_index_data();
         let vertex_buffer_size = size_of::<GlyphQuadVertex>() * vertices.len();

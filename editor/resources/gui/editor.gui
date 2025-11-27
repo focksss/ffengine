@@ -355,7 +355,8 @@
         },
         "children": [],
         "position": [0, 0],
-        "scale": [0.05, 1.0],
+        "scale": [10, 1.0],
+        "absolute_scale": [true, false],
         "anchor_point": "bottom_left"
       },
     {

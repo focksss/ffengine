@@ -48,6 +48,8 @@ pub struct GUI {
     pub fonts: Vec<Arc<Font>>,
 
     pub active_node: usize,
+
+    new_texts: Vec<usize>
 }
 impl GUI {
     fn handle_gui_interaction(
@@ -171,6 +173,8 @@ impl GUI {
             text_renderer,
 
             active_node: 0,
+
+            new_texts: Vec::new(),
         };
         gui.update_descriptors(&base);
         gui
@@ -458,7 +462,7 @@ impl GUI {
                     .text(text_text)
                     .font_size(text_font_size)
                     .newline_distance(text_newline_size)
-                    .set_buffers(base)),
+                    .build_set_buffers(base)),
                 position,
                 scale,
                 clip_min,
@@ -884,6 +888,20 @@ impl GUI {
         }
     }
 
+    pub fn add_text(&mut self, text: String) {
+        let mut new_text = GUIText::default();
+        new_text.text_information.as_mut().unwrap().text = text;
+        self.new_texts.push(self.gui_texts.len());
+        self.gui_texts.push(GUIText::default());
+    }
+    pub unsafe fn initialize_new_texts(&mut self, base: &VkBase) {
+        for new_text in self.new_texts.drain(..) {
+            if let Some(info) = self.gui_texts[new_text].text_information.as_mut() {
+                info.set_buffers(base);
+            }
+        }
+    }
+
     pub unsafe fn draw(&mut self, current_frame: usize, command_buffer: CommandBuffer,) { unsafe {
         let mut interactable_action_parameter_sets = Vec::new();
 
@@ -1059,8 +1077,9 @@ impl GUI {
         }
     } }
 }
+
 #[derive(Clone)]
-enum AnchorPoint {
+pub enum AnchorPoint {
     TopLeft,
     TopMiddle,
     TopRight,
@@ -1140,6 +1159,24 @@ pub struct GUINode {
 
     pub text: Option<usize>,
     pub quad: Option<usize>
+}
+impl GUINode {
+    pub fn new(index: usize) -> Self {
+        Self {
+            index,
+            name: String::from(""),
+            interactable_information: None,
+            hidden: false,
+            position: Vector::empty(),
+            scale: Vector::empty(),
+            children_indices: Vec::new(),
+            absolute_position: (false, false),
+            absolute_scale: (false, false),
+            anchor_point: AnchorPoint::default(),
+            text: None,
+            quad: None,
+        }
+    }
 }
 #[derive(Clone)]
 pub struct GUIInteractableInformation {

@@ -166,6 +166,7 @@ impl Engine {
                                 );
                             */
                         }
+                        self.renderer.borrow_mut().gui.borrow_mut().initialize_new_texts(base);
 
                         let now = Instant::now();
                         let delta_time = now.duration_since(last_frame_time).as_secs_f32();

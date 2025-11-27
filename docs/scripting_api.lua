@@ -32,6 +32,9 @@ MovementMode = {
         ---@field get_node fun(self:GUI, index:integer):GUINode
         ---@field get_quad fun(self:GUI, index:integer):GUIQuad
         ---@field get_text fun(self:GUI, index:integer):GUIText
+        ---@field destroy_node fun(self:GUI, index:integer):nil
+        ---@field destroy_quad fun(self:GUI, index:integer):nil
+        ---@field destroy_text fun(self:GUI, index:integer):nil
 
             ---@class GUINode
             ---@field quad GUIQuad
@@ -39,6 +42,11 @@ MovementMode = {
             ---@field position Vector
             ---@field scale Vector
             ---@field hidden boolean
+            ---@field quad_index integer
+            ---@field text_index integer
+            ---@field get_child_index fun(self:GUINode, index:integer):integer
+            ---@field add_child_index fun(self:GUINode, index:integer):nil
+            ---@field remove_child_index_at fun(self:GUINode, index:integer):nil
 
                 ---@class GUIQuad
                 ---@field set_color fun(self:GUIQuad, r:number, g:number, b:number, a:number):nil
