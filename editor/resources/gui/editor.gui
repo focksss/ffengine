@@ -2,7 +2,7 @@
   "guis": [
     {
       "name": "editor",
-      "nodes": [0, 3]
+      "nodes": [0, 3, 5]
     }
   ],
   "scripts": [
@@ -61,6 +61,14 @@
       "clip_max": [1.0, 1.0],
       "color": [0.3, 0.3, 0.3, 0.8],
       "corner_radius": 5.0
+    },
+    {
+      "position": [0.0, 0.0],
+      "scale": [1.0, 1.0],
+      "clip_min": [0.0, 0.0],
+      "clip_max": [1.0, 1.0],
+      "color": [0.3, 0.3, 0.3, 0.4],
+      "corner_radius": 5.0
     }
   ],
   "texts": [
@@ -76,11 +84,32 @@
       "clip_min": [0.0, 0.0],
       "clip_max": [1.0, 1.0],
       "color": [1.0, 1.0, 1.0, 1.0]
+    },
+    {
+      "text_information": {
+        "font": 0,
+        "text": "FPS: XXX.XX",
+        "font_size": 15.0,
+        "newline_distance": 1720.0
+      },
+      "position": [0.01, 0.2],
+      "scale": [1.0, 1.0],
+      "clip_min": [0.0, 0.0],
+      "clip_max": [1.0, 1.0],
+      "color": [1.0, 1.0, 1.0, 1.0]
     }
   ],
   "nodes": [
     {
       "name": "top_bar",
+      "interactable_information": {
+        "left_hold_actions": [
+          {
+            "method": "drag_window",
+            "script": 0
+          }
+        ]
+      },
       "children": [1, 2],
       "position": [0, 0],
       "scale": [1.0, 40.0],
@@ -149,9 +178,9 @@
         "quad": 2
       },
     {
-      "name": "scene_graph",
+      "name": "right_area",
       "children": [4],
-      "position": [0, 40],
+      "position": [0, -40],
       "scale": [200.0, 1000.0],
       "anchor_point": "top_right",
       "absolute_scale": [true, true],
@@ -159,11 +188,11 @@
       "quad": 3
     },
       {
-        "name": "scene_graph_resize",
+        "name": "right_area_resize",
         "interactable_information": {
           "left_hold_actions": [
             {
-              "method": "resize_scene_graph",
+              "method": "resize_right_area",
               "script": 0
             }
           ]
@@ -172,6 +201,42 @@
         "position": [0, 0],
         "scale": [0.05, 1.0],
         "anchor_point": "bottom_left"
-      }
+      },
+    {
+      "name": "scene_view",
+      "children": [6],
+      "position": [0, 0],
+      "scale": [1920, 1040],
+      "anchor_point": "bottom_left",
+      "absolute_scale": [true, true]
+    },
+      {
+        "name": "hud",
+        "children": [7],
+        "position": [20, -10],
+        "scale": [80, 20],
+        "absolute_scale": [true, true],
+        "absolute_position": [true, true],
+        "anchor_point": "top_left"
+      },
+        {
+          "name": "fps",
+          "interactable_information": {
+            "passive_actions": [
+              {
+                "method": "update_fps",
+                "script": 0
+              }
+            ]
+          },
+          "children": [],
+          "position": [0, 0],
+          "scale": [80, 20],
+          "absolute_scale": [true, true],
+          "absolute_position": [true, true],
+          "quad": 4,
+          "text": 1,
+          "anchor_point": "top_left"
+        }
   ]
 }

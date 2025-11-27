@@ -12,8 +12,8 @@ use crate::physics::player::PlayerPointer;
 use crate::scripting::lua_engine::RegisterToLua;
 
 #[derive(Clone)]
-pub struct ControllerRef(pub Arc<RefCell<Client>>);
-impl UserData for ControllerRef {
+pub struct ClientRef(pub Arc<RefCell<Client>>);
+impl UserData for ClientRef {
     fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
         fields.add_field_method_get("flags", |lua, this| {
             lua.create_userdata(FlagsRef(this.0.borrow_mut().flags.clone()))
@@ -77,6 +77,10 @@ impl UserData for ControllerRef {
         methods.add_method("key_pressed", |_, this, key: LuaKeyCode| {
             let physical_key = PhysicalKey::from(key.0);
             Ok(this.0.borrow().pressed_keys.contains(&physical_key))
+        });
+
+        methods.add_method("drag_window", |_, this, ()| {
+            Ok(this.0.borrow().window().drag_window().expect("Failed to drag window"))
         });
 
         methods.add_method("mouse_button_pressed", |_, this, key: LuaMouseButton| {

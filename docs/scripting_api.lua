@@ -67,6 +67,7 @@ MovementMode = {
     ---@field new_key_pressed fun(self:Client, key: integer):boolean
     ---@field key_pressed fun(self:Client, key: integer):boolean
     ---@field mouse_button_pressed fun(self:Client, button: integer):boolean
+    ---@field drag_window fun(self:Client):nil
 
         ---@class Flags
         ---@field pause_rendering boolean

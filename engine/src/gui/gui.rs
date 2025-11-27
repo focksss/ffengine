@@ -20,6 +20,12 @@ use crate::render::render::MAX_FRAMES_IN_FLIGHT;
 use crate::render::vulkan_base::VkBase;
 use crate::scripting::lua_engine::Lua;
 
+enum GUIInteractionResult {
+    None,
+    LeftTap,
+    LeftHold,
+}
+
 pub struct GUI {
     device: ash::Device,
     window: Arc<winit::window::Window>,
@@ -44,76 +50,79 @@ pub struct GUI {
     pub active_node: usize,
 }
 impl GUI {
-    pub fn handle_gui_interaction(&mut self, node_index: usize, min: Vector, max: Vector) {
-        {
-            let node = &mut self.gui_nodes[node_index];
-            let interactable_information = node.interactable_information.as_mut().unwrap();
+    pub fn handle_gui_interaction(&mut self, node_index: usize, min: Vector, max: Vector) -> GUIInteractionResult {
+        let mut result = GUIInteractionResult::None;
 
-            for passive_action in interactable_information.passive_actions.iter() {
+        let node = &mut self.gui_nodes[node_index];
+        let interactable_information = node.interactable_information.as_mut().unwrap();
+
+        for passive_action in interactable_information.passive_actions.iter() {
+            Lua::cache_call(
+                passive_action.1,
+                passive_action.0.as_str(),
+                Some(self.active_node)
+            )
+        }
+
+        let (x, y, left_pressed) = {
+            let controller = self.controller.borrow();
+            let x = controller.cursor_position.x as f32;
+            let y = self.window.inner_size().height as f32 - controller.cursor_position.y as f32;
+            let left_pressed = controller.pressed_mouse_buttons.contains(&MouseButton::Left);
+            (x, y, left_pressed)
+        };
+
+        let hovered = if
+        x > min.x && x < max.x &&
+            y > min.y && y < max.y
+        { true } else { false };
+
+        if !hovered {
+            for unhover_action in interactable_information.unhover_actions.iter() {
                 Lua::cache_call(
-                    passive_action.1,
-                    passive_action.0.as_str(),
+                    unhover_action.1,
+                    unhover_action.0.as_str(),
                     Some(self.active_node)
                 )
             }
-
-            let (x, y, left_pressed) = {
-                let controller = self.controller.borrow();
-                let x = controller.cursor_position.x as f32;
-                let y = self.window.inner_size().height as f32 - controller.cursor_position.y as f32;
-                let left_pressed = controller.pressed_mouse_buttons.contains(&MouseButton::Left);
-                (x, y, left_pressed)
-            };
-
-            let hovered = if
-            x > min.x && x < max.x &&
-                y > min.y && y < max.y
-            { true } else { false };
-
-            if !hovered {
-                for unhover_action in interactable_information.unhover_actions.iter() {
-                    Lua::cache_call(
-                        unhover_action.1,
-                        unhover_action.0.as_str(),
-                        Some(self.active_node)
-                    )
-                }
-            } else {
-                for hover_action in interactable_information.hover_actions.iter() {
-                    Lua::cache_call(
-                        hover_action.1,
-                        hover_action.0.as_str(),
-                        Some(self.active_node)
-                    )
-                }
-            }
-            
-            if !interactable_information.was_pressed_last_frame && left_pressed && hovered {
-                interactable_information.was_pressed_last_frame = true;
-
-                for left_tap_action in interactable_information.left_tap_actions.clone().iter() {
-                    Lua::cache_call(
-                        left_tap_action.1,
-                        left_tap_action.0.as_str(),
-                        Some(self.active_node)
-                    )
-                }
-            }
-            
-            if left_pressed && interactable_information.was_pressed_last_frame {
-                for left_hold_action in interactable_information.left_hold_actions.clone().iter() {
-                    Lua::cache_call(
-                        left_hold_action.1,
-                        left_hold_action.0.as_str(),
-                        Some(self.active_node)
-                    )
-                }
-            }
-
-            if !left_pressed {
-                interactable_information.was_pressed_last_frame = false;
+        } else {
+            for hover_action in interactable_information.hover_actions.iter() {
+                Lua::cache_call(
+                    hover_action.1,
+                    hover_action.0.as_str(),
+                    Some(self.active_node)
+                )
             }
         }
+
+        if !interactable_information.was_pressed_last_frame && left_pressed && hovered {
+            interactable_information.was_pressed_last_frame = true;
+            result = GUIInteractionResult::LeftTap;
+            for left_tap_action in interactable_information.left_tap_actions.clone().iter() {
+                Lua::cache_call(
+                    left_tap_action.1,
+                    left_tap_action.0.as_str(),
+                    Some(self.active_node)
+                )
+            }
+        }
+
+        if left_pressed && interactable_information.was_pressed_last_frame {
+            result = GUIInteractionResult::LeftHold;
+            for left_hold_action in interactable_information.left_hold_actions.clone().iter() {
+                Lua::cache_call(
+                    left_hold_action.1,
+                    left_hold_action.0.as_str(),
+                    Some(self.active_node)
+                )
+            }
+        }
+
+        if !left_pressed {
+            interactable_information.was_pressed_last_frame = false;
+        }
+
+        result
     }
 
     pub unsafe fn new(base: &VkBase, controller: Arc<RefCell<Client>>, null_tex_sampler: vk::Sampler, null_tex_img_view: vk::ImageView) -> GUI { unsafe {
@@ -883,9 +892,12 @@ impl GUI {
         self.device.cmd_end_render_pass(command_buffer);
         self.pass.borrow().transition_to_readable(command_buffer, current_frame);
 
-        for parameter_set in interactable_action_parameter_sets {
+        for parameter_set in interactable_action_parameter_sets.iter() {
             self.active_node = parameter_set.0;
-            self.handle_gui_interaction(parameter_set.0, parameter_set.1, parameter_set.2)
+            match self.handle_gui_interaction(parameter_set.0, parameter_set.1, parameter_set.2) {
+                GUIInteractionResult::None => (),
+                _ => return
+            }
         }
     } }
     unsafe fn draw_node(
@@ -912,8 +924,8 @@ impl GUI {
         let position = offset_factor * parent_scale - scale * offset_factor
             + parent_position
             + Vector::new2(
-                if node.absolute_position.0 { node.position.x } else { parent_scale.x * node.position.x } * -offset_factor.x,
-                if node.absolute_position.1 { node.position.y } else { parent_scale.y * node.position.y } * -offset_factor.y
+                if node.absolute_position.0 { node.position.x } else { parent_scale.x * node.position.x },
+                if node.absolute_position.1 { node.position.y } else { parent_scale.y * node.position.y }
             );
 
         if let Some(quad) = &node.quad {
