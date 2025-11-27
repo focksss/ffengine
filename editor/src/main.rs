@@ -120,7 +120,7 @@ fn main() { unsafe {
         */
 
 
-        renderer.scene_renderer.update_world_textures_all_frames(base, world);
+        renderer.scene_renderer.borrow_mut().update_world_textures_all_frames(base, world);
         renderer.gui.borrow_mut().load_from_file(base, "editor\\resources\\gui\\editor.gui");
     }
     let player = Player::new(

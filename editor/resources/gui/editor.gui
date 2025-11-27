@@ -150,13 +150,28 @@
       },
     {
       "name": "scene_graph",
-      "children": [],
+      "children": [4],
       "position": [0, 40],
       "scale": [200.0, 1000.0],
       "anchor_point": "top_right",
       "absolute_scale": [true, true],
       "absolute_position": [false, true],
       "quad": 3
-    }
+    },
+      {
+        "name": "scene_graph_resize",
+        "interactable_information": {
+          "left_hold_actions": [
+            {
+              "method": "resize_scene_graph",
+              "script": 0
+            }
+          ]
+        },
+        "children": [],
+        "position": [0, 0],
+        "scale": [0.05, 1.0],
+        "anchor_point": "bottom_left"
+      }
   ]
 }

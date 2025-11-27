@@ -88,10 +88,11 @@
 | anchor_point             | Common                    | Common                                     |
 
 ###### Method Structure
-| Key    | Type      | Description                                   |
-|--------|-----------|-----------------------------------------------|
-| method | `String`  | Name of the method.                           |
-| script | `integer` | Index of the script the method is defined in. |
+| Key              | Type      | Description                                                       |
+|------------------|-----------|-------------------------------------------------------------------|
+| method           | `String`  | Name of the method.                                               |
+| script           | `integer` | Index of the script the method is defined in.                     |
+| hitbox_diversion | `integer` | Index of child node for the interactable hitbox to be diverted to |
 
 #### InteractableInformation Structure
 
@@ -104,4 +105,3 @@
 | right_tap_actions  | `[Method]`  | Methods to be executed upon a single right click of the hitbox.                                            |
 | left_hold_actions  | `[Method]`  | Methods to be executed whenever the left mouse button is pressed and hovering over the hitbox.             |
 | right_hold_actions | `[Method]`  | Methods to be executed whenever the right mouse button is pressed and hovering over the hitbox.            |
-| hitbox_diversion   | `integer`   | Index of child node for the interactable hitbox to be diverted to                                          |

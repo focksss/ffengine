@@ -44,7 +44,7 @@ pub struct GUI {
     pub active_node: usize,
 }
 impl GUI {
-    pub fn handle_gui_interaction(&mut self, node_index: usize, min: Vector, max: Vector, frame_command_buffer: CommandBuffer) {
+    pub fn handle_gui_interaction(&mut self, node_index: usize, min: Vector, max: Vector) {
         {
             let node = &mut self.gui_nodes[node_index];
             let interactable_information = node.interactable_information.as_mut().unwrap();
@@ -69,6 +69,7 @@ impl GUI {
             x > min.x && x < max.x &&
                 y > min.y && y < max.y
             { true } else { false };
+
             if !hovered {
                 for unhover_action in interactable_information.unhover_actions.iter() {
                     Lua::cache_call(
@@ -77,21 +78,17 @@ impl GUI {
                         Some(self.active_node)
                     )
                 }
-                return;
-            };
-
-            for hover_action in interactable_information.hover_actions.iter() {
-                Lua::cache_call(
-                    hover_action.1,
-                    hover_action.0.as_str(),
-                    Some(self.active_node)
-                )
+            } else {
+                for hover_action in interactable_information.hover_actions.iter() {
+                    Lua::cache_call(
+                        hover_action.1,
+                        hover_action.0.as_str(),
+                        Some(self.active_node)
+                    )
+                }
             }
-
-            if !left_pressed {
-                interactable_information.was_pressed_last_frame = false;
-            }
-            if !interactable_information.was_pressed_last_frame && left_pressed {
+            
+            if !interactable_information.was_pressed_last_frame && left_pressed && hovered {
                 interactable_information.was_pressed_last_frame = true;
 
                 for left_tap_action in interactable_information.left_tap_actions.clone().iter() {
@@ -101,6 +98,20 @@ impl GUI {
                         Some(self.active_node)
                     )
                 }
+            }
+            
+            if left_pressed && interactable_information.was_pressed_last_frame {
+                for left_hold_action in interactable_information.left_hold_actions.clone().iter() {
+                    Lua::cache_call(
+                        left_hold_action.1,
+                        left_hold_action.0.as_str(),
+                        Some(self.active_node)
+                    )
+                }
+            }
+
+            if !left_pressed {
+                interactable_information.was_pressed_last_frame = false;
             }
         }
     }
@@ -113,7 +124,7 @@ impl GUI {
         };
         let (pass_ref, quad_renderpass, text_renderer) = GUI::create_rendering_objects(&base, null_info);
 
-        GUI {
+        let mut gui = GUI {
             device: base.device.clone(),
             window: base.window.clone(),
             controller,
@@ -136,7 +147,10 @@ impl GUI {
             text_renderer,
 
             active_node: 0,
-        }
+        };
+        gui.update_descriptors(&base);
+        gui
+
     } }
     pub unsafe fn create_rendering_objects(base: &VkBase, null_info: vk::DescriptorImageInfo) -> (Arc<RefCell<Pass>>, Renderpass, TextRenderer) { unsafe {
         let pass_create_info = PassCreateInfo::new(base)
@@ -184,10 +198,17 @@ impl GUI {
         self.fonts = fonts.clone();
         self.text_renderer.update_font_atlases_all_frames(fonts);
     }
-    pub unsafe fn reload_rendering(&mut self, base: &VkBase) { unsafe {
+    pub unsafe fn reload_rendering(&mut self, base: &VkBase, null_tex_sampler: vk::Sampler, null_tex_img_view: vk::ImageView) { unsafe {
+        let null_info = vk::DescriptorImageInfo {
+            sampler: null_tex_sampler,
+            image_view: null_tex_img_view,
+            image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+        };
+        self.null_tex_info = null_info;
         self.text_renderer.destroy();
         self.quad_renderpass.destroy();
         (self.pass, self.quad_renderpass, self.text_renderer) = GUI::create_rendering_objects(base, self.null_tex_info);
+        self.update_descriptors(base);
     } }
 
     /**
@@ -273,35 +294,10 @@ impl GUI {
                 }
             }).collect();
 
-            let mut image_infos: Vec<vk::DescriptorImageInfo> = Vec::with_capacity(1024);
-
-            for texture in &gui_images {
-                image_infos.push(vk::DescriptorImageInfo {
-                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                    image_view: texture.image_view,
-                    sampler: texture.sampler,
-                })
-            }
-            let missing = 1024 - image_infos.len();
-            for _ in 0..missing {
-                image_infos.push(self.null_tex_info.clone());
-            }
-            let image_infos = image_infos.as_slice().as_ptr();
-
-            for frame in 0..MAX_FRAMES_IN_FLIGHT {
-                let descriptor_write = vk::WriteDescriptorSet {
-                    s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
-                    dst_set: self.quad_renderpass.descriptor_set.descriptor_sets[frame],
-                    dst_binding: 0,
-                    dst_array_element: 0,
-                    descriptor_type: DescriptorType::COMBINED_IMAGE_SAMPLER,
-                    descriptor_count: 1024,
-                    p_image_info: image_infos,
-                    ..Default::default()
-                };
-                base.device.update_descriptor_sets(&[descriptor_write], &[]);
-            }
             self.gui_images = gui_images;
+
+            self.update_descriptors(base);
+
         };
 
         let mut guis = Vec::new();
@@ -581,7 +577,6 @@ impl GUI {
                 let mut interactable_right_tap_actions = Vec::new();
                 let mut interactable_left_hold_actions = Vec::new();
                 let mut interactable_right_hold_actions = Vec::new();
-                let mut interactable_hitbox_diversion = None;
 
                 match &interactable_information_json["passive_actions"] {
                     JsonValue::Array(arr) => {
@@ -723,11 +718,6 @@ impl GUI {
                     }
                     _ => {}
                 }
-                if let JsonValue::Number(ref interactable_information_json) = interactable_information_json["hitbox_diversion"] {
-                    if let Ok(v) = interactable_information_json.to_string().parse::<usize>() {
-                        interactable_hitbox_diversion = Some(v);
-                    }
-                }
 
                 let temp = GUIInteractableInformation {
                     was_pressed_last_frame: false,
@@ -739,7 +729,6 @@ impl GUI {
                     left_hold_actions: interactable_left_hold_actions,
                     right_tap_actions: interactable_right_tap_actions,
                     right_hold_actions: interactable_right_hold_actions,
-                    hitbox_diversion: interactable_hitbox_diversion,
                 };
                 interactable_information = Some(temp);
             }
@@ -838,6 +827,38 @@ impl GUI {
         }
         self.gui_nodes = nodes;
     }
+    unsafe fn update_descriptors(&mut self, base: &VkBase) {
+        let mut image_infos: Vec<vk::DescriptorImageInfo> = Vec::with_capacity(1024);
+
+        for texture in &self.gui_images {
+            image_infos.push(vk::DescriptorImageInfo {
+                image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                image_view: texture.image_view,
+                sampler: texture.sampler,
+            })
+        }
+        let missing = 1024 - image_infos.len();
+        for _ in 0..missing {
+            image_infos.push(self.null_tex_info.clone());
+        }
+        let image_infos = image_infos.as_slice().as_ptr();
+
+        unsafe {
+            for frame in 0..MAX_FRAMES_IN_FLIGHT {
+                let descriptor_write = vk::WriteDescriptorSet {
+                    s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
+                    dst_set: self.quad_renderpass.descriptor_set.descriptor_sets[frame],
+                    dst_binding: 0,
+                    dst_array_element: 0,
+                    descriptor_type: DescriptorType::COMBINED_IMAGE_SAMPLER,
+                    descriptor_count: 1024,
+                    p_image_info: image_infos,
+                    ..Default::default()
+                };
+                base.device.update_descriptor_sets(&[descriptor_write], &[]);
+            }
+        }
+    }
 
     pub unsafe fn draw(&mut self, current_frame: usize, command_buffer: CommandBuffer,) { unsafe {
         let mut interactable_action_parameter_sets = Vec::new();
@@ -864,7 +885,7 @@ impl GUI {
 
         for parameter_set in interactable_action_parameter_sets {
             self.active_node = parameter_set.0;
-            self.handle_gui_interaction(parameter_set.0, parameter_set.1, parameter_set.2, command_buffer)
+            self.handle_gui_interaction(parameter_set.0, parameter_set.1, parameter_set.2)
         }
     } }
     unsafe fn draw_node(
@@ -1101,7 +1122,6 @@ pub struct GUIInteractableInformation {
     pub left_hold_actions: Vec<(String, usize)>,
     pub right_tap_actions: Vec<(String, usize)>,
     pub right_hold_actions: Vec<(String, usize)>,
-    pub hitbox_diversion: Option<usize>,
 }
 
 /**

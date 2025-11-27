@@ -140,7 +140,7 @@ impl Engine {
 
                                 renderer.reload(base, &self.world.borrow());
                                 
-                                renderer.gui.borrow_mut().load_from_file(base, "editor\\resources\\gui\\editor.gui");
+                                // renderer.gui.borrow_mut().load_from_file(base, "editor\\resources\\gui\\editor.gui");
                                 
                                 flag_ref.recompile_queued = false;
                             }

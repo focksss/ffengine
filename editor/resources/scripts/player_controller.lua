@@ -17,8 +17,8 @@ function Update()
     local camera = player.camera
     local rigid_body = player.rigid_body
 
-    local window_size = Engine.client.window_size
-    camera.aspect_ratio = window_size.x / window_size.y
+    local scene_viewport = Engine.renderer.scene_renderer.viewport
+	camera.aspect_ratio = scene_viewport.width / scene_viewport.height
 
     if Engine.client:new_key_pressed(KeyCode.Escape) then
         Engine.client.cursor_locked = not Engine.client.cursor_locked
