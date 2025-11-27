@@ -1689,32 +1689,34 @@ pub struct Primitive {
     pub vertex_data: Vec<Vertex>,
 }
 impl Primitive {
-    fn construct_data(&mut self) {
-        let mut position_accessor: Option<&Rc<Accessor>> = None;
-        let mut normal_accessor: Option<&Rc<Accessor>> = None;
-        let mut texcoord_accessor: Option<&Rc<Accessor>> = None;
-        let mut joint_accessor: Option<&Rc<Accessor>> = None;
-        let mut weight_accessor: Option<&Rc<Accessor>> = None;
+    fn construct_data(&mut self, world: &World) {
+        let mut position_accessor: Option<&Accessor> = None;
+        let mut normal_accessor: Option<&Accessor> = None;
+        let mut texcoord_accessor: Option<&Accessor> = None;
+        let mut joint_accessor: Option<&Accessor> = None;
+        let mut weight_accessor: Option<&Accessor> = None;
         for attribute in self.attributes.iter() {
             if attribute.0.eq("POSITION") {
-                position_accessor = Some(&attribute.1);
+                position_accessor = Some(&world.accessors[attribute.1]);
             } else if attribute.0.eq("NORMAL") {
-                normal_accessor = Some(&attribute.1);
+                normal_accessor = Some(&world.accessors[attribute.1]);
             } else if attribute.0.eq("TEXCOORD_0") {
-                texcoord_accessor = Some(&attribute.1);
+                texcoord_accessor = Some(&world.accessors[attribute.1]);
             } else if attribute.0.eq("JOINTS_0") {
-                joint_accessor = Some(&attribute.1);
+                joint_accessor = Some(&world.accessors[attribute.1]);
             } else if attribute.0.eq("WEIGHTS_0") {
-                weight_accessor = Some(&attribute.1);
+                weight_accessor = Some(&world.accessors[attribute.1]);
             }
         }
         if position_accessor.is_none() {
             println!("Primitive has no POSITION attribute!");
         } else {
-            let indices_accessor = self.indices.clone();
-            let mut byte_offset = indices_accessor.buffer_view.byte_offset;
-            let mut byte_length = indices_accessor.buffer_view.byte_length;
-            let bytes = &indices_accessor.buffer_view.buffer.data[byte_offset..(byte_offset + byte_length)];
+            let indices_accessor = &world.accessors[self.indices];
+            let indices_accessor_buffer_view = &world.buffer_views[indices_accessor.buffer_view];
+            let indices_accessor_buffer_view_buffer = &world.buffers[indices_accessor_buffer_view.buffer];
+            let mut byte_offset = indices_accessor_buffer_view.byte_offset;
+            let mut byte_length = indices_accessor_buffer_view.byte_length;
+            let bytes = &indices_accessor_buffer_view_buffer.data[byte_offset..(byte_offset + byte_length)];
             let component_type = indices_accessor.component_type;
             match component_type {
                 ComponentType::U8 => {
@@ -1732,26 +1734,38 @@ impl Primitive {
                 _ => panic!("Unsupported index type"),
             }
 
-            byte_offset = position_accessor.unwrap().buffer_view.byte_offset;
-            byte_length = position_accessor.unwrap().buffer_view.byte_length;
-            let bytes = &position_accessor.unwrap().buffer_view.buffer.data[byte_offset..(byte_offset + byte_length)];
-            let positions: &[[f32; 3]] = bytemuck::cast_slice(bytes);
+            let mut positions: &[[f32; 3]] = if let Some(accessor) = position_accessor {
+                let accessor_buffer_view = &world.buffer_views[accessor.buffer_view];
+                let accessor_buffer_view_buffer = &world.buffers[accessor_buffer_view.buffer];
+                byte_offset = accessor_buffer_view.byte_offset;
+                byte_length = accessor_buffer_view.byte_length;
+                let bytes = &accessor_buffer_view_buffer.data[byte_offset..(byte_offset + byte_length)];
+                bytemuck::cast_slice(bytes)
+            } else {
+                &[]
+            };
 
-            let mut normals: &[[f32; 3]] = &[];
-            if !normal_accessor.is_none() {
-                byte_offset = normal_accessor.unwrap().buffer_view.byte_offset;
-                byte_length = normal_accessor.unwrap().buffer_view.byte_length;
-                let bytes = &normal_accessor.unwrap().buffer_view.buffer.data[byte_offset..(byte_offset + byte_length)];
-                normals = bytemuck::cast_slice(bytes);
-            }
-
-            let mut tex_coords: &[[f32; 2]] = &[];
-            if !texcoord_accessor.is_none() {
-                byte_offset = texcoord_accessor.unwrap().buffer_view.byte_offset;
-                byte_length = texcoord_accessor.unwrap().buffer_view.byte_length;
-                let bytes = &texcoord_accessor.unwrap().buffer_view.buffer.data[byte_offset..(byte_offset + byte_length)];
-                tex_coords = bytemuck::cast_slice(bytes);
-            }
+            let mut normals: &[[f32; 3]] = if let Some(accessor) = normal_accessor {
+                let accessor_buffer_view = &world.buffer_views[accessor.buffer_view];
+                let accessor_buffer_view_buffer = &world.buffers[accessor_buffer_view.buffer];
+                byte_offset = accessor_buffer_view.byte_offset;
+                byte_length = accessor_buffer_view.byte_length;
+                let bytes = &accessor_buffer_view_buffer.data[byte_offset..(byte_offset + byte_length)];
+                bytemuck::cast_slice(bytes)
+            } else {
+                &[]
+            };
+            
+            let mut tex_coords: &[[f32; 2]] = if let Some(accessor) = texcoord_accessor {
+                let accessor_buffer_view = &world.buffer_views[accessor.buffer_view];
+                let accessor_buffer_view_buffer = &world.buffers[accessor_buffer_view.buffer];
+                byte_offset = accessor_buffer_view.byte_offset;
+                byte_length = accessor_buffer_view.byte_length;
+                let bytes = &accessor_buffer_view_buffer.data[byte_offset..(byte_offset + byte_length)];
+                bytemuck::cast_slice(bytes)
+            } else {
+                &[]
+            };
 
             let mut joints= Vec::new();
             if !joint_accessor.is_none() {
@@ -1982,7 +1996,7 @@ impl Instance {
 
 pub struct Mesh {
     pub name: String,
-    pub primitives: Vec<usize>
+    pub primitives: Vec<Primitive>
 }
 impl Mesh {
     pub fn get_min_max(&self) -> (Vector, Vector) {
@@ -2002,7 +2016,7 @@ impl Mesh {
 
 pub struct Node {
     pub mesh: Option<usize>,
-    pub skin: Option<usize>,
+    pub skin: Option<i32>,
     pub name: String,
     pub rotation: Vector,
     pub scale: Vector,
@@ -2023,9 +2037,9 @@ pub struct Node {
     pub children_indices: Vec<usize>,
 }
 impl Node {
-    pub unsafe fn draw(&self, device: &ash::Device, owner: &Model, draw_command_buffer: &CommandBuffer, frustum: Option<&Frustum>) { unsafe {
-        if self.mesh.is_some() {
-            for primitive in self.mesh.as_ref().unwrap().borrow().primitives.iter() {
+    pub unsafe fn draw(&self, device: &ash::Device, world: &World, draw_command_buffer: &CommandBuffer, frustum: Option<&Frustum>) { unsafe {
+        if let Some(mesh_index) = self.mesh {
+            for primitive in world.meshes[mesh_index].primitives.iter() {
                 let mut all_points_outside_of_same_plane = false;
 
                 if frustum.is_some() {
@@ -2049,7 +2063,7 @@ impl Node {
                 if !all_points_outside_of_same_plane {
                     device.cmd_draw_indexed(
                         *draw_command_buffer,
-                        primitive.indices.count as u32,
+                        world.accessors[primitive.indices].count as u32,
                         1,
                         primitive.index_buffer_offset as u32,
                         0,
@@ -2060,7 +2074,7 @@ impl Node {
         }
 
         for child in &self.children_indices {
-            owner.nodes[*child].draw(device, &owner, draw_command_buffer, frustum);
+            world.nodes[*child].draw(device, world, draw_command_buffer, frustum);
         }
     } }
 
@@ -2079,9 +2093,10 @@ impl Node {
         self.world_transform = parent_transform * self.local_transform;
     }
 
-    pub fn update_instances(&self, instances: &mut Vec<Instance>, dirty_instances: &mut Vec<usize>, add_dirty: bool) {
-        if let Some(mesh) = &self.mesh {
-            for primitive in mesh.borrow().primitives.iter() {
+    pub fn update_instances(&self, world: &World, instances: &mut Vec<Instance>, dirty_instances: &mut Vec<usize>, add_dirty: bool) {
+        if let Some(mesh_index) = &self.mesh {
+            let mesh = &world.meshes[*mesh_index];
+            for primitive in mesh.primitives.iter() {
                 instances[primitive.id].matrix = self.world_transform.data;
                 instances[primitive.id].indices[1] = self.skin.unwrap_or(-1);
                 if add_dirty {
@@ -2148,26 +2163,37 @@ pub struct Animation {
     pub snap_back: bool,
 }
 impl Animation {
-    fn new(name: String, accessors: &Vec<Accessor>, buffer_views: &Vec<BufferView>, channels: Vec<(usize, usize, String)>, samplers: Vec<(usize, String, usize)>) -> Self { // samplers are accessors
+    fn new(name: String, world: &World, channels: Vec<(usize, usize, String)>, samplers: Vec<(usize, String, usize)>) -> Self { // samplers are accessors
         let mut compiled_samplers = Vec::new();
         for sampler in samplers.iter() {
-            let sampler_buffer_views = (&buffer_views[sampler.0], &buffer_views[sampler.2]);
+            let sampler_accessors = (
+                &world.accessors[sampler.0],
+                &world.accessors[sampler.2]
+            );
+            let sampler_buffer_views = (
+                &world.buffer_views[sampler_accessors.0.buffer_view],
+                &world.buffer_views[sampler_accessors.1.buffer_view]
+            );
+            let sampler_buffers = (
+                &world.buffers[sampler_buffer_views.0.buffer],
+                &world.buffers[sampler_buffer_views.1.buffer]
+            );
             let mut byte_offset = sampler_buffer_views.0.byte_offset;
             let mut byte_length = sampler_buffer_views.0.byte_length;
-            let mut bytes = &sampler.0.buffer_view.buffer.data[byte_offset..(byte_offset + byte_length)];
+            let mut bytes = &sampler_buffers.0.data[byte_offset..(byte_offset + byte_length)];
             let times: &[f32] = bytemuck::cast_slice(bytes);
 
-            byte_offset = sampler.2.buffer_view.byte_offset;
-            byte_length = sampler.2.buffer_view.byte_length;
-            bytes = &sampler.2.buffer_view.buffer.data[byte_offset..(byte_offset + byte_length)];
+            byte_offset = sampler_buffer_views.1.byte_offset;
+            byte_length = sampler_buffer_views.1.byte_length;
+            bytes = &sampler_buffers.1.data[byte_offset..(byte_offset + byte_length)];
             let mut vectors = Vec::new();
-            if sampler.2.r#type.eq("VEC3") {
+            if sampler_accessors.1.r#type.eq("VEC3") {
                 let vec3s: &[[f32; 3]] = bytemuck::cast_slice(bytes);
                 for vec3 in vec3s.iter() {
                     vectors.push(Vector::new3(vec3[0], vec3[1], vec3[2]));
                 }
                 compiled_samplers.push((times.to_vec(), sampler.1.clone(), vectors));
-            } else if sampler.2.r#type.eq("VEC4") {
+            } else if sampler_accessors.1.r#type.eq("VEC4") {
                 let vec4s: &[[f32; 4]] = bytemuck::cast_slice(bytes);
                 for vec4 in vec4s.iter() {
                     vectors.push(Vector::new4(vec4[0], vec4[1], vec4[2], vec4[3]));
