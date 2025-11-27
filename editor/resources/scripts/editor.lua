@@ -92,7 +92,7 @@ function update_fps()
 	end
 end
 
-local stored_window_size = Vector.new2(1920, 1080)
+local stored_window_size = Vector.new2(0, 0)
 function Update()
 	local gui = Engine.renderer.gui
 	local window_size = Engine.client.window_size
@@ -109,11 +109,15 @@ function Update()
 	elseif 
 		not resize_called_this_tick and
 		not resize_called_last_tick and
-		window_size.x ~= stored_window_size.x and
-		window_size.y ~= stored_window_size.y
+		(window_size.x ~= stored_window_size.x or
+		 window_size.y ~= stored_window_size.y)
 	then
+		local scene_viewport = Engine.renderer.scene_renderer.viewport
+		scene_viewport.width = window_size.x - right_area_node.scale.x
+		scene_viewport.height = window_size.y
+		
 		stored_window_size = window_size
-		---Engine.client.flags.reload_rendering_queued = true
+		Engine.client.flags.reload_rendering_queued = true
 	end
 	
 	resize_called_last_tick = resize_called_this_tick

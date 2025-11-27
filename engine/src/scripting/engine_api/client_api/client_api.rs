@@ -89,6 +89,10 @@ impl UserData for ClientRef {
         });
 
         methods.add_method("drag_resize_window", |_, this, direction: LuaResizeDirection| {
+            let window = &this.0.borrow().window;
+            if window.is_maximized() {
+                window.set_maximized(false);
+            }
             Ok(this.0.borrow().window.drag_resize_window(ResizeDirection::from(direction.0)).expect("Failed to drag window"))
         });
 
