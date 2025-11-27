@@ -5,7 +5,7 @@ use winit::dpi::PhysicalPosition;
 use winit::event::MouseButton;
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::keyboard::NativeKey::MacOS;
-use winit::window::CursorGrabMode;
+use winit::window::{CursorGrabMode, ResizeDirection};
 use crate::client::client::{Client, Flags};
 use crate::math::Vector;
 use crate::physics::player::PlayerPointer;
@@ -40,25 +40,25 @@ impl UserData for ClientRef {
             let borrowed = &mut this.0.borrow_mut();
             borrowed.cursor_locked = val;
             if borrowed.cursor_locked {
-                if let Err(err) = borrowed.window().set_cursor_grab(CursorGrabMode::Confined) {} else {
-                    borrowed.window().set_cursor_visible(false);
+                if let Err(err) = borrowed.window.set_cursor_grab(CursorGrabMode::Confined) {} else {
+                    borrowed.window.set_cursor_visible(false);
                 }
-                borrowed.window().set_cursor_position(PhysicalPosition::new(
-                    borrowed.window().inner_size().width as f32 * 0.5,
-                    borrowed.window().inner_size().height as f32 * 0.5))
+                borrowed.window.set_cursor_position(PhysicalPosition::new(
+                    borrowed.window.inner_size().width as f32 * 0.5,
+                    borrowed.window.inner_size().height as f32 * 0.5))
                     .expect("failed to reset mouse position");
             } else {
-                if let Err(err) = borrowed.window().set_cursor_grab(CursorGrabMode::None) {} else {
-                    borrowed.window().set_cursor_visible(true);
+                if let Err(err) = borrowed.window.set_cursor_grab(CursorGrabMode::None) {} else {
+                    borrowed.window.set_cursor_visible(true);
                 }
-                borrowed.window().set_cursor_position(borrowed.saved_cursor_pos).expect("Cursor pos reset failed");
+                borrowed.window.set_cursor_position(borrowed.saved_cursor_pos).expect("Cursor pos reset failed");
             }
             Ok(())
         });
 
         fields.add_field_method_get("window_size", |_, this| {
             let borrowed = this.0.borrow();
-            let window = borrowed.window();
+            let window = borrowed.window.clone();
             Ok(Vector::new2(window.inner_size().width as f32, window.inner_size().height as f32))
         });
 
@@ -80,7 +80,16 @@ impl UserData for ClientRef {
         });
 
         methods.add_method("drag_window", |_, this, ()| {
-            Ok(this.0.borrow().window().drag_window().expect("Failed to drag window"))
+            let window = &this.0.borrow().window;
+            if window.is_maximized() {
+                window.set_maximized(false);
+            }
+            window.drag_window().ok();
+            Ok(())
+        });
+
+        methods.add_method("drag_resize_window", |_, this, direction: LuaResizeDirection| {
+            Ok(this.0.borrow().window.drag_resize_window(ResizeDirection::from(direction.0)).expect("Failed to drag window"))
         });
 
         methods.add_method("mouse_button_pressed", |_, this, key: LuaMouseButton| {
@@ -93,9 +102,15 @@ impl UserData for ClientRef {
 struct FlagsRef(pub Arc<RefCell<Flags>>);
 impl UserData for FlagsRef {
     fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
-        fields.add_field_method_get("recompile_queued", |_, this| Ok(this.0.borrow().recompile_queued));
-        fields.add_field_method_set("recompile_queued", |_, this, val: bool| {
-            this.0.borrow_mut().recompile_queued = val;
+        fields.add_field_method_get("reload_rendering_queued", |_, this| Ok(this.0.borrow().reload_rendering_queued));
+        fields.add_field_method_set("reload_rendering_queued", |_, this, val: bool| {
+            this.0.borrow_mut().reload_rendering_queued = val;
+            Ok(())
+        });
+
+        fields.add_field_method_get("reload_scripts_queued", |_, this| Ok(this.0.borrow().reload_scripts_queued));
+        fields.add_field_method_set("reload_scripts_queued", |_, this, val: bool| {
+            this.0.borrow_mut().reload_scripts_queued = val;
             Ok(())
         });
 
@@ -209,6 +224,55 @@ impl<'lua> FromLua<'lua> for LuaKeyCode {
         })
     }
 }
+pub struct LuaResizeDirection(pub ResizeDirection);
+impl RegisterToLua for LuaResizeDirection {
+    fn register_to_lua(lua: &mlua::Lua) -> mlua::Result<()> {
+        let globals = lua.globals();
+        let table = lua.create_table()?;
+        for (idx, key) in ALL_RESIZE_DIRECTIONS.iter().enumerate() {
+            table.set(format!("{:?}", key), idx as u32)?;
+        }
+        globals.set("ResizeDirection", table)?;
+        Ok(())
+    }
+}
+impl<'lua> IntoLua<'lua> for LuaResizeDirection {
+    fn into_lua(self, lua: &'lua mlua::Lua) -> mlua::Result<Value<'lua>> {
+        let index = ALL_RESIZE_DIRECTIONS
+            .iter()
+            .position(|k| *k == self.0)
+            .ok_or_else(|| mlua::Error::ToLuaConversionError {
+                from: "LuaResizeDirection",
+                to: "Value",
+                message: Some("ResizeDirection not found in ALL_RESIZE_DIRECTIONS".into()),
+            })?;
+        (index as u32).into_lua(lua)
+    }
+}
+impl<'lua> FromLua<'lua> for LuaResizeDirection {
+    fn from_lua(value: Value<'lua>, _: &'lua mlua::Lua) -> mlua::Result<Self> {
+        if let Value::Integer(i) = value {
+            if i >= 0 && (i as usize) < ALL_RESIZE_DIRECTIONS.len() {
+                return Ok(LuaResizeDirection(ALL_RESIZE_DIRECTIONS[i as usize]));
+            }
+        }
+        Err(mlua::Error::FromLuaConversionError {
+            from: value.type_name(),
+            to: "LuaResizeDirection",
+            message: Some("invalid ResizeDirection value".into()),
+        })
+    }
+}
+const ALL_RESIZE_DIRECTIONS: &[ResizeDirection] = &[
+    ResizeDirection::East,
+    ResizeDirection::North,
+    ResizeDirection::NorthEast,
+    ResizeDirection::NorthWest,
+    ResizeDirection::South,
+    ResizeDirection::SouthEast,
+    ResizeDirection::SouthWest,
+    ResizeDirection::West,
+];
 const ALL_MOUSE_BUTTONS: &[MouseButton] = &[
     MouseButton::Left,
     MouseButton::Right,

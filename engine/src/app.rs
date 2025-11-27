@@ -53,7 +53,7 @@ impl Engine {
         let world = Arc::new(RefCell::new(world));
         let physics_engine = Arc::new(RefCell::new(PhysicsEngine::new(Vector::new3(0.0, -9.8, 0.0), 0.9, 0.5)));
 
-        let controller = Arc::new(RefCell::new(Client::new(&base.window)));
+        let controller = Arc::new(RefCell::new(Client::new(base.window.clone())));
 
         let rw_lock = RwLock::new(base.draw_command_buffers[0]);
         COMMAND_BUFFER.set(rw_lock).expect("Failed to initialize frame command buffer global");
@@ -130,9 +130,8 @@ impl Engine {
                                 return;
                             }
 
-                            if flag_ref.recompile_queued {
+                            if flag_ref.reload_rendering_queued {
                                 base.device.device_wait_idle().unwrap();
-                                Lua::reload_scripts();
                                 Renderer::compile_shaders();
                                 base.device.device_wait_idle().unwrap();
 
@@ -142,7 +141,11 @@ impl Engine {
                                 
                                 // renderer.gui.borrow_mut().load_from_file(base, "editor\\resources\\gui\\editor.gui");
                                 
-                                flag_ref.recompile_queued = false;
+                                flag_ref.reload_rendering_queued = false;
+                            }
+
+                            if flag_ref.reload_scripts_queued {
+                                Lua::reload_scripts()
                             }
 
                             let lock = COMMAND_BUFFER.get().expect("not initialized");

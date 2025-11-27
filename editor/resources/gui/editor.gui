@@ -2,7 +2,7 @@
   "guis": [
     {
       "name": "editor",
-      "nodes": [0, 3, 5]
+      "nodes": [0, 3, 5, 8, 9, 10, 11, 12, 13, 14, 15]
     }
   ],
   "scripts": [
@@ -237,6 +237,136 @@
           "quad": 4,
           "text": 1,
           "anchor_point": "top_left"
-        }
+        },
+
+    {
+      "name": "top_resize",
+      "interactable_information": {
+        "left_hold_actions": [
+          {
+            "method": "drag_resize_north",
+            "script": 0
+          }
+        ]
+      },
+      "position": [0, 0],
+      "scale": [1.0, 10],
+      "anchor_point": "top_middle",
+      "absolute_position": [false, true],
+      "absolute_scale": [false, true]
+    },
+    {
+      "name": "bottom_resize",
+      "interactable_information": {
+        "left_hold_actions": [
+          {
+            "method": "drag_resize_south",
+            "script": 0
+          }
+        ]
+      },
+      "position": [0, 0],
+      "scale": [1.0, 10],
+      "anchor_point": "bottom_middle",
+      "absolute_position": [false, true],
+      "absolute_scale": [false, true]
+    },
+    {
+      "name": "left_resize",
+      "interactable_information": {
+        "left_hold_actions": [
+          {
+            "method": "drag_resize_west",
+            "script": 0
+          }
+        ]
+      },
+      "position": [0, 0],
+      "scale": [10, 1.0],
+      "anchor_point": "left",
+      "absolute_position": [true, false],
+      "absolute_scale": [true, false]
+    },
+    {
+      "name": "right_resize",
+      "interactable_information": {
+        "left_hold_actions": [
+          {
+            "method": "drag_resize_east",
+            "script": 0
+          }
+        ]
+      },
+      "position": [0, 0],
+      "scale": [10, 1.0],
+      "anchor_point": "right",
+      "absolute_position": [true, false],
+      "absolute_scale": [true, false]
+    },
+
+    {
+      "name": "top_left_resize",
+      "interactable_information": {
+        "left_hold_actions": [
+          {
+            "method": "drag_resize_northwest",
+            "script": 0
+          }
+        ]
+      },
+      "position": [0, 0],
+      "scale": [12, 12],
+      "anchor_point": "top_left",
+      "absolute_position": [true, true],
+      "absolute_scale": [true, true]
+    },
+    {
+      "name": "top_right_resize",
+      "interactable_information": {
+        "left_hold_actions": [
+          {
+            "method": "drag_resize_northeast",
+            "script": 0
+          }
+        ]
+      },
+      "position": [0, 0],
+      "scale": [12, 12],
+      "anchor_point": "top_right",
+      "absolute_position": [true, true],
+      "absolute_scale": [true, true]
+    },
+    {
+      "name": "bottom_right_resize",
+      "interactable_information": {
+        "left_hold_actions": [
+          {
+            "method": "drag_resize_southeast",
+            "script": 0
+          }
+        ]
+      },
+      "position": [0, 0],
+      "scale": [12, 12],
+      "anchor_point": "bottom_right",
+      "absolute_position": [true, true],
+      "absolute_scale": [true, true]
+    },
+    {
+      "name": "bottom_left_resize",
+      "interactable_information": {
+        "left_hold_actions": [
+          {
+            "method": "drag_resize_southwest",
+            "script": 0
+          }
+        ]
+      },
+      "position": [0, 0],
+      "scale": [12, 12],
+      "anchor_point": "bottom_left",
+      "absolute_position": [true, true],
+      "absolute_scale": [true, true]
+    }
   ]
 }

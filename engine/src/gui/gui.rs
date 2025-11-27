@@ -892,11 +892,13 @@ impl GUI {
         self.device.cmd_end_render_pass(command_buffer);
         self.pass.borrow().transition_to_readable(command_buffer, current_frame);
 
-        for parameter_set in interactable_action_parameter_sets.iter() {
+        for parameter_set in interactable_action_parameter_sets.iter().rev() {
             self.active_node = parameter_set.0;
             match self.handle_gui_interaction(parameter_set.0, parameter_set.1, parameter_set.2) {
                 GUIInteractionResult::None => (),
-                _ => return
+                _ => {
+                    return
+                }
             }
         }
     } }
@@ -935,12 +937,12 @@ impl GUI {
             self.draw_text(*text, current_frame, position, scale);
         }
 
-        for child in &node.children_indices.clone() {
-            self.draw_node(*child, current_frame, command_buffer, position, scale, interactable_parameter_sets);
-        }
-
         if node.interactable_information.is_some() {
             interactable_parameter_sets.push((node_index, position, position + scale));
+        }
+
+        for child in &node.children_indices.clone() {
+            self.draw_node(*child, current_frame, command_buffer, position, scale, interactable_parameter_sets);
         }
     } }
     unsafe fn draw_quad(

@@ -68,13 +68,15 @@ MovementMode = {
     ---@field key_pressed fun(self:Client, key: integer):boolean
     ---@field mouse_button_pressed fun(self:Client, button: integer):boolean
     ---@field drag_window fun(self:Client):nil
+    ---@field drag_resize_window fun(self:Client, direction:integer):nil
 
         ---@class Flags
         ---@field pause_rendering boolean
         ---@field screenshot_queued boolean
         ---@field draw_hitboxes boolean
         ---@field do_physics boolean
-        ---@field recompile_queued boolean
+        ---@field reload_rendering_queued boolean
+        ---@field reload_scripts_queued boolean
         ---@field close_requested boolean
 
     ---@class PhysicsEngine
@@ -116,6 +118,29 @@ MovementMode = {
 ---@field rotate_by_euler fun(self:Vector, rot:Vector):Vector
 
 Vector = Vector
+
+
+---@class ResizeDirection
+---@field East integer
+---@field North integer
+---@field NorthEast integer
+---@field NorthWest integer
+---@field South integer
+---@field SouthEast integer
+---@field SouthWest integer
+---@field West integer
+ResizeDirection = ResizeDirection
+
+ResizeDirection = {
+    East = 0,
+    NorthEast = 1,
+    Middle = 2,
+    NorthWest = 3,
+    South = 4,
+    SouthEast = 5,
+    SouthWest = 6,
+    West = 7,
+}
 
 
 ---@class MouseButton

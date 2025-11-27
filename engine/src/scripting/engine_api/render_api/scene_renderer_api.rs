@@ -25,15 +25,15 @@ impl UserData for ViewportRef {
         fields.add_field_method_get("width", |_, this| {
             Ok(this.0.borrow().width)
         });
-        fields.add_field_method_set("width", |_, this, v| {
-            Ok(this.0.borrow_mut().width = v)
+        fields.add_field_method_set("width", |_, this, v: f32| {
+            Ok(this.0.borrow_mut().width = v.max(1.0))
         });
 
         fields.add_field_method_get("height", |_, this| {
             Ok(this.0.borrow().height)
         });
-        fields.add_field_method_set("height", |_, this, v| {
-            Ok(this.0.borrow_mut().height = v)
+        fields.add_field_method_set("height", |_, this, v: f32| {
+            Ok(this.0.borrow_mut().height = v.max(1.0))
         });
     }
 }

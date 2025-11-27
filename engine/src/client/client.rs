@@ -20,7 +20,7 @@ use crate::world::camera::Camera;
 use crate::world::scene::Scene;
 
 pub struct Client {
-    pub window_ptr: *const winit::window::Window,
+    pub window: Arc<winit::window::Window>,
 
     pub sensitivity: f32,
 
@@ -44,13 +44,13 @@ pub struct Client {
     pub paused: bool,
 }
 impl Client {
-    pub fn new(window: &winit::window::Window) -> Client {
+    pub fn new(window: Arc<winit::window::Window>) -> Client {
         window.set_cursor_position(PhysicalPosition::new(
             window.inner_size().width as f32 * 0.5,
             window.inner_size().height as f32 * 0.5))
             .expect("failed to reset mouse position");
         Client {
-            window_ptr: window as *const _,
+            window: window.clone(),
             sensitivity: 0.001,
             cursor_position: Default::default(),
             flags: Arc::new(RefCell::new(Flags::default())),
@@ -65,9 +65,6 @@ impl Client {
             button_pressed: MouseButton::Left,
             button_released: MouseButton::Left,
         }
-    }
-    pub fn window(&self) -> &winit::window::Window {
-        unsafe { &*self.window_ptr }
     }
 
     pub unsafe fn reset_deltas(
@@ -138,7 +135,7 @@ impl Client {
                     event: WindowEvent::MouseWheel { delta, .. },
                     ..
                 } => {
-                    if controller.window().has_focus() {
+                    if controller.window.has_focus() {
                         if let MouseScrollDelta::LineDelta(x, y) = delta {
                             controller.scroll_delta = (x, y);
                         }
@@ -149,14 +146,14 @@ impl Client {
                     event: WindowEvent::CursorMoved { position, .. },
                     ..
                 } => {
-                    if controller.window().has_focus() && controller.cursor_locked {
+                    if controller.window.has_focus() && controller.cursor_locked {
                         controller.mouse_delta = (
-                            -position.x as f32 + 0.5 * controller.window().inner_size().width as f32,
-                            position.y as f32 - 0.5 * controller.window().inner_size().height as f32,
+                            -position.x as f32 + 0.5 * controller.window.inner_size().width as f32,
+                            position.y as f32 - 0.5 * controller.window.inner_size().height as f32,
                         );
-                        controller.window().set_cursor_position(PhysicalPosition::new(
-                            controller.window().inner_size().width as f32 * 0.5,
-                            controller.window().inner_size().height as f32 * 0.5))
+                        controller.window.set_cursor_position(PhysicalPosition::new(
+                            controller.window.inner_size().width as f32 * 0.5,
+                            controller.window.inner_size().height as f32 * 0.5))
                             .expect("failed to reset mouse position");
                         should_mouse_move_event = true
                     } else {
@@ -169,10 +166,10 @@ impl Client {
                     ..
                 } => {
                     if !controller.cursor_locked {
-                        if let Err(err) = controller.window().set_cursor_grab(CursorGrabMode::Confined) {
+                        if let Err(err) = controller.window.set_cursor_grab(CursorGrabMode::Confined) {
                             eprintln!("Cursor lock failed: {:?}", err);
                         } else {
-                            controller.window().set_cursor_visible(false);
+                            controller.window.set_cursor_visible(false);
                             controller.cursor_locked = true;
                         }
                     }
@@ -182,10 +179,10 @@ impl Client {
                     ..
                 } => {
                     controller.cursor_locked = false;
-                    if let Err(err) = controller.window().set_cursor_grab(CursorGrabMode::None) {
+                    if let Err(err) = controller.window.set_cursor_grab(CursorGrabMode::None) {
                         eprintln!("Cursor unlock failed: {:?}", err);
                     } else {
-                        controller.window().set_cursor_visible(true);
+                        controller.window.set_cursor_visible(true);
                     }
                 }
                 _ => {}
@@ -212,6 +209,7 @@ pub struct Flags {
     pub screenshot_queued: bool,
     pub draw_hitboxes: bool,
     pub do_physics: bool,
-    pub recompile_queued: bool,
+    pub reload_rendering_queued: bool,
+    pub reload_scripts_queued: bool,
     pub close_requested: bool,
 }
