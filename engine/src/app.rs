@@ -145,7 +145,8 @@ impl Engine {
                             }
 
                             if flag_ref.reload_scripts_queued {
-                                Lua::reload_scripts()
+                                Lua::reload_scripts();
+                                flag_ref.reload_scripts_queued = false;
                             }
 
                             let lock = COMMAND_BUFFER.get().expect("not initialized");
