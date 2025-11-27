@@ -72,6 +72,7 @@ MovementMode = {
     ---@field drag_resize_window fun(self:Client, direction:integer):nil
     ---@field maximized boolean
     ---@field minimized boolean
+    ---@field set_cursor_icon fun(self:Client, icon:integer):nil
 
         ---@class Flags
         ---@field pause_rendering boolean
@@ -161,6 +162,82 @@ MouseButton = {
     Back = 3,
     Forard = 4,
 }
+
+
+---@class CursorIcon
+---@field Default integer
+---@field Crosshair integer
+---@field Pointer integer
+---@field Text integer
+---@field VerticalText integer
+---@field Wait integer
+---@field Progress integer
+---@field NotAllowed integer
+---@field ContextMenu integer
+---@field Help integer
+---@field Cell integer
+---@field Move integer
+---@field Grab integer
+---@field Grabbing integer
+---@field Alias integer
+---@field Copy integer
+---@field NoDrop integer
+---@field AllScroll integer
+---@field ZoomIn integer
+---@field ZoomOut integer
+---@field EResize integer
+---@field NResize integer
+---@field NeResize integer
+---@field NwResize integer
+---@field SResize integer
+---@field SeResize integer
+---@field SwResize integer
+---@field WResize integer
+---@field EwResize integer
+---@field NsResize integer
+---@field NeswResize integer
+---@field NwseResize integer
+---@field ColResize integer
+---@field RowResize integer
+CursorIcon = CursorIcon
+
+CursorIcon = {
+    Default = 0,
+    Crosshair = 1,
+    Pointer = 2,
+    Text = 3,
+    VerticalText = 4,
+    Wait = 5,
+    Progress = 6,
+    NotAllowed = 7,
+    ContextMenu = 8,
+    Help = 9,
+    Cell = 10,
+    Move = 11,
+    Grab = 12,
+    Grabbing = 13,
+    Alias = 14,
+    Copy = 15,
+    NoDrop = 16,
+    AllScroll = 17,
+    ZoomIn = 18,
+    ZoomOut = 19,
+    EResize = 20,
+    NResize = 21,
+    NeResize = 22,
+    NwResize = 23,
+    SResize = 24,
+    SeResize = 25,
+    SwResize = 26,
+    WResize = 27,
+    EwResize = 28,
+    NsResize = 29,
+    NeswResize = 30,
+    NwseResize = 31,
+    ColResize = 32,
+    RowResize = 33,
+}
+
 
 
 ---@class KeyCode

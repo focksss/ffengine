@@ -9,7 +9,7 @@ use crate::app::EngineRef;
 use crate::gui::gui::GUI;
 use crate::math::Vector;
 use crate::physics::player::MovementMode;
-use crate::scripting::engine_api::client_api::client_api::{LuaKeyCode, LuaMouseButton, LuaResizeDirection};
+use crate::scripting::engine_api::client_api::client_api::{LuaCursorIcon, LuaKeyCode, LuaMouseButton, LuaResizeDirection};
 use crate::scripting::engine_api::engine_api;
 use crate::scripting::engine_api::gui_api::gui_api::{GUIRef};
 
@@ -62,6 +62,7 @@ impl Lua {
             let lua = &script_engine_ref.as_ref().unwrap().lua;
 
 
+            LuaCursorIcon::register_to_lua(lua)?;
             LuaResizeDirection::register_to_lua(lua)?;
             LuaMouseButton::register_to_lua(lua)?;
             LuaKeyCode::register_to_lua(lua)?;

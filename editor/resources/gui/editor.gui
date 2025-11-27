@@ -164,6 +164,10 @@
             {
               "method": "close_hovered",
               "script": 0
+            },
+            {
+              "method": "hover_cursor",
+              "script": 0
             }
           ],
           "unhover_actions": [
@@ -192,6 +196,10 @@
           "hover_actions": [
             {
               "method": "color_hovered",
+              "script": 0
+            },
+            {
+              "method": "hover_cursor",
               "script": 0
             }
           ],
@@ -224,6 +232,10 @@
             {
               "method": "color_hovered",
               "script": 0
+            },
+            {
+              "method": "hover_cursor",
+              "script": 0
             }
           ],
           "unhover_actions": [
@@ -254,6 +266,10 @@
             {
               "method": "color_hovered",
               "script": 0
+            },
+            {
+              "method": "hover_cursor",
+              "script": 0
             }
           ],
           "unhover_actions": [
@@ -283,6 +299,10 @@
           "hover_actions": [
             {
               "method": "color_hovered",
+              "script": 0
+            },
+            {
+              "method": "hover_cursor",
               "script": 0
             }
           ],
@@ -323,6 +343,12 @@
           "left_hold_actions": [
             {
               "method": "resize_right_area",
+              "script": 0
+            }
+          ],
+          "hover_actions": [
+            {
+              "method": "horizontal_resize_cursor",
               "script": 0
             }
           ]
@@ -377,6 +403,12 @@
             "method": "drag_resize_north",
             "script": 0
           }
+        ],
+        "hover_actions": [
+          {
+            "method": "vertical_resize_cursor",
+            "script": 0
+          }
         ]
       },
       "position": [0, 0],
@@ -391,6 +423,12 @@
         "left_hold_actions": [
           {
             "method": "drag_resize_south",
+            "script": 0
+          }
+        ],
+        "hover_actions": [
+          {
+            "method": "vertical_resize_cursor",
             "script": 0
           }
         ]
@@ -409,6 +447,12 @@
             "method": "drag_resize_west",
             "script": 0
           }
+        ],
+        "hover_actions": [
+          {
+            "method": "horizontal_resize_cursor",
+            "script": 0
+          }
         ]
       },
       "position": [0, 0],
@@ -423,6 +467,12 @@
         "left_hold_actions": [
           {
             "method": "drag_resize_east",
+            "script": 0
+          }
+        ],
+        "hover_actions": [
+          {
+            "method": "horizontal_resize_cursor",
             "script": 0
           }
         ]
@@ -442,6 +492,12 @@
             "method": "drag_resize_northwest",
             "script": 0
           }
+        ],
+        "hover_actions": [
+          {
+            "method": "nw_resize_cursor",
+            "script": 0
+          }
         ]
       },
       "position": [0, 0],
@@ -456,6 +512,12 @@
         "left_hold_actions": [
           {
             "method": "drag_resize_northeast",
+            "script": 0
+          }
+        ],
+        "hover_actions": [
+          {
+            "method": "sw_resize_cursor",
             "script": 0
           }
         ]
@@ -474,6 +536,12 @@
             "method": "drag_resize_southeast",
             "script": 0
           }
+        ],
+        "hover_actions": [
+          {
+            "method": "nw_resize_cursor",
+            "script": 0
+          }
         ]
       },
       "position": [0, 0],
@@ -488,6 +556,12 @@
         "left_hold_actions": [
           {
             "method": "drag_resize_southwest",
+            "script": 0
+          }
+        ],
+        "hover_actions": [
+          {
+            "method": "sw_resize_cursor",
             "script": 0
           }
         ]

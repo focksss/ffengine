@@ -54,7 +54,8 @@ impl GUI {
         &mut self,
         node_index: usize,
         min: Vector,
-        max: Vector
+        max: Vector,
+        has_triggered_hover: &mut bool,
     ) -> GUIInteractionResult {
         let mut result = GUIInteractionResult::None;
 
@@ -92,12 +93,15 @@ impl GUI {
                 )
             }
         } else {
-            for hover_action in interactable_information.hover_actions.iter() {
-                Lua::cache_call(
-                    hover_action.1,
-                    hover_action.0.as_str(),
-                    Some(self.active_node)
-                )
+            if !*has_triggered_hover {
+                *has_triggered_hover = true;
+                for hover_action in interactable_information.hover_actions.iter() {
+                    Lua::cache_call(
+                        hover_action.1,
+                        hover_action.0.as_str(),
+                        Some(self.active_node)
+                    )
+                }
             }
         }
 
@@ -903,9 +907,10 @@ impl GUI {
         self.device.cmd_end_render_pass(command_buffer);
         self.pass.borrow().transition_to_readable(command_buffer, current_frame);
 
+        let mut has_hover_actioned = false;
         for parameter_set in interactable_action_parameter_sets.iter().rev() {
             self.active_node = parameter_set.0;
-            match self.handle_gui_interaction(parameter_set.0, parameter_set.1, parameter_set.2) {
+            match self.handle_gui_interaction(parameter_set.0, parameter_set.1, parameter_set.2, &mut has_hover_actioned) {
                 GUIInteractionResult::None => (),
                 _ => {
                     return

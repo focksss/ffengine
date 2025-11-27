@@ -5,7 +5,7 @@ use winit::dpi::PhysicalPosition;
 use winit::event::MouseButton;
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::keyboard::NativeKey::MacOS;
-use winit::window::{CursorGrabMode, ResizeDirection};
+use winit::window::{CursorGrabMode, CursorIcon, ResizeDirection};
 use crate::client::client::{Client, Flags};
 use crate::math::Vector;
 use crate::physics::player::PlayerPointer;
@@ -118,6 +118,10 @@ impl UserData for ClientRef {
             let mouse_button = MouseButton::from(key.0);
             Ok(this.0.borrow().pressed_mouse_buttons.contains(&mouse_button))
         });
+
+        methods.add_method("set_cursor_icon", |_, this, icon: LuaCursorIcon| {
+            Ok(this.0.borrow().window.set_cursor_icon(icon.0))
+        });
     }
 }
 
@@ -207,6 +211,7 @@ impl<'lua> FromLua<'lua> for LuaMouseButton {
         })
     }
 }
+
 pub struct LuaKeyCode(pub KeyCode);
 impl RegisterToLua for LuaKeyCode {
     fn register_to_lua(lua: &mlua::Lua) -> mlua::Result<()> {
@@ -246,6 +251,7 @@ impl<'lua> FromLua<'lua> for LuaKeyCode {
         })
     }
 }
+
 pub struct LuaResizeDirection(pub ResizeDirection);
 impl RegisterToLua for LuaResizeDirection {
     fn register_to_lua(lua: &mlua::Lua) -> mlua::Result<()> {
@@ -285,6 +291,85 @@ impl<'lua> FromLua<'lua> for LuaResizeDirection {
         })
     }
 }
+
+pub struct LuaCursorIcon(pub CursorIcon);
+impl RegisterToLua for LuaCursorIcon {
+    fn register_to_lua(lua: &mlua::Lua) -> mlua::Result<()> {
+        let globals = lua.globals();
+        let table = lua.create_table()?;
+        for (idx, key) in ALL_CURSOR_ICONS.iter().enumerate() {
+            table.set(format!("{:?}", key), idx as u32)?;
+        }
+        globals.set("CursorIcon", table)?;
+        Ok(())
+    }
+}
+impl<'lua> IntoLua<'lua> for LuaCursorIcon {
+    fn into_lua(self, lua: &'lua mlua::Lua) -> mlua::Result<Value<'lua>> {
+        let index = ALL_CURSOR_ICONS
+            .iter()
+            .position(|k| *k == self.0)
+            .ok_or_else(|| mlua::Error::ToLuaConversionError {
+                from: "LuaCursorIcon",
+                to: "Value",
+                message: Some("CursorIcon not found in ALL_CURSOR_ICONS".into()),
+            })?;
+        (index as u32).into_lua(lua)
+    }
+}
+impl<'lua> FromLua<'lua> for LuaCursorIcon {
+    fn from_lua(value: Value<'lua>, _: &'lua mlua::Lua) -> mlua::Result<Self> {
+        if let Value::Integer(i) = value {
+            if i >= 0 && (i as usize) < ALL_CURSOR_ICONS.len() {
+                return Ok(LuaCursorIcon(ALL_CURSOR_ICONS[i as usize]));
+            }
+        }
+        Err(mlua::Error::FromLuaConversionError {
+            from: value.type_name(),
+            to: "LuaCursorIcon",
+            message: Some("invalid CursorIcon value".into()),
+        })
+    }
+}
+
+const ALL_CURSOR_ICONS: &[CursorIcon] = &[
+    CursorIcon::Default,
+    CursorIcon::Crosshair,
+    CursorIcon::Pointer,
+    CursorIcon::Text,
+    CursorIcon::VerticalText,
+    CursorIcon::Wait,
+    CursorIcon::Progress,
+    CursorIcon::NotAllowed,
+    CursorIcon::ContextMenu,
+    CursorIcon::Help,
+    CursorIcon::Cell,
+    CursorIcon::Move,
+    CursorIcon::Grab,
+    CursorIcon::Grabbing,
+    CursorIcon::Alias,
+    CursorIcon::Copy,
+    CursorIcon::NoDrop,
+    CursorIcon::AllScroll,
+    CursorIcon::ZoomIn,
+    CursorIcon::ZoomOut,
+
+    CursorIcon::EResize,
+    CursorIcon::NResize,
+    CursorIcon::NeResize,
+    CursorIcon::NwResize,
+    CursorIcon::SResize,
+    CursorIcon::SeResize,
+    CursorIcon::SwResize,
+    CursorIcon::WResize,
+    CursorIcon::EwResize,
+    CursorIcon::NsResize,
+    CursorIcon::NeswResize,
+    CursorIcon::NwseResize,
+
+    CursorIcon::ColResize,
+    CursorIcon::RowResize,
+];
 const ALL_RESIZE_DIRECTIONS: &[ResizeDirection] = &[
     ResizeDirection::East,
     ResizeDirection::North,

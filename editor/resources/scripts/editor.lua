@@ -10,6 +10,24 @@ local scene_view_node_index = 8
 local minimize_button_index = 2
 local maximize_button_index = 3
 
+local target_cursor_icon = CursorIcon.Default
+
+function horizontal_resize_cursor()
+	target_cursor_icon = CursorIcon.EResize
+end
+function vertical_resize_cursor()
+	target_cursor_icon = CursorIcon.NResize
+end
+function hover_cursor()
+	target_cursor_icon = CursorIcon.Pointer
+end
+function nw_resize_cursor()
+	target_cursor_icon = CursorIcon.NwResize
+end
+function sw_resize_cursor()
+	target_cursor_icon = CursorIcon.SwResize
+end
+
 function drag_resize_north()
 	resize_called_this_tick = true
 	Engine.client:drag_resize_window(ResizeDirection.North)
@@ -114,6 +132,9 @@ function Update()
 	local maximized = Engine.client.maximized
 	Engine.renderer.gui:get_node(minimize_button_index).hidden = not maximized
 	Engine.renderer.gui:get_node(maximize_button_index).hidden = maximized
+
+	Engine.client:set_cursor_icon(target_cursor_icon)
+	target_cursor_icon = CursorIcon.Default
 
 	if not resize_called_this_tick and resize_called_last_tick then
 		local scene_viewport = Engine.renderer.scene_renderer.viewport
