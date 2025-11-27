@@ -31,7 +31,7 @@ pub struct Client {
     pub new_pressed_keys: HashSet<PhysicalKey>,
 
     pub pressed_mouse_buttons: HashSet<MouseButton>,
-
+    pub new_pressed_mouse_buttons: HashSet<MouseButton>,
     /// Set to the last pressed button, to be used in scripts responding to MouseButtonPressed
     pub button_pressed: MouseButton,
     /// Set to the last released button, to be used in scripts responding to MouseButtonReleased
@@ -57,6 +57,7 @@ impl Client {
             pressed_keys: Default::default(),
             new_pressed_keys: Default::default(),
             pressed_mouse_buttons: Default::default(),
+            new_pressed_mouse_buttons: Default::default(),
             mouse_delta: (0.0, 0.0),
             scroll_delta: (0.0, 0.0),
             cursor_locked: false,
@@ -72,6 +73,7 @@ impl Client {
     ) {
         self.scroll_delta = (0.0, 0.0);
         self.new_pressed_keys.clear();
+        self.new_pressed_mouse_buttons.clear();
     }
 
     pub fn handle_event<T>(controller_ref: Arc<RefCell<Client>>, event: Event<T>) {
@@ -120,14 +122,16 @@ impl Client {
                 } => {
                     match state {
                         ElementState::Pressed => {
+                            if !controller.pressed_mouse_buttons.contains(&button) { controller.new_pressed_mouse_buttons.insert(button.clone()); }
+                            controller.pressed_mouse_buttons.insert(button.clone());
                             controller.button_pressed = button;
                             should_mouse_button_pressed_event = true;
-                            if !controller.pressed_mouse_buttons.contains(&button) { controller.pressed_mouse_buttons.insert(button.clone()); }
                         }
                         ElementState::Released => {
+                            controller.new_pressed_mouse_buttons.remove(&button);
+                            controller.pressed_mouse_buttons.remove(&button);
                             controller.button_released = button;
                             should_mouse_button_released_event = true;
-                            if controller.pressed_mouse_buttons.contains(&button) { controller.pressed_mouse_buttons.remove(&button); }
                         }
                     }
                 }

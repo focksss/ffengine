@@ -56,6 +56,24 @@ impl UserData for ClientRef {
             Ok(())
         });
 
+        fields.add_field_method_get("maximized", |_, this| {
+            Ok(this.0.borrow().window.is_maximized())
+        });
+        fields.add_field_method_set("maximized", |_, this, val: bool| {
+            let borrowed = &mut this.0.borrow_mut();
+            borrowed.window.set_maximized(val);
+            Ok(())
+        });
+
+        fields.add_field_method_get("minimized", |_, this| {
+            Ok(this.0.borrow().window.is_minimized())
+        });
+        fields.add_field_method_set("minimized", |_, this, val: bool| {
+            let borrowed = &mut this.0.borrow_mut();
+            borrowed.window.set_minimized(val);
+            Ok(())
+        });
+
         fields.add_field_method_get("window_size", |_, this| {
             let borrowed = this.0.borrow();
             let window = borrowed.window.clone();

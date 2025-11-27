@@ -173,11 +173,6 @@ impl Engine {
 
                         Lua::run_update_methods().expect("Failed to run Update methods");
                         {
-                            {
-                                let mut controller_mut = self.client.borrow_mut();
-                                controller_mut.reset_deltas()
-                            };
-
                             if self.client.borrow().flags.borrow().do_physics { self.physics_engine.borrow_mut().tick(delta_time, &mut self.world.borrow_mut()); }
                         }
 
@@ -226,6 +221,10 @@ impl Engine {
                                 Lua::run_cache(&engine_ref);
                             },
                         );
+                        {
+                            let mut controller_mut = self.client.borrow_mut();
+                            controller_mut.reset_deltas()
+                        };
 
                         let wait_semaphores = [current_rendering_complete_semaphore];
                         let swapchains = [base.swapchain];

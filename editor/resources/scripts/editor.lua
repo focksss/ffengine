@@ -4,8 +4,11 @@ local initial_value = Vector.new()
 local resize_called_last_tick = false
 local resize_called_this_tick = false
 
-local right_area_node_index = 3
-local scene_view_node_index = 5
+local right_area_node_index = 6
+local scene_view_node_index = 8
+
+local minimize_button_index = 2
+local maximize_button_index = 3
 
 function drag_resize_north()
 	resize_called_this_tick = true
@@ -54,15 +57,25 @@ function close_hovered()
 end
 
 function color_hovered()
-	Engine.renderer.gui.ActiveNode.quad:set_color(0.3, 0.3, 0.3, 1.0)
+	Engine.renderer.gui.ActiveNode.quad:set_color(2.0, 2.0, 2.0, 0.15)
 end
 
 function color_unhovered()
-	Engine.renderer.gui.ActiveNode.quad:set_color(0.0, 0.0, 0.0, 0.0)
+	Engine.renderer.gui.ActiveNode.quad:set_color(1.0, 1.0, 1.0, 0.0)
 end
 
 function drag_window() 
 	Engine.client:drag_window()
+end
+
+function maximize()
+	Engine.client.maximized = true
+end
+function minimize()
+	Engine.client.maximized = false
+end
+function minimize_window()
+	Engine.client.minimized = true
 end
 
 function resize_right_area()
@@ -97,6 +110,10 @@ function Update()
 	local gui = Engine.renderer.gui
 	local window_size = Engine.client.window_size
 	local right_area_node = gui:get_node(right_area_node_index)
+
+	local maximized = Engine.client.maximized
+	Engine.renderer.gui:get_node(minimize_button_index).hidden = not maximized
+	Engine.renderer.gui:get_node(maximize_button_index).hidden = maximized
 
 	if not resize_called_this_tick and resize_called_last_tick then
 		local scene_viewport = Engine.renderer.scene_renderer.viewport

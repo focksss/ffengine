@@ -38,6 +38,7 @@ MovementMode = {
             ---@field text GUIText
             ---@field position Vector
             ---@field scale Vector
+            ---@field hidden boolean
 
                 ---@class GUIQuad
                 ---@field set_color fun(self:GUIQuad, r:number, g:number, b:number, a:number):nil
@@ -69,6 +70,8 @@ MovementMode = {
     ---@field mouse_button_pressed fun(self:Client, button: integer):boolean
     ---@field drag_window fun(self:Client):nil
     ---@field drag_resize_window fun(self:Client, direction:integer):nil
+    ---@field maximized boolean
+    ---@field minimized boolean
 
         ---@class Flags
         ---@field pause_rendering boolean

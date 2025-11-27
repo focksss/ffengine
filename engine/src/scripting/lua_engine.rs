@@ -272,6 +272,10 @@ impl Lua {
         self.cached_calls.push((script_index, method_name.to_string(), call_index.unwrap_or(0)));
     }
 
+    pub fn clear_cache() {
+        Self::with_mut(|lua| lua.cached_calls.clear());
+    }
+
     pub fn run_cache(
         engine: &EngineRef,
     ) {

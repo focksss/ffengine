@@ -29,7 +29,7 @@ enum GUIInteractionResult {
 pub struct GUI {
     device: ash::Device,
     window: Arc<winit::window::Window>,
-    pub controller: Arc<RefCell<Client>>,
+    controller: Arc<RefCell<Client>>,
     null_tex_info: vk::DescriptorImageInfo,
 
     pub pass: Arc<RefCell<Pass>>,
@@ -50,7 +50,12 @@ pub struct GUI {
     pub active_node: usize,
 }
 impl GUI {
-    pub fn handle_gui_interaction(&mut self, node_index: usize, min: Vector, max: Vector) -> GUIInteractionResult {
+    fn handle_gui_interaction(
+        &mut self,
+        node_index: usize,
+        min: Vector,
+        max: Vector
+    ) -> GUIInteractionResult {
         let mut result = GUIInteractionResult::None;
 
         let node = &mut self.gui_nodes[node_index];
@@ -64,12 +69,13 @@ impl GUI {
             )
         }
 
-        let (x, y, left_pressed) = {
-            let controller = self.controller.borrow();
-            let x = controller.cursor_position.x as f32;
-            let y = self.window.inner_size().height as f32 - controller.cursor_position.y as f32;
-            let left_pressed = controller.pressed_mouse_buttons.contains(&MouseButton::Left);
-            (x, y, left_pressed)
+        let (x, y, left_pressed, left_just_pressed) = {
+            let client = self.controller.borrow();
+            let x = client.cursor_position.x as f32;
+            let y = self.window.inner_size().height as f32 - client.cursor_position.y as f32;
+            let left_pressed = client.pressed_mouse_buttons.contains(&MouseButton::Left);
+            let left_just_pressed = client.new_pressed_mouse_buttons.contains(&MouseButton::Left);
+            (x, y, left_pressed, left_just_pressed)
         };
 
         let hovered = if
@@ -95,20 +101,16 @@ impl GUI {
             }
         }
 
-        if !interactable_information.was_pressed_last_frame && left_pressed && hovered {
-            interactable_information.was_pressed_last_frame = true;
-            result = GUIInteractionResult::LeftTap;
-            for left_tap_action in interactable_information.left_tap_actions.clone().iter() {
-                Lua::cache_call(
-                    left_tap_action.1,
-                    left_tap_action.0.as_str(),
-                    Some(self.active_node)
-                )
-            }
+        if left_just_pressed && hovered {
+            interactable_information.was_initially_pressed = true;
         }
 
-        if left_pressed && interactable_information.was_pressed_last_frame {
-            result = GUIInteractionResult::LeftHold;
+        // discard any buttons that happen to be hovered over while holding another down
+        if !interactable_information.was_initially_pressed {
+            return result;
+        }
+
+        if left_pressed {
             for left_hold_action in interactable_information.left_hold_actions.clone().iter() {
                 Lua::cache_call(
                     left_hold_action.1,
@@ -116,10 +118,19 @@ impl GUI {
                     Some(self.active_node)
                 )
             }
-        }
-
-        if !left_pressed {
-            interactable_information.was_pressed_last_frame = false;
+            return GUIInteractionResult::LeftHold;
+        } else {
+            if hovered {
+                result = GUIInteractionResult::LeftTap;
+                for left_tap_action in interactable_information.left_tap_actions.clone().iter() {
+                    Lua::cache_call(
+                        left_tap_action.1,
+                        left_tap_action.0.as_str(),
+                        Some(self.active_node)
+                    )
+                }
+            }
+            interactable_information.was_initially_pressed = false;
         }
 
         result
@@ -729,7 +740,7 @@ impl GUI {
                 }
 
                 let temp = GUIInteractableInformation {
-                    was_pressed_last_frame: false,
+                    was_initially_pressed: false,
 
                     passive_actions: interactable_passive_actions,
                     hover_actions: interactable_hover_actions,
@@ -1127,15 +1138,15 @@ pub struct GUINode {
 }
 #[derive(Clone)]
 pub struct GUIInteractableInformation {
-    pub was_pressed_last_frame: bool,
+    was_initially_pressed: bool,
 
-    pub passive_actions: Vec<(String, usize)>,
-    pub hover_actions: Vec<(String, usize)>,
-    pub unhover_actions: Vec<(String, usize)>,
-    pub left_tap_actions: Vec<(String, usize)>,
-    pub left_hold_actions: Vec<(String, usize)>,
-    pub right_tap_actions: Vec<(String, usize)>,
-    pub right_hold_actions: Vec<(String, usize)>,
+    passive_actions: Vec<(String, usize)>,
+    hover_actions: Vec<(String, usize)>,
+    unhover_actions: Vec<(String, usize)>,
+    left_tap_actions: Vec<(String, usize)>,
+    left_hold_actions: Vec<(String, usize)>,
+    right_tap_actions: Vec<(String, usize)>,
+    right_hold_actions: Vec<(String, usize)>,
 }
 
 /**

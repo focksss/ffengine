@@ -2,7 +2,7 @@
   "guis": [
     {
       "name": "editor",
-      "nodes": [0, 3, 5, 8, 9, 10, 11, 12, 13, 14, 15]
+      "nodes": [0, 6, 8, 11, 12, 13, 14, 15, 16, 17, 18]
     }
   ],
   "scripts": [
@@ -24,6 +24,18 @@
     },
     {
       "uri": "editor\\resources\\gui\\images\\close.png",
+      "alpha_threshold": 0.1
+    },
+    {
+      "uri": "editor\\resources\\gui\\images\\minimize.png",
+      "alpha_threshold": 0.1
+    },
+    {
+      "uri": "editor\\resources\\gui\\images\\maximize.png",
+      "alpha_threshold": 0.1
+    },
+    {
+      "uri": "editor\\resources\\gui\\images\\minimize_window.png",
       "alpha_threshold": 0.1
     }
   ],
@@ -50,7 +62,7 @@
       "scale": [1.0, 1.0],
       "clip_min": [0.0, 0.0],
       "clip_max": [1.0, 1.0],
-      "color": [0.3, 0.3, 0.3, 0.0],
+      "color": [0.0, 0.0, 0.0, 0.0],
       "corner_radius": 5.0,
       "image": 0
     },
@@ -69,6 +81,33 @@
       "clip_max": [1.0, 1.0],
       "color": [0.3, 0.3, 0.3, 0.4],
       "corner_radius": 5.0
+    },
+    {
+      "position": [0.0, 0.0],
+      "scale": [1.0, 1.0],
+      "clip_min": [0.0, 0.0],
+      "clip_max": [1.0, 1.0],
+      "color": [0.0, 0.0, 0.0, 0.0],
+      "corner_radius": 5.0,
+      "image": 2
+    },
+    {
+      "position": [0.0, 0.0],
+      "scale": [1.0, 1.0],
+      "clip_min": [0.0, 0.0],
+      "clip_max": [1.0, 1.0],
+      "color": [0.0, 0.0, 0.0, 0.0],
+      "corner_radius": 5.0,
+      "image": 3
+    },
+    {
+      "position": [0.0, 0.0],
+      "scale": [1.0, 1.0],
+      "clip_min": [0.0, 0.0],
+      "clip_max": [1.0, 1.0],
+      "color": [0.0, 0.0, 0.0, 0.0],
+      "corner_radius": 5.0,
+      "image": 4
     }
   ],
   "texts": [
@@ -110,7 +149,7 @@
           }
         ]
       },
-      "children": [1, 2],
+      "children": [1, 2, 3, 4, 5],
       "position": [0, 0],
       "scale": [1.0, 40.0],
       "anchor_point": "top_left",
@@ -148,6 +187,97 @@
         "quad": 1
       },
       {
+        "name": "minimize_button",
+        "interactable_information": {
+          "hover_actions": [
+            {
+              "method": "color_hovered",
+              "script": 0
+            }
+          ],
+          "unhover_actions": [
+            {
+              "method": "color_unhovered",
+              "script": 0
+            }
+          ],
+          "left_tap_actions": [
+            {
+              "method": "minimize",
+              "script": 0
+            }
+          ]
+        },
+        "children": [],
+        "position": [-40, 0],
+        "scale": [40.0, 1.0],
+        "anchor_point": "top_right",
+        "absolute_position": [true, true],
+        "absolute_scale": [true, false],
+        "quad": 5,
+        "hidden": true
+      },
+      {
+        "name": "maximize_button",
+        "interactable_information": {
+          "hover_actions": [
+            {
+              "method": "color_hovered",
+              "script": 0
+            }
+          ],
+          "unhover_actions": [
+            {
+              "method": "color_unhovered",
+              "script": 0
+            }
+          ],
+          "left_tap_actions": [
+            {
+              "method": "maximize",
+              "script": 0
+            }
+          ]
+        },
+        "children": [],
+        "position": [-40, 0],
+        "scale": [40.0, 1.0],
+        "anchor_point": "top_right",
+        "absolute_position": [true, true],
+        "absolute_scale": [true, false],
+        "quad": 6
+      },
+      {
+        "name": "minimize_window_button",
+        "interactable_information": {
+          "hover_actions": [
+            {
+              "method": "color_hovered",
+              "script": 0
+            }
+          ],
+          "unhover_actions": [
+            {
+              "method": "color_unhovered",
+              "script": 0
+            }
+          ],
+          "left_tap_actions": [
+            {
+              "method": "minimize_window",
+              "script": 0
+            }
+          ]
+        },
+        "children": [],
+        "position": [-80, 0],
+        "scale": [40.0, 1.0],
+        "anchor_point": "top_right",
+        "absolute_position": [true, true],
+        "absolute_scale": [true, false],
+        "quad": 7
+      },
+      {
         "name": "run_button",
         "interactable_information": {
           "hover_actions": [
@@ -179,7 +309,7 @@
       },
     {
       "name": "right_area",
-      "children": [4],
+      "children": [7],
       "position": [0, -40],
       "scale": [200.0, 1000.0],
       "anchor_point": "top_right",
@@ -204,7 +334,7 @@
       },
     {
       "name": "scene_view",
-      "children": [6],
+      "children": [9],
       "position": [0, 0],
       "scale": [1920, 1040],
       "anchor_point": "bottom_left",
@@ -212,7 +342,7 @@
     },
       {
         "name": "hud",
-        "children": [7],
+        "children": [10],
         "position": [20, -10],
         "scale": [80, 20],
         "absolute_scale": [true, true],
