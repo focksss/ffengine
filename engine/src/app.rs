@@ -18,7 +18,7 @@ use crate::render::render::{Renderer, MAX_FRAMES_IN_FLIGHT};
 use crate::render::vulkan_base::{record_submit_commandbuffer, VkBase};
 use crate::scripting::lua_engine::Lua;
 use crate::world::camera::{Camera, CameraPointer};
-use crate::world::scene::{Light, Model, Scene};
+use crate::world::scene::{Light, Model, World};
 
 const PI: f32 = std::f32::consts::PI;
 
@@ -33,14 +33,14 @@ pub fn get_command_buffer() -> vk::CommandBuffer {
 
 pub struct Engine {
     pub base: VkBase,
-    pub world: Arc<RefCell<Scene>>,
+    pub world: Arc<RefCell<World>>,
     pub renderer: Arc<RefCell<Renderer>>,
     pub physics_engine: Arc<RefCell<PhysicsEngine>>,
     pub client: Arc<RefCell<Client>>,
 }
 #[derive(Clone)]
 pub struct EngineRef {
-    pub world: Arc<RefCell<Scene>>,
+    pub world: Arc<RefCell<World>>,
     pub renderer: Arc<RefCell<Renderer>>,
     pub physics_engine: Arc<RefCell<PhysicsEngine>>,
     pub client: Arc<RefCell<Client>>,
@@ -48,7 +48,7 @@ pub struct EngineRef {
 impl Engine {
     pub unsafe fn new() -> Engine {
         let base = VkBase::new("ffengine".to_string(), 1920, 1080, MAX_FRAMES_IN_FLIGHT).unwrap();
-        let mut world = Scene::new(&base);
+        let mut world = World::new(&base);
         unsafe { world.initialize(&base) }
         let world = Arc::new(RefCell::new(world));
         let physics_engine = Arc::new(RefCell::new(PhysicsEngine::new(Vector::new3(0.0, -9.8, 0.0), 0.9, 0.5)));

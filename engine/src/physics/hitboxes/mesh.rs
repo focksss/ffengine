@@ -8,7 +8,7 @@ use crate::world::scene::{Mesh, Vertex};
 pub struct MeshCollider {
     pub mesh: Rc<RefCell<Mesh>>,
     pub current_scale_multiplier: f32,
-    pub(crate) current_scale_factor: Vector,
+    pub current_scale_factor: Vector,
     pub bvh: Rc<RefCell<Bvh>>,
 }
 impl MeshCollider {

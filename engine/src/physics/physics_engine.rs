@@ -8,7 +8,7 @@ use crate::physics::hitboxes::hitbox::Hitbox;
 use crate::physics::hitboxes::mesh::{Bvh, MeshCollider};
 use crate::physics::player::{MovementMode, Player};
 pub(crate) use crate::physics::rigid_body::RigidBody;
-use crate::world::scene::{Node, Scene, Vertex};
+use crate::world::scene::{Node, World, Vertex};
 
 const MAX_ITERATIONS: usize = 5;
 const MIN_MOVE_THRESHOLD: f32 = 0.001;
@@ -39,7 +39,7 @@ impl PhysicsEngine {
     /// * 2 = Capsule
     /// * 3 = Sphere
     /// * 4 = ConvexHull
-    pub fn add_all_nodes_from_model(&mut self, world: &Scene, model_index: usize, hitbox_type: usize) {
+    pub fn add_all_nodes_from_model(&mut self, world: &World, model_index: usize, hitbox_type: usize) {
         assert!(hitbox_type < 5);
         let model = &world.models[model_index];
         for (node_index, node) in model.nodes.iter().enumerate() {
@@ -55,7 +55,7 @@ impl PhysicsEngine {
     }
 
 
-    pub fn tick(&mut self, delta_time: f32, world: &mut Scene) {
+    pub fn tick(&mut self, delta_time: f32, world: &mut World) {
         for body in &mut self.rigid_bodies {
             if body.is_static {
                 body.update_this_according_to_coupled(world);

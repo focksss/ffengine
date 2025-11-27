@@ -22,6 +22,9 @@ MovementMode = {
 ---@field renderer Renderer
 ---@field client Client
 ---@field physics_engine PhysicsEngine
+---@field scene Scene
+
+    ---@class Scene
 
     ---@class Renderer
     ---@field gui GUI

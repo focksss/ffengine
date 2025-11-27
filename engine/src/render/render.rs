@@ -18,7 +18,7 @@ use crate::render::render_helper::{Descriptor, DescriptorCreateInfo, DescriptorS
 use crate::render::scene_renderer::SceneRenderer;
 use crate::render::vulkan_base::{compile_shaders, find_memorytype_index, VkBase};
 use crate::world::camera::{Camera, CameraPointer};
-use crate::world::scene::Scene;
+use crate::world::scene::World;
 
 pub const MAX_FRAMES_IN_FLIGHT: usize = 3;
 
@@ -100,7 +100,7 @@ impl Renderer {
 
         renderer
     } }
-    unsafe fn create_rendering_objects(base: &VkBase, world: &Scene, scene_viewport: vk::Viewport) -> (Arc<RefCell<SceneRenderer>>, Renderpass, Renderpass, Renderpass) { unsafe {
+    unsafe fn create_rendering_objects(base: &VkBase, world: &World, scene_viewport: vk::Viewport) -> (Arc<RefCell<SceneRenderer>>, Renderpass, Renderpass, Renderpass) { unsafe {
         let texture_sampler_create_info = DescriptorCreateInfo::new(base)
             .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
             .shader_stages(ShaderStageFlags::FRAGMENT);
@@ -175,7 +175,7 @@ impl Renderer {
             hitbox_renderpass
         )
     } }
-    pub unsafe fn reload(&mut self, base: &VkBase, world: &Scene) { unsafe {
+    pub unsafe fn reload(&mut self, base: &VkBase, world: &World) { unsafe {
         self.device.device_wait_idle().unwrap();
 
 
@@ -260,7 +260,7 @@ impl Renderer {
         &mut self,
         current_frame: usize,
         present_index: usize,
-        world: Arc<RefCell<Scene>>,
+        world: Arc<RefCell<World>>,
         render_hitboxes: bool,
         physics_engine: &PhysicsEngine
     ) { unsafe {

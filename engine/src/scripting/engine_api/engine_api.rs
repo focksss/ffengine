@@ -3,6 +3,7 @@ use crate::app::EngineRef;
 use crate::scripting::engine_api::client_api::client_api::ClientRef;
 use crate::scripting::engine_api::physics_api::physics_engine_api::PhysicsEngineRef;
 use crate::scripting::engine_api::render_api::render_api::RendererRef;
+//use crate::scripting::engine_api::world_api::scene_api::SceneRef;
 use crate::scripting::lua_engine::Lua;
 
 impl UserData for EngineRef {
@@ -19,6 +20,10 @@ impl UserData for EngineRef {
             let object = PhysicsEngineRef(this.physics_engine.clone());
             lua.create_userdata(object)
         });
+        // fields.add_field_method_get("scene", |lua, this| {
+        //     let object = SceneRef(this.world.clone());
+        //     lua.create_userdata(object)
+        // });
     }
     fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
         methods.add_method_mut("queue_script_reload", |lua, this, ()| {

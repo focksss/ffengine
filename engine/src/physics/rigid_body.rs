@@ -5,7 +5,7 @@ use crate::math::Vector;
 use crate::physics::hitboxes::hitbox::{Hitbox, HitboxType};
 use crate::physics::hitboxes::sphere::Sphere;
 use crate::physics::physics_engine::{AxisType, ContactInformation, ContactPoint, PhysicsEngine};
-use crate::world::scene::{Node, Scene, Vertex};
+use crate::world::scene::{Node, World, Vertex};
 
 #[derive(Clone)]
 pub struct RigidBodyPointer {
@@ -49,7 +49,7 @@ impl RigidBody {
         body.update_shape_properties();
         body
     }
-    pub fn update_this_according_to_coupled(&mut self, world: &Scene)  {
+    pub fn update_this_according_to_coupled(&mut self, world: &World)  {
         if let Some(coupled_object) = self.coupled_with_scene_object {
             let node = &world.models[coupled_object.0].nodes[coupled_object.1];
             let node_scale = node.world_transform.extract_scale();
@@ -68,7 +68,7 @@ impl RigidBody {
             }
         }
     }
-    pub fn update_coupled_according_to_this(&self, world: &mut Scene) {
+    pub fn update_coupled_according_to_this(&self, world: &mut World) {
         if let Some(coupled_object) = self.coupled_with_scene_object {
             let node = &mut world.models[coupled_object.0].nodes[coupled_object.1];
 

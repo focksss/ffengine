@@ -22,14 +22,26 @@ const MAX_INSTANCES: u64 = 10u64 * 10u64.pow(4); // 5 for bistro
 const MAX_MATERIALS: u64 = 10u64 * 10u64.pow(4);
 const MAX_JOINTS: u64 = 10u64 * 10u64.pow(4);
 const MAX_LIGHTS: u64 = 10u64 * 10u64.pow(3);
-pub struct Scene {
+pub struct World {
     pub device: ash::Device,
 
     pub cameras: Vec<Camera>,
-
-    pub models: Vec<Model>,
     pub lights: Vec<Light>,
     pub sun: Sun,
+
+    pub models: Vec<Model>,
+
+    pub nodes: Vec<Node>,
+    pub meshes: Vec<Mesh>,
+    pub materials: Vec<Material>,
+    pub textures: Vec<SceneTexture>,
+    pub images: Vec<Image>,
+    pub skins: Vec<Skin>,
+    pub animations: Vec<Animation>,
+    pub accessors: Vec<Accessor>,
+    pub buffer_views: Vec<BufferView>,
+    pub buffers: Vec<Buffer>,
+    pub scenes: Vec<GltfScene>,
 
     pub texture_count: i32,
 
@@ -63,16 +75,28 @@ pub struct Scene {
     pub dirty_instances: Vec<usize>,
     pub primitive_count: usize,
 }
-impl Scene {
+impl World {
     pub fn new(base: &VkBase) -> Self {
         Self {
             device: base.device.clone(),
 
             cameras: Vec::new(),
-
-            models: Vec::new(),
             lights: Vec::new(),
             sun: Sun::new_sun(Vector::new3(-1.0, -5.0, -1.0), Vector::new3(0.98, 0.84, 0.64)),
+
+            models: Vec::new(),
+
+            nodes: Vec::new(),
+            meshes: Vec::new(),
+            materials: Vec::new(),
+            textures: Vec::new(),
+            images: Vec::new(),
+            skins: Vec::new(),
+            animations: Vec::new(),
+            accessors: Vec::new(),
+            buffer_views: Vec::new(),
+            buffers: Vec::new(),
+            scenes: Vec::new(),
 
             texture_count: 0,
             index_buffer: (vk::Buffer::null(), DeviceMemory::null()),
@@ -603,22 +627,22 @@ pub struct SunSendable {
     pub _pad1: u32,
 }
 
-pub struct Model {
+pub struct ModelContainer {
     pub extensions_used: Vec<String>,
     pub scene: Rc<GltfScene>,
     pub scenes: Vec<Rc<GltfScene>>,
     pub animations: Vec<Animation>,
     pub skins: Vec<Skin>,
     pub nodes: Vec<Node>,
-    pub meshes: Vec<Rc<RefCell<Mesh>>>,
+    pub meshes: Vec<Mesh>,
     pub materials: Vec<Material>,
-    pub textures: Vec<Rc<RefCell<SceneTexture>>>,
-    pub images: Vec<Rc<RefCell<Image>>>,
-    pub accessors: Vec<Rc<Accessor>>,
-    pub buffer_views: Vec<Rc<BufferView>>,
-    pub buffers: Vec<Rc<Buffer>>,
+    pub textures: Vec<SceneTexture>,
+    pub images: Vec<Image>,
+    pub accessors: Vec<Accessor>,
+    pub buffer_views: Vec<BufferView>,
+    pub buffers: Vec<Buffer>,
 }
-impl Model {
+impl ModelContainer {
     pub fn new(path: &str) -> Self {
         let json = json::parse(fs::read_to_string(path).expect("failed to load json file").as_str()).expect("json parse error");
 
@@ -630,21 +654,21 @@ impl Model {
         let mut buffers = Vec::new();
         for buffer in json["buffers"].members() {
             buffers.push(
-                Rc::new(Buffer::new(
+                Buffer::new(
                     resolve_gltf_uri(path, buffer["uri"].as_str().unwrap()),
                     buffer["byteLength"].as_usize().unwrap()
-                )))
+                ))
         }
 
         let mut buffer_views = Vec::new();
         for buffer_view in json["bufferViews"].members() {
             buffer_views.push(
-                Rc::new(BufferView {
+                BufferView {
                     buffer: buffers[buffer_view["buffer"].as_usize().unwrap()].clone(),
                     byte_length: buffer_view["byteLength"].as_usize().unwrap(),
                     byte_offset: buffer_view["byteOffset"].as_usize().unwrap_or(0),
                     target: buffer_view["target"].as_usize().unwrap_or(0)
-                }))
+                })
         }
 
         let mut accessors = Vec::new();
@@ -1394,14 +1418,14 @@ impl Buffer {
 }
 
 pub struct BufferView {
-    pub buffer: Rc<Buffer>,
+    pub buffer: usize,
     pub byte_length: usize,
     pub byte_offset: usize,
     pub target: usize,
 }
 
 pub struct Accessor {
-    pub buffer_view: Rc<BufferView>,
+    pub buffer_view: usize,
     pub component_type: ComponentType,
     pub count: usize,
     pub r#type: String,
@@ -1472,7 +1496,7 @@ impl SceneSampler {
 }
 
 pub struct SceneTexture {
-    pub source: Rc<RefCell<Image>>,
+    pub source: usize,
     pub sampler: Sampler,
     pub sampler_info: SceneSampler,
 }
@@ -1645,8 +1669,8 @@ impl ComponentType {
     }
 }
 pub struct Primitive {
-    pub attributes: Vec<(String, Rc<Accessor>)>,
-    pub indices: Rc<Accessor>,
+    pub attributes: Vec<(String, usize)>, // ... + accessor
+    pub indices: usize, // accesor
 
     pub material_index: u32,
     pub id: usize,
@@ -1958,7 +1982,7 @@ impl Instance {
 
 pub struct Mesh {
     pub name: String,
-    pub primitives: Vec<Primitive>
+    pub primitives: Vec<usize>
 }
 impl Mesh {
     pub fn get_min_max(&self) -> (Vector, Vector) {
@@ -1977,8 +2001,8 @@ impl Mesh {
 }
 
 pub struct Node {
-    pub mesh: Option<Rc<RefCell<Mesh>>>,
-    pub skin: Option<i32>,
+    pub mesh: Option<usize>,
+    pub skin: Option<usize>,
     pub name: String,
     pub rotation: Vector,
     pub scale: Vector,
@@ -2070,18 +2094,21 @@ impl Node {
 
 pub struct Skin {
     name: String,
-    inverse_bind_matrices_accessor: Rc<Accessor>,
+    inverse_bind_matrices_accessor: usize,
     inverse_bind_matrices: Vec<Matrix>,
     joint_indices: Vec<usize>,
     joint_matrices: Vec<Matrix>,
     skeleton: Option<usize>,
 }
 impl Skin {
-    pub fn construct_joint_matrices(&mut self, nodes: &Vec<Node>) {
+    pub fn construct_joint_matrices(&mut self, world: &mut World) {
         let inverse_bind_matrices_accessor = &self.inverse_bind_matrices_accessor;
-        let byte_offset = inverse_bind_matrices_accessor.buffer_view.byte_offset;
-        let byte_length = inverse_bind_matrices_accessor.buffer_view.byte_length;
-        let bytes = &inverse_bind_matrices_accessor.buffer_view.buffer.data[byte_offset..(byte_offset + byte_length)];
+        let buffer_view = &world.buffer_views[world.accessors[*inverse_bind_matrices_accessor].buffer_view];
+        let byte_offset = buffer_view.byte_offset;
+        let byte_length = buffer_view.byte_length;
+
+        let buffer = &world.buffers[buffer_view.buffer];
+        let bytes = &buffer.data[byte_offset..(byte_offset + byte_length)];
         let inverse_bind_matrices: &[[f32; 16]] = bytemuck::cast_slice(bytes);
         self.inverse_bind_matrices.clear();
         for matrix_data in inverse_bind_matrices.iter() {
@@ -2092,7 +2119,7 @@ impl Skin {
         let mut joint = 0;
         for node_index in self.joint_indices.iter() {
             self.joint_matrices.push(
-                nodes[*node_index].world_transform * self.inverse_bind_matrices[joint]
+                world.nodes[*node_index].world_transform * self.inverse_bind_matrices[joint]
             );
             joint += 1
         }
@@ -2121,11 +2148,12 @@ pub struct Animation {
     pub snap_back: bool,
 }
 impl Animation {
-    fn new(name: String, channels: Vec<(usize, usize, String)>, samplers: Vec<(Rc<Accessor>, String, Rc<Accessor>)>) -> Self {
+    fn new(name: String, accessors: &Vec<Accessor>, buffer_views: &Vec<BufferView>, channels: Vec<(usize, usize, String)>, samplers: Vec<(usize, String, usize)>) -> Self { // samplers are accessors
         let mut compiled_samplers = Vec::new();
         for sampler in samplers.iter() {
-            let mut byte_offset = sampler.0.buffer_view.byte_offset;
-            let mut byte_length = sampler.0.buffer_view.byte_length;
+            let sampler_buffer_views = (&buffer_views[sampler.0], &buffer_views[sampler.2]);
+            let mut byte_offset = sampler_buffer_views.0.byte_offset;
+            let mut byte_length = sampler_buffer_views.0.byte_length;
             let mut bytes = &sampler.0.buffer_view.buffer.data[byte_offset..(byte_offset + byte_length)];
             let times: &[f32] = bytemuck::cast_slice(bytes);
 

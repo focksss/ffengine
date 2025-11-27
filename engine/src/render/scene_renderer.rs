@@ -12,7 +12,7 @@ use crate::render::render::MAX_FRAMES_IN_FLIGHT;
 use crate::render::render_helper::{Descriptor, DescriptorCreateInfo, DescriptorSetCreateInfo, PassCreateInfo, Renderpass, RenderpassCreateInfo, Texture, TextureCreateInfo};
 use crate::render::vulkan_base::{copy_data_to_memory, VkBase};
 use crate::world::camera::Camera;
-use crate::world::scene::{Instance, Scene, SunSendable, Vertex};
+use crate::world::scene::{Instance, World, SunSendable, Vertex};
 
 const SSAO_KERNAL_SIZE: usize = 16;
 const SSAO_RESOLUTION_MULTIPLIER: f32 = 0.5;
@@ -46,7 +46,7 @@ pub struct SceneRenderer {
     pub ssao_noise_texture: Texture,
 }
 impl SceneRenderer {
-    pub unsafe fn new(base: &VkBase, world: &Scene, viewport: vk::Viewport) -> SceneRenderer { unsafe {
+    pub unsafe fn new(base: &VkBase, world: &World, viewport: vk::Viewport) -> SceneRenderer { unsafe {
         let null_tex_info = base.create_2d_texture_image(&PathBuf::from("").join("engine\\resources\\checker_2x2.png"), true) ;
         base.device.destroy_sampler(null_tex_info.0.1, None);
         let sampler_info = vk::SamplerCreateInfo {
@@ -378,7 +378,7 @@ impl SceneRenderer {
         base: &VkBase,
         null_tex: &Texture,
         null_tex_sampler: &vk::Sampler,
-        world: &Scene,
+        world: &World,
         viewport: vk::Viewport
     ) -> (Renderpass, Renderpass, Renderpass, Renderpass, Renderpass, Renderpass, Renderpass, Renderpass) { unsafe {
         let resolution = Extent2D { width: viewport.width as u32, height: viewport.height as u32 };
@@ -869,12 +869,12 @@ impl SceneRenderer {
             lighting_renderpass
         )
     } }
-    pub fn update_world_textures_all_frames(&self, base: &VkBase, world: &Scene) {
+    pub fn update_world_textures_all_frames(&self, base: &VkBase, world: &World) {
         for frame in 0..MAX_FRAMES_IN_FLIGHT {
             self.update_world_textures(base, world, frame);
         }
     }
-    pub fn update_world_textures(&self, base: &VkBase, world: &Scene, frame: usize) { unsafe {
+    pub fn update_world_textures(&self, base: &VkBase, world: &World, frame: usize) { unsafe {
         let mut image_infos: Vec<vk::DescriptorImageInfo> = Vec::with_capacity(1024);
         for model in &world.models {
             for texture in &model.textures {
@@ -922,7 +922,7 @@ impl SceneRenderer {
     pub unsafe fn render_world(
         &self,
         current_frame: usize,
-        world: &Scene, player_camera: &Camera,
+        world: &World, player_camera: &Camera,
     ) { unsafe {
         let device = &self.device;
 

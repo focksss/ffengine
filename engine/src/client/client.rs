@@ -17,7 +17,7 @@ use crate::render::render::{screenshot_texture, Renderer};
 use crate::render::vulkan_base::VkBase;
 use crate::scripting::lua_engine::Lua;
 use crate::world::camera::Camera;
-use crate::world::scene::Scene;
+use crate::world::scene::World;
 
 pub struct Client {
     pub window: Arc<winit::window::Window>,

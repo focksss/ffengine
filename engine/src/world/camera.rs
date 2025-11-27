@@ -2,13 +2,13 @@ use std::cell::RefCell;
 use std::sync::Arc;
 use crate::math::matrix::Matrix;
 use crate::math::Vector;
-use crate::world::scene::Scene;
+use crate::world::scene::World;
 
 const PI: f32 = std::f32::consts::PI;
 
 #[derive(Clone)]
 pub struct CameraPointer {
-    pub world: Arc<RefCell<Scene>>,
+    pub world: Arc<RefCell<World>>,
     pub index: usize,
 }
 #[derive(Clone, Debug)]

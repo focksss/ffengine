@@ -8,7 +8,7 @@ use crate::physics::hitboxes::hitbox::Hitbox;
 use crate::physics::hitboxes::sphere::Sphere;
 use crate::physics::physics_engine::{PhysicsEngine, RigidBody};
 use crate::physics::rigid_body::RigidBodyPointer;
-use crate::world::scene::Scene;
+use crate::world::scene::World;
 
 #[derive(Copy, Clone, Debug)]
 pub enum MovementMode {
@@ -32,7 +32,7 @@ pub struct Player {
     pub camera_pointer: CameraPointer,
 }
 impl Player {
-    pub fn new(physics_engine: Arc<RefCell<PhysicsEngine>>, world: Arc<RefCell<Scene>>, camera: Camera, eye_to_foot: Vector, eye_to_head: Vector, movement_mode: MovementMode, move_power: f32, jump_power: f32, skin_width: f32) -> Self {
+    pub fn new(physics_engine: Arc<RefCell<PhysicsEngine>>, world: Arc<RefCell<World>>, camera: Camera, eye_to_foot: Vector, eye_to_head: Vector, movement_mode: MovementMode, move_power: f32, jump_power: f32, skin_width: f32) -> Self {
         let mut rigid_body = RigidBody::default();
         rigid_body.owned_by_player = true;
         let max = camera.position + eye_to_head;

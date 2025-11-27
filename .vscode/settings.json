@@ -1,6 +1,7 @@
 {
     "Lua.diagnostics.globals": [
-        "Engine"
+        "Engine",
+        "CursorIcon"
     ],
     "Lua.diagnostics.disable": [
         "lowercase-global"
