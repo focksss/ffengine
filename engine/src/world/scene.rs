@@ -29,7 +29,7 @@ pub struct World {
     pub lights: Vec<Light>,
     pub sun: Sun,
 
-    pub models: Vec<Model>,
+    pub models: Vec<ModelContainer>,
 
     pub nodes: Vec<Node>,
     pub meshes: Vec<Mesh>,
@@ -160,7 +160,8 @@ impl World {
         }
     } }
 
-    pub unsafe fn add_model(&mut self, base: &VkBase, mut model: Model) { unsafe {
+    pub unsafe fn add_model(&mut self, base: &VkBase, uri: &str) { unsafe {
+        let model = ModelContainer::new(uri, self);
         let mut new_vertices: Vec<Vertex> = vec![];
         let mut new_indices: Vec<u32> = vec![];
         let mut new_materials_send: Vec<MaterialSendable> = vec![];
@@ -408,7 +409,28 @@ impl World {
             vk::IndexType::UINT32,
         );
         for model in self.models.iter() {
-            model.draw(&self.device, draw_command_buffer, frustum);
+            for node_index in model.scene.nodes.iter() {
+                let node = &self.nodes[*node_index];
+                node.draw(&self.device, &self, &draw_command_buffer, frustum)
+            }
+        }
+    } }
+
+
+    pub unsafe fn construct_textures(&mut self, base: &VkBase) { unsafe {
+        let uris: Vec<PathBuf> = self.images.iter().map(|img| { img.uri.clone() }).collect();
+        let textures = base.load_textures_batched(uris.as_slice(), true);
+        for i in 0..self.images.len() {
+            let mut img = &mut self.images[i];
+            let (image_view, image, mips) = textures[i];
+            img.image = image;
+            img.image_view = image_view.0;
+            img.mip_levels = mips;
+            img.generated = true;
+            base.device.destroy_sampler(image_view.1, None);
+        }
+        for texture in &mut self.textures {
+            texture.construct_sampler(&self, base);
         }
     } }
 
@@ -452,8 +474,13 @@ impl World {
         base.device.destroy_buffer(self.vertex_staging_buffer.0, None);
         base.device.free_memory(self.vertex_staging_buffer.1, None);
 
-        for model in &self.models {
-            model.cleanup(base);
+        for texture in &self.textures {
+            base.device.destroy_sampler(texture.sampler, None);
+        }
+        for image in &self.images {
+            base.device.destroy_image_view(image.image_view, None);
+            base.device.destroy_image(image.image.0, None);
+            base.device.free_memory(image.image.1, None);
         }
     } }
 }
@@ -629,22 +656,35 @@ pub struct SunSendable {
 
 pub struct ModelContainer {
     pub extensions_used: Vec<String>,
-    pub scene: Rc<GltfScene>,
-    pub scenes: Vec<Rc<GltfScene>>,
-    pub animations: Vec<Animation>,
-    pub skins: Vec<Skin>,
-    pub nodes: Vec<Node>,
-    pub meshes: Vec<Mesh>,
-    pub materials: Vec<Material>,
-    pub textures: Vec<SceneTexture>,
-    pub images: Vec<Image>,
-    pub accessors: Vec<Accessor>,
-    pub buffer_views: Vec<BufferView>,
-    pub buffers: Vec<Buffer>,
+    pub scene: usize,
+    pub scenes: Vec<usize>,
+    pub animations: Vec<usize>,
+    pub skins: Vec<usize>,
+    pub nodes: Vec<usize>,
+    pub meshes: Vec<usize>,
+    pub materials: Vec<usize>,
+    pub textures: Vec<usize>,
+    pub images: Vec<usize>,
+    pub accessors: Vec<usize>,
+    pub buffer_views: Vec<usize>,
+    pub buffers: Vec<usize>,
 }
 impl ModelContainer {
-    pub fn new(path: &str) -> Self {
+    pub fn new(path: &str, world: &mut World) -> Self {
         let json = json::parse(fs::read_to_string(path).expect("failed to load json file").as_str()).expect("json parse error");
+
+        let initial_buffer_count = world.buffers.len();
+        let initial_buffer_view_count = world.buffer_views.len();
+        let initial_accessors_count = world.accessors.len();
+        let initial_images_count = world.images.len();
+        let initial_skins_count = world.skins.len();
+        let initial_textures_count = world.textures.len();
+        let initial_materials_count = world.materials.len();
+        let initial_primitive_count = world.primitive_count;
+        let initial_animation_count = world.animations.len();
+        let initial_node_count = world.nodes.len();
+        let initial_mesh_count = world.meshes.len();
+        let initial_scene_count = world.scenes.len();
 
         let mut extensions_used = Vec::new();
         for extension in json["extensionsUsed"].members() {
@@ -659,17 +699,19 @@ impl ModelContainer {
                     buffer["byteLength"].as_usize().unwrap()
                 ))
         }
+        world.buffers.extend(buffers);
 
         let mut buffer_views = Vec::new();
         for buffer_view in json["bufferViews"].members() {
             buffer_views.push(
                 BufferView {
-                    buffer: buffers[buffer_view["buffer"].as_usize().unwrap()].clone(),
+                    buffer: buffer_view["buffer"].as_usize().unwrap() + initial_buffer_count,
                     byte_length: buffer_view["byteLength"].as_usize().unwrap(),
                     byte_offset: buffer_view["byteOffset"].as_usize().unwrap_or(0),
                     target: buffer_view["target"].as_usize().unwrap_or(0)
                 })
         }
+        world.buffer_views.extend(buffer_views);
 
         let mut accessors = Vec::new();
         for accessor in json["accessors"].members() {
@@ -692,16 +734,17 @@ impl ModelContainer {
                 }
             }
             accessors.push(
-                Rc::new(Accessor {
-                    buffer_view: buffer_views[accessor["bufferView"].as_usize().unwrap()].clone(),
+                Accessor {
+                    buffer_view: accessor["bufferView"].as_usize().unwrap() + initial_buffer_view_count,
                     component_type: ComponentType::from_u32(accessor["componentType"].as_u32().unwrap()).expect("unsupported component type"),
                     count: accessor["count"].as_usize().unwrap(),
                     r#type: accessor["type"].as_str().unwrap().parse().unwrap(),
                     min,
                     max,
                     data: Vec::new(),
-                }))
+                })
         }
+        world.accessors.extend(accessors);
 
         let mut images = Vec::new();
         for image in json["images"].members() {
@@ -720,12 +763,13 @@ impl ModelContainer {
             }
 
             images.push(
-                Rc::new(RefCell::new(Image::new(
+                Image::new(
                     mime_type,
                     name,
                     resolve_gltf_uri(path, image["uri"].as_str().unwrap())
-                ))))
+                ))
         }
+        world.images.extend(images);
 
         let mut samplers = Vec::new();
         for sampler in json["samplers"].members() {
@@ -741,12 +785,13 @@ impl ModelContainer {
         let mut textures = Vec::new();
         for texture in json["textures"].members() {
             textures.push(
-                Rc::new(RefCell::new(SceneTexture {
-                    source: images[texture["source"].as_usize().unwrap()].clone(),
+                SceneTexture {
+                    source: texture["source"].as_usize().unwrap() + initial_images_count,
                     sampler: Sampler::null(),
                     sampler_info: samplers[texture["sampler"].as_usize().unwrap().clone()]
-                })))
+                })
         }
+        world.textures.extend(textures);
 
         let mut materials = Vec::new();
         materials.push(Material {
@@ -1073,8 +1118,8 @@ impl ModelContainer {
                         emissive_strength,
                 })
         }
+        world.materials.extend(materials);
 
-        let mut primitive_count = 0usize;
         let mut meshes = Vec::new();
         for mesh in json["meshes"].members() {
             let name_maybe: Option<&str> = mesh["name"].as_str();
@@ -1087,24 +1132,23 @@ impl ModelContainer {
             let mut primitives = Vec::new();
             if let JsonValue::Array(ref primitives_json) = mesh["primitives"] {
                 for primitive_json in primitives_json {
-                    let mut attributes: Vec<(String, Rc<Accessor>)> = Vec::new();
+                    let mut attributes: Vec<(String, usize)> = Vec::new();
                     if let JsonValue::Object(ref attributes_json) = primitive_json["attributes"] {
                         for (name, accessor) in attributes_json.iter() {
-                            attributes.push((name.to_string(), accessors[accessor.as_usize().unwrap()].clone()));
+                            attributes.push((name.to_string(), accessor.as_usize().unwrap() + initial_accessors_count));
                         }
                     }
 
-                    let indices = accessors[primitive_json["indices"].as_usize().unwrap()].clone();
+                    let indices = primitive_json["indices"].as_usize().unwrap() + initial_accessors_count;
 
-                    let material_index_maybe: Option<u32> = primitive_json["material"].as_u32();
-                    let mut material_index = 0u32;
-                    match material_index_maybe {
-                        Some(material_index_value) => material_index = material_index_value + 1,
-                        None => (),
-                    }
+                    let material_index = if let Some(material_index) = primitive_json["material"].as_u32() {
+                        material_index + initial_materials_count as u32 + 1u32
+                    } else {
+                        0u32
+                    };
                     primitives.push(Primitive {
                         attributes,
-                        indices_count: indices.count,
+                        indices_count: world.accessors[indices].count,
                         indices,
                         index_buffer_offset: 0,
                         vertex_buffer_offset: 0,
@@ -1116,19 +1160,20 @@ impl ModelContainer {
                         min: Vector::new(),
                         max: Vector::new(),
                         corners: [Vector::new(); 8],
-                        id: primitive_count,
+                        id: world.primitive_count,
                     });
-                    primitive_count += 1;
+                    world.primitive_count += 1;
                 }
             }
 
             meshes.push(
-                Rc::new(RefCell::new(Mesh {
+                Mesh {
                     name,
                     primitives,
-                }))
+                }
             );
         }
+        world.meshes.extend(meshes);
 
         let mut nodes = Vec::new();
         for node in json["nodes"].members() {
@@ -1139,19 +1184,17 @@ impl ModelContainer {
                 None => (),
             }
 
-            let mesh_maybe: Option<usize> = node["mesh"].as_usize();
-            let mut mesh = None;
-            match mesh_maybe {
-                Some(mesh_index) => mesh = Some(meshes[mesh_index].clone()),
-                None => (),
-            }
+            let mut mesh = if let Some(index) = node["mesh"].as_usize() {
+                Some(index + initial_mesh_count)
+            } else {
+                None
+            };
 
-            let skin_maybe: Option<usize> = node["skin"].as_usize();
-            let mut skin = None;
-            match skin_maybe {
-                Some(skin_index) => skin = Some(skin_index as i32),
-                None => (),
-            }
+            let skin = if let Some(index) = node["skin"].as_usize() {
+                Some((index + initial_skins_count) as i32)
+            } else {
+                None
+            };
 
             let mut rotation = Vector::empty();
             if let JsonValue::Array(ref rotation_json) = node["rotation"] {
@@ -1190,7 +1233,7 @@ impl ModelContainer {
             let mut children_indices = Vec::new();
             if let JsonValue::Array(ref children_json) = node["children"] {
                 for child_json in children_json {
-                    children_indices.push(child_json.as_usize().unwrap());
+                    children_indices.push(child_json.as_usize().unwrap() + initial_node_count);
                 }
             }
 
@@ -1215,6 +1258,7 @@ impl ModelContainer {
                 }
             )
         }
+        world.nodes.extend(nodes);
 
         let mut skins = Vec::new();
         for skin in json["skins"].members() {
@@ -1228,17 +1272,17 @@ impl ModelContainer {
             let mut joint_indices = Vec::new();
             if let JsonValue::Array(ref joint_json) = skin["joints"] {
                 for joint in joint_json.iter() {
-                    joint_indices.push(joint.as_usize().unwrap());
+                    joint_indices.push(joint.as_usize().unwrap() + initial_node_count);
                 }
             }
 
-            let inverse_bind_matrices_accessor = accessors[skin["inverseBindMatrices"].as_usize().unwrap()].clone();
+            let inverse_bind_matrices_accessor = skin["inverseBindMatrices"].as_usize().unwrap() + initial_accessors_count;
 
-            let mut skeleton: Option<usize> = None;
-            match skin["skeleton"].as_usize() {
-                Some(skeleton_idx) => skeleton = Some(skeleton_idx),
-                None => (),
-            }
+            let mut skeleton: Option<usize> = if let Some(skeleton_index) = skin["skeleton"].as_usize() {
+                Some(skeleton_index + initial_node_count)
+            } else {
+                None
+            };
 
             skins.push(Skin {
                 name,
@@ -1249,6 +1293,7 @@ impl ModelContainer {
                 skeleton,
             })
         }
+        world.skins.extend(skins);
 
         let mut animations = Vec::new();
         for animation in json["animations"].members() {
@@ -1263,8 +1308,8 @@ impl ModelContainer {
             if let JsonValue::Array(ref channels_json) = animation["channels"] {
                 for channel in channels_json {
                     channels.push((
-                        channel["sampler"].as_usize().unwrap(),
-                        channel["target"]["node"].as_usize().unwrap(),
+                        channel["sampler"].as_usize().unwrap() + initial_accessors_count,
+                        channel["target"]["node"].as_usize().unwrap() + initial_node_count,
                         String::from(channel["target"]["path"].as_str().unwrap())
                     ))
                 }
@@ -1274,19 +1319,21 @@ impl ModelContainer {
             if let JsonValue::Array(ref samplers_json) = animation["samplers"] {
                 for sampler_json in samplers_json {
                     samplers.push((
-                        accessors[sampler_json["input"].as_usize().unwrap()].clone(),
+                        sampler_json["input"].as_usize().unwrap() + initial_accessors_count,
                         String::from(sampler_json["interpolation"].as_str().unwrap()),
-                        accessors[sampler_json["output"].as_usize().unwrap()].clone()
+                        sampler_json["output"].as_usize().unwrap() + initial_accessors_count
                     ))
                 }
             }
 
             animations.push(Animation::new(
                 name,
+                world,
                 channels,
                 samplers,
             ))
         }
+        world.animations.extend(animations);
 
         let mut scenes = Vec::new();
         for scene in json["scenes"].members() {
@@ -1300,34 +1347,35 @@ impl ModelContainer {
             let mut scene_nodes = Vec::new();
             if let JsonValue::Array(ref nodes_json) = scene["nodes"] {
                 for node_json in nodes_json {
-                    scene_nodes.push(node_json.as_usize().unwrap());
+                    scene_nodes.push(node_json.as_usize().unwrap() + initial_node_count);
                 }
             }
 
             scenes.push(
-                Rc::new(GltfScene {
+                GltfScene {
                     name,
                     nodes: scene_nodes,
-                })
+                }
             )
         }
+        world.scenes.extend(scenes);
 
-        let scene = scenes[json["world"].as_usize().unwrap_or(0)].clone();
+        let scene = json["world"].as_usize().unwrap_or(0) + initial_scene_count;
 
         Self {
             extensions_used,
             scene,
-            scenes,
-            animations,
-            skins,
-            nodes,
-            meshes,
-            materials,
-            textures,
-            images,
-            accessors,
-            buffer_views,
-            buffers,
+            scenes: (initial_scene_count..world.scenes.len()).collect(),
+            animations: (initial_animation_count..world.animations.len()).collect(),
+            skins: (initial_skins_count..world.skins.len()).collect(),
+            nodes: (initial_node_count..world.nodes.len()).collect(),
+            meshes: (initial_mesh_count..world.meshes.len()).collect(),
+            materials: (initial_materials_count..world.materials.len()).collect(),
+            textures: (initial_textures_count..world.textures.len()).collect(),
+            images: (initial_images_count..world.images.len()).collect(),
+            accessors: (initial_accessors_count..world.accessors.len()).collect(),
+            buffer_views: (initial_buffer_view_count..world.buffer_views.len()).collect(),
+            buffers: (initial_buffer_count..world.buffers.len()).collect(),
         }
     }
 
@@ -1342,24 +1390,15 @@ impl ModelContainer {
         }
     }
 
-    pub unsafe fn construct_textures(&mut self, base: &VkBase) { unsafe {
-        let uris: Vec<PathBuf> = self.images.iter().map(|img| {img.borrow().uri.clone()}).collect();
-        let textures = base.load_textures_batched(uris.as_slice(), true);
-        for i in 0..self.images.len() {
-            let mut img = self.images[i].borrow_mut();
-            let (image_view, image, mips) = textures[i];
-            img.image = image;
-            img.image_view = image_view.0;
-            img.mip_levels = mips;
-            img.generated = true;
-            base.device.destroy_sampler(image_view.1, None);
-        }
-        for texture in &mut self.textures {
-            texture.borrow_mut().construct_sampler(base);
-        }
-    }}
-
-    pub fn update_node(&mut self, instances: &mut Vec<Instance>, dirty_instances: &mut Vec<usize>, node_index: usize, parent_transform: &Matrix, parent_needs_update: bool) {
+    pub fn update_node(
+        &mut self,
+        world: &World,
+        instances: &mut Vec<Instance>,
+        dirty_instances: &mut Vec<usize>,
+        node_index: usize,
+        parent_transform: &Matrix,
+        parent_needs_update: bool
+    ) {
         let (transform, children_indices, needs_update) = {
             let node = &mut self.nodes[node_index];
             let mut node_needs_update = false;
@@ -1368,38 +1407,18 @@ impl ModelContainer {
                 node_needs_update = true;
                 node.update_local_transform();
                 node.update_world_transform(parent_transform);
-                node.update_instances(instances, dirty_instances, true);
+                node.update_instances(world, instances, dirty_instances, true);
             } else if parent_needs_update {
                 node.update_world_transform(parent_transform);
-                node.update_instances(instances, dirty_instances, true);
+                node.update_instances(world, instances, dirty_instances, true);
             }
             let node = &self.nodes[node_index];
             (&node.world_transform.clone(), &node.children_indices.clone(), node_needs_update)
         };
         for child in children_indices {
-            self.update_node(instances, dirty_instances, *child, transform, parent_needs_update || needs_update);
+            self.update_node(world, instances, dirty_instances, *child, transform, parent_needs_update || needs_update);
         }
     }
-
-    pub unsafe fn draw(&self, device: &ash::Device, draw_command_buffer: &CommandBuffer, frustum: Option<&Frustum>) { unsafe {
-        for node_index in self.scene.nodes.iter() {
-            let node = &self.nodes[*node_index];
-            node.draw(device, &self, &draw_command_buffer, frustum)
-        }
-    } }
-
-    pub unsafe fn cleanup(&self, base: &VkBase) { unsafe {
-        for texture in &self.textures {
-            let texture = texture.borrow();
-            base.device.destroy_sampler(texture.sampler, None);
-        }
-        for image in &self.images {
-            let image = image.borrow();
-            base.device.destroy_image_view(image.image_view, None);
-            base.device.destroy_image(image.image.0, None);
-            base.device.free_memory(image.image.1, None);
-        }
-    } }
 }
 
 pub struct Buffer {
@@ -1501,7 +1520,7 @@ pub struct SceneTexture {
     pub sampler_info: SceneSampler,
 }
 impl SceneTexture {
-    pub unsafe fn construct_sampler(&mut self, base: &VkBase) { unsafe {
+    pub unsafe fn construct_sampler(&mut self, world: &World, base: &VkBase) { unsafe {
         let sampler_info = vk::SamplerCreateInfo {
             s_type: vk::StructureType::SAMPLER_CREATE_INFO,
             mag_filter: self.sampler_info.mag_filter,
@@ -1516,7 +1535,7 @@ impl SceneTexture {
             mipmap_mode: vk::SamplerMipmapMode::LINEAR,
             mip_lod_bias: 0.0,
             min_lod: 0.0,
-            max_lod: self.source.borrow().mip_levels as f32,
+            max_lod: world.images[self.source].mip_levels as f32,
             ..Default::default()
         };
         self.sampler = base.device.create_sampler(&sampler_info, None).expect("failed to create sampler");
@@ -1768,11 +1787,13 @@ impl Primitive {
             };
 
             let mut joints= Vec::new();
-            if !joint_accessor.is_none() {
-                let component_type = joint_accessor.unwrap().component_type;
-                byte_offset = joint_accessor.unwrap().buffer_view.byte_offset;
-                byte_length = joint_accessor.unwrap().buffer_view.byte_length;
-                let bytes = &joint_accessor.unwrap().buffer_view.buffer.data[byte_offset..(byte_offset + byte_length)];
+            if let Some(accessor) = joint_accessor {
+                let component_type = accessor.component_type;
+                let accessor_buffer_view = &world.buffer_views[accessor.buffer_view];
+                byte_offset = accessor_buffer_view.byte_offset;
+                byte_length = accessor_buffer_view.byte_length;
+                let accessor_buffer_view_buffer = &world.buffers[accessor_buffer_view.buffer];
+                let bytes = &accessor_buffer_view_buffer.data[byte_offset..(byte_offset + byte_length)];
                 match component_type {
                     ComponentType::U8 => {
                         let raw: &[[u8; 4]] = bytemuck::cast_slice(bytes);
@@ -1793,10 +1814,12 @@ impl Primitive {
             }
 
             let mut weights: &[[f32; 4]] = &[];
-            if !weight_accessor.is_none() {
-                byte_offset = weight_accessor.unwrap().buffer_view.byte_offset;
-                byte_length = weight_accessor.unwrap().buffer_view.byte_length;
-                let bytes = &weight_accessor.unwrap().buffer_view.buffer.data[byte_offset..(byte_offset + byte_length)];
+            if let Some(accessor) = weight_accessor {
+                let accessor_buffer_view = &world.buffer_views[accessor.buffer_view];
+                byte_offset = accessor_buffer_view.byte_offset;
+                byte_length = accessor_buffer_view.byte_length;
+                let accessor_buffer_view_buffer = &world.buffers[accessor_buffer_view.buffer];
+                let bytes = &accessor_buffer_view_buffer.data[byte_offset..(byte_offset + byte_length)];
                 weights = bytemuck::cast_slice(bytes);
             }
 
