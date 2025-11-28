@@ -166,10 +166,8 @@ impl World {
         let mut new_indices: Vec<u32> = vec![];
         let mut new_materials_send: Vec<MaterialSendable> = vec![];
         for mesh in &model.meshes {
-            for primitive in &mut mesh.borrow_mut().primitives {
-                primitive.id = self.primitive_count;
-                self.primitive_count += 1;
-                primitive.construct_data();
+            for primitive in &mut self.meshes[*mesh].primitives {
+                primitive.construct_data(&self.accessors, &self.buffer_views, &self.buffers);
                 primitive.vertex_buffer_offset = self.vertices_count + new_vertices.len();
                 primitive.index_buffer_offset = self.indices_count + new_indices.len();
                 new_vertices.extend_from_slice(&primitive.vertex_data);
@@ -186,27 +184,18 @@ impl World {
                         primitive.index_data_u32.iter().map(|&i| i + primitive.vertex_buffer_offset as u32)
                     );
                 }
-                self.instance_data.push(Instance::new(Matrix::new(), primitive.material_index + self.materials_count as u32, 0));
+                self.instance_data.push(Instance::new(Matrix::new(), primitive.material_index, 0));
                 primitive.construct_min_max()
             }
         }
         for material in model.materials.iter() {
-            new_materials_send.push(material.to_sendable(self.texture_count));
-        }
-
-        let mut num_skins = 0i32;
-        for scene_model in &self.models {
-            num_skins += scene_model.skins.len() as i32;
-        }
-        for node in model.nodes.iter_mut() {
-            if node.skin.is_some() {
-                node.skin = Some(node.skin.unwrap() + num_skins)
-            }
+            new_materials_send.push(self.materials[*material].to_sendable(self.texture_count));
         }
 
         let mut new_joints_send = Vec::new();
-        for skin in model.skins.iter_mut() {
-            skin.construct_joint_matrices(&model.nodes);
+        for skin_index in model.skins.iter() {
+            let skin = &mut self.skins[*skin_index];
+            skin.construct_joint_matrices(&mut self.nodes, &self.accessors, &self.buffer_views, &self.buffers);
             for joint in skin.joint_matrices.iter() {
                 new_joints_send.push(joint.clone());
             }
@@ -256,8 +245,8 @@ impl World {
         self.texture_count += model.textures.len() as i32;
         self.joints_count += new_joints_send.len();
 
-        model.construct_textures(base);
         self.models.push(model);
+        self.construct_textures(base);
     } }
     pub unsafe fn add_light(&mut self, base: &VkBase, light: Light) { unsafe {
         let light_send = light.to_sendable();
@@ -285,9 +274,9 @@ impl World {
     pub unsafe fn update_instances(&mut self, command_buffer: CommandBuffer, frame: usize) { unsafe {
         if frame == 0 {
             self.dirty_instances.clear();
-            for model in self.models.iter_mut() {
-                for node in &model.scene.nodes.clone() {
-                    model.update_node(&mut self.instance_data, &mut self.dirty_instances, *node, &mut Matrix::new(), false);
+            for model in &self.models.clone() {
+                for node in &self.scenes[model.scene].nodes.clone() {
+                    self.update_node(*node, &mut Matrix::new(), false);
                 }
             }
         }
@@ -333,9 +322,10 @@ impl World {
     }
 
     pub unsafe fn update_instances_all_frames(&mut self, base: &VkBase) { unsafe {
-        for model in self.models.iter_mut() {
-            for node in &model.scene.nodes.clone() {
-                model.update_node(&mut self.instance_data, &mut self.dirty_instances, *node, &mut Matrix::new(), true);
+        for model in self.models.clone() {
+            let scene = &self.scenes[model.scene];
+            for node in &scene.nodes.clone() {
+                self.update_node(*node, &mut Matrix::new(), true);
             }
         }
         let command_buffers = base.begin_single_time_commands(1);
@@ -353,36 +343,70 @@ impl World {
     } }
 
     pub unsafe fn update_nodes(&mut self, command_buffer: CommandBuffer, frame: usize) { unsafe {
-        for model in self.models.iter_mut() {
-            for animation in model.animations.iter_mut() {
-                animation.update(&mut model.nodes)
-            }
+        for animation in self.animations.iter_mut() {
+            animation.update(&mut self.nodes)
         }
         self.update_instances(command_buffer, frame);
         self.update_joints(command_buffer, frame);
     } }
+    pub fn update_node(
+        &mut self,
+        node_index: usize,
+        parent_transform: &Matrix,
+        parent_needs_update: bool
+    ) {
+        let (transform, children_indices, needs_update) = {
+            let node_needs_update_already = self.nodes[node_index].needs_update;
+            let mut node_needs_update = false;
+            if node_needs_update_already {
+                {
+                    let mut node = &mut self.nodes[node_index];
+                    node.needs_update = false;
+                    node_needs_update = true;
+                    node.update_local_transform();
+                    node.update_world_transform(parent_transform);
+                }
+                let mesh = if let Some(mesh_index) = self.nodes[node_index].mesh {
+                    Some(&self.meshes[mesh_index])
+                } else {
+                    None
+                };
+                self.nodes[node_index].update_instances(mesh, &mut self.instance_data, &mut self.dirty_instances, true);
+            } else if parent_needs_update {
+                {
+                    let mut node = &mut self.nodes[node_index];
+                    node.update_world_transform(parent_transform);
+                }
+                let mesh = if let Some(mesh_index) = self.nodes[node_index].mesh {
+                    Some(&self.meshes[mesh_index])
+                } else {
+                    None
+                };
+                self.nodes[node_index].update_instances(mesh, &mut self.instance_data, &mut self.dirty_instances, true);
+            }
+            let node = &self.nodes[node_index];
+            (&node.world_transform.clone(), &node.children_indices.clone(), node_needs_update)
+        };
+        for child in children_indices {
+            self.update_node(*child, transform, parent_needs_update || needs_update);
+        }
+    }
 
     pub unsafe fn update_joints(&mut self, command_buffer: CommandBuffer, frame: usize) { unsafe {
         let mut joints = Vec::new();
         let mut total_skins = 0f32;
-        for model in self.models.iter_mut() {
-            for skin in &mut model.skins {
-                skin.update_joint_matrices(&model.nodes);
-                total_skins += 1.0;
-            }
+        for skin in &mut self.skins {
+            skin.update_joint_matrices(&self.nodes);
+            total_skins += 1.0;
         }
         let mut total = 0f32;
-        for model in self.models.iter() {
-            for skin in model.skins.iter() {
-                joints.push(Matrix::new_manual([total_skins + total; 16]));
-                total += skin.joint_matrices.len() as f32;
-            }
+        for skin in self.skins.iter() {
+            joints.push(Matrix::new_manual([total_skins + total; 16]));
+            total += skin.joint_matrices.len() as f32;
         }
-        for model in self.models.iter_mut() {
-            for skin in &model.skins {
-                for joint in skin.joint_matrices.iter() {
-                    joints.push(joint.clone());
-                }
+        for skin in &self.skins {
+            for joint in skin.joint_matrices.iter() {
+                joints.push(joint.clone());
             }
         }
         copy_data_to_memory(self.joints_staging_buffer.2, &joints);
@@ -409,19 +433,24 @@ impl World {
             vk::IndexType::UINT32,
         );
         for model in self.models.iter() {
-            for node_index in model.scene.nodes.iter() {
+            let scene = &self.scenes[model.scene];
+            for node_index in scene.nodes.iter() {
                 let node = &self.nodes[*node_index];
                 node.draw(&self.device, &self, &draw_command_buffer, frustum)
             }
         }
     } }
 
-
     pub unsafe fn construct_textures(&mut self, base: &VkBase) { unsafe {
-        let uris: Vec<PathBuf> = self.images.iter().map(|img| { img.uri.clone() }).collect();
+        let uris: Vec<PathBuf> = self.images
+            .iter()
+            .filter(|img| !img.generated)
+            .map(|img| img.uri.clone())
+            .collect();
         let textures = base.load_textures_batched(uris.as_slice(), true);
         for i in 0..self.images.len() {
-            let mut img = &mut self.images[i];
+            let img = &mut self.images[i];
+            if img.generated { continue; }
             let (image_view, image, mips) = textures[i];
             img.image = image;
             img.image_view = image_view.0;
@@ -430,7 +459,7 @@ impl World {
             base.device.destroy_sampler(image_view.1, None);
         }
         for texture in &mut self.textures {
-            texture.construct_sampler(&self, base);
+            texture.construct_sampler(self.images[texture.source].mip_levels as f32, base);
         }
     } }
 
@@ -654,6 +683,7 @@ pub struct SunSendable {
     pub _pad1: u32,
 }
 
+#[derive(Clone)]
 pub struct ModelContainer {
     pub extensions_used: Vec<String>,
     pub scene: usize,
@@ -1380,43 +1410,14 @@ impl ModelContainer {
     }
 
     ///* Takes euler for rotation, converts to quaternion
-    pub fn transform_roots(&mut self, translation: &Vector, rotation: &Vector, scale: &Vector) {
-        for node_index in self.scene.nodes.iter() {
-            let node = &mut self.nodes[*node_index];
+    pub fn transform_roots(&mut self, world: &mut World, translation: &Vector, rotation: &Vector, scale: &Vector) {
+        let scene = &world.scenes[self.scene];
+        for node_index in scene.nodes.iter() {
+            let node = &mut world.nodes[*node_index];
             node.user_translation.add_vec_to_self(translation);
             node.user_rotation.combine_to_self(&rotation.euler_to_quat().normalize4());
             node.user_scale.mul_by_vec_to_self(scale);
             node.needs_update = true;
-        }
-    }
-
-    pub fn update_node(
-        &mut self,
-        world: &World,
-        instances: &mut Vec<Instance>,
-        dirty_instances: &mut Vec<usize>,
-        node_index: usize,
-        parent_transform: &Matrix,
-        parent_needs_update: bool
-    ) {
-        let (transform, children_indices, needs_update) = {
-            let node = &mut self.nodes[node_index];
-            let mut node_needs_update = false;
-            if node.needs_update {
-                node.needs_update = false;
-                node_needs_update = true;
-                node.update_local_transform();
-                node.update_world_transform(parent_transform);
-                node.update_instances(world, instances, dirty_instances, true);
-            } else if parent_needs_update {
-                node.update_world_transform(parent_transform);
-                node.update_instances(world, instances, dirty_instances, true);
-            }
-            let node = &self.nodes[node_index];
-            (&node.world_transform.clone(), &node.children_indices.clone(), node_needs_update)
-        };
-        for child in children_indices {
-            self.update_node(world, instances, dirty_instances, *child, transform, parent_needs_update || needs_update);
         }
     }
 }
@@ -1520,7 +1521,7 @@ pub struct SceneTexture {
     pub sampler_info: SceneSampler,
 }
 impl SceneTexture {
-    pub unsafe fn construct_sampler(&mut self, world: &World, base: &VkBase) { unsafe {
+    pub unsafe fn construct_sampler(&mut self, max_lod: f32, base: &VkBase) { unsafe {
         let sampler_info = vk::SamplerCreateInfo {
             s_type: vk::StructureType::SAMPLER_CREATE_INFO,
             mag_filter: self.sampler_info.mag_filter,
@@ -1535,7 +1536,7 @@ impl SceneTexture {
             mipmap_mode: vk::SamplerMipmapMode::LINEAR,
             mip_lod_bias: 0.0,
             min_lod: 0.0,
-            max_lod: world.images[self.source].mip_levels as f32,
+            max_lod,
             ..Default::default()
         };
         self.sampler = base.device.create_sampler(&sampler_info, None).expect("failed to create sampler");
@@ -1708,7 +1709,12 @@ pub struct Primitive {
     pub vertex_data: Vec<Vertex>,
 }
 impl Primitive {
-    fn construct_data(&mut self, world: &World) {
+    fn construct_data(
+        &mut self,
+        world_accessors: &Vec<Accessor>,
+        world_buffer_views: &Vec<BufferView>,
+        world_buffers: &Vec<Buffer>,
+    ) {
         let mut position_accessor: Option<&Accessor> = None;
         let mut normal_accessor: Option<&Accessor> = None;
         let mut texcoord_accessor: Option<&Accessor> = None;
@@ -1716,23 +1722,23 @@ impl Primitive {
         let mut weight_accessor: Option<&Accessor> = None;
         for attribute in self.attributes.iter() {
             if attribute.0.eq("POSITION") {
-                position_accessor = Some(&world.accessors[attribute.1]);
+                position_accessor = Some(&world_accessors[attribute.1]);
             } else if attribute.0.eq("NORMAL") {
-                normal_accessor = Some(&world.accessors[attribute.1]);
+                normal_accessor = Some(&world_accessors[attribute.1]);
             } else if attribute.0.eq("TEXCOORD_0") {
-                texcoord_accessor = Some(&world.accessors[attribute.1]);
+                texcoord_accessor = Some(&world_accessors[attribute.1]);
             } else if attribute.0.eq("JOINTS_0") {
-                joint_accessor = Some(&world.accessors[attribute.1]);
+                joint_accessor = Some(&world_accessors[attribute.1]);
             } else if attribute.0.eq("WEIGHTS_0") {
-                weight_accessor = Some(&world.accessors[attribute.1]);
+                weight_accessor = Some(&world_accessors[attribute.1]);
             }
         }
         if position_accessor.is_none() {
             println!("Primitive has no POSITION attribute!");
         } else {
-            let indices_accessor = &world.accessors[self.indices];
-            let indices_accessor_buffer_view = &world.buffer_views[indices_accessor.buffer_view];
-            let indices_accessor_buffer_view_buffer = &world.buffers[indices_accessor_buffer_view.buffer];
+            let indices_accessor = &world_accessors[self.indices];
+            let indices_accessor_buffer_view = &world_buffer_views[indices_accessor.buffer_view];
+            let indices_accessor_buffer_view_buffer = &world_buffers[indices_accessor_buffer_view.buffer];
             let mut byte_offset = indices_accessor_buffer_view.byte_offset;
             let mut byte_length = indices_accessor_buffer_view.byte_length;
             let bytes = &indices_accessor_buffer_view_buffer.data[byte_offset..(byte_offset + byte_length)];
@@ -1754,8 +1760,8 @@ impl Primitive {
             }
 
             let mut positions: &[[f32; 3]] = if let Some(accessor) = position_accessor {
-                let accessor_buffer_view = &world.buffer_views[accessor.buffer_view];
-                let accessor_buffer_view_buffer = &world.buffers[accessor_buffer_view.buffer];
+                let accessor_buffer_view = &world_buffer_views[accessor.buffer_view];
+                let accessor_buffer_view_buffer = &world_buffers[accessor_buffer_view.buffer];
                 byte_offset = accessor_buffer_view.byte_offset;
                 byte_length = accessor_buffer_view.byte_length;
                 let bytes = &accessor_buffer_view_buffer.data[byte_offset..(byte_offset + byte_length)];
@@ -1765,8 +1771,8 @@ impl Primitive {
             };
 
             let mut normals: &[[f32; 3]] = if let Some(accessor) = normal_accessor {
-                let accessor_buffer_view = &world.buffer_views[accessor.buffer_view];
-                let accessor_buffer_view_buffer = &world.buffers[accessor_buffer_view.buffer];
+                let accessor_buffer_view = &world_buffer_views[accessor.buffer_view];
+                let accessor_buffer_view_buffer = &world_buffers[accessor_buffer_view.buffer];
                 byte_offset = accessor_buffer_view.byte_offset;
                 byte_length = accessor_buffer_view.byte_length;
                 let bytes = &accessor_buffer_view_buffer.data[byte_offset..(byte_offset + byte_length)];
@@ -1776,8 +1782,8 @@ impl Primitive {
             };
             
             let mut tex_coords: &[[f32; 2]] = if let Some(accessor) = texcoord_accessor {
-                let accessor_buffer_view = &world.buffer_views[accessor.buffer_view];
-                let accessor_buffer_view_buffer = &world.buffers[accessor_buffer_view.buffer];
+                let accessor_buffer_view = &world_buffer_views[accessor.buffer_view];
+                let accessor_buffer_view_buffer = &world_buffers[accessor_buffer_view.buffer];
                 byte_offset = accessor_buffer_view.byte_offset;
                 byte_length = accessor_buffer_view.byte_length;
                 let bytes = &accessor_buffer_view_buffer.data[byte_offset..(byte_offset + byte_length)];
@@ -1789,10 +1795,10 @@ impl Primitive {
             let mut joints= Vec::new();
             if let Some(accessor) = joint_accessor {
                 let component_type = accessor.component_type;
-                let accessor_buffer_view = &world.buffer_views[accessor.buffer_view];
+                let accessor_buffer_view = &world_buffer_views[accessor.buffer_view];
                 byte_offset = accessor_buffer_view.byte_offset;
                 byte_length = accessor_buffer_view.byte_length;
-                let accessor_buffer_view_buffer = &world.buffers[accessor_buffer_view.buffer];
+                let accessor_buffer_view_buffer = &world_buffers[accessor_buffer_view.buffer];
                 let bytes = &accessor_buffer_view_buffer.data[byte_offset..(byte_offset + byte_length)];
                 match component_type {
                     ComponentType::U8 => {
@@ -1815,10 +1821,10 @@ impl Primitive {
 
             let mut weights: &[[f32; 4]] = &[];
             if let Some(accessor) = weight_accessor {
-                let accessor_buffer_view = &world.buffer_views[accessor.buffer_view];
+                let accessor_buffer_view = &world_buffer_views[accessor.buffer_view];
                 byte_offset = accessor_buffer_view.byte_offset;
                 byte_length = accessor_buffer_view.byte_length;
-                let accessor_buffer_view_buffer = &world.buffers[accessor_buffer_view.buffer];
+                let accessor_buffer_view_buffer = &world_buffers[accessor_buffer_view.buffer];
                 let bytes = &accessor_buffer_view_buffer.data[byte_offset..(byte_offset + byte_length)];
                 weights = bytemuck::cast_slice(bytes);
             }
@@ -2116,9 +2122,8 @@ impl Node {
         self.world_transform = parent_transform * self.local_transform;
     }
 
-    pub fn update_instances(&self, world: &World, instances: &mut Vec<Instance>, dirty_instances: &mut Vec<usize>, add_dirty: bool) {
-        if let Some(mesh_index) = &self.mesh {
-            let mesh = &world.meshes[*mesh_index];
+    pub fn update_instances(&self, mesh: Option<&Mesh>, instances: &mut Vec<Instance>, dirty_instances: &mut Vec<usize>, add_dirty: bool) {
+        if let Some(mesh) = mesh {
             for primitive in mesh.primitives.iter() {
                 instances[primitive.id].matrix = self.world_transform.data;
                 instances[primitive.id].indices[1] = self.skin.unwrap_or(-1);
@@ -2139,13 +2144,19 @@ pub struct Skin {
     skeleton: Option<usize>,
 }
 impl Skin {
-    pub fn construct_joint_matrices(&mut self, world: &mut World) {
+    pub fn construct_joint_matrices(
+        &mut self,
+        world_nodes: &mut Vec<Node>,
+        world_accessors: &Vec<Accessor>,
+        world_buffer_views: &Vec<BufferView>,
+        world_buffers: &Vec<Buffer>,
+    ) {
         let inverse_bind_matrices_accessor = &self.inverse_bind_matrices_accessor;
-        let buffer_view = &world.buffer_views[world.accessors[*inverse_bind_matrices_accessor].buffer_view];
+        let buffer_view = &world_buffer_views[world_accessors[*inverse_bind_matrices_accessor].buffer_view];
         let byte_offset = buffer_view.byte_offset;
         let byte_length = buffer_view.byte_length;
 
-        let buffer = &world.buffers[buffer_view.buffer];
+        let buffer = &world_buffers[buffer_view.buffer];
         let bytes = &buffer.data[byte_offset..(byte_offset + byte_length)];
         let inverse_bind_matrices: &[[f32; 16]] = bytemuck::cast_slice(bytes);
         self.inverse_bind_matrices.clear();
@@ -2157,7 +2168,7 @@ impl Skin {
         let mut joint = 0;
         for node_index in self.joint_indices.iter() {
             self.joint_matrices.push(
-                world.nodes[*node_index].world_transform * self.inverse_bind_matrices[joint]
+                world_nodes[*node_index].world_transform * self.inverse_bind_matrices[joint]
             );
             joint += 1
         }
