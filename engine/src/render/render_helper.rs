@@ -615,6 +615,7 @@ impl<'a> PassCreateInfo<'a> {
     }
 }
 
+#[derive(Clone)]
 pub struct Texture {
     pub device: Device,
 

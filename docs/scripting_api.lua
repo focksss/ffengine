@@ -27,7 +27,7 @@ MovementMode = {
     ---@class Scene
 
     ---@class Renderer
-    ---@field gui GUI
+    ---@field gui fun(self:Renderer, index:integer):GUI
     ---@field scene_renderer SceneRenderer
 
         ---@class GUI

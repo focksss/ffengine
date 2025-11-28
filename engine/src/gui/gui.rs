@@ -27,6 +27,8 @@ enum GUIInteractionResult {
 }
 
 pub struct GUI {
+    index: usize,
+
     device: ash::Device,
     window: Arc<winit::window::Window>,
     controller: Arc<RefCell<Client>>,
@@ -68,7 +70,8 @@ impl GUI {
             Lua::cache_call(
                 passive_action.1,
                 passive_action.0.as_str(),
-                Some(self.active_node)
+                Some(self.active_node),
+                Some(self.index)
             )
         }
 
@@ -91,7 +94,8 @@ impl GUI {
                 Lua::cache_call(
                     unhover_action.1,
                     unhover_action.0.as_str(),
-                    Some(self.active_node)
+                    Some(self.active_node),
+                    Some(self.index)
                 )
             }
         } else {
@@ -101,7 +105,8 @@ impl GUI {
                     Lua::cache_call(
                         hover_action.1,
                         hover_action.0.as_str(),
-                        Some(self.active_node)
+                        Some(self.active_node),
+                        Some(self.index)
                     )
                 }
             }
@@ -121,7 +126,8 @@ impl GUI {
                 Lua::cache_call(
                     left_hold_action.1,
                     left_hold_action.0.as_str(),
-                    Some(self.active_node)
+                    Some(self.active_node),
+                    Some(self.index)
                 )
             }
             return GUIInteractionResult::LeftHold;
@@ -132,7 +138,8 @@ impl GUI {
                     Lua::cache_call(
                         left_tap_action.1,
                         left_tap_action.0.as_str(),
-                        Some(self.active_node)
+                        Some(self.active_node),
+                        Some(self.index)
                     )
                 }
             }
@@ -142,7 +149,7 @@ impl GUI {
         result
     }
 
-    pub unsafe fn new(base: &VkBase, controller: Arc<RefCell<Client>>, null_tex_sampler: vk::Sampler, null_tex_img_view: vk::ImageView) -> GUI { unsafe {
+    pub unsafe fn new(index: usize, base: &VkBase, controller: Arc<RefCell<Client>>, null_tex_sampler: vk::Sampler, null_tex_img_view: vk::ImageView) -> GUI { unsafe {
         let null_info = vk::DescriptorImageInfo {
             sampler: null_tex_sampler,
             image_view: null_tex_img_view,
@@ -151,6 +158,8 @@ impl GUI {
         let (pass_ref, quad_renderpass, text_renderer) = GUI::create_rendering_objects(&base, null_info);
 
         let mut gui = GUI {
+            index,
+
             device: base.device.clone(),
             window: base.window.clone(),
             controller,

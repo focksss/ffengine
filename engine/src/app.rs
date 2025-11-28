@@ -62,7 +62,7 @@ impl Engine {
             renderer: unsafe { Arc::new(RefCell::new(Renderer::new(&base, controller.clone(), CameraPointer {
                 world: world.clone(),
                 index: 0
-            }))) },
+            }, 1))) },
             world,
             client: controller,
             base,
@@ -165,7 +165,9 @@ impl Engine {
                                 );
                             */
                         }
-                        self.renderer.borrow_mut().gui.borrow_mut().initialize_new_texts(base);
+                        for gui in self.renderer.borrow_mut().guis.iter() {
+                            gui.borrow_mut().initialize_new_texts(base);
+                        }
 
                         let now = Instant::now();
                         let delta_time = now.duration_since(last_frame_time).as_secs_f32();

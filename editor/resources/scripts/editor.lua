@@ -71,15 +71,15 @@ function recompile()
 end
 
 function close_hovered()
-	Engine.renderer.gui.ActiveNode.quad:set_color(1.0, 0.3, 0.3, 1.0)
+	Engine.renderer:gui(0).ActiveNode.quad:set_color(1.0, 0.3, 0.3, 1.0)
 end
 
 function color_hovered()
-	Engine.renderer.gui.ActiveNode.quad:set_color(2.0, 2.0, 2.0, 0.15)
+	Engine.renderer:gui(0).ActiveNode.quad:set_color(2.0, 2.0, 2.0, 0.15)
 end
 
 function color_unhovered()
-	Engine.renderer.gui.ActiveNode.quad:set_color(1.0, 1.0, 1.0, 0.0)
+	Engine.renderer:gui(0).ActiveNode.quad:set_color(1.0, 1.0, 1.0, 0.0)
 end
 
 function drag_window() 
@@ -99,7 +99,7 @@ end
 function resize_right_area()
 	resize_called_this_tick = true
 
-	local gui = Engine.renderer.gui
+	local gui = Engine.renderer:gui(0)
 	local right_area_node = gui:get_node(right_area_node_index)
 	local window_size = Engine.client.window_size
 	right_area_node.scale = Vector.new2(
@@ -117,7 +117,7 @@ function update_fps()
 
 	if time_since_fps_update > 1.0 then 
 		local fps = frame_count / time_since_fps_update
-        Engine.renderer.gui.ActiveNode.text:update_text(string.format("FPS: %.1f", fps))
+        Engine.renderer:gui(0).ActiveNode.text:update_text(string.format("FPS: %.1f", fps))
         time_since_fps_update = 0
         frame_count = 0
 	end
@@ -125,13 +125,13 @@ end
 
 local stored_window_size = Vector.new2(0, 0)
 function Update()
-	local gui = Engine.renderer.gui
+	local gui = Engine.renderer:gui(0)
 	local window_size = Engine.client.window_size
 	local right_area_node = gui:get_node(right_area_node_index)
 
 	local maximized = Engine.client.maximized
-	Engine.renderer.gui:get_node(minimize_button_index).hidden = not maximized
-	Engine.renderer.gui:get_node(maximize_button_index).hidden = maximized
+	Engine.renderer:gui(0):get_node(minimize_button_index).hidden = not maximized
+	Engine.renderer:gui(0):get_node(maximize_button_index).hidden = maximized
 
 	Engine.client:set_cursor_icon(target_cursor_icon)
 	target_cursor_icon = CursorIcon.Default

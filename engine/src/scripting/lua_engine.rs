@@ -34,7 +34,7 @@ pub struct Lua {
     scripts: Vec<Script>,
     free_script_indices: Vec<usize>,
 
-    cached_calls: Vec<(usize, String, usize)>, // cached script calls, stores script index, method name, and call index. Maybe add a parameter cache using a sort of heap?
+    cached_calls: Vec<(usize, String, usize, usize)>, // stores script index, method name, call index, and gui index.
     reload_scripts_requested: bool,
     load_scripts_requested: bool,
 }
@@ -261,16 +261,17 @@ impl Lua {
     }
 
     /// call_index is used as the "active_object" index during method calling
-    pub fn cache_call(script_index: usize, method_name: &str, call_index: Option<usize>) {
-        Self::with_mut(|lua| lua.cache_call_impl(script_index, method_name, call_index));
+    pub fn cache_call(script_index: usize, method_name: &str, call_index: Option<usize>, gui_index: Option<usize>) {
+        Self::with_mut(|lua| lua.cache_call_impl(script_index, method_name, call_index, gui_index));
     }
     fn cache_call_impl(
         &mut self,
         script_index: usize,
         method_name: &str,
         call_index: Option<usize>,
+        gui_index: Option<usize>,
     ) {
-        self.cached_calls.push((script_index, method_name.to_string(), call_index.unwrap_or(0)));
+        self.cached_calls.push((script_index, method_name.to_string(), call_index.unwrap_or(0), gui_index.unwrap_or(0)));
     }
 
     pub fn clear_cache() {
@@ -289,7 +290,7 @@ impl Lua {
         engine: &EngineRef,
     ) {
         for call in self.cached_calls.clone() {
-            engine.renderer.borrow_mut().gui.borrow_mut().active_node = call.2;
+            engine.renderer.borrow_mut().guis[call.3].borrow_mut().active_node = call.2;
             self.call_method_impl(
                 call.0,
                 call.1.as_str(),
