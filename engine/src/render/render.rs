@@ -8,17 +8,17 @@ use std::sync::Arc;
 use crate::client::client::Client;
 use crate::gui::gui::GUI;
 use crate::math::Vector;
-use crate::physics::hitboxes::hitbox::Hitbox;
-use crate::physics::hitboxes::hitbox::Hitbox::OBB;
-use crate::physics::hitboxes::hitbox::Hitbox::Sphere;
-use crate::physics::hitboxes::mesh::Bvh;
-use crate::physics::physics_engine::PhysicsEngine;
-use crate::physics::player::Player;
+use crate::scene::physics::hitboxes::hitbox::Hitbox;
+use crate::scene::physics::hitboxes::hitbox::Hitbox::OBB;
+use crate::scene::physics::hitboxes::hitbox::Hitbox::Sphere;
+use crate::scene::physics::hitboxes::mesh::Bvh;
+use crate::scene::physics::physics_engine::PhysicsEngine;
+use crate::scene::physics::player::Player;
 use crate::render::render_helper::{Descriptor, DescriptorCreateInfo, DescriptorSetCreateInfo, PassCreateInfo, Renderpass, RenderpassCreateInfo, Texture, TextureCreateInfo};
 use crate::render::scene_renderer::SceneRenderer;
 use crate::render::vulkan_base::{compile_shaders, find_memorytype_index, VkBase};
-use crate::world::camera::{Camera, CameraPointer};
-use crate::world::scene::World;
+use crate::scene::world::camera::{Camera, CameraPointer};
+use crate::scene::world::scene::World;
 
 pub const MAX_FRAMES_IN_FLIGHT: usize = 3;
 

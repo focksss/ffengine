@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::sync::Arc;
 use crate::math::matrix::Matrix;
 use crate::math::Vector;
-use crate::world::scene::World;
+use crate::scene::world::scene::World;
 
 const PI: f32 = std::f32::consts::PI;
 

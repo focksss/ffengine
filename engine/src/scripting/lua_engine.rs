@@ -8,7 +8,7 @@ use mlua::AsChunk;
 use crate::app::EngineRef;
 use crate::gui::gui::GUI;
 use crate::math::Vector;
-use crate::physics::player::MovementMode;
+use crate::scene::physics::player::MovementMode;
 use crate::scripting::engine_api::client_api::client_api::{LuaCursorIcon, LuaKeyCode, LuaMouseButton, LuaResizeDirection};
 use crate::scripting::engine_api::engine_api;
 use crate::scripting::engine_api::gui_api::gui_api::{GUIRef};

@@ -1,11 +1,11 @@
-use crate::physics::hitboxes::capsule::Capsule;
-use crate::physics::hitboxes::sphere::Sphere;
-use crate::world::scene::{Node, World};
+use crate::scene::physics::hitboxes::capsule::Capsule;
+use crate::scene::physics::hitboxes::sphere::Sphere;
+use crate::scene::world::scene::{Node, World};
 use crate::math::Vector;
-use crate::physics::hitboxes::bounding_box::BoundingBox;
-use crate::physics::hitboxes::convex_hull::ConvexHull;
-use crate::physics::hitboxes::hitbox;
-use crate::physics::hitboxes::mesh::MeshCollider;
+use crate::scene::physics::hitboxes::bounding_box::BoundingBox;
+use crate::scene::physics::hitboxes::convex_hull::ConvexHull;
+use crate::scene::physics::hitboxes::hitbox;
+use crate::scene::physics::hitboxes::mesh::MeshCollider;
 
 pub enum Hitbox {
     OBB(BoundingBox, ConvexHull),

@@ -8,7 +8,7 @@ use winit::keyboard::NativeKey::MacOS;
 use winit::window::{CursorGrabMode, CursorIcon, ResizeDirection};
 use crate::client::client::{Client, Flags};
 use crate::math::Vector;
-use crate::physics::player::PlayerPointer;
+use crate::scene::physics::player::PlayerPointer;
 use crate::scripting::lua_engine::RegisterToLua;
 
 #[derive(Clone)]

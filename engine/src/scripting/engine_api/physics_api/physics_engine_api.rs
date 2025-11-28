@@ -2,9 +2,9 @@ use std::cell::RefCell;
 use std::sync::Arc;
 use mlua::{FromLua, UserData, UserDataFields, UserDataMethods, Value};
 use crate::math::Vector;
-use crate::physics::physics_engine::PhysicsEngine;
-use crate::physics::player::PlayerPointer;
-use crate::physics::rigid_body::RigidBodyPointer;
+use crate::scene::physics::physics_engine::PhysicsEngine;
+use crate::scene::physics::player::PlayerPointer;
+use crate::scene::physics::rigid_body::RigidBodyPointer;
 
 #[derive(Clone)]
 pub struct PhysicsEngineRef(pub Arc<RefCell<PhysicsEngine>>);

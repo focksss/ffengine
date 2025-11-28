@@ -11,13 +11,13 @@ use winit::event_loop::EventLoopWindowTarget;
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::CursorGrabMode;
 use crate::math::Vector;
-use crate::physics::physics_engine::PhysicsEngine;
-use crate::physics::player::{MovementMode, Player, PlayerPointer};
+use crate::scene::physics::physics_engine::PhysicsEngine;
+use crate::scene::physics::player::{MovementMode, Player, PlayerPointer};
 use crate::render::render::{screenshot_texture, Renderer};
 use crate::render::vulkan_base::VkBase;
 use crate::scripting::lua_engine::Lua;
-use crate::world::camera::Camera;
-use crate::world::scene::World;
+use crate::scene::world::camera::Camera;
+use crate::scene::world::scene::World;
 
 pub struct Client {
     pub window: Arc<winit::window::Window>,

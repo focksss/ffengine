@@ -11,8 +11,8 @@ use crate::math::Vector;
 use crate::render::render::MAX_FRAMES_IN_FLIGHT;
 use crate::render::render_helper::{Descriptor, DescriptorCreateInfo, DescriptorSetCreateInfo, PassCreateInfo, Renderpass, RenderpassCreateInfo, Texture, TextureCreateInfo};
 use crate::render::vulkan_base::{copy_data_to_memory, VkBase};
-use crate::world::camera::Camera;
-use crate::world::scene::{Instance, World, SunSendable, Vertex};
+use crate::scene::world::camera::Camera;
+use crate::scene::world::scene::{Instance, World, SunSendable, Vertex};
 
 const SSAO_KERNAL_SIZE: usize = 16;
 const SSAO_RESOLUTION_MULTIPLIER: f32 = 0.5;
@@ -415,7 +415,7 @@ impl SceneRenderer {
 
         let ssao_depth_downsample_pass_create_info = PassCreateInfo::new(base)
             .add_color_attachment_info(TextureCreateInfo::new(base).format(Format::R16G16B16A16_SFLOAT)
-                .width(resolution.width as u32).height(resolution.height as u32)
+                .width(resolution.width).height(resolution.height)
                 .resolution_denominator((1.0 / SSAO_RESOLUTION_MULTIPLIER) as u32));
         let ssao_pass_create_info = PassCreateInfo::new(base)
             .add_color_attachment_info(ssao_res_color_tex_create_info);
@@ -789,7 +789,7 @@ impl SceneRenderer {
                 .descriptor_set_create_info(ssao_depth_downsample_descriptor_set_create_info)
                 .vertex_shader_uri(String::from("quad\\quad.vert.spv"))
                 .fragment_shader_uri(String::from("ssao\\pre_downsample.frag.spv"))
-                .resolution(vk::Extent2D {
+                .resolution(Extent2D {
                     width: (resolution.width as f32 * SSAO_RESOLUTION_MULTIPLIER) as u32,
                     height: (resolution.height as f32 * SSAO_RESOLUTION_MULTIPLIER) as u32,
                 }) };
@@ -1009,7 +1009,13 @@ impl SceneRenderer {
             None
         );
 
-        self.ssao_pre_downsample_renderpass.do_renderpass(current_frame, frame_command_buffer, None::<fn()>, None::<fn()>, None);
+        self.ssao_pre_downsample_renderpass.do_renderpass(
+            current_frame,
+            frame_command_buffer,
+            None::<fn()>,
+            None::<fn()>,
+            None
+        );
         self.ssao_renderpass.do_renderpass(current_frame, frame_command_buffer, None::<fn()>, None::<fn()>, None);
         self.ssao_blur_horizontal_renderpass.do_renderpass(current_frame, frame_command_buffer, Some(|| {
             device.cmd_push_constants(frame_command_buffer, self.ssao_blur_horizontal_renderpass.pipeline_layout, ShaderStageFlags::FRAGMENT, 0, slice::from_raw_parts(

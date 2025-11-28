@@ -2,10 +2,10 @@ use std::cell::RefCell;
 use std::sync::Arc;
 use mlua::{UserData, UserDataFields, UserDataMethods};
 use crate::math::Vector;
-use crate::world::scene::World;
+use crate::scene::world::scene::World;
 
 /*
-pub struct SceneRef(pub Arc<RefCell<Scene>>);
+pub struct SceneRef(pub Arc<RefCell<World>>);
 impl UserData for SceneRef {
     fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
         methods.add_method("get_object", |lua, this, index: usize| {
@@ -16,12 +16,12 @@ impl UserData for SceneRef {
 }
 
 struct SceneObjectPointer {
-    scene: Arc<RefCell<Scene>>,
+    scene: Arc<RefCell<World>>,
     index: usize
 }
 
 struct SceneNodePointer {
-    scene: Arc<RefCell<Scene>>,
+    scene: Arc<RefCell<World>>,
     index: usize
 }
 impl UserData for SceneNodePointer {
@@ -52,4 +52,5 @@ impl UserData for SceneNodePointer {
         });
     }
 }
+
  */

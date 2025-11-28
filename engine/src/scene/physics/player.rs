@@ -1,14 +1,14 @@
 use std::cell::RefCell;
 use std::sync::Arc;
-use crate::world::camera::{Camera, CameraPointer};
+use crate::scene::world::camera::{Camera, CameraPointer};
 use crate::math::Vector;
-use crate::physics::hitboxes::bounding_box::BoundingBox;
-use crate::physics::hitboxes::convex_hull::ConvexHull;
-use crate::physics::hitboxes::hitbox::Hitbox;
-use crate::physics::hitboxes::sphere::Sphere;
-use crate::physics::physics_engine::{PhysicsEngine, RigidBody};
-use crate::physics::rigid_body::RigidBodyPointer;
-use crate::world::scene::World;
+use crate::scene::physics::hitboxes::bounding_box::BoundingBox;
+use crate::scene::physics::hitboxes::convex_hull::ConvexHull;
+use crate::scene::physics::hitboxes::hitbox::Hitbox;
+use crate::scene::physics::hitboxes::sphere::Sphere;
+use crate::scene::physics::physics_engine::{PhysicsEngine, RigidBody};
+use crate::scene::physics::rigid_body::RigidBodyPointer;
+use crate::scene::world::scene::World;
 
 #[derive(Copy, Clone, Debug)]
 pub enum MovementMode {

@@ -2,10 +2,10 @@ use std::cell::RefCell;
 use std::sync::Arc;
 use crate::math::matrix::Matrix;
 use crate::math::Vector;
-use crate::physics::hitboxes::hitbox::{Hitbox, HitboxType};
-use crate::physics::hitboxes::sphere::Sphere;
-use crate::physics::physics_engine::{AxisType, ContactInformation, ContactPoint, PhysicsEngine};
-use crate::world::scene::{Node, World, Vertex};
+use crate::scene::physics::hitboxes::hitbox::{Hitbox, HitboxType};
+use crate::scene::physics::hitboxes::sphere::Sphere;
+use crate::scene::physics::physics_engine::{AxisType, ContactInformation, ContactPoint, PhysicsEngine};
+use crate::scene::world::scene::{Node, World, Vertex};
 
 #[derive(Clone)]
 pub struct RigidBodyPointer {

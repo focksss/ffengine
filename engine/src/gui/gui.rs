@@ -12,7 +12,7 @@ use winit::event::MouseButton;
 use crate::app::get_command_buffer;
 use crate::client::client::*;
 use crate::math::*;
-use crate::physics::player::MovementMode;
+use crate::scene::physics::player::MovementMode;
 use crate::render::render_helper::{Descriptor, DescriptorCreateInfo, DescriptorSetCreateInfo, Pass, PassCreateInfo, Renderpass, RenderpassCreateInfo, Texture, TextureCreateInfo};
 use crate::gui::text::font::Font;
 use crate::gui::text::text_render::{TextInformation, TextRenderer};

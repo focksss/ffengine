@@ -1,6 +1,6 @@
 use mlua::{FromLua, Lua, UserData, UserDataFields, Value};
 use crate::math::Vector;
-use crate::physics::rigid_body::RigidBodyPointer;
+use crate::scene::physics::rigid_body::RigidBodyPointer;
 
 impl UserData for RigidBodyPointer {
     fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {

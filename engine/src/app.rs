@@ -12,13 +12,13 @@ use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
 use crate::math::Vector;
 use crate::client::client::Client;
 use crate::gui::gui::GUI;
-use crate::physics::physics_engine::PhysicsEngine;
-use crate::physics::player::{MovementMode, Player, PlayerPointer};
+use crate::scene::physics::physics_engine::PhysicsEngine;
+use crate::scene::physics::player::{MovementMode, Player, PlayerPointer};
 use crate::render::render::{Renderer, MAX_FRAMES_IN_FLIGHT};
 use crate::render::vulkan_base::{record_submit_commandbuffer, VkBase};
 use crate::scripting::lua_engine::Lua;
-use crate::world::camera::{Camera, CameraPointer};
-use crate::world::scene::{Light, World};
+use crate::scene::world::camera::{Camera, CameraPointer};
+use crate::scene::world::scene::{Light, World};
 
 const PI: f32 = std::f32::consts::PI;
 

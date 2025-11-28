@@ -3,9 +3,9 @@ use std::default::Default;
 use std::path::{Path, PathBuf};
 use ffengine::app::Engine;
 use ffengine::math::Vector;
-use ffengine::physics::player::{MovementMode, Player};
-use ffengine::world::camera::Camera;
-use ffengine::world::scene::{Light};
+use ffengine::scene::physics::player::{MovementMode, Player};
+use ffengine::scene::world::camera::Camera;
+use ffengine::scene::world::scene::{Light};
 
 fn main() { unsafe {
     let mut app = Engine::new();
@@ -30,10 +30,12 @@ fn main() { unsafe {
             outer_cutoff: 0.0,
         });
 
-        // world.add_model(base, Model::new(&PathBuf::from("editor/resources/models/ffocks/untitled.gltf").to_str().unwrap()));
-        // world.models[0].transform_roots(&Vector::new_vec3(0.0, 0.0, 5.0), &Vector::new_vec(0.0), &Vector::new_vec(0.05));
-        // world.models[0].animations[0].repeat = true;
-        // world.models[0].animations[0].start();
+        /*
+        world.add_model(base, "editor/resources/models/ffocks/untitled.gltf");
+        let anim_index = world.models[0].animations[0];
+        world.animations[anim_index].repeat = true;
+        world.animations[anim_index].start();
+         */
 
         //world.add_model(Model::new("C:\\Graphics\\assets\\flower\\world.gltf"));
         //world.models[0].transform_roots(&Vector::new_vec3(0.0, 1.0, 0.0), &Vector::new_vec(0.0), &Vector::new_vec(1.0));
@@ -45,7 +47,7 @@ fn main() { unsafe {
         //world.preload_model(Model::new(&PathBuf::from("resources/models/discardTest/scene.gltf").to_str().unwrap()));
         //world.preload_model(Model::new(&PathBuf::from("resources/models/shadowTest/shadowTest.gltf").to_str().unwrap()));
         //world.models[1].transform_roots(&Vector::new_vec3(0.0, 0.0, -5.0), &Vector::new_vec(0.0), &Vector::new_vec(1.0));
-        //world.add_model(base, Model::new("C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf"));
+        //world.add_model(base, "C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf");
         //world.preload_model(Model::new("C:\\Graphics\\assets\\neeko\\scene.gltf"));
         //world.preload_model(Model::new("C:\\Graphics\\assets\\bistroGLTF\\untitled.gltf"));
         //world.preload_model(Model::new("C:\\Graphics\\assets\\asgard\\asgard.gltf"));
@@ -66,6 +68,7 @@ fn main() { unsafe {
         physics_engine.rigid_bodies[0].position = Vector::new3(0.5, 10.0, 0.5);
         physics_engine.rigid_bodies[0].restitution_coefficient = 1.0;
         */
+
         // /*
         world.add_model(base, "editor/resources/models/collisionTest/collisionTestNoWalls.gltf");
 
@@ -92,6 +95,7 @@ fn main() { unsafe {
         physics_engine.rigid_bodies[2].position = Vector::new3(0.5, 15.0, 0.5);
         physics_engine.rigid_bodies[2].restitution_coefficient = 1.0;
         // */
+
         /*
         world.add_model(base, Model::new(&PathBuf::from("editor/resources/models/sphereScene/scene.gltf").to_str().unwrap()));
 

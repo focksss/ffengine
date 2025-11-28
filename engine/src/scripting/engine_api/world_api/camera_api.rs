@@ -1,8 +1,8 @@
 use mlua::{FromLua, UserData, UserDataFields, UserDataMethods, Value};
 use crate::math::Vector;
-use crate::physics::player::PlayerPointer;
-use crate::physics::rigid_body::RigidBodyPointer;
-use crate::world::camera::CameraPointer;
+use crate::scene::physics::player::PlayerPointer;
+use crate::scene::physics::rigid_body::RigidBodyPointer;
+use crate::scene::world::camera::CameraPointer;
 
 impl UserData for CameraPointer {
     fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {

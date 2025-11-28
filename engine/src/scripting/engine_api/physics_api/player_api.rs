@@ -2,8 +2,8 @@ use std::cell::RefCell;
 use std::sync::Arc;
 use mlua::{FromLua, Lua, UserData, UserDataFields, Value};
 use crate::math::Vector;
-use crate::physics::player::{MovementMode, PlayerPointer};
-use crate::physics::rigid_body::RigidBodyPointer;
+use crate::scene::physics::player::{MovementMode, PlayerPointer};
+use crate::scene::physics::rigid_body::RigidBodyPointer;
 use crate::scripting::lua_engine::RegisterToLua;
 
 impl RegisterToLua for MovementMode {

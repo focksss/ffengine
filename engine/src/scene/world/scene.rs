@@ -13,7 +13,7 @@ use crate::math::Vector;
 use crate::render::render::MAX_FRAMES_IN_FLIGHT;
 use crate::render::scene_renderer::SHADOW_RES;
 use crate::render::vulkan_base::{copy_buffer_synchronous, copy_data_to_memory, VkBase};
-use crate::world::camera::{Camera, Frustum};
+use crate::scene::world::camera::{Camera, Frustum};
 
 // SHOULD DETECT MATH VS COLOR DATA TEXTURES, LOAD COLOR AS SRGB, MATH AS UNORM
 const MAX_VERTICES: u64 = 3 * 10u64.pow(6); // 7 for bistro
