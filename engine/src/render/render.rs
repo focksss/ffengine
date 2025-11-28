@@ -30,6 +30,9 @@ pub struct Renderer {
 
     pub present_renderpass: Renderpass,
     pub compositing_renderpass: Renderpass,
+    compositing_renderpass_layers: usize,
+
+    null_tex_info: vk::DescriptorImageInfo,
 
     pub scene_renderer: Arc<RefCell<SceneRenderer>>,
     pub gui: Arc<RefCell<GUI>>,
@@ -55,7 +58,12 @@ impl Renderer {
             }
         );
 
-        let gui = Arc::new(RefCell::new(GUI::new(base, controller, scene_renderer.borrow().null_tex_sampler, scene_renderer.borrow().null_texture.image_view)));
+        let null_tex_info = vk::DescriptorImageInfo {
+            sampler: scene_renderer.borrow().sampler.clone(),
+            image_view: scene_renderer.borrow().null_texture.image_view.clone(),
+            image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+        };
+        let gui = Arc::new(RefCell::new(GUI::new(base, controller, scene_renderer.borrow().null_tex_sampler.clone(), scene_renderer.borrow().null_texture.image_view.clone())));
         let mut renderer = Renderer {
             device: base.device.clone(),
             draw_command_buffers: base.draw_command_buffers.clone(),
@@ -64,6 +72,9 @@ impl Renderer {
 
             present_renderpass,
             compositing_renderpass,
+            compositing_renderpass_layers: 3,
+
+            null_tex_info,
 
             gui,
             scene_renderer,
@@ -96,11 +107,21 @@ impl Renderer {
                 &frame_textures[0]
             }).collect::<Vec<&Texture>>()
         ]);
+        renderer.set_compositing_layers(3);
         renderer.scene_renderer.borrow_mut().update_world_textures_all_frames(&base, &world);
 
         renderer
     } }
-    unsafe fn create_rendering_objects(base: &VkBase, world: &World, scene_viewport: vk::Viewport) -> (Arc<RefCell<SceneRenderer>>, Renderpass, Renderpass, Renderpass) { unsafe {
+    unsafe fn create_rendering_objects(
+        base: &VkBase, world: &World, scene_viewport: vk::Viewport
+    ) -> (
+        Arc<RefCell<SceneRenderer>>,
+        Renderpass,
+        Renderpass,
+        Renderpass
+    ) { unsafe {
+        let scene_renderer = SceneRenderer::new(base, world, scene_viewport);
+
         let texture_sampler_create_info = DescriptorCreateInfo::new(base)
             .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
             .shader_stages(ShaderStageFlags::FRAGMENT);
@@ -157,19 +178,33 @@ impl Renderer {
             .vertex_shader_uri(String::from("quad\\quad.vert.spv"))
             .fragment_shader_uri(String::from("quad\\quad.frag.spv")) };
 
+        let composite_layers_descriptor_create_info = DescriptorCreateInfo::new(base)
+            .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
+            .shader_stages(ShaderStageFlags::FRAGMENT)
+            .dynamic(true)
+            .image_infos(vec![vk::DescriptorImageInfo {
+                image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                image_view: scene_renderer.null_texture.image_view,
+                sampler: scene_renderer.null_tex_sampler,
+                ..Default::default()
+            }; 5]);
         let compositing_pass_create_info = PassCreateInfo::new(base)
             .add_color_attachment_info(TextureCreateInfo::new(base).format(Format::R16G16B16A16_SFLOAT).add_usage_flag(vk::ImageUsageFlags::TRANSFER_SRC));
         let compositing_descriptor_set_create_info = DescriptorSetCreateInfo::new(base)
-            .add_descriptor(Descriptor::new(&texture_sampler_create_info))
-            .add_descriptor(Descriptor::new(&texture_sampler_create_info))
-            .add_descriptor(Descriptor::new(&texture_sampler_create_info));
+            .add_descriptor(Descriptor::new(&composite_layers_descriptor_create_info));
         let compositing_renderpass_create_info = { RenderpassCreateInfo::new(base)
             .pass_create_info(compositing_pass_create_info)
             .descriptor_set_create_info(compositing_descriptor_set_create_info)
             .vertex_shader_uri(String::from("quad\\quad.vert.spv"))
-            .fragment_shader_uri(String::from("composite.frag.spv")) };
+            .fragment_shader_uri(String::from("composite.frag.spv"))
+            .push_constant_range(vk::PushConstantRange {
+                stage_flags: ShaderStageFlags::FRAGMENT,
+                offset: 0,
+                size: size_of::<usize>() as _,
+            })
+        };
         (
-            Arc::new(RefCell::new(SceneRenderer::new(base, world, scene_viewport))),
+            Arc::new(RefCell::new(scene_renderer)),
             Renderpass::new(compositing_renderpass_create_info),
             Renderpass::new(present_renderpass_create_info),
             hitbox_renderpass
@@ -195,6 +230,11 @@ impl Renderer {
 
         { self.gui.borrow_mut().reload_rendering(base, scene_renderer.null_tex_sampler, scene_renderer.null_texture.image_view); }
 
+        self.null_tex_info = vk::DescriptorImageInfo {
+            sampler: scene_renderer.sampler.clone(),
+            image_view: scene_renderer.null_texture.image_view.clone(),
+            image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+        };
 
         self.set_present_textures(self.compositing_renderpass.pass.borrow().textures.iter().map(|frame_textures| {
             &frame_textures[0]
@@ -235,24 +275,34 @@ impl Renderer {
             self.device.update_descriptor_sets(&present_descriptor_writes, &[]);
         }
     } }
+    pub fn set_compositing_layers(&mut self, layers: usize) { self.compositing_renderpass_layers = layers }
     pub unsafe fn set_compositing_textures(&self, texture_sets: Vec<Vec<&Texture>>) { unsafe {
         for current_frame in 0..MAX_FRAMES_IN_FLIGHT {
-            let image_infos = texture_sets.iter().map(|texture_set| {
+            let mut image_infos = texture_sets.iter().map(|texture_set| {
                 vk::DescriptorImageInfo {
                     sampler: self.present_sampler,
                     image_view: texture_set[current_frame].image_view,
                     image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                 }
             }).collect::<Vec<vk::DescriptorImageInfo>>();
+            for _ in 0..(5 - image_infos.len()) {
+                image_infos.push(self.null_tex_info.clone())
+            }
 
-            let descriptor_writes: Vec<vk::WriteDescriptorSet> = image_infos.iter().enumerate().map(|(i, info)| {
-                vk::WriteDescriptorSet::default()
-                    .dst_set(self.compositing_renderpass.descriptor_set.descriptor_sets[current_frame])
-                    .dst_binding(i as u32)
-                    .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
-                    .image_info(slice::from_ref(info))
-            }).collect();
-            self.device.update_descriptor_sets(&descriptor_writes, &[]);
+            let image_infos = image_infos.as_slice().as_ptr();
+            for frame in 0..MAX_FRAMES_IN_FLIGHT {
+                let descriptor_write = vk::WriteDescriptorSet {
+                    s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
+                    dst_set: self.compositing_renderpass.descriptor_set.descriptor_sets[frame],
+                    dst_binding: 0,
+                    dst_array_element: 0,
+                    descriptor_type: DescriptorType::COMBINED_IMAGE_SAMPLER,
+                    descriptor_count: 5,
+                    p_image_info: image_infos,
+                    ..Default::default()
+                };
+                self.device.update_descriptor_sets(&[descriptor_write], &[]);
+            }
         }
     } }
 
@@ -332,7 +382,18 @@ impl Renderer {
         self.device.cmd_end_render_pass(frame_command_buffer);
         { self.hitbox_renderpass.pass.borrow().transition_to_readable(frame_command_buffer, current_frame); }
 
-        self.compositing_renderpass.do_renderpass(current_frame, frame_command_buffer, None::<fn()>, None::<fn()>, None);
+        self.compositing_renderpass.do_renderpass(
+            current_frame,
+            frame_command_buffer,
+            Some(|| {
+                self.device.cmd_push_constants(frame_command_buffer, self.compositing_renderpass.pipeline_layout, ShaderStageFlags::FRAGMENT, 0, slice::from_raw_parts(
+                    &self.compositing_renderpass_layers as *const usize as *const u8,
+                    size_of::<usize>(),
+                ));
+            }),
+            None::<fn()>,
+            None
+        );
         self.present_renderpass.begin_renderpass(current_frame, frame_command_buffer, Some(present_index));
         self.device.cmd_draw(frame_command_buffer, 6, 1, 0, 0);
         self.device.cmd_end_render_pass(frame_command_buffer);

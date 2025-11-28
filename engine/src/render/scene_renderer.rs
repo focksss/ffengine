@@ -384,8 +384,8 @@ impl SceneRenderer {
         let resolution = Extent2D { width: viewport.width as u32, height: viewport.height as u32 };
         let image_infos: Vec<vk::DescriptorImageInfo> = vec![vk::DescriptorImageInfo {
             image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-            image_view: null_tex.image_view,
-            sampler: *null_tex_sampler,
+            image_view: null_tex.image_view.clone(),
+            sampler: null_tex_sampler.clone(),
             ..Default::default()
         }; 1024];
 
