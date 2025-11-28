@@ -878,11 +878,13 @@ impl SceneRenderer {
         let mut image_infos: Vec<vk::DescriptorImageInfo> = Vec::with_capacity(1024);
         for model in &world.models {
             for texture in &model.textures {
-                if texture.borrow().source.borrow().generated {
+                let texture = &world.textures[*texture];
+                let texture_source = &world.images[texture.source];
+                if texture_source.generated {
                     image_infos.push(vk::DescriptorImageInfo {
                         image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                        image_view: texture.borrow().source.borrow().image_view,
-                        sampler: texture.borrow().sampler,
+                        image_view: texture_source.image_view,
+                        sampler: texture.sampler,
                         ..Default::default()
                     });
                 } else {

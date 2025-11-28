@@ -1,6 +1,6 @@
 use crate::physics::hitboxes::capsule::Capsule;
 use crate::physics::hitboxes::sphere::Sphere;
-use crate::world::scene::Node;
+use crate::world::scene::{Node, World};
 use crate::math::Vector;
 use crate::physics::hitboxes::bounding_box::BoundingBox;
 use crate::physics::hitboxes::convex_hull::ConvexHull;
@@ -15,11 +15,12 @@ pub enum Hitbox {
     ConvexHull(ConvexHull),
 }
 impl Hitbox {
-    pub fn get_hitbox_from_node(node: &Node, hitbox_type: usize) -> Option<(Hitbox, Vector)> {
+    pub fn get_hitbox_from_node(world: &World, node: &Node, hitbox_type: usize) -> Option<(Hitbox, Vector)> {
         assert!(hitbox_type < 5);
-        if let Some(mesh) = &node.mesh {
+        if let Some(mesh_index) = &node.mesh {
+            let mesh = &world.meshes[*mesh_index];
             let scale = node.scale * node.user_scale;
-            let (min, max) = mesh.borrow().get_min_max();
+            let (min, max) = mesh.get_min_max();
             let half_extent = (max - min) * 0.5 * scale;
 
             return Some((match hitbox_type {
@@ -56,7 +57,7 @@ impl Hitbox {
                 4 => {
                     let mut vertices = Vec::new();
 
-                    for primitive in &mesh.borrow().primitives {
+                    for primitive in &mesh.primitives {
                         for vertex in primitive.vertex_data.iter() {
                             vertices.push(scale * Vector::from_array(&vertex.position));
                         }

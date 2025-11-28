@@ -51,13 +51,13 @@ impl RigidBody {
     }
     pub fn update_this_according_to_coupled(&mut self, world: &World)  {
         if let Some(coupled_object) = self.coupled_with_scene_object {
-            let node = &world.models[coupled_object.0].nodes[coupled_object.1];
+            let node = &world.nodes[world.models[coupled_object.0].nodes[coupled_object.1]];
             let node_scale = node.world_transform.extract_scale();
 
             self.position = node.world_transform * Vector::new4(0.0, 0.0, 0.0, 1.0);
             self.orientation = node.world_transform.extract_quaternion();
             if !node_scale.equals(&self.stored_hitbox_scale, 0.01) {
-                (self.hitbox, self.stored_hitbox_scale) = Hitbox::get_hitbox_from_node(node, match self.hitbox {
+                (self.hitbox, self.stored_hitbox_scale) = Hitbox::get_hitbox_from_node(world, node, match self.hitbox {
                     Hitbox::OBB(_, _) => 0,
                     Hitbox::Mesh(_) => 1,
                     Hitbox::Capsule(_) => 2,
@@ -70,7 +70,7 @@ impl RigidBody {
     }
     pub fn update_coupled_according_to_this(&self, world: &mut World) {
         if let Some(coupled_object) = self.coupled_with_scene_object {
-            let node = &mut world.models[coupled_object.0].nodes[coupled_object.1];
+            let node = &mut world.nodes[world.models[coupled_object.0].nodes[coupled_object.1]];
 
             node.translation = self.position;
             node.rotation = self.orientation;

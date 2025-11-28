@@ -6,18 +6,16 @@ use crate::world::scene::{Mesh, Vertex};
 
 ///* Does not support non-uniform scaling, as is the standard(?) with physics engines. Must call .rescale() to rescale the bvh to be nonuniform.
 pub struct MeshCollider {
-    pub mesh: Rc<RefCell<Mesh>>,
     pub current_scale_multiplier: f32,
     pub current_scale_factor: Vector,
     pub bvh: Rc<RefCell<Bvh>>,
 }
 impl MeshCollider {
-    pub fn new(mesh: Rc<RefCell<Mesh>>, scale: Vector) -> Self {
+    pub fn new(mesh: &Mesh, scale: Vector) -> Self {
         MeshCollider {
-            mesh: mesh.clone(),
             current_scale_factor: scale,
             current_scale_multiplier: 1.0,
-            bvh: Rc::new(RefCell::new(Bvh::new(mesh.clone(), scale))),
+            bvh: Rc::new(RefCell::new(Bvh::new(mesh, scale))),
         }
     }
 
@@ -30,7 +28,6 @@ impl MeshCollider {
 impl Clone for MeshCollider {
     fn clone(&self) -> Self {
         Self {
-            mesh: self.mesh.clone(),
             current_scale_factor: self.current_scale_factor.clone(),
             current_scale_multiplier: self.current_scale_multiplier,
             bvh: self.bvh.clone()
@@ -77,11 +74,10 @@ impl Bvh {
         self.active_scale_factor = new_scale.clone();
     }
 
-    pub fn new(mesh: Rc<RefCell<Mesh>>, scale: Vector) -> Bvh {
-        let mesh_ref = mesh.borrow();
+    pub fn new(mesh: &Mesh, scale: Vector) -> Bvh {
         let mut triangles = Vec::new();
 
-        for primitive in &mesh_ref.primitives {
+        for primitive in &mesh.primitives {
             let indices: Vec<u32> = if primitive.index_data_u8.len() > 0 {
                 primitive.index_data_u8.iter().map(|i| *i as u32).collect()
             } else if primitive.index_data_u16.len() > 0 {
@@ -102,19 +98,18 @@ impl Bvh {
             }
         }
 
-        drop(mesh_ref);
         let num_tris = triangles.len();
-        Self::split(mesh, &mut triangles, 0, num_tris, &scale)
+        Self::split(&mesh, &mut triangles, 0, num_tris, &scale)
     }
 
     fn split(
-        mesh: Rc<RefCell<Mesh>>,
+        mesh: &Mesh,
         triangles: &mut [(usize, Vector)],
         start: usize,
         end: usize,
         scale: &Vector,
     ) -> Bvh {
-        let (mut min, mut max) = Self::min_max(&mesh, triangles, start, end);
+        let (mut min, mut max) = Self::min_max(mesh, triangles, start, end);
         min = min * scale; max = max * scale;
         let num_triangles = end - start;
 
@@ -174,7 +169,7 @@ impl Bvh {
     }
 
     fn min_max(
-        mesh: &Rc<RefCell<Mesh>>,
+        mesh: &Mesh,
         triangles: &[(usize, Vector)],
         start: usize,
         end: usize
@@ -182,10 +177,8 @@ impl Bvh {
         let mut min = Vector::fill(f32::MAX);
         let mut max = Vector::fill(f32::MIN);
 
-        let mesh_borrow = mesh.borrow();
-
         for (triangle_idx, _) in &triangles[start..end] {
-            let (v0, v1, v2) = Self::get_triangle_vertices(&mesh_borrow, *triangle_idx, None);
+            let (v0, v1, v2) = Self::get_triangle_vertices(&mesh, *triangle_idx, None);
 
             min = Vector::min(&min, &Vector::from_array(&v0.position));
             min = Vector::min(&min, &Vector::from_array(&v1.position));

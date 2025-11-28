@@ -5,7 +5,7 @@ use ffengine::app::Engine;
 use ffengine::math::Vector;
 use ffengine::physics::player::{MovementMode, Player};
 use ffengine::world::camera::Camera;
-use ffengine::world::scene::{Light, Model};
+use ffengine::world::scene::{Light};
 
 fn main() { unsafe {
     let mut app = Engine::new();
@@ -67,11 +67,11 @@ fn main() { unsafe {
         physics_engine.rigid_bodies[0].restitution_coefficient = 1.0;
         */
         // /*
-        world.add_model(base, Model::new(&PathBuf::from("editor/resources/models/collisionTest/collisionTestNoWalls.gltf").to_str().unwrap()));
+        world.add_model(base, "editor/resources/models/collisionTest/collisionTestNoWalls.gltf");
 
-        world.add_model(base, Model::new(&PathBuf::from("editor/resources/models/demoBall/scene.gltf").to_str().unwrap()));
-        world.add_model(base, Model::new(&PathBuf::from("editor/resources/models/demoBall/scene.gltf").to_str().unwrap()));
-        world.add_model(base, Model::new("C:\\Graphics\\assets\\grassblockGLTF\\grassblock.gltf"));
+        world.add_model(base, "editor/resources/models/demoBall/scene.gltf");
+        world.add_model(base, "editor/resources/models/demoBall/scene.gltf");
+        world.add_model(base, "editor/resources/models/grassblockGLTF/grassblock.gltf");
 
         physics_engine.add_all_nodes_from_model(&world, 1, 3);
         physics_engine.add_all_nodes_from_model(&world, 2, 3);

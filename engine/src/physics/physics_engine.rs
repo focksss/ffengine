@@ -43,7 +43,8 @@ impl PhysicsEngine {
         assert!(hitbox_type < 5);
         let model = &world.models[model_index];
         for (node_index, node) in model.nodes.iter().enumerate() {
-            if let Some(hitbox) = Hitbox::get_hitbox_from_node(node, hitbox_type) {
+            let node = &world.nodes[*node];
+            if let Some(hitbox) = Hitbox::get_hitbox_from_node(world, node, hitbox_type) {
                 let mut rb = RigidBody::new_from_node(node, Some((model_index, node_index)), hitbox);
                 rb.update_this_according_to_coupled(world);
                 self.rigid_bodies.push(rb);

@@ -442,16 +442,20 @@ impl World {
     } }
 
     pub unsafe fn construct_textures(&mut self, base: &VkBase) { unsafe {
-        let uris: Vec<PathBuf> = self.images
+        let ungenerated_indices = self.images
             .iter()
-            .filter(|img| !img.generated)
-            .map(|img| img.uri.clone())
+            .enumerate()
+            .filter(|(_, img)| !img.generated)
+            .map(|(i, _)| i)
+            .collect::<Vec<usize>>();
+        let uris: Vec<PathBuf> = ungenerated_indices
+            .iter()
+            .map(|i| self.images[*i].uri.clone())
             .collect();
-        let textures = base.load_textures_batched(uris.as_slice(), true);
-        for i in 0..self.images.len() {
-            let img = &mut self.images[i];
-            if img.generated { continue; }
-            let (image_view, image, mips) = textures[i];
+        let image_sources = base.load_textures_batched(uris.as_slice(), true);
+        for (i, ungenerated_image_index) in ungenerated_indices.iter().enumerate() {
+            let img = &mut self.images[*ungenerated_image_index];
+            let (image_view, image, mips) = image_sources[i];
             img.image = image;
             img.image_view = image_view.0;
             img.mip_levels = mips;
@@ -459,6 +463,7 @@ impl World {
             base.device.destroy_sampler(image_view.1, None);
         }
         for texture in &mut self.textures {
+            if texture.has_sampler { continue }
             texture.construct_sampler(self.images[texture.source].mip_levels as f32, base);
         }
     } }
@@ -818,7 +823,8 @@ impl ModelContainer {
                 SceneTexture {
                     source: texture["source"].as_usize().unwrap() + initial_images_count,
                     sampler: Sampler::null(),
-                    sampler_info: samplers[texture["sampler"].as_usize().unwrap().clone()]
+                    sampler_info: samplers[texture["sampler"].as_usize().unwrap().clone()],
+                    has_sampler: false
                 })
         }
         world.textures.extend(textures);
@@ -1519,6 +1525,7 @@ pub struct SceneTexture {
     pub source: usize,
     pub sampler: Sampler,
     pub sampler_info: SceneSampler,
+    pub has_sampler: bool,
 }
 impl SceneTexture {
     pub unsafe fn construct_sampler(&mut self, max_lod: f32, base: &VkBase) { unsafe {
@@ -1540,6 +1547,7 @@ impl SceneTexture {
             ..Default::default()
         };
         self.sampler = base.device.create_sampler(&sampler_info, None).expect("failed to create sampler");
+        self.has_sampler = true;
     } }
 }
 pub struct Material {
