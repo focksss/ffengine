@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use crate::math::Vector;
 use crate::scene::physics::hitboxes::bounding_box::BoundingBox;
-use crate::scene::world::scene::{Mesh, Vertex};
+use crate::scene::world::world::{Mesh, Vertex};
 
 ///* Does not support non-uniform scaling, as is the standard(?) with physics engines. Must call .rescale() to rescale the bvh to be nonuniform.
 pub struct MeshCollider {

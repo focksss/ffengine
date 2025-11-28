@@ -18,7 +18,7 @@ use crate::render::render::{Renderer, MAX_FRAMES_IN_FLIGHT};
 use crate::render::vulkan_base::{record_submit_commandbuffer, VkBase};
 use crate::scripting::lua_engine::Lua;
 use crate::scene::world::camera::{Camera, CameraPointer};
-use crate::scene::world::scene::{Light, World};
+use crate::scene::world::world::{Light, World};
 
 const PI: f32 = std::f32::consts::PI;
 

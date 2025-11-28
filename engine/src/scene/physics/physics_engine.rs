@@ -8,7 +8,7 @@ use crate::scene::physics::hitboxes::hitbox::Hitbox;
 use crate::scene::physics::hitboxes::mesh::{Bvh, MeshCollider};
 use crate::scene::physics::player::{MovementMode, Player};
 pub(crate) use crate::scene::physics::rigid_body::RigidBody;
-use crate::scene::world::scene::{Node, World, Vertex};
+use crate::scene::world::world::{Node, World, Vertex};
 
 const MAX_ITERATIONS: usize = 5;
 const MIN_MOVE_THRESHOLD: f32 = 0.001;

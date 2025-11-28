@@ -1,6 +1,6 @@
 use crate::scene::physics::hitboxes::capsule::Capsule;
 use crate::scene::physics::hitboxes::sphere::Sphere;
-use crate::scene::world::scene::{Node, World};
+use crate::scene::world::world::{Node, World};
 use crate::math::Vector;
 use crate::scene::physics::hitboxes::bounding_box::BoundingBox;
 use crate::scene::physics::hitboxes::convex_hull::ConvexHull;

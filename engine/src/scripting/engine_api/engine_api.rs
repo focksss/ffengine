@@ -1,7 +1,7 @@
 use mlua::{UserData, UserDataFields, UserDataMethods};
 use crate::app::EngineRef;
 use crate::scripting::engine_api::client_api::client_api::ClientRef;
-use crate::scripting::engine_api::physics_api::physics_engine_api::PhysicsEngineRef;
+use crate::scripting::engine_api::scene_api::physics_api::physics_engine_api::PhysicsEngineRef;
 use crate::scripting::engine_api::render_api::render_api::RendererRef;
 //use crate::scripting::engine_api::world_api::scene_api::SceneRef;
 use crate::scripting::lua_engine::Lua;

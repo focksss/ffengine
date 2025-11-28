@@ -18,7 +18,7 @@ use crate::render::render_helper::{Descriptor, DescriptorCreateInfo, DescriptorS
 use crate::render::scene_renderer::SceneRenderer;
 use crate::render::vulkan_base::{compile_shaders, find_memorytype_index, VkBase};
 use crate::scene::world::camera::{Camera, CameraPointer};
-use crate::scene::world::scene::World;
+use crate::scene::world::world::World;
 
 pub const MAX_FRAMES_IN_FLIGHT: usize = 3;
 

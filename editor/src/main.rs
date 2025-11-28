@@ -5,7 +5,7 @@ use ffengine::app::Engine;
 use ffengine::math::Vector;
 use ffengine::scene::physics::player::{MovementMode, Player};
 use ffengine::scene::world::camera::Camera;
-use ffengine::scene::world::scene::{Light};
+use ffengine::scene::world::world::{Light};
 
 fn main() { unsafe {
     let mut app = Engine::new();

@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::sync::Arc;
 use mlua::{UserData, UserDataFields, UserDataMethods};
 use crate::math::Vector;
-use crate::scene::world::scene::World;
+use crate::scene::world::world::World;
 
 /*
 pub struct SceneRef(pub Arc<RefCell<World>>);

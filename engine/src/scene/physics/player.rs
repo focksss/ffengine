@@ -8,7 +8,7 @@ use crate::scene::physics::hitboxes::hitbox::Hitbox;
 use crate::scene::physics::hitboxes::sphere::Sphere;
 use crate::scene::physics::physics_engine::{PhysicsEngine, RigidBody};
 use crate::scene::physics::rigid_body::RigidBodyPointer;
-use crate::scene::world::scene::World;
+use crate::scene::world::world::World;
 
 #[derive(Copy, Clone, Debug)]
 pub enum MovementMode {

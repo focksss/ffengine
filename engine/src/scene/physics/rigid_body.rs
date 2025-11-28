@@ -5,7 +5,7 @@ use crate::math::Vector;
 use crate::scene::physics::hitboxes::hitbox::{Hitbox, HitboxType};
 use crate::scene::physics::hitboxes::sphere::Sphere;
 use crate::scene::physics::physics_engine::{AxisType, ContactInformation, ContactPoint, PhysicsEngine};
-use crate::scene::world::scene::{Node, World, Vertex};
+use crate::scene::world::world::{Node, World, Vertex};
 
 #[derive(Clone)]
 pub struct RigidBodyPointer {
