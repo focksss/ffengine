@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::ops::Add;
 use std::sync::Arc;
-use ash::vk;
+use ash::{vk, Device};
 use ash::vk::CommandBuffer;
 use crate::engine::get_command_buffer;
 use crate::math::matrix::Matrix;
@@ -117,15 +117,16 @@ impl Scene {
                     let primitive_entity_index = self.entities.len();
                     self.entities[node_entity_index].children_indices.push(primitive_entity_index);
 
+                    let primitive_entity_transform_index = self.transforms.len();
+                    self.transforms.push(Transform::default());
+
                     let render_component_index = self.render_components.len();
                     self.render_components.push(RenderComponent {
                         mesh_primitive_index: (mesh_index, i),
                         skin_index: node.skin,
-                        material_index: primitive.material_index as usize
+                        material_index: primitive.material_index as usize,
+                        transform: primitive_entity_transform_index,
                     });
-
-                    let primitive_entity_transform_index = self.transforms.len();
-                    self.transforms.push(Transform::default());
 
                     self.entities.push(Entity {
                         name: node.name.clone().add(format!(".primitive{}", primitive.id).as_str()),
@@ -207,11 +208,12 @@ impl Scene {
         dirty_primitive_instance_data: &mut Vec<Instance>
     ) {
         let entity = &self.entities[entity];
-        let entity_local_transform = &mut self.transforms[entity.transform];
-        entity_local_transform.update_matrix();
-        let entity_local_transform = &entity_local_transform.matrix;
+        let entity_transform_component = &mut self.transforms[entity.transform];
+        entity_transform_component.update_matrix();
+        let entity_local_transform = &entity_transform_component.matrix;
 
         let entity_world_transform = parent_world_transform * entity_local_transform;
+        entity_transform_component.world = entity_world_transform;
 
         {
             let world = &mut self.world.borrow_mut();
@@ -236,35 +238,34 @@ impl Scene {
         }
     }
 
-    pub unsafe fn draw(&self, base: &VkBase, frame: usize) {
-        /*
+    pub unsafe fn draw(&self, device: &Device, frame: usize, frustum: Option<&Frustum>) {
         let command_buffer = get_command_buffer();
         let world = &self.world.borrow();
-        base.device.cmd_bind_vertex_buffers(
-            *command_buffer,
-            1,
-            &[world.instance_buffers[frame].0],
-            &[0],
-        );
-        base.device.cmd_bind_vertex_buffers(
-            *command_buffer,
-            0,
-            &[world.vertex_buffer.0],
-            &[0],
-        );
-        base.device.cmd_bind_index_buffer(
-            *command_buffer,
-            world.index_buffer.0,
-            0,
-            vk::IndexType::UINT32,
-        );
+        unsafe {
+            device.cmd_bind_vertex_buffers(
+                command_buffer,
+                1,
+                &[world.instance_buffers[frame].0],
+                &[0],
+            );
+            device.cmd_bind_vertex_buffers(
+                command_buffer,
+                0,
+                &[world.vertex_buffer.0],
+                &[0],
+            );
+            device.cmd_bind_index_buffer(
+                command_buffer,
+                world.index_buffer.0,
+                0,
+                vk::IndexType::UINT32,
+            );
 
 
-        for render_component in self.render_components.iter() {
-
+            for render_component in self.render_components.iter() {
+                render_component.draw(&self, device, &command_buffer, world, frustum);
+            }
         }
-
-         */
     }
 }
 
@@ -301,6 +302,8 @@ pub struct Transform {
     scale: Vector,
 
     matrix: Matrix,
+
+    world: Matrix
 }
 impl Transform {
     fn update_matrix(&mut self) {
@@ -319,6 +322,8 @@ impl Default for Transform {
             scale: Vector::fill(1.0),
 
             matrix: Matrix::new(),
+
+            world: Matrix::new(),
         }
     }
 }
@@ -326,13 +331,13 @@ pub struct RigidBodyComponent {
     rigid_body_index: usize, // physics object
 }
 pub struct RenderComponent {
-    pub mesh_primitive_index: (usize, usize), // world mesh, mesh-primitive index
-    pub skin_index: Option<i32>,
-    pub material_index: usize,
+    mesh_primitive_index: (usize, usize), // world mesh, mesh-primitive index
+    transform: usize, // shared with owner Entity, also here to allow for avoiding graph traversal during rendering
+    skin_index: Option<i32>,
+    material_index: usize,
 }
 impl RenderComponent {
-    fn draw(&self, base: &VkBase, command_buffer: &CommandBuffer, world: &World, frustum: Option<&Frustum>) {
-        /*
+    unsafe fn draw(&self, scene: &Scene, device: &Device, command_buffer: &CommandBuffer, world: &World, frustum: Option<&Frustum>) {
         let mut all_points_outside_of_same_plane = false;
 
         let primitive = &world.meshes[self.mesh_primitive_index.0].primitives[self.mesh_primitive_index.1];
@@ -342,7 +347,7 @@ impl RenderComponent {
                 let mut all_outside_this_plane = true;
 
                 for corner in primitive.corners.iter() {
-                    let world_pos = self.world_transform * Vector::new4(corner.x, corner.y, corner.z, 1.0);
+                    let world_pos = scene.transforms[self.transform].world * Vector::new4(corner.x, corner.y, corner.z, 1.0);
 
                     if frustum.unwrap().planes[plane_idx].test_point_within(&world_pos) {
                         all_outside_this_plane = false;
@@ -356,17 +361,17 @@ impl RenderComponent {
             }
         }
         if !all_points_outside_of_same_plane || frustum.is_none() {
-            base.device.cmd_draw_indexed(
-                *draw_command_buffer,
-                world.accessors[primitive.indices].count as u32,
-                1,
-                primitive.index_buffer_offset as u32,
-                0,
-                primitive.id as u32,
-            );
+            unsafe {
+                device.cmd_draw_indexed(
+                    *command_buffer,
+                    world.accessors[primitive.indices].count as u32,
+                    1,
+                    primitive.index_buffer_offset as u32,
+                    0,
+                    primitive.id as u32,
+                );
+            }
         }
-
-         */
     }
 }
 pub struct CameraComponent {

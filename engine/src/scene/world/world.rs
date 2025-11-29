@@ -304,34 +304,6 @@ impl World {
         copy_buffer_synchronous(&self.device, command_buffer, &self.joints_staging_buffer.0, &self.joints_buffers[frame].0, None, &self.joints_buffers_size);
     }}
 
-    pub unsafe fn draw(&self, draw_command_buffer: &CommandBuffer, frame: usize, frustum: Option<&Frustum>) { unsafe {
-        self.device.cmd_bind_vertex_buffers(
-            *draw_command_buffer,
-            1,
-            &[self.instance_buffers[frame].0],
-            &[0],
-        );
-        self.device.cmd_bind_vertex_buffers(
-            *draw_command_buffer,
-            0,
-            &[self.vertex_buffer.0],
-            &[0],
-        );
-        self.device.cmd_bind_index_buffer(
-            *draw_command_buffer,
-            self.index_buffer.0,
-            0,
-            vk::IndexType::UINT32,
-        );
-        for model in self.models.iter() {
-            let scene = &self.scenes[model.scene];
-            for node_index in scene.nodes.iter() {
-                let node = &self.nodes[*node_index];
-                node.draw(&self.device, &self, &draw_command_buffer, frustum)
-            }
-        }
-    } }
-
     pub unsafe fn construct_textures(&mut self, base: &VkBase) { unsafe {
         let ungenerated_indices = self.images
             .iter()
@@ -1965,47 +1937,6 @@ pub struct Node {
     pub children_indices: Vec<usize>,
 }
 impl Node {
-    pub unsafe fn draw(&self, device: &ash::Device, world: &World, draw_command_buffer: &CommandBuffer, frustum: Option<&Frustum>) { unsafe {
-        if let Some(mesh_index) = self.mesh {
-            for primitive in world.meshes[mesh_index].primitives.iter() {
-                let mut all_points_outside_of_same_plane = false;
-
-                if frustum.is_some() {
-                    for plane_idx in 0..6 {
-                        let mut all_outside_this_plane = true;
-
-                        for corner in primitive.corners.iter() {
-                            let world_pos = self.world_transform * Vector::new4(corner.x, corner.y, corner.z, 1.0);
-
-                            if frustum.unwrap().planes[plane_idx].test_point_within(&world_pos) {
-                                all_outside_this_plane = false;
-                                break;
-                            }
-                        }
-                        if all_outside_this_plane {
-                            all_points_outside_of_same_plane = true;
-                            break;
-                        }
-                    }
-                }
-                if !all_points_outside_of_same_plane {
-                    device.cmd_draw_indexed(
-                        *draw_command_buffer,
-                        world.accessors[primitive.indices].count as u32,
-                        1,
-                        primitive.index_buffer_offset as u32,
-                        0,
-                        primitive.id as u32,
-                    );
-                }
-            }
-        }
-
-        for child in &self.children_indices {
-            world.nodes[*child].draw(device, world, draw_command_buffer, frustum);
-        }
-    } }
-
     pub fn update_local_transform(&mut self) {
         let rotate = Matrix::new_rotate_quaternion_vec4(&self.rotation.combine(&self.user_rotation));
         let scale = Matrix::new_scale_vec3(&(self.scale * self.user_scale));

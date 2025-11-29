@@ -998,7 +998,7 @@ impl SceneRenderer {
                 ));
             }),
             Some(|| {
-                scene.world.borrow().draw(&frame_command_buffer, current_frame, Some(&player_camera.frustum));
+                scene.draw(device, current_frame, Some(&player_camera.frustum));
             }),
             None
         );
@@ -1008,7 +1008,7 @@ impl SceneRenderer {
             frame_command_buffer,
             None::<fn()>,
             Some(|| {
-                scene.world.borrow().draw(&frame_command_buffer, current_frame, None);
+                scene.draw(device, current_frame, Some(&player_camera.frustum));
             }),
             None
         );
