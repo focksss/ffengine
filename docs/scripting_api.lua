@@ -42,7 +42,6 @@ MovementMode = {
         ---@field get_text fun(self:GUI, index:integer):GUIText
         ---@field destroy_node fun(self:GUI, index:integer):nil
         ---@field destroy_quad fun(self:GUI, index:integer):nil
-        ---@field destroy_text fun(self:GUI, index:integer):nil
         ---@field num_nodes integer
         ---@field num_quads integer
         ---@field num_texts integer

@@ -3,7 +3,6 @@ use std::sync::Arc;
 use ash::vk;
 use mlua::{UserData, UserDataFields, UserDataMethods};
 use crate::render::scene_renderer::SceneRenderer;
-use crate::scripting::engine_api::gui_api::gui_api::{GUINodePointer, GUIRef};
 
 struct ViewportRef(pub Arc<RefCell<vk::Viewport>>);
 impl UserData for ViewportRef {

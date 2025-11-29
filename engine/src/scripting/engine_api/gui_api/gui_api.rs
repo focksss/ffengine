@@ -1,184 +1,241 @@
 use std::cell::RefCell;
 use std::cmp::PartialEq;
 use std::sync::Arc;
-use mlua::{FromLua, IntoLua, UserData, UserDataFields, UserDataMethods, Value};
-use winit::window::CursorIcon;
+use mlua::{FromLua, IntoLua, Lua, UserData, UserDataFields, UserDataMethods, Value};
+use mlua::prelude::LuaError;
+use crate::engine::EngineRef;
 use crate::gui::gui::{AnchorPoint, GUINode, GUIQuad, GUIText, GUI};
 use crate::math::Vector;
 use crate::scripting::lua_engine::RegisterToLua;
 
+macro_rules! with_gui {
+    ($lua:expr, $gui_index:expr => $gui:ident) => {
+        let __engine = $lua.app_data_ref::<EngineRef>().unwrap();
+        let __renderer = __engine.renderer.borrow();
+        let $gui = __renderer.guis[$gui_index].borrow();
+    };
+}
+macro_rules! with_gui_mut {
+    ($lua:expr, $gui_index:expr => $gui:ident) => {
+        let __engine = $lua.app_data_ref::<EngineRef>().unwrap();
+        let __renderer = __engine.renderer.borrow();
+        let mut $gui = __renderer.guis[$gui_index].borrow_mut();
+    };
+}
+
 pub struct GUITextPointer {
-    gui: Arc<RefCell<GUI>>,
+    gui_index: usize,
     index: usize
 }
 impl UserData for GUITextPointer {
     fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
-        fields.add_field_method_get("text_message", |_, this| Ok(
-            this.gui.borrow().gui_texts[this.index].text_information.as_ref().unwrap().text.clone()
-        ));
-
-        fields.add_field_method_get("font_size", |_, this| {
-            Ok(this.gui.borrow().gui_texts[this.index].text_information.as_ref().map_or(-1.0, |t| t.font_size))
+        fields.add_field_method_get("text_message", |lua, this| {
+            with_gui!(lua, this.gui_index => gui);
+            Ok(gui.gui_texts[this.index].text_information.as_ref().unwrap().text.clone())
         });
-        fields.add_field_method_set("font_size", |_, this, val: f32| {
-            if let Some(text_info) = this.gui.borrow_mut().gui_texts[this.index].text_information.as_mut() {
+
+        fields.add_field_method_get("font_size", |lua, this| {
+            with_gui!(lua, this.gui_index => gui);
+            Ok(gui.gui_texts[this.index].text_information.as_ref().map_or(-1.0, |t| t.font_size))
+        });
+        fields.add_field_method_set("font_size", |lua, this, val: f32| {
+            with_gui_mut!(lua, this.gui_index => gui);
+            if let Some(text_info) = gui.gui_texts[this.index].text_information.as_mut() {
                 text_info.font_size = val;
             }
             Ok(())
         });
 
-        fields.add_field_method_get("auto_wrap_distance", |_, this| {
-            Ok(this.gui.borrow().gui_texts[this.index].text_information.as_ref().map_or(200.0, |t| t.auto_wrap_distance))
+        fields.add_field_method_get("auto_wrap_distance", |lua, this| {
+            with_gui!(lua, this.gui_index => gui);
+            Ok(gui.gui_texts[this.index].text_information.as_ref().map_or(200.0, |t| t.auto_wrap_distance))
         });
-        fields.add_field_method_set("auto_wrap_distance", |_, this, val: f32| {
-            if let Some(text_info) = this.gui.borrow_mut().gui_texts[this.index].text_information.as_mut() {
+        fields.add_field_method_set("auto_wrap_distance", |lua, this, val: f32| {
+            with_gui_mut!(lua, this.gui_index => gui);
+            if let Some(text_info) = gui.gui_texts[this.index].text_information.as_mut() {
                 text_info.auto_wrap_distance = val;
             }
             Ok(())
         });
 
-        fields.add_field_method_get("position", |_, this| Ok(
-            this.gui.borrow().gui_texts[this.index].position
-        ));
-        fields.add_field_method_set("position", |_, this, val: Vector| {
-            Ok(this.gui.borrow_mut().gui_texts[this.index].position = val)
+        fields.add_field_method_get("position", |lua, this| {
+            with_gui!(lua, this.gui_index => gui);
+            Ok(gui.gui_texts[this.index].position)
+        });
+        fields.add_field_method_set("position", |lua, this, val: Vector| {
+            with_gui_mut!(lua, this.gui_index => gui);
+            Ok(gui.gui_texts[this.index].position = val)
         });
 
-        fields.add_field_method_get("scale", |_, this| Ok(
-            this.gui.borrow().gui_texts[this.index].scale
-        ));
-        fields.add_field_method_set("scale", |_, this, val: Vector| {
-            Ok(this.gui.borrow_mut().gui_texts[this.index].scale = val)
+        fields.add_field_method_get("scale", |lua, this| {
+            with_gui!(lua, this.gui_index => gui);
+            Ok(gui.gui_texts[this.index].scale)
+        });
+        fields.add_field_method_set("scale", |lua, this, val: Vector| {
+            with_gui_mut!(lua, this.gui_index => gui);
+            Ok(gui.gui_texts[this.index].scale = val)
         });
     }
     fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
-        methods.add_method_mut("update_text", |_, this, text: String| {
-            this.gui.borrow_mut().gui_texts[this.index].update_text(text.as_str());
+        methods.add_method_mut("update_text", |lua, this, text: String| {
+            with_gui_mut!(lua, this.gui_index => gui);
+            gui.gui_texts[this.index].update_text(text.as_str());
             Ok(())
         });
     }
 }
 
 pub struct GUIQuadPointer {
-    gui: Arc<RefCell<GUI>>,
+    gui_index: usize,
     index: usize
 }
 impl UserData for GUIQuadPointer {
     fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
-        fields.add_field_method_get("color", |_, this| Ok(
-            this.gui.borrow().gui_quads[this.index].color
-        ));
+        fields.add_field_method_get("color", |lua, this| {
+            with_gui!(lua, this.gui_index => gui);
+            Ok(gui.gui_quads[this.index].color)
+        });
         fields.add_field_method_set("color", |lua, this, val: Value| {
-            this.gui.borrow_mut().gui_quads[this.index].color = Vector::from_lua(val, lua)?;
+            with_gui_mut!(lua, this.gui_index => gui);
+            gui.gui_quads[this.index].color = Vector::from_lua(val, lua)?;
             Ok(())
         });
 
-        fields.add_field_method_get("position", |_, this| Ok(
-            this.gui.borrow().gui_quads[this.index].position
-        ));
+        fields.add_field_method_get("position", |lua, this| {
+            with_gui!(lua, this.gui_index => gui);
+            Ok(gui.gui_quads[this.index].position)
+        });
         fields.add_field_method_set("position", |lua, this, val: Value| {
-            this.gui.borrow_mut().gui_quads[this.index].position = Vector::from_lua(val, lua)?;
+            with_gui_mut!(lua, this.gui_index => gui);
+            gui.gui_quads[this.index].position = Vector::from_lua(val, lua)?;
             Ok(())
         });
 
-        fields.add_field_method_get("scale", |_, this| Ok(
-            this.gui.borrow().gui_quads[this.index].scale
-        ));
+        fields.add_field_method_get("scale", |lua, this| {
+            with_gui!(lua, this.gui_index => gui);
+            Ok(gui.gui_quads[this.index].scale)
+        });
         fields.add_field_method_set("scale", |lua, this, val: Value| {
-            this.gui.borrow_mut().gui_quads[this.index].scale = Vector::from_lua(val, lua)?;
+            with_gui_mut!(lua, this.gui_index => gui);
+            gui.gui_quads[this.index].scale = Vector::from_lua(val, lua)?;
             Ok(())
         });
 
-        fields.add_field_method_get("corner_radius", |_, this| {
-            Ok(this.gui.borrow().gui_quads[this.index].corner_radius)
+        fields.add_field_method_get("corner_radius", |lua, this| {
+            with_gui!(lua, this.gui_index => gui);
+            Ok(gui.gui_quads[this.index].corner_radius)
         });
-        fields.add_field_method_set("corner_radius", |_, this, val: f32| {
-            Ok(this.gui.borrow_mut().gui_quads[this.index].corner_radius = val)
+        fields.add_field_method_set("corner_radius", |lua, this, val: f32| {
+            with_gui_mut!(lua, this.gui_index => gui);
+            Ok(gui.gui_quads[this.index].corner_radius = val)
         })
     }
 }
 
 pub struct GUINodePointer {
-    gui: Arc<RefCell<GUI>>,
+    gui_index: usize,
     index: usize
 }
 impl UserData for GUINodePointer {
     fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
-        fields.add_field_method_get("hidden", |_, this| Ok(
-            this.gui.borrow().gui_nodes[this.index].hidden
-        ));
-        fields.add_field_method_set("hidden", |_, this, val: bool| {
-            this.gui.borrow_mut().gui_nodes[this.index].hidden = val;
+        fields.add_field_method_get("hidden", |lua, this| {
+            with_gui!(lua, this.gui_index => gui);
+            Ok(gui.gui_nodes[this.index].hidden)
+        });
+        fields.add_field_method_set("hidden", |lua, this, val: bool| {
+            with_gui_mut!(lua, this.gui_index => gui);
+            gui.gui_nodes[this.index].hidden = val;
             Ok(())
         });
 
-        fields.add_field_method_get("absolute_position_x", |_, this| {
-            Ok(this.gui.borrow().gui_nodes[this.index].absolute_position.0)
+        fields.add_field_method_get("absolute_position_x", |lua, this| {
+            with_gui!(lua, this.gui_index => gui);
+            Ok(gui.gui_nodes[this.index].absolute_position.0)
         });
-        fields.add_field_method_set("absolute_position_x", |_, this, val: bool| {
-            Ok(this.gui.borrow_mut().gui_nodes[this.index].absolute_position.0 = val)
+        fields.add_field_method_set("absolute_position_x", |lua, this, val: bool| {
+            with_gui_mut!(lua, this.gui_index => gui);
+            gui.gui_nodes[this.index].absolute_position.0 = val;
+            Ok(())
         });
-        fields.add_field_method_get("absolute_position_y", |_, this| {
-            Ok(this.gui.borrow().gui_nodes[this.index].absolute_position.1)
+        fields.add_field_method_get("absolute_position_y", |lua, this| {
+            with_gui!(lua, this.gui_index => gui);
+            Ok(gui.gui_nodes[this.index].absolute_position.1)
         });
-        fields.add_field_method_set("absolute_position_y", |_, this, val: bool| {
-            Ok(this.gui.borrow_mut().gui_nodes[this.index].absolute_position.1 = val)
-        });
-
-        fields.add_field_method_get("absolute_scale_x", |_, this| {
-            Ok(this.gui.borrow().gui_nodes[this.index].absolute_scale.0)
-        });
-        fields.add_field_method_set("absolute_scale_x", |_, this, val: bool| {
-            Ok(this.gui.borrow_mut().gui_nodes[this.index].absolute_scale.0 = val)
-        });
-        fields.add_field_method_get("absolute_scale_y", |_, this| {
-            Ok(this.gui.borrow().gui_nodes[this.index].absolute_scale.1)
-        });
-        fields.add_field_method_set("absolute_scale_y", |_, this, val: bool| {
-            Ok(this.gui.borrow_mut().gui_nodes[this.index].absolute_scale.1 = val)
+        fields.add_field_method_set("absolute_position_y", |lua, this, val: bool| {
+            with_gui_mut!(lua, this.gui_index => gui);
+            gui.gui_nodes[this.index].absolute_position.1 = val;
+            Ok(())
         });
 
-        fields.add_field_method_get("index", |_, this| Ok(this.index));
+        fields.add_field_method_get("absolute_scale_x", |lua, this| {
+            with_gui!(lua, this.gui_index => gui);
+            Ok(gui.gui_nodes[this.index].absolute_scale.0)
+        });
+        fields.add_field_method_set("absolute_scale_x", |lua, this, val: bool| {
+            with_gui_mut!(lua, this.gui_index => gui);
+            gui.gui_nodes[this.index].absolute_scale.0 = val;
+            Ok(())
+        });
+        fields.add_field_method_get("absolute_scale_y", |lua, this| {
+            with_gui!(lua, this.gui_index => gui);
+            Ok(gui.gui_nodes[this.index].absolute_scale.1)
+        });
+        fields.add_field_method_set("absolute_scale_y", |lua, this, val: bool| {
+            with_gui_mut!(lua, this.gui_index => gui);
+            gui.gui_nodes[this.index].absolute_scale.1 = val;
+            Ok(())
+        });
 
-        fields.add_field_method_get("anchor_point", |_, this| {
-            Ok(LuaAnchorPoint(this.gui.borrow().gui_nodes[this.index].anchor_point.clone()))
+        fields.add_field_method_get("index", |lua, this| Ok(this.index));
+
+        fields.add_field_method_get("anchor_point", |lua, this| {
+            with_gui!(lua, this.gui_index => gui);
+            Ok(LuaAnchorPoint(gui.gui_nodes[this.index].anchor_point.clone()))
         });
 
         fields.add_field_method_get("quad", |lua, this| {
+            with_gui!(lua, this.gui_index => gui);
             let quad = GUIQuadPointer {
-                gui: this.gui.clone(),
-                index: this.gui.borrow().gui_nodes[this.index].quad.unwrap_or(0)
+                gui_index: this.gui_index,
+                index: gui.gui_nodes[this.index].quad.unwrap_or(0)
             };
             lua.create_userdata(quad)
         });
 
         fields.add_field_method_get("text", |lua, this| {
+            with_gui!(lua, this.gui_index => gui);
             let text = GUITextPointer {
-                gui: this.gui.clone(),
-                index: this.gui.borrow().gui_nodes[this.index].text.unwrap_or(0)
+                gui_index: this.gui_index,
+                index: gui.gui_nodes[this.index].text.unwrap_or(0)
             };
             lua.create_userdata(text)
         });
 
-        fields.add_field_method_get("position", |_, this| Ok(
-            this.gui.borrow().gui_nodes[this.index].position
-        ));
-        fields.add_field_method_set("position", |_, this, val: Vector| {
-            Ok(this.gui.borrow_mut().gui_nodes[this.index].position = val)
+        fields.add_field_method_get("position", |lua, this| {
+            with_gui!(lua, this.gui_index => gui);
+            Ok(gui.gui_nodes[this.index].position)
+        });
+        fields.add_field_method_set("position", |lua, this, val: Vector| {
+            with_gui_mut!(lua, this.gui_index => gui);
+            Ok(gui.gui_nodes[this.index].position = val)
         });
 
-        fields.add_field_method_get("scale", |_, this| Ok(
-            this.gui.borrow().gui_nodes[this.index].scale
-        ));
-        fields.add_field_method_set("scale", |_, this, val: Vector| {
-            Ok(this.gui.borrow_mut().gui_nodes[this.index].scale = val)
+        fields.add_field_method_get("scale", |lua, this| {
+            with_gui!(lua, this.gui_index => gui);
+            Ok(gui.gui_nodes[this.index].scale)
+        });
+        fields.add_field_method_set("scale", |lua, this, val: Vector| {
+            with_gui_mut!(lua, this.gui_index => gui);
+            Ok(gui.gui_nodes[this.index].scale = val)
         });
 
-        fields.add_field_method_get("quad_index", |_, this| Ok(
-            this.gui.borrow().gui_nodes[this.index].quad.map_or(-1, |quad| { quad as i32 })
-        ));
-        fields.add_field_method_set("quad_index", |_, this, val: i32| {
-            this.gui.borrow_mut().gui_nodes[this.index].quad = if val >= 0 {
+        fields.add_field_method_get("quad_index", |lua, this| {
+            with_gui!(lua, this.gui_index => gui);
+            Ok(gui.gui_nodes[this.index].quad.map_or(-1, |quad| { quad as i32 }))
+        });
+        fields.add_field_method_set("quad_index", |lua, this, val: i32| {
+            with_gui_mut!(lua, this.gui_index => gui);
+            gui.gui_nodes[this.index].quad = if val >= 0 {
                 Some(val as usize)
             } else {
                 None
@@ -186,11 +243,13 @@ impl UserData for GUINodePointer {
             Ok(())
         });
 
-        fields.add_field_method_get("text_index", |_, this| Ok(
-            this.gui.borrow().gui_nodes[this.index].text.map_or(-1, |text| { text as i32 })
-        ));
-        fields.add_field_method_set("text_index", |_, this, val: i32| {
-            this.gui.borrow_mut().gui_nodes[this.index].text = if val >= 0 {
+        fields.add_field_method_get("text_index", |lua, this| {
+            with_gui!(lua, this.gui_index => gui);
+            Ok(gui.gui_nodes[this.index].text.map_or(-1, |text| { text as i32 }))
+        });
+        fields.add_field_method_set("text_index", |lua, this, val: i32| {
+            with_gui_mut!(lua, this.gui_index => gui);
+            gui.gui_nodes[this.index].text = if val >= 0 {
                 Some(val as usize)
             } else {
                 None
@@ -199,8 +258,8 @@ impl UserData for GUINodePointer {
         });
 
         fields.add_field_method_get("children_indices", |lua, this| {
-            let scene = this.gui.borrow();
-            let children = &scene.gui_nodes[this.index].children_indices;
+            with_gui!(lua, this.gui_index => gui);
+            let children = &gui.gui_nodes[this.index].children_indices;
             let table = lua.create_table()?;
             for (i, child_index) in children.iter().enumerate() {
                 table.set(i + 1, *child_index)?;
@@ -209,20 +268,25 @@ impl UserData for GUINodePointer {
         });
     }
     fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
-        methods.add_method("get_child_index", |_, this, val: i32| {
-            Ok(this.gui.borrow().gui_nodes[this.index].children_indices[val as usize])
+        methods.add_method("get_child_index", |lua, this, val: i32| {
+            with_gui!(lua, this.gui_index => gui);
+            Ok(gui.gui_nodes[this.index].children_indices[val as usize])
         });
-        methods.add_method_mut("add_child_index", |_, this, val: i32| {
-            Ok(this.gui.borrow_mut().gui_nodes[this.index].children_indices.push(val as usize))
+        methods.add_method_mut("add_child_index", |lua, this, val: i32| {
+            with_gui_mut!(lua, this.gui_index => gui);
+            Ok(gui.gui_nodes[this.index].children_indices.push(val as usize))
         });
-        methods.add_method_mut("remove_child_index_at", |_, this, val: i32| {
-            Ok(this.gui.borrow_mut().gui_nodes[this.index].children_indices.remove(val as usize))
+        methods.add_method_mut("remove_child_index_at", |lua, this, val: i32| {
+            with_gui_mut!(lua, this.gui_index => gui);
+            Ok(gui.gui_nodes[this.index].children_indices.remove(val as usize))
         });
-        methods.add_method_mut("set_anchor_point", |_, this, val: LuaAnchorPoint| {
-            Ok(this.gui.borrow_mut().gui_nodes[this.index].anchor_point = val.0)
+        methods.add_method_mut("set_anchor_point", |lua, this, val: LuaAnchorPoint| {
+            with_gui_mut!(lua, this.gui_index => gui);
+            Ok(gui.gui_nodes[this.index].anchor_point = val.0)
         });
-        methods.add_method_mut("add_left_tap_action", |_, this, val: (String, usize)| {
-            if let Some(interactable_information) = &mut this.gui.borrow_mut().gui_nodes[this.index].interactable_information {
+        methods.add_method_mut("add_left_tap_action", |lua, this, val: (String, usize)| {
+            with_gui_mut!(lua, this.gui_index => gui);
+            if let Some(interactable_information) = &mut gui.gui_nodes[this.index].interactable_information {
                 interactable_information.left_tap_actions.push((val.0, val.1));
             }
             Ok(())
@@ -230,66 +294,72 @@ impl UserData for GUINodePointer {
     }
 }
 
-pub struct GUIRef(pub Arc<RefCell<GUI>>);
-impl UserData for GUIRef {
+pub struct GUIPointer {
+    pub(crate) index: usize
+}
+impl UserData for GUIPointer {
     fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
         fields.add_field_method_get("ActiveNode", |lua, this| {
-            let node = GUINodePointer { gui: this.0.clone(), index: this.0.borrow().active_node };
+            with_gui!(lua, this.index => gui);
+
+            let node = GUINodePointer {
+                gui_index: this.index,
+                index: gui.active_node
+            };
             lua.create_userdata(node)
         });
         fields.add_field_method_get("num_nodes", |lua, this| {
-            Ok(this.0.borrow().gui_nodes.len())
+            with_gui!(lua, this.index => gui);
+            Ok(gui.gui_nodes.len())
         });
         fields.add_field_method_get("num_quads", |lua, this| {
-            Ok(this.0.borrow().gui_quads.len())
+            with_gui!(lua, this.index => gui);
+            Ok(gui.gui_quads.len())
         });
         fields.add_field_method_get("num_texts", |lua, this| {
-            Ok(this.0.borrow().gui_texts.len())
+            with_gui!(lua, this.index => gui);
+            Ok(gui.gui_texts.len())
         });
     }
     fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
         methods.add_method("get_node", |lua, this, index: usize| {
-            let node = GUINodePointer { gui: this.0.clone(), index };
+            let node = GUINodePointer { gui_index: this.index, index };
             lua.create_userdata(node)
         });
-
         methods.add_method("get_quad", |lua, this, index: usize| {
-            let quad = GUIQuadPointer { gui: this.0.clone(), index };
+            let quad = GUIQuadPointer { gui_index: this.index, index };
             lua.create_userdata(quad)
         });
-
         methods.add_method("get_text", |lua, this, index: usize| {
-            let text = GUITextPointer { gui: this.0.clone(), index };
+            let text = GUITextPointer { gui_index: this.index, index };
             lua.create_userdata(text)
         });
 
-        methods.add_method("destroy_node", |_, this, index: usize| {
-            this.0.borrow_mut().gui_nodes.remove(index);
+        methods.add_method("destroy_node", |lua, this, index: usize| {
+            with_gui_mut!(lua, this.index => gui);
+            gui.gui_nodes.remove(index);
             Ok(())
         });
-        methods.add_method("destroy_quad", |_, this, index: usize| {
-            this.0.borrow_mut().gui_quads.remove(index);
-            Ok(())
-        });
-        methods.add_method("destroy_text", |_, this, index: usize| {
-            this.0.borrow_mut().gui_texts.remove(index);
+        methods.add_method("destroy_quad", |lua, this, index: usize| {
+            with_gui_mut!(lua, this.index => gui);
+            gui.gui_quads.remove(index);
             Ok(())
         });
 
-        methods.add_method_mut("add_node", |_, this, ()| {
-            let mut borrowed = this.0.borrow_mut();
-            let num_nodes = borrowed.gui_nodes.len();
-            borrowed.gui_nodes.push(GUINode::new(num_nodes));
+        methods.add_method_mut("add_node", |lua, this, ()| {
+            with_gui_mut!(lua, this.index => gui);
+            let num_nodes = gui.gui_nodes.len();
+            gui.gui_nodes.push(GUINode::new(num_nodes));
             Ok(())
         });
-        methods.add_method_mut("add_quad", |_, this, ()| {
-            let mut borrowed = this.0.borrow_mut();
-            borrowed.gui_quads.push(GUIQuad::default());
+        methods.add_method_mut("add_quad", |lua, this, ()| {
+            with_gui_mut!(lua, this.index => gui);
+            gui.gui_quads.push(GUIQuad::default());
             Ok(())
         });
-        methods.add_method_mut("add_text", |_, this, initial_text: String| {
-            let mut borrowed = this.0.borrow_mut();
-            borrowed.add_text(initial_text);
+        methods.add_method_mut("add_text", |lua, this, initial_text: String| {
+            with_gui_mut!(lua, this.index => gui);
+            gui.add_text(initial_text);
             Ok(())
         });
     }

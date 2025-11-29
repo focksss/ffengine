@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::sync::Arc;
 use mlua::{UserData, UserDataFields, UserDataMethods};
 use crate::render::render::Renderer;
-use crate::scripting::engine_api::gui_api::gui_api::{GUIRef};
+use crate::scripting::engine_api::gui_api::gui_api::GUIPointer;
 use crate::scripting::engine_api::render_api::scene_renderer_api::SceneRendererRef;
 
 pub struct RendererRef(pub Arc<RefCell<Renderer>>);
@@ -14,8 +14,8 @@ impl UserData for RendererRef {
         });
     }
     fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
-        methods.add_method("gui", |lua, this, index: usize| {
-            let object = GUIRef(this.0.borrow().guis[index].clone());
+        methods.add_method("gui", |lua, _, index: usize| {
+            let object = GUIPointer { index };
             lua.create_userdata(object)
         })
     }
