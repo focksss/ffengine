@@ -128,7 +128,7 @@ impl Scene {
                     self.transforms.push(Transform::default());
 
                     self.entities.push(Entity {
-                        name: node.name.clone().add(format!("{}", primitive.id).as_str()),
+                        name: node.name.clone().add(format!(".primitive{}", primitive.id).as_str()),
                         transform: primitive_entity_transform_index,
                         parent: node_entity_index,
                         render_object: Some(render_component_index),

@@ -212,10 +212,10 @@ function build_graph_recursive(entity, depth, parent_gui_node)
 	gui:add_quad()
 	local quad = gui:get_quad(quad_index)
 	if darker then
-		quad.color = Vector.new4(0.2, 0.2, 0.2, 1.0)
+		quad.color = Vector.new4(0.25, 0.25, 0.25, 1.0)
 		darker = false
 	else
-		quad.color = Vector.new4(0.25, 0.25, 0.25, 1.0)
+		quad.color = Vector.new4(0.3, 0.3, 0.3, 1.0)
 		darker = true
 	end
 	quad.corner_radius = 5.0
@@ -231,9 +231,9 @@ function build_graph_recursive(entity, depth, parent_gui_node)
 	end
 	local text = gui:get_text(text_index)
 	text.font_size = 15.0
+	text.position = Vector.new2(0.01, 0.2)
 	node.text_index = text_index
 	used_text_count = used_text_count + 1
-
 
 	-- format
 	node.position = Vector.new2(depth * 20, -graph_level * 20)
@@ -250,9 +250,10 @@ function build_graph_recursive(entity, depth, parent_gui_node)
 	
 	graph_level = graph_level + 1
 
-	local children = entity.children_indices
+	-- recursively process children
+		local children = entity.children_indices
 	for i = 1, #children do
 		local child_entity = Engine.scene:get_entity(children[i])
-		build_graph_recursive(child_entity, depth + 1, node)
+		build_graph_recursive(child_entity, depth + 1, parent_gui_node)
 	end
 end

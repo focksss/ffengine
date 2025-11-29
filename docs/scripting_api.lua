@@ -79,6 +79,8 @@ MovementMode = {
                 ---@field text_message string
                 ---@field update_text fun(self:GUIText, text:string):nil
                 ---@field font_size number
+                ---@field position Vector
+                ---@field scale Vector
                 
         ---@class SceneRenderer
         ---@field viewport Viewport

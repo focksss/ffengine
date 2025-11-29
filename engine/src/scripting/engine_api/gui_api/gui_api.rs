@@ -26,6 +26,20 @@ impl UserData for GUITextPointer {
             }
             Ok(())
         });
+
+        fields.add_field_method_get("position", |_, this| Ok(
+            this.gui.borrow().gui_texts[this.index].position
+        ));
+        fields.add_field_method_set("position", |_, this, val: Vector| {
+            Ok(this.gui.borrow_mut().gui_texts[this.index].position = val)
+        });
+
+        fields.add_field_method_get("scale", |_, this| Ok(
+            this.gui.borrow().gui_texts[this.index].scale
+        ));
+        fields.add_field_method_set("scale", |_, this, val: Vector| {
+            Ok(this.gui.borrow_mut().gui_texts[this.index].scale = val)
+        });
     }
     fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
         methods.add_method_mut("update_text", |_, this, text: String| {
