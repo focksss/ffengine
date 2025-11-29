@@ -231,6 +231,7 @@ function build_graph_recursive(entity, depth, parent_gui_node)
 	end
 	local text = gui:get_text(text_index)
 	text.font_size = 15.0
+	text.auto_wrap_distance = 1000.0
 	text.position = Vector.new2(0.01, 0.2)
 	node.text_index = text_index
 	used_text_count = used_text_count + 1

@@ -79,6 +79,7 @@ MovementMode = {
                 ---@field text_message string
                 ---@field update_text fun(self:GUIText, text:string):nil
                 ---@field font_size number
+                ---@field auto_wrap_distance number
                 ---@field position Vector
                 ---@field scale Vector
                 

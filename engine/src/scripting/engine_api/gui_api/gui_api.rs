@@ -27,6 +27,16 @@ impl UserData for GUITextPointer {
             Ok(())
         });
 
+        fields.add_field_method_get("auto_wrap_distance", |_, this| {
+            Ok(this.gui.borrow().gui_texts[this.index].text_information.as_ref().map_or(200.0, |t| t.auto_wrap_distance))
+        });
+        fields.add_field_method_set("auto_wrap_distance", |_, this, val: f32| {
+            if let Some(text_info) = this.gui.borrow_mut().gui_texts[this.index].text_information.as_mut() {
+                text_info.auto_wrap_distance = val;
+            }
+            Ok(())
+        });
+
         fields.add_field_method_get("position", |_, this| Ok(
             this.gui.borrow().gui_texts[this.index].position
         ));
