@@ -4,7 +4,7 @@ use std::sync::Arc;
 use mlua::{FromLua, IntoLua, Lua, UserData, UserDataFields, UserDataMethods, Value};
 use mlua::prelude::LuaError;
 use crate::engine::EngineRef;
-use crate::gui::gui::{AnchorPoint, GUINode, GUIQuad, GUIText, GUI};
+use crate::gui::gui::{AnchorPoint, GUIInteractableInformation, GUINode, GUIQuad, GUIText, GUI};
 use crate::math::Vector;
 use crate::scripting::lua_engine::RegisterToLua;
 
@@ -286,8 +286,14 @@ impl UserData for GUINodePointer {
         });
         methods.add_method_mut("add_left_tap_action", |lua, this, val: (String, usize)| {
             with_gui_mut!(lua, this.gui_index => gui);
-            if let Some(interactable_information) = &mut gui.gui_nodes[this.index].interactable_information {
-                interactable_information.left_tap_actions.push((val.0, val.1));
+            let script_index = gui.script_indices[val.1];
+            let node = &mut gui.gui_nodes[this.index];
+            if let Some(interactable_information) = &mut node.interactable_information {
+                interactable_information.left_tap_actions.push((val.0, script_index));
+            } else {
+                let mut new_interactable_information = GUIInteractableInformation::default();
+                new_interactable_information.left_tap_actions.push((val.0, script_index));
+                node.interactable_information = Some(new_interactable_information);
             }
             Ok(())
         })

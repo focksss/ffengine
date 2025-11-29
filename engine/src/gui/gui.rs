@@ -51,6 +51,8 @@ pub struct GUI {
 
     pub active_node: usize,
 
+    pub script_indices: Vec<usize>,
+
     new_texts: Vec<usize>
 }
 impl GUI {
@@ -122,7 +124,7 @@ impl GUI {
         }
 
         if left_pressed {
-            for left_hold_action in interactable_information.left_hold_actions.clone().iter() {
+            for left_hold_action in interactable_information.left_hold_actions.iter() {
                 Lua::cache_call(
                     left_hold_action.1,
                     left_hold_action.0.as_str(),
@@ -134,7 +136,7 @@ impl GUI {
         } else {
             if hovered {
                 result = GUIInteractionResult::LeftTap;
-                for left_tap_action in interactable_information.left_tap_actions.clone().iter() {
+                for left_tap_action in interactable_information.left_tap_actions.iter() {
                     Lua::cache_call(
                         left_tap_action.1,
                         left_tap_action.0.as_str(),
@@ -149,7 +151,13 @@ impl GUI {
         result
     }
 
-    pub unsafe fn new(index: usize, base: &VkBase, controller: Arc<RefCell<Client>>, null_tex_sampler: vk::Sampler, null_tex_img_view: vk::ImageView) -> GUI { unsafe {
+    pub unsafe fn new(
+        index: usize,
+        base: &VkBase,
+        controller: Arc<RefCell<Client>>,
+        null_tex_sampler: vk::Sampler,
+        null_tex_img_view: vk::ImageView
+    ) -> GUI { unsafe {
         let null_info = vk::DescriptorImageInfo {
             sampler: null_tex_sampler,
             image_view: null_tex_img_view,
@@ -178,6 +186,8 @@ impl GUI {
             interactable_node_indices: Vec::new(),
 
             fonts: vec![text_renderer.default_font.clone()],
+
+            script_indices: Vec::new(),
 
             text_renderer,
 
@@ -863,8 +873,9 @@ impl GUI {
             })
         }
         self.gui_nodes = nodes;
+        self.script_indices = script_indices;
     }
-    unsafe fn update_descriptors(&mut self, base: &VkBase) {
+    unsafe fn update_descriptors(&self, base: &VkBase) {
         let mut image_infos: Vec<vk::DescriptorImageInfo> = Vec::with_capacity(1024);
 
         for texture in &self.gui_images {
@@ -876,7 +887,7 @@ impl GUI {
         }
         let missing = 1024 - image_infos.len();
         for _ in 0..missing {
-            image_infos.push(self.null_tex_info.clone());
+            image_infos.push(self.null_tex_info);
         }
         let image_infos = image_infos.as_slice().as_ptr();
 
@@ -925,7 +936,7 @@ impl GUI {
             vk::SubpassContents::INLINE,
         );
 
-        for node_index in &self.gui_root_node_indices.clone() {
+        for node_index in &self.gui_root_node_indices {
             self.draw_node(
                 *node_index,
                 current_frame,
@@ -951,7 +962,7 @@ impl GUI {
         }
     } }
     unsafe fn draw_node(
-        &mut self,
+        &self,
         node_index: usize,
         current_frame: usize,
         command_buffer: CommandBuffer,
@@ -959,7 +970,7 @@ impl GUI {
         parent_scale: Vector,
         interactable_parameter_sets: &mut Vec<(usize, Vector, Vector)>
     ) { unsafe {
-        let node = &mut self.gui_nodes[node_index].clone();
+        let node = &self.gui_nodes[node_index];
         if node.hidden { return };
 
         /*
@@ -978,6 +989,11 @@ impl GUI {
                 if node.absolute_position.1 { node.position.y } else { parent_scale.y * node.position.y }
             );
 
+        if position.x + scale.x < 0.0 || position.y + scale.y < 0.0
+            || position.x > self.quad_renderpass.viewport.width || position.y > self.quad_renderpass.viewport.height {
+            return;
+        }
+
         if let Some(quad) = &node.quad {
             self.draw_quad(*quad, current_frame, command_buffer, position, scale);
         }
@@ -989,7 +1005,7 @@ impl GUI {
             interactable_parameter_sets.push((node_index, position, position + scale));
         }
 
-        for child in &node.children_indices.clone() {
+        for child in &node.children_indices {
             self.draw_node(*child, current_frame, command_buffer, position, scale, interactable_parameter_sets);
         }
     } }
@@ -1028,7 +1044,7 @@ impl GUI {
             image: quad.image.unwrap_or(-1)
         };
 
-        let device = self.device.clone();
+        let device = &self.device;
         device.cmd_bind_pipeline(
             command_buffer,
             vk::PipelineBindPoint::GRAPHICS,
@@ -1204,6 +1220,20 @@ pub struct GUIInteractableInformation {
     left_hold_actions: Vec<(String, usize)>,
     right_tap_actions: Vec<(String, usize)>,
     right_hold_actions: Vec<(String, usize)>,
+}
+impl Default for GUIInteractableInformation {
+    fn default() -> Self {
+        Self {
+            was_initially_pressed: false,
+            passive_actions: Vec::new(),
+            hover_actions: Vec::new(),
+            unhover_actions: Vec::new(),
+            left_hold_actions: Vec::new(),
+            left_tap_actions: Vec::new(),
+            right_hold_actions: Vec::new(),
+            right_tap_actions: Vec::new(),
+        }
+    }
 }
 
 /**

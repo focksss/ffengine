@@ -171,9 +171,24 @@ function Update()
 
 end
 
+local expanded_entities = {}
+local node_to_entity_map = {}
 local graph_level = 0
 local used_text_count = 0
 local darker = false
+function toggle_graph_node() 
+	local gui = Engine.renderer:gui(0)
+	local clicked_node = gui.ActiveNode
+	local clicked_node_index = clicked_node.index
+	
+	local entity_index = node_to_entity_map[clicked_node_index]
+	
+	if entity_index then
+		expanded_entities[entity_index] = not expanded_entities[entity_index]
+		
+		build_graph()
+	end
+end
 function build_graph()
 	local gui = Engine.renderer:gui(0)
 	local scene_graph_node = gui:get_node(scene_graph_index)
@@ -187,6 +202,12 @@ function build_graph()
 		scene_graph_node:remove_child_index_at(i - 1)
 	end
 	
+	--- reset mapping for expansion tracking (root expanded)
+	node_to_entity_map = {}
+	if expanded_entities[0] == nil then
+		expanded_entities[0] = true
+	end
+
 	-- reset text usage counter
 	used_text_count = 0
 
@@ -197,15 +218,30 @@ function build_graph()
 	darker = false
 	
 	local root_entity = Engine.scene:get_entity(0)
-	build_graph_recursive(root_entity, 0, scene_graph_node)
+	build_graph_recursive(root_entity, 0, 0, scene_graph_node)
 end
-function build_graph_recursive(entity, depth, parent_gui_node)
+function build_graph_recursive(entity, entity_index, depth, parent_gui_node)
 	local gui = Engine.renderer:gui(0)
 	
 	-- node
 	local node_index = gui.num_nodes
 	gui:add_node()
 	local node = gui:get_node(node_index)
+	node:add_left_tap_action("toggle_graph_node", 0)
+
+	--- map
+	node_to_entity_map[node_index] = entity_index
+	local is_expanded = expanded_entities[entity_index]
+	local display_name = entity.name
+	local children = entity.children_indices
+	local has_children = #children > 0	
+	if has_children then
+		if is_expanded then
+			display_name = "▼ " .. display_name
+		else
+			display_name = "▶ " .. display_name
+		end
+	end
 
 	-- quad
 	local quad_index = gui.num_quads
@@ -252,9 +288,11 @@ function build_graph_recursive(entity, depth, parent_gui_node)
 	graph_level = graph_level + 1
 
 	-- recursively process children
-		local children = entity.children_indices
-	for i = 1, #children do
-		local child_entity = Engine.scene:get_entity(children[i])
-		build_graph_recursive(child_entity, depth + 1, parent_gui_node)
+	if is_expanded then
+		for i = 1, #children do
+			local child_entity_index = children[i]
+			local child_entity = Engine.scene:get_entity(child_entity_index)
+			build_graph_recursive(child_entity, child_entity_index, depth + 1, parent_gui_node)
+		end
 	end
 end
