@@ -137,10 +137,6 @@ impl Lua {
             .map(|f| self.lua.create_registry_value(f))
             .transpose()?;
 
-        if let Some(awake_fn) = &on_awake_fn {
-            self.call_method_by_key(awake_fn).expect("failed to call Awake method");
-        }
-
         let script = Script {
             path: PathBuf::from(path),
             environment: self.lua.create_registry_value(environment).unwrap(),
@@ -160,6 +156,10 @@ impl Lua {
             self.scripts.push(script);
             self.scripts.len() - 1
         };
+
+        if on_awake_fn.is_some() {
+            self.cache_call_impl(assigned_index, "Awake", None, None);
+        }
 
         Ok(assigned_index)
     }

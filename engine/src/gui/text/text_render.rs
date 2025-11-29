@@ -427,29 +427,31 @@ impl TextInformation {
     }
     pub fn set_buffers(&mut self, base: &VkBase) {
         let (vertices, indices) = self.get_vertex_and_index_data();
+        let vertex_buffer_size = (size_of::<GlyphQuadVertex>() * vertices.len()) as u64 + 5000;
+        let index_buffer_size = (size_of::<u32>() * indices.len()) as u64 + 2000;
         unsafe {
             for i in 0..MAX_FRAMES_IN_FLIGHT {
                 if i == 0 {
                     (self.vertex_buffer[i], self.vertex_staging_buffer) =
                         base.create_device_and_staging_buffer(
-                            0 as vk::DeviceSize,
+                            vertex_buffer_size,
                             &vertices,
                             vk::BufferUsageFlags::VERTEX_BUFFER, false, true, true
                         );
                     (self.index_buffer[i], self.index_staging_buffer) =
                         base.create_device_and_staging_buffer(
-                            0 as vk::DeviceSize,
+                            index_buffer_size,
                             &indices,
                             vk::BufferUsageFlags::INDEX_BUFFER, false, true, true
                         );
                 } else {
                     self.vertex_buffer[i] = base.create_device_and_staging_buffer(
-                        0 as vk::DeviceSize,
+                        vertex_buffer_size,
                         &vertices,
                         vk::BufferUsageFlags::VERTEX_BUFFER, true, false, true
                     ).0;
                     self.index_buffer[i] = base.create_device_and_staging_buffer(
-                        0 as vk::DeviceSize,
+                        index_buffer_size,
                         &indices,
                         vk::BufferUsageFlags::INDEX_BUFFER, true, false, true
                     ).0

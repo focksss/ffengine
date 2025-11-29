@@ -15,6 +15,10 @@ local scene_graph_text_indices_start = 2
 
 local target_cursor_icon = CursorIcon.Default
 
+function Awake()
+	build_graph()
+end
+
 function horizontal_resize_cursor()
 	target_cursor_icon = CursorIcon.EResize
 end
@@ -133,8 +137,8 @@ function Update()
 	local right_area_node = gui:get_node(right_area_node_index)
 
 	local maximized = Engine.client.maximized
-	Engine.renderer:gui(0):get_node(minimize_button_index).hidden = not maximized
-	Engine.renderer:gui(0):get_node(maximize_button_index).hidden = maximized
+	gui:get_node(minimize_button_index).hidden = not maximized
+	gui:get_node(maximize_button_index).hidden = maximized
 
 	Engine.client:set_cursor_icon(target_cursor_icon)
 	target_cursor_icon = CursorIcon.Default
@@ -237,9 +241,9 @@ function build_graph_recursive(entity, entity_index, depth, parent_gui_node)
 	local has_children = #children > 0	
 	if has_children then
 		if is_expanded then
-			display_name = "▼ " .. display_name
+			display_name = "> " .. display_name .. "      "
 		else
-			display_name = "▶ " .. display_name
+			display_name = display_name .. "      "
 		end
 	end
 
@@ -260,10 +264,10 @@ function build_graph_recursive(entity, entity_index, depth, parent_gui_node)
 	-- reuse or create text
 	local text_index = scene_graph_text_indices_start + used_text_count
 	if text_index >= gui.num_texts then
-		gui:add_text(entity.name)
+		gui:add_text(display_name)
 	else
 		local text = gui:get_text(text_index)
-		text:update_text(entity.name)
+		text:update_text(display_name)
 	end
 	local text = gui:get_text(text_index)
 	text.font_size = 15.0

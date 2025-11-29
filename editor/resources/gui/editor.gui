@@ -370,8 +370,8 @@
       {
         "name": "scene_graph_area",
         "children": [],
-        "position": [0, -30],
-        "scale": [1.0, 10.0],
+        "position": [0, 30],
+        "scale": [1.0, 0.5],
         "anchor_point": "top_left",
         "absolute_position": [false, true]
       },
