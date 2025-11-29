@@ -8,17 +8,19 @@ use std::time::SystemTime;
 use ash::vk;
 use ash::vk::{CommandBuffer, DeviceMemory, ImageView, Sampler};
 use json::JsonValue;
+use crate::engine::get_command_buffer;
 use crate::math::matrix::Matrix;
 use crate::math::Vector;
 use crate::render::render::MAX_FRAMES_IN_FLIGHT;
 use crate::render::scene_renderer::SHADOW_RES;
 use crate::render::vulkan_base::{copy_buffer_synchronous, copy_data_to_memory, VkBase};
+use crate::scene::scene::Scene;
 use crate::scene::world::camera::{Camera, Frustum};
 
 // SHOULD DETECT MATH VS COLOR DATA TEXTURES, LOAD COLOR AS SRGB, MATH AS UNORM
 const MAX_VERTICES: u64 = 3 * 10u64.pow(6); // 7 for bistro
 const MAX_INDICES: u64 = 4 * 10u64.pow(5); // 6 for bistro
-const MAX_INSTANCES: u64 = 10u64 * 10u64.pow(4); // 5 for bistro
+pub const MAX_INSTANCES: u64 = 10u64 * 10u64.pow(4); // 5 for bistro
 const MAX_MATERIALS: u64 = 10u64 * 10u64.pow(4);
 const MAX_JOINTS: u64 = 10u64 * 10u64.pow(4);
 const MAX_LIGHTS: u64 = 10u64 * 10u64.pow(3);
@@ -71,8 +73,6 @@ pub struct World {
     pub lights_buffers_size: u64,
     pub lights_count: usize,
 
-    pub instance_data: Vec<Instance>,
-    pub dirty_instances: Vec<usize>,
     pub primitive_count: usize,
 }
 impl World {
@@ -120,8 +120,6 @@ impl World {
             lights_buffers: Vec::new(),
             lights_buffers_size: 0,
             lights_count: 0,
-            instance_data: Vec::new(),
-            dirty_instances: Vec::new(),
             primitive_count: 0,
         }
     }
@@ -184,7 +182,6 @@ impl World {
                         primitive.index_data_u32.iter().map(|&i| i + primitive.vertex_buffer_offset as u32)
                     );
                 }
-                self.instance_data.push(Instance::new(Matrix::new(), primitive.material_index, 0));
                 primitive.construct_min_max()
             }
         }
@@ -271,41 +268,6 @@ impl World {
         self.cameras.push(camera);
     }
 
-    pub unsafe fn update_instances(&mut self, command_buffer: CommandBuffer, frame: usize) { unsafe {
-        if frame == 0 {
-            self.dirty_instances.clear();
-            for model in &self.models.clone() {
-                for node in &self.scenes[model.scene].nodes.clone() {
-                    self.update_node(*node, &mut Matrix::new(), false);
-                }
-            }
-        }
-        if self.dirty_instances.len() > 0 {
-            for idx in &self.dirty_instances {
-                let dst = (self.instance_staging_buffer.2 as *mut u8).add(idx * size_of::<Instance>());
-                std::ptr::copy_nonoverlapping(
-                    &self.instance_data[*idx] as *const _ as *const u8,
-                    dst,
-                    size_of::<Instance>(),
-                );
-            }
-            let copy_regions: Vec<vk::BufferCopy> = self.dirty_instances.iter().map(|&idx| {
-                let offset = (idx * size_of::<Instance>()) as u64;
-                vk::BufferCopy {
-                    src_offset: offset,
-                    dst_offset: offset,
-                    size: size_of::<Instance>() as u64,
-                }
-            }).collect();
-            copy_buffer_synchronous(&self.device,
-                command_buffer,
-                &self.instance_staging_buffer.0,
-                &self.instance_buffers[frame].0,
-                Some(copy_regions),
-                &0u64
-            );
-        }
-    } }
     pub unsafe fn update_lights(&mut self, command_buffer: CommandBuffer, frame: usize) { unsafe {
         let lights_send = self.lights.iter().map(|light| light.to_sendable()).collect::<Vec<_>>();
         copy_data_to_memory(self.lights_staging_buffer.2, &lights_send);
@@ -318,77 +280,6 @@ impl World {
         for camera in self.cameras.iter_mut() {
             camera.update_matrices();
             camera.update_frustum();
-        }
-    }
-
-    pub unsafe fn update_instances_all_frames(&mut self, base: &VkBase) { unsafe {
-        for model in self.models.clone() {
-            let scene = &self.scenes[model.scene];
-            for node in &scene.nodes.clone() {
-                self.update_node(*node, &mut Matrix::new(), true);
-            }
-        }
-        let command_buffers = base.begin_single_time_commands(1);
-        for frame in 0..self.instance_buffers.len() {
-            base.update_buffer_through_staging(
-                &command_buffers[0],
-                &self.instance_buffers[frame],
-                &self.instance_staging_buffer,
-                &self.instance_data,
-                0,
-                frame == 0
-            );
-        }
-        base.end_single_time_commands(command_buffers);
-    } }
-
-    pub unsafe fn update_nodes(&mut self, command_buffer: CommandBuffer, frame: usize) { unsafe {
-        for animation in self.animations.iter_mut() {
-            animation.update(&mut self.nodes)
-        }
-        self.update_instances(command_buffer, frame);
-        self.update_joints(command_buffer, frame);
-    } }
-    pub fn update_node(
-        &mut self,
-        node_index: usize,
-        parent_transform: &Matrix,
-        parent_needs_update: bool
-    ) {
-        let (transform, children_indices, needs_update) = {
-            let node_needs_update_already = self.nodes[node_index].needs_update;
-            let mut node_needs_update = false;
-            if node_needs_update_already {
-                {
-                    let mut node = &mut self.nodes[node_index];
-                    node.needs_update = false;
-                    node_needs_update = true;
-                    node.update_local_transform();
-                    node.update_world_transform(parent_transform);
-                }
-                let mesh = if let Some(mesh_index) = self.nodes[node_index].mesh {
-                    Some(&self.meshes[mesh_index])
-                } else {
-                    None
-                };
-                self.nodes[node_index].update_instances(mesh, &mut self.instance_data, &mut self.dirty_instances, true);
-            } else if parent_needs_update {
-                {
-                    let mut node = &mut self.nodes[node_index];
-                    node.update_world_transform(parent_transform);
-                }
-                let mesh = if let Some(mesh_index) = self.nodes[node_index].mesh {
-                    Some(&self.meshes[mesh_index])
-                } else {
-                    None
-                };
-                self.nodes[node_index].update_instances(mesh, &mut self.instance_data, &mut self.dirty_instances, true);
-            }
-            let node = &self.nodes[node_index];
-            (&node.world_transform.clone(), &node.children_indices.clone(), node_needs_update)
-        };
-        for child in children_indices {
-            self.update_node(*child, transform, parent_needs_update || needs_update);
         }
     }
 

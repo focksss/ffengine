@@ -25,6 +25,11 @@ MovementMode = {
 ---@field scene Scene
 
     ---@class Scene
+    ---@field get_entity fun(self:Scene, index:integer):Entity
+    
+        ---@class Entity
+        ---@field children_indices integer[]
+        ---@field name string
 
     ---@class Renderer
     ---@field gui fun(self:Renderer, index:integer):GUI
@@ -38,6 +43,12 @@ MovementMode = {
         ---@field destroy_node fun(self:GUI, index:integer):nil
         ---@field destroy_quad fun(self:GUI, index:integer):nil
         ---@field destroy_text fun(self:GUI, index:integer):nil
+        ---@field num_nodes integer
+        ---@field num_quads integer
+        ---@field num_texts integer
+        ---@field add_node fun(self:GUI):nil
+        ---@field add_quad fun(self:GUI):nil
+        ---@field add_text fun(self:GUI, initial_text:string):nil
 
             ---@class GUINode
             ---@field quad GUIQuad
@@ -50,13 +61,24 @@ MovementMode = {
             ---@field get_child_index fun(self:GUINode, index:integer):integer
             ---@field add_child_index fun(self:GUINode, index:integer):nil
             ---@field remove_child_index_at fun(self:GUINode, index:integer):nil
+            ---@field children_indices integer[]
+            ---@field absolute_position_x boolean
+            ---@field absolute_position_y boolean
+            ---@field absolute_scale_x boolean
+            ---@field absolute_scale_y boolean
+            ---@field anchor_point AnchorPoint
+            ---@field set_anchor_point fun(self:GUINode, anchor_point:integer):nil
 
                 ---@class GUIQuad
-                ---@field set_color fun(self:GUIQuad, r:number, g:number, b:number, a:number):nil
+                ---@field color Vector
+                ---@field position Vector
+                ---@field scale Vector
+                ---@field corner_radius number
 
                 ---@class GUIText
                 ---@field text_message string
                 ---@field update_text fun(self:GUIText, text:string):nil
+                ---@field font_size number
                 
         ---@class SceneRenderer
         ---@field viewport Viewport
@@ -155,6 +177,31 @@ ResizeDirection = {
     SouthEast = 5,
     SouthWest = 6,
     West = 7,
+}
+
+
+---@class AnchorPoint
+---@field BottomLeft integer
+---@field BottomMiddle integer
+---@field BottomRight integer
+---@field Right integer
+---@field TopRight integer
+---@field TopMiddle integer
+---@field TopLeft integer
+---@field Left integer
+---@field Center integer
+AnchorPoint = AnchorPoint
+
+AnchorPoint = {
+    BottomLeft = 0,
+    BottomMiddle = 1,
+    BottomRight = 2,
+    Right = 3,
+    TopRight = 4,
+    TopMiddle = 5,
+    TopLeft = 6,
+    Left = 7,
+    Center = 8,
 }
 
 

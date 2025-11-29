@@ -5,13 +5,13 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::Arc;
 use mlua::AsChunk;
-use crate::app::EngineRef;
+use crate::engine::EngineRef;
 use crate::gui::gui::GUI;
 use crate::math::Vector;
 use crate::scene::physics::player::MovementMode;
 use crate::scripting::engine_api::client_api::client_api::{LuaCursorIcon, LuaKeyCode, LuaMouseButton, LuaResizeDirection};
 use crate::scripting::engine_api::engine_api;
-use crate::scripting::engine_api::gui_api::gui_api::{GUIRef};
+use crate::scripting::engine_api::gui_api::gui_api::{GUIRef, LuaAnchorPoint};
 
 thread_local! {
     static LUA: RefCell<Option<Lua>> = RefCell::new(None);
@@ -62,6 +62,7 @@ impl Lua {
             let lua = &script_engine_ref.as_ref().unwrap().lua;
 
 
+            LuaAnchorPoint::register_to_lua(lua)?;
             LuaCursorIcon::register_to_lua(lua)?;
             LuaResizeDirection::register_to_lua(lua)?;
             LuaMouseButton::register_to_lua(lua)?;

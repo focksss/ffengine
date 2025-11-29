@@ -15,6 +15,7 @@ use crate::gui::gui::GUI;
 use crate::scene::physics::physics_engine::PhysicsEngine;
 use crate::render::render::{Renderer, MAX_FRAMES_IN_FLIGHT};
 use crate::render::vulkan_base::{record_submit_commandbuffer, VkBase};
+use crate::scene::scene::Scene;
 use crate::scripting::lua_engine::Lua;
 use crate::scene::world::camera::{Camera, CameraPointer};
 use crate::scene::world::world::{Light, World};
@@ -31,6 +32,8 @@ pub fn get_command_buffer() -> vk::CommandBuffer {
 }
 
 pub struct Engine {
+    pub scene: Arc<RefCell<Scene>>,
+
     pub base: VkBase,
     pub world: Arc<RefCell<World>>,
     pub renderer: Arc<RefCell<Renderer>>,
@@ -39,6 +42,8 @@ pub struct Engine {
 }
 #[derive(Clone)]
 pub struct EngineRef {
+    pub scene: Arc<RefCell<Scene>>,
+
     pub world: Arc<RefCell<World>>,
     pub renderer: Arc<RefCell<Renderer>>,
     pub physics_engine: Arc<RefCell<PhysicsEngine>>,
@@ -52,19 +57,23 @@ impl Engine {
         let world = Arc::new(RefCell::new(world));
         let physics_engine = Arc::new(RefCell::new(PhysicsEngine::new(Vector::new3(0.0, -9.8, 0.0), 0.9, 0.5)));
 
-        let controller = Arc::new(RefCell::new(Client::new(base.window.clone())));
+        let client = Arc::new(RefCell::new(Client::new(base.window.clone())));
 
         let rw_lock = RwLock::new(base.draw_command_buffers[0]);
         COMMAND_BUFFER.set(rw_lock).expect("Failed to initialize frame command buffer global");
 
+        let renderer = unsafe { Arc::new(RefCell::new(Renderer::new(&base, client.clone(), CameraPointer {
+            world: world.clone(),
+            index: 0
+        }, 1))) };
+
         let engine = Engine {
+            scene: Arc::new(RefCell::new(Scene::new(renderer.clone(), world.clone(), physics_engine.clone()))),
+
             physics_engine,
-            renderer: unsafe { Arc::new(RefCell::new(Renderer::new(&base, controller.clone(), CameraPointer {
-                world: world.clone(),
-                index: 0
-            }, 1))) },
+            renderer,
             world,
-            client: controller,
+            client,
             base,
         };
         Lua::initialize(engine.as_ref()).expect("failed to initialize lua");
@@ -73,6 +82,7 @@ impl Engine {
 
     pub fn as_ref(&self) -> EngineRef {
         EngineRef {
+            scene: self.scene.clone(),
             world: self.world.clone(),
             renderer: self.renderer.clone(),
             physics_engine: self.physics_engine.clone(),
@@ -165,9 +175,6 @@ impl Engine {
                                 );
                             */
                         }
-                        for gui in self.renderer.borrow_mut().guis.iter() {
-                            gui.borrow_mut().initialize_new_texts(base);
-                        }
 
                         let now = Instant::now();
                         let delta_time = now.duration_since(last_frame_time).as_secs_f32();
@@ -175,6 +182,9 @@ impl Engine {
                         last_frame_time = now;
 
                         Lua::run_update_methods().expect("Failed to run Update methods");
+                        for gui in self.renderer.borrow_mut().guis.iter() {
+                            gui.borrow_mut().initialize_new_texts(base);
+                        }
                         {
                             if self.client.borrow().flags.borrow().do_physics { self.physics_engine.borrow_mut().tick(delta_time, &mut self.world.borrow_mut()); }
                         }
@@ -210,15 +220,16 @@ impl Engine {
                             &[current_rendering_complete_semaphore],
                             |_device, frame_command_buffer| {
                                 {
+                                    self.scene.borrow_mut().update_scene(base, current_frame);
                                     let world_ref = &mut self.world.borrow_mut();
-                                    world_ref.update_nodes(frame_command_buffer, current_frame);
+                                    world_ref.update_joints(frame_command_buffer, current_frame);
                                     world_ref.update_lights(frame_command_buffer, current_frame);
                                     world_ref.update_cameras()
                                 }
 
                                 let flags = self.client.borrow().flags.clone();
                                 {
-                                    self.renderer.borrow_mut().render_frame(current_frame, present_index as usize, self.world.clone(), flags.borrow().draw_hitboxes, &self.physics_engine.borrow());
+                                    self.renderer.borrow_mut().render_frame(current_frame, present_index as usize, self.scene.clone(), flags.borrow().draw_hitboxes, &self.physics_engine.borrow());
                                 }
 
                                 Lua::run_cache(&engine_ref);

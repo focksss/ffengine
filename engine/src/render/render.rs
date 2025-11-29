@@ -17,6 +17,7 @@ use crate::scene::physics::player::Player;
 use crate::render::render_helper::{Descriptor, DescriptorCreateInfo, DescriptorSetCreateInfo, PassCreateInfo, Renderpass, RenderpassCreateInfo, Texture, TextureCreateInfo};
 use crate::render::scene_renderer::SceneRenderer;
 use crate::render::vulkan_base::{compile_shaders, find_memorytype_index, VkBase};
+use crate::scene::scene::Scene;
 use crate::scene::world::camera::{Camera, CameraPointer};
 use crate::scene::world::world::World;
 
@@ -361,7 +362,7 @@ impl Renderer {
         &mut self,
         current_frame: usize,
         present_index: usize,
-        world: Arc<RefCell<World>>,
+        scene: Arc<RefCell<Scene>>,
         render_hitboxes: bool,
         physics_engine: &PhysicsEngine
     ) { unsafe {
@@ -371,12 +372,13 @@ impl Renderer {
             gui.borrow_mut().draw(current_frame, frame_command_buffer);
         }
 
-        let mut world = &mut world.borrow_mut();
-        world.update_sun(self.camera.index);
-        let camera = &world.cameras[self.camera.index];
+        let mut scene = &mut scene.borrow_mut();
+        scene.world.borrow_mut().update_sun(self.camera.index);
         //println!("camera data {:?}", camera);
 
-        self.scene_renderer.borrow().render_world(current_frame, &world, camera);
+        self.scene_renderer.borrow().render_world(current_frame, &scene, self.camera.index);
+
+        let camera = &scene.world.borrow().cameras[self.camera.index];
 
         self.hitbox_renderpass.begin_renderpass(current_frame, frame_command_buffer, Some(present_index));
         if render_hitboxes {

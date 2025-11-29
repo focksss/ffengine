@@ -2,7 +2,7 @@
   "guis": [
     {
       "name": "editor",
-      "nodes": [0, 6, 8, 11, 12, 13, 14, 15, 16, 17, 18]
+      "nodes": [0, 6, 9, 12, 13, 14, 15, 16, 17, 18, 19]
     }
   ],
   "scripts": [
@@ -329,9 +329,17 @@
       },
     {
       "name": "right_area",
-      "children": [7],
+      "interactable_information": {
+        "left_tap_actions": [
+          {
+            "method": "build_graph",
+            "script": 0
+          }
+        ]
+      },
+      "children": [7, 8],
       "position": [0, -40],
-      "scale": [200.0, 1000.0],
+      "scale": [200.0, 0.0],
       "anchor_point": "top_right",
       "absolute_scale": [true, true],
       "absolute_position": [false, true],
@@ -359,9 +367,17 @@
         "absolute_scale": [true, false],
         "anchor_point": "bottom_left"
       },
+      {
+        "name": "scene_graph_area",
+        "children": [],
+        "position": [0, -30],
+        "scale": [1.0, 10.0],
+        "anchor_point": "top_left",
+        "absolute_position": [false, true]
+      },
     {
       "name": "scene_view",
-      "children": [9],
+      "children": [10],
       "position": [0, 0],
       "scale": [1920, 1040],
       "anchor_point": "bottom_left",
@@ -369,7 +385,7 @@
     },
       {
         "name": "hud",
-        "children": [10],
+        "children": [11],
         "position": [20, -10],
         "scale": [80, 20],
         "absolute_scale": [true, true],

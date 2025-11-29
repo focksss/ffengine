@@ -11,6 +11,7 @@ use crate::math::Vector;
 use crate::render::render::MAX_FRAMES_IN_FLIGHT;
 use crate::render::render_helper::{Descriptor, DescriptorCreateInfo, DescriptorSetCreateInfo, PassCreateInfo, Renderpass, RenderpassCreateInfo, Texture, TextureCreateInfo};
 use crate::render::vulkan_base::{copy_data_to_memory, VkBase};
+use crate::scene::scene::Scene;
 use crate::scene::world::camera::Camera;
 use crate::scene::world::world::{Instance, World, SunSendable, Vertex};
 
@@ -924,13 +925,16 @@ impl SceneRenderer {
     pub unsafe fn render_world(
         &self,
         current_frame: usize,
-        world: &World, player_camera: &Camera,
+        scene: &Scene, player_camera_index: usize,
     ) { unsafe {
         let device = &self.device;
 
         let frame_command_buffer = self.draw_command_buffers[current_frame];
 
-        let ubo = world.sun.to_sendable();
+        let ubo = scene.world.borrow().sun.to_sendable();
+        
+        let player_camera = &scene.world.borrow().cameras[player_camera_index];
+        
         copy_data_to_memory(self.lighting_renderpass.descriptor_set.descriptors[10].owned_buffers.2[current_frame], &[ubo]);
         copy_data_to_memory(self.shadow_renderpass.descriptor_set.descriptors[2].owned_buffers.2[current_frame], &[ubo]);
         let ubo = SSAOPassUniformData {
@@ -945,7 +949,7 @@ impl SceneRenderer {
         copy_data_to_memory(self.ssao_renderpass.descriptor_set.descriptors[2].owned_buffers.2[current_frame], &[ubo]);
         let ubo = LightingUniformData {
             shadow_cascade_distances: [player_camera.far * 0.005, player_camera.far * 0.015, player_camera.far * 0.045, player_camera.far * 0.15],
-            num_lights: world.lights.len() as u32,
+            num_lights: scene.world.borrow().lights.len() as u32,
         };
         copy_data_to_memory(self.lighting_renderpass.descriptor_set.descriptors[9].owned_buffers.2[current_frame], &[ubo]);
         let camera_constants = CameraMatrixUniformData {
@@ -994,7 +998,7 @@ impl SceneRenderer {
                 ));
             }),
             Some(|| {
-                world.draw(&frame_command_buffer, current_frame, Some(&player_camera.frustum));
+                scene.world.borrow().draw(&frame_command_buffer, current_frame, Some(&player_camera.frustum));
             }),
             None
         );
@@ -1004,7 +1008,7 @@ impl SceneRenderer {
             frame_command_buffer,
             None::<fn()>,
             Some(|| {
-                world.draw(&frame_command_buffer, current_frame, None);
+                scene.world.borrow().draw(&frame_command_buffer, current_frame, None);
             }),
             None
         );

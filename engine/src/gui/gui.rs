@@ -9,7 +9,7 @@ use ash::vk::{CommandBuffer, DescriptorType, Format, Handle, ShaderStageFlags};
 use json::JsonValue;
 use mlua::{UserData, UserDataFields, UserDataMethods};
 use winit::event::MouseButton;
-use crate::app::get_command_buffer;
+use crate::engine::get_command_buffer;
 use crate::client::client::*;
 use crate::math::*;
 use crate::scene::physics::player::MovementMode;
@@ -898,10 +898,15 @@ impl GUI {
     }
 
     pub fn add_text(&mut self, text: String) {
-        let mut new_text = GUIText::default();
-        new_text.text_information.as_mut().unwrap().text = text;
+        let new_text = GUIText {
+            text_information: Some(TextInformation::new(self.fonts[0].clone())
+                .text(text.as_str())
+                .font_size(17.0)
+                .newline_distance(100.0)),
+            ..Default::default()
+        };
         self.new_texts.push(self.gui_texts.len());
-        self.gui_texts.push(GUIText::default());
+        self.gui_texts.push(new_text);
     }
     pub unsafe fn initialize_new_texts(&mut self, base: &VkBase) {
         for new_text in self.new_texts.drain(..) {
@@ -1088,6 +1093,7 @@ impl GUI {
 }
 
 #[derive(Clone)]
+#[derive(Debug)]
 pub enum AnchorPoint {
     TopLeft,
     TopMiddle,
@@ -1220,13 +1226,13 @@ impl Default for GUIQuad {
     fn default() -> Self {
         GUIQuad {
             position: Default::default(),
-            scale: Default::default(),
+            scale: Vector::fill(1.0),
             clip_min: Default::default(),
-            clip_max: Default::default(),
+            clip_max: Vector::fill(1.0),
             absolute_position: (false, false),
             absolute_scale: (false, false),
             anchor_point: AnchorPoint::default(),
-            color: Default::default(),
+            color: Vector::fill(0.0),
             corner_radius: 0.0,
             image: None
         }
@@ -1257,14 +1263,14 @@ impl Default for GUIText {
     fn default() -> Self {
         GUIText {
             text_information: None,
-            position: Default::default(),
-            scale: Default::default(),
-            clip_min: Default::default(),
-            clip_max: Default::default(),
+            position: Vector::fill(0.0),
+            scale: Vector::fill(1.0),
+            clip_min: Vector::fill(0.0),
+            clip_max: Vector::fill(1.0),
             absolute_position: (false, false),
             absolute_scale: (false, false),
             anchor_point: AnchorPoint::default(),
-            color: Default::default(),
+            color: Vector::fill(1.0),
         }
     }
 }

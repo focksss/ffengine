@@ -5,10 +5,13 @@ local resize_called_last_tick = false
 local resize_called_this_tick = false
 
 local right_area_node_index = 6
-local scene_view_node_index = 8
+local scene_view_node_index = 9
 
 local minimize_button_index = 2
 local maximize_button_index = 3
+
+local scene_graph_index = 8
+local scene_graph_text_indices_start = 2
 
 local target_cursor_icon = CursorIcon.Default
 
@@ -71,15 +74,15 @@ function recompile()
 end
 
 function close_hovered()
-	Engine.renderer:gui(0).ActiveNode.quad:set_color(1.0, 0.3, 0.3, 1.0)
+	Engine.renderer:gui(0).ActiveNode.quad.color = Vector.new4(1.0, 0.3, 0.3, 1.0)
 end
 
 function color_hovered()
-	Engine.renderer:gui(0).ActiveNode.quad:set_color(2.0, 2.0, 2.0, 0.15)
+	Engine.renderer:gui(0).ActiveNode.quad.color = Vector.new4(2.0, 2.0, 2.0, 0.15)
 end
 
 function color_unhovered()
-	Engine.renderer:gui(0).ActiveNode.quad:set_color(1.0, 1.0, 1.0, 0.0)
+	Engine.renderer:gui(0).ActiveNode.quad.color = Vector.new4(1.0, 1.0, 1.0, 0.0)
 end
 
 function drag_window() 
@@ -165,4 +168,91 @@ function Update()
 
 	local scene_view_node = gui:get_node(scene_view_node_index)
 	scene_view_node.scale = Vector.new2(window_size.x - right_area_node.scale.x, window_size.y - 40)
+
+end
+
+local graph_level = 0
+local used_text_count = 0
+local darker = false
+function build_graph()
+	local gui = Engine.renderer:gui(0)
+	local scene_graph_node = gui:get_node(scene_graph_index)
+
+	-- remove existing children + quads
+	local num_children = #scene_graph_node.children_indices
+	for i = num_children, 1, -1 do
+		local child_index = scene_graph_node:get_child_index(i - 1)
+		gui:destroy_quad(gui:get_node(child_index).quad_index)
+		gui:destroy_node(child_index)
+		scene_graph_node:remove_child_index_at(i - 1)
+	end
+	
+	-- reset text usage counter
+	used_text_count = 0
+
+	-- reset length
+	graph_level = 0
+
+	-- reset alternating pattern
+	darker = false
+	
+	local root_entity = Engine.scene:get_entity(0)
+	build_graph_recursive(root_entity, 0, scene_graph_node)
+end
+function build_graph_recursive(entity, depth, parent_gui_node)
+	local gui = Engine.renderer:gui(0)
+	
+	-- node
+	local node_index = gui.num_nodes
+	gui:add_node()
+	local node = gui:get_node(node_index)
+
+	-- quad
+	local quad_index = gui.num_quads
+	gui:add_quad()
+	local quad = gui:get_quad(quad_index)
+	if darker then
+		quad.color = Vector.new4(0.2, 0.2, 0.2, 1.0)
+		darker = false
+	else
+		quad.color = Vector.new4(0.25, 0.25, 0.25, 1.0)
+		darker = true
+	end
+	quad.corner_radius = 5.0
+	node.quad_index = quad_index
+
+	-- reuse or create text
+	local text_index = scene_graph_text_indices_start + used_text_count
+	if text_index >= gui.num_texts then
+		gui:add_text(entity.name)
+	else
+		local text = gui:get_text(text_index)
+		text:update_text(entity.name)
+	end
+	local text = gui:get_text(text_index)
+	text.font_size = 15.0
+	node.text_index = text_index
+	used_text_count = used_text_count + 1
+
+
+	-- format
+	node.position = Vector.new2(depth * 20, -graph_level * 20)
+	node.absolute_position_x = true
+	node.absolute_position_y = true
+
+	node.scale = Vector.new2(1.0, 20)
+	node.absolute_scale_x = false
+	node.absolute_scale_y = true
+	node:set_anchor_point(AnchorPoint.TopLeft)
+
+	-- add as child of parent
+	parent_gui_node:add_child_index(node_index)
+	
+	graph_level = graph_level + 1
+
+	local children = entity.children_indices
+	for i = 1, #children do
+		local child_entity = Engine.scene:get_entity(children[i])
+		build_graph_recursive(child_entity, depth + 1, node)
+	end
 end
