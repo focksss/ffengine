@@ -92,6 +92,13 @@ impl Lua {
         })
     }
 
+    pub fn force_gc() {
+        Self::with(|lua| {lua.force_gc_impl()})
+    }
+    fn force_gc_impl(&self) {
+        self.lua.gc_collect().unwrap()
+    }
+
     /// Returns the script and assigned index (could be different from scripts.len())
     fn load_script_impl(&mut self, path: &Path) -> Result<(usize), Box<dyn std::error::Error>> {
         let script_content = std::fs::read_to_string(path)?;

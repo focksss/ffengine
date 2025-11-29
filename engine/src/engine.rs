@@ -239,6 +239,7 @@ impl Engine {
                             let mut controller_mut = self.client.borrow_mut();
                             controller_mut.reset_deltas()
                         };
+                        Lua::force_gc();
 
                         let wait_semaphores = [current_rendering_complete_semaphore];
                         let swapchains = [base.swapchain];
