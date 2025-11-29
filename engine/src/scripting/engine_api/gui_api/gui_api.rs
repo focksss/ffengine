@@ -221,6 +221,12 @@ impl UserData for GUINodePointer {
         methods.add_method_mut("set_anchor_point", |_, this, val: LuaAnchorPoint| {
             Ok(this.gui.borrow_mut().gui_nodes[this.index].anchor_point = val.0)
         });
+        methods.add_method_mut("add_left_tap_action", |_, this, val: (String, usize)| {
+            if let Some(interactable_information) = &mut this.gui.borrow_mut().gui_nodes[this.index].interactable_information {
+                interactable_information.left_tap_actions.push((val.0, val.1));
+            }
+            Ok(())
+        })
     }
 }
 

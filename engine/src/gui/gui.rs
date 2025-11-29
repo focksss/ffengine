@@ -1200,7 +1200,7 @@ pub struct GUIInteractableInformation {
     passive_actions: Vec<(String, usize)>,
     hover_actions: Vec<(String, usize)>,
     unhover_actions: Vec<(String, usize)>,
-    left_tap_actions: Vec<(String, usize)>,
+    pub left_tap_actions: Vec<(String, usize)>,
     left_hold_actions: Vec<(String, usize)>,
     right_tap_actions: Vec<(String, usize)>,
     right_hold_actions: Vec<(String, usize)>,

@@ -68,6 +68,7 @@ MovementMode = {
             ---@field absolute_scale_y boolean
             ---@field anchor_point AnchorPoint
             ---@field set_anchor_point fun(self:GUINode, anchor_point:integer):nil
+            ---@field add_left_tap_action fun(self:GUINode, method:string, script:integer):nil
 
                 ---@class GUIQuad
                 ---@field color Vector

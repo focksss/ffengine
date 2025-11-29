@@ -1,0 +1,18 @@
+{
+"dhatFileVersion": 2,
+"mode": "rust-heap",
+"verb": "Allocated",
+"bklt": true,
+"bkacc": false,
+"tu": "µs",
+"Mtu": "s",
+"tuth": 10,
+"cmd": "target\\debug\\ffeditor.exe",
+"pid": 28228,
+"tg": 0,
+"te": 60234521,
+"pps": [],
+"ftbl": [
+"[root]"
+]
+}
