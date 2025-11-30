@@ -1162,6 +1162,57 @@ impl GUI {
     } }
 }
 
+
+#[derive(Clone)]
+enum ContainerType {
+    VerticalStack {
+        spacing: f32,
+        padding: Padding,
+        packing: Packing,
+        alignment: Alignment,
+    },
+    HorizontalStack {
+        spacing: f32,
+        padding: f32,
+        alignment: Alignment,
+    },
+    Dock,
+    None,
+}
+#[derive(Clone)]
+enum Packing {
+    Start, // top if vertical,
+    End, // bottom if vertical
+    Center,
+    SpaceIncludeEdge,
+    SpaceExcludeEdge,
+}
+enum StackDirection {
+    Reverse,
+    Normal,
+    Alternating
+}
+#[derive(Clone)]
+struct Padding {
+    left: f32,
+    right: f32,
+    top: f32,
+    bottom: f32,
+}
+#[derive(Clone)]
+enum Alignment {
+    Start,
+    Center,
+    End,
+    Stretch,
+}
+enum DockMode {
+    Left,
+    Right,
+    Top,
+    Bottom,
+}
+
 #[derive(Clone)]
 #[derive(Debug)]
 pub enum AnchorPoint {
