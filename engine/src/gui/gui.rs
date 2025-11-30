@@ -440,6 +440,16 @@ impl GUI {
                 }
             }
 
+            let mut additive_scale = (false, false);
+            if let JsonValue::Array(ref additive_scale_json) = text["additive_scale"] {
+                if additive_scale_json.len() >= 2 {
+                    additive_scale = (
+                        additive_scale_json[0].as_bool().unwrap(),
+                        additive_scale_json[1].as_bool().unwrap(),
+                    )
+                }
+            }
+
             let mut anchor_point = AnchorPoint::default();
             match &text["anchor_point"] {
                 JsonValue::String(s) => {
@@ -473,6 +483,7 @@ impl GUI {
                 scale,
                 absolute_position,
                 absolute_scale,
+                additive_scale,
                 anchor_point,
                 color,
             })
@@ -521,6 +532,16 @@ impl GUI {
                 }
             }
 
+            let mut additive_scale = (false, false);
+            if let JsonValue::Array(ref additive_scale_json) = quad["additive_scale"] {
+                if additive_scale_json.len() >= 2 {
+                    additive_scale = (
+                        additive_scale_json[0].as_bool().unwrap(),
+                        additive_scale_json[1].as_bool().unwrap(),
+                    )
+                }
+            }
+
             let mut anchor_point = AnchorPoint::default();
             match &quad["anchor_point"] {
                 JsonValue::String(s) => {
@@ -563,6 +584,7 @@ impl GUI {
                 scale,
                 absolute_position,
                 absolute_scale,
+                additive_scale,
                 anchor_point,
                 color,
                 corner_radius,
@@ -815,6 +837,16 @@ impl GUI {
                 }
             }
 
+            let mut additive_scale = (false, false);
+            if let JsonValue::Array(ref additive_scale_json) = node["additive_scale"] {
+                if additive_scale_json.len() >= 2 {
+                    additive_scale = (
+                        additive_scale_json[0].as_bool().unwrap(),
+                        additive_scale_json[1].as_bool().unwrap(),
+                    )
+                }
+            }
+
             let mut anchor_point = AnchorPoint::default();
             match &node["anchor_point"] {
                 JsonValue::String(s) => {
@@ -826,17 +858,17 @@ impl GUI {
                 _ => ()
             }
 
-            let mut text = None;
-            if let JsonValue::Number(ref text_json) = node["text"] {
-                if let Ok(v) = text_json.to_string().parse::<usize>() {
-                    text = Some(v);
+            let mut texts = Vec::new();
+            if let JsonValue::Array(ref text_indices_json) = node["texts"] {
+                for text_index in text_indices_json {
+                    texts.push(text_index.as_usize().expect("node text index parse error"));
                 }
             }
 
-            let mut quad = None;
-            if let JsonValue::Number(ref quad_json) = node["quad"] {
-                if let Ok(v) = quad_json.to_string().parse::<usize>() {
-                    quad = Some(v);
+            let mut quads = Vec::new();
+            if let JsonValue::Array(ref quad_indices_json) = node["quads"] {
+                for quad_index in quad_indices_json {
+                    quads.push(quad_index.as_usize().expect("node quad index parse error"));
                 }
             }
 
@@ -852,9 +884,10 @@ impl GUI {
                 children_indices,
                 absolute_position,
                 absolute_scale,
+                additive_scale,
                 anchor_point,
-                text,
-                quad,
+                text_indices: texts,
+                quad_indices: quads,
             })
         }
         self.gui_nodes = nodes;
@@ -970,9 +1003,9 @@ impl GUI {
         let scale = if node.absolute_scale { node.scale } else { parent_scale * node.scale };
          */
         let offset_factor = node.anchor_point.offset_factor();
-        let scale = Vector::new2(
-            if node.absolute_scale.0 { node.scale.x } else { parent_scale.x * node.scale.x },
-            if node.absolute_scale.1 { node.scale.y } else { parent_scale.y * node.scale.y }
+        let mut scale = Vector::new2(
+            if node.absolute_scale.0 { node.scale.x } else { parent_scale.x * node.scale.x } + if node.additive_scale.0 { parent_scale.x } else { 0.0 },
+            if node.absolute_scale.1 { node.scale.y } else { parent_scale.y * node.scale.y } + if node.additive_scale.1 { parent_scale.y } else { 0.0 }
         );
         let position = offset_factor * parent_scale - scale * offset_factor
             + parent_position
@@ -1000,10 +1033,10 @@ impl GUI {
             )
         );
 
-        if let Some(quad) = &node.quad {
+        for quad in &node.quad_indices {
             self.draw_quad(*quad, current_frame, command_buffer, position, scale, parent_clipping);
         }
-        if let Some(text) = &node.text {
+        for text in &node.text_indices {
             self.draw_text(*text, current_frame, position, scale, parent_clipping);
         }
 
@@ -1039,8 +1072,8 @@ impl GUI {
 
         let offset_factor = quad.anchor_point.offset_factor();
         let scale = Vector::new2(
-            if quad.absolute_scale.0 { quad.scale.x } else { parent_scale.x * quad.scale.x },
-            if quad.absolute_scale.1 { quad.scale.y } else { parent_scale.y * quad.scale.y }
+            if quad.absolute_scale.0 { quad.scale.x } else { parent_scale.x * quad.scale.x } + if quad.additive_scale.0 { parent_scale.x } else { 0.0 },
+            if quad.absolute_scale.1 { quad.scale.y } else { parent_scale.y * quad.scale.y } + if quad.additive_scale.1 { parent_scale.y } else { 0.0 }
         );
         let position = offset_factor * parent_scale - scale * offset_factor
             + parent_position
@@ -1094,8 +1127,8 @@ impl GUI {
 
         let offset_factor = text.anchor_point.offset_factor();
         let scale = Vector::new2(
-            if text.absolute_scale.0 { text.scale.x } else { parent_scale.x * text.scale.x },
-            if text.absolute_scale.1 { text.scale.y } else { parent_scale.y * text.scale.y }
+            if text.absolute_scale.0 { text.scale.x } else { parent_scale.x * text.scale.x } + if text.additive_scale.0 { parent_scale.x } else { 0.0 },
+            if text.absolute_scale.1 { text.scale.y } else { parent_scale.y * text.scale.y } + if text.additive_scale.1 { parent_scale.y } else { 0.0 }
         );
         let position = offset_factor * parent_scale - scale * offset_factor
             + parent_position
@@ -1209,10 +1242,11 @@ pub struct GUINode {
     pub children_indices: Vec<usize>,
     pub absolute_position: (bool, bool),
     pub absolute_scale: (bool, bool),
+    pub additive_scale: (bool, bool),
     pub anchor_point: AnchorPoint,
 
-    pub text: Option<usize>,
-    pub quad: Option<usize>
+    pub text_indices: Vec<usize>,
+    pub quad_indices: Vec<usize>
 }
 impl GUINode {
     pub fn new(index: usize) -> Self {
@@ -1228,9 +1262,10 @@ impl GUINode {
             children_indices: Vec::new(),
             absolute_position: (false, false),
             absolute_scale: (false, false),
+            additive_scale: (false, false),
             anchor_point: AnchorPoint::default(),
-            text: None,
-            quad: None,
+            text_indices: Vec::new(),
+            quad_indices: Vec::new(),
         }
     }
 }
@@ -1270,6 +1305,7 @@ pub struct GUIQuad {
     pub scale: Vector,
     pub absolute_position: (bool, bool),
     pub absolute_scale: (bool, bool),
+    pub additive_scale: (bool, bool),
     pub anchor_point: AnchorPoint,
     pub color: Vector,
     pub corner_radius: f32,
@@ -1282,6 +1318,7 @@ impl Default for GUIQuad {
             scale: Vector::fill(1.0),
             absolute_position: (false, false),
             absolute_scale: (false, false),
+            additive_scale: (false, false),
             anchor_point: AnchorPoint::default(),
             color: Vector::fill(0.0),
             corner_radius: 0.0,
@@ -1297,6 +1334,7 @@ pub struct GUIText {
     pub scale: Vector,
     pub absolute_position: (bool, bool),
     pub absolute_scale: (bool, bool),
+    pub additive_scale: (bool, bool),
     pub anchor_point: AnchorPoint,
     pub color: Vector,
 }
@@ -1316,6 +1354,7 @@ impl Default for GUIText {
             scale: Vector::fill(1.0),
             absolute_position: (false, false),
             absolute_scale: (false, false),
+            additive_scale: (false, false),
             anchor_point: AnchorPoint::default(),
             color: Vector::fill(1.0),
         }

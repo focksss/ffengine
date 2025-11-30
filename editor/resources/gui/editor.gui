@@ -2,7 +2,7 @@
   "guis": [
     {
       "name": "editor",
-      "nodes": [0, 6, 11, 14, 15, 16, 17, 18, 19, 20, 21]
+      "nodes": [0, 6, 12, 15, 16, 17, 18, 19, 20, 21, 22]
     }
   ],
   "scripts": [
@@ -36,6 +36,14 @@
     },
     {
       "uri": "editor\\resources\\gui\\images\\minimize_window.png",
+      "alpha_threshold": 0.1
+    },
+    {
+      "uri": "editor\\resources\\gui\\images\\collapsed.png",
+      "alpha_threshold": 0.1
+    },
+    {
+      "uri": "editor\\resources\\gui\\images\\expanded.png",
       "alpha_threshold": 0.1
     }
   ],
@@ -75,6 +83,18 @@
     {
       "color": [0.4, 0.4, 0.4, 1.0],
       "corner_radius": 5.0
+    },
+    {
+      "color": [1.0, 1.0, 1.0, 0.0],
+      "scale": [20, 1.0],
+      "absolute_scale": [true, false],
+      "image": 5
+    },
+    {
+      "color": [1.0, 1.0, 1.0, 0.0],
+      "scale": [20, 1.0],
+      "absolute_scale": [true, false],
+      "image": 6
     }
   ],
   "texts": [
@@ -121,8 +141,8 @@
       "scale": [1.0, 40.0],
       "anchor_point": "top_left",
       "absolute_scale": [false, true],
-      "text": 0,
-      "quad": 0
+      "texts": [0],
+      "quads": [0]
     },
       {
         "name": "close_button",
@@ -155,7 +175,7 @@
         "scale": [40.0, 1.0],
         "anchor_point": "top_right",
         "absolute_scale": [true, false],
-        "quad": 1
+        "quads": [1]
       },
       {
         "name": "minimize_button",
@@ -189,7 +209,7 @@
         "anchor_point": "top_right",
         "absolute_position": [true, true],
         "absolute_scale": [true, false],
-        "quad": 5,
+        "quads": [5],
         "hidden": true
       },
       {
@@ -224,7 +244,7 @@
         "anchor_point": "top_right",
         "absolute_position": [true, true],
         "absolute_scale": [true, false],
-        "quad": 6
+        "quads": [6]
       },
       {
         "name": "minimize_window_button",
@@ -258,7 +278,7 @@
         "anchor_point": "top_right",
         "absolute_position": [true, true],
         "absolute_scale": [true, false],
-        "quad": 7
+        "quads": [7]
       },
       {
         "name": "run_button",
@@ -292,17 +312,16 @@
         "anchor_point": "top_middle",
         "absolute_scale": [true, false],
         "absolute_position": [true, false],
-        "quad": 2
+        "quads": [2]
       },
     {
       "name": "right_area",
-      "children": [7, 8],
+      "children": [7, 8, 11],
       "position": [0, -40],
       "scale": [200.0, 0.0],
       "anchor_point": "top_right",
       "absolute_scale": [true, true],
-      "absolute_position": [false, true],
-      "quad": 3
+      "absolute_position": [false, true]
     },
       {
         "name": "right_area_resize",
@@ -330,11 +349,11 @@
         "name": "scene_graph_area",
         "interactable_information": {},
         "children": [9, 10],
-        "position": [0, -30],
-        "scale": [1.0, 500],
+        "position": [0, 0],
+        "scale": [1.0, 0.5],
         "anchor_point": "top_left",
-        "absolute_position": [false, true],
-        "absolute_scale": [false, true]
+        "absolute_scale": [false, false],
+        "quads": [3]
       },
         {
           "name": "graph_parent",
@@ -352,12 +371,20 @@
           "anchor_point": "top_right",
           "absolute_scale": [true, false],
           "absolute_position": [true, true],
-          "quad": 8
+          "quads": [8]
         },
+      {
+      "name": "entity_editor_area",
+      "interactable_information": {},
+      "position": [0, 0],
+      "scale": [1.0, 0.5],
+      "anchor_point": "bottom_left",
+      "quads": [3]
+    },
     {
       "name": "scene_view",
       "interactable_information": {},
-      "children": [12],
+      "children": [13],
       "position": [0, 0],
       "scale": [1920, 1040],
       "anchor_point": "bottom_left",
@@ -365,7 +392,7 @@
     },
       {
         "name": "hud",
-        "children": [13],
+        "children": [14],
         "position": [20, -10],
         "scale": [80, 20],
         "absolute_scale": [true, true],
@@ -387,8 +414,8 @@
           "scale": [80, 20],
           "absolute_scale": [true, true],
           "absolute_position": [true, true],
-          "quad": 4,
-          "text": 1,
+          "quads": [4],
+          "texts": [1],
           "anchor_point": "top_left"
         },
 
@@ -430,7 +457,7 @@
           }
         ]
       },
-      "position": [0, -10],
+      "position": [0, 0],
       "scale": [1.0, 10],
       "anchor_point": "bottom_middle",
       "absolute_position": [false, true],

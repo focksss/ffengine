@@ -24,18 +24,18 @@ function Awake()
 	
 	gui = Engine.renderer:gui(0)
 
-	top_bar_node = gui:get_node(0)
+	top_bar_node = gui:get_root(0)
 		minimize_button_node = top_bar_node:get_child(1)
 		maximize_button_node = top_bar_node:get_child(2)
 
-	right_area_node = gui:get_node(6)
-		scene_graph_area_node = gui:get_node(8)
+	right_area_node = gui:get_root(1)
+		scene_graph_area_node = right_area_node:get_child(1)
 			scene_graph_parent_node = scene_graph_area_node:get_child(0)
 			scene_graph_scroll_bar_node = scene_graph_area_node:get_child(1)
 
 			scene_graph_text_indices_start = gui.num_texts
 
-	scene_view_node = gui:get_node(11)
+	scene_view_node = gui:get_root(2)
 	
 	build_graph()
 end
@@ -124,15 +124,15 @@ function recompile()
 end
 
 function close_hovered()
-	gui.ActiveNode.quad.color = Vector.new4(1.0, 0.3, 0.3, 1.0)
+	gui.ActiveNode:get_quad(0).color = Vector.new4(1.0, 0.3, 0.3, 1.0)
 end
 
 function color_hovered()
-	gui.ActiveNode.quad.color = Vector.new4(2.0, 2.0, 2.0, 0.15)
+	gui.ActiveNode:get_quad(0).color = Vector.new4(2.0, 2.0, 2.0, 0.15)
 end
 
 function color_unhovered()
-	gui.ActiveNode.quad.color = Vector.new4(1.0, 1.0, 1.0, 0.0)
+	gui.ActiveNode:get_quad(0).color = Vector.new4(1.0, 1.0, 1.0, 0.0)
 end
 
 function drag_window() 
@@ -168,7 +168,7 @@ function update_fps()
 
 	if time_since_fps_update > 1.0 then 
 		local fps = frame_count / time_since_fps_update
-        gui.ActiveNode.text:update_text(string.format("FPS: %.1f", fps))
+        gui.ActiveNode:get_text(0):update_text(string.format("FPS: %.1f", fps))
         time_since_fps_update = 0
         frame_count = 0
 	end
@@ -228,9 +228,10 @@ local graph_scroll_pixels = 10
 local graph_entity_height = 20
 local graph_child_indent = 20
 function MouseScrolled()
+	local total_pixels = scene_graph_area_node.scale.y * right_area_node.scale.y
 	if gui:is_node_hovered(scene_graph_area_node.index) then
-		local max_content_scroll = graph_height - scene_graph_area_node.scale.y
-		local max_scrollbar_travel = (1.0 - scene_graph_scroll_bar_node.scale.y) * scene_graph_area_node.scale.y
+		local max_content_scroll = graph_height - total_pixels
+		local max_scrollbar_travel = (1.0 - scene_graph_scroll_bar_node.scale.y) * total_pixels
 		
 		scene_graph_scroll_bar_node.position = Vector.new2(
 			scene_graph_scroll_bar_node.position.x, 
@@ -266,7 +267,7 @@ function build_graph()
 	local num_children = #scene_graph_parent_node.children_indices
 	for i = num_children, 1, -1 do
 		local child_index = scene_graph_parent_node:get_child_index(i - 1)
-		gui:destroy_quad(gui:get_node(child_index).quad_index)
+		gui:destroy_quad(gui:get_node(child_index):get_quad_index(0))
 		gui:destroy_node(child_index)
 		scene_graph_parent_node:remove_child_index_at(i - 1)
 	end
@@ -291,7 +292,7 @@ function build_graph()
 
 	scene_graph_scroll_bar_node.scale = Vector.new2(
 		scene_graph_scroll_bar_node.scale.x, 
-		math.min(1.0, scene_graph_area_node.scale.y / graph_height) --- visible pixels / total pixels
+		math.min(1.0, (scene_graph_area_node.scale.y * right_area_node.scale.y) / graph_height) --- visible pixels / total pixels
 	)
 end
 function build_graph_recursive(entity, entity_index, depth, parent_gui_node)
@@ -309,13 +310,6 @@ function build_graph_recursive(entity, entity_index, depth, parent_gui_node)
 	local display_name = entity.name
 	local children = entity.children_indices
 	local has_children = #children > 0	
-	if has_children then
-		if is_expanded then
-			display_name = "> " .. display_name .. "      "
-		else
-			display_name = display_name .. "      "
-		end
-	end
 
 	-- quad
 	local quad_index = gui.num_quads
@@ -329,7 +323,15 @@ function build_graph_recursive(entity, entity_index, depth, parent_gui_node)
 		darker = true
 	end
 	quad.corner_radius = 5.0
-	node.quad_index = quad_index
+	node:add_quad_index(quad_index)
+	--- add the expanded/collapsed visual quad after so its drawn on top
+	if has_children then
+		if is_expanded then
+			node:add_quad_index(10)
+		else
+			node:add_quad_index(9)
+		end
+	end
 
 	-- reuse or create text
 	local text_index = scene_graph_text_indices_start + used_text_count
@@ -342,8 +344,9 @@ function build_graph_recursive(entity, entity_index, depth, parent_gui_node)
 	local text = gui:get_text(text_index)
 	text.font_size = 15.0
 	text.auto_wrap_distance = 1000.0
-	text.position = Vector.new2(0.01, 0.2)
-	node.text_index = text_index
+	text.position = Vector.new2(20, 0.2)
+	text.absolute_position_x = true
+	node:add_text_index(text_index)
 	used_text_count = used_text_count + 1
 
 	-- format

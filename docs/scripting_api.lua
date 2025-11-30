@@ -49,15 +49,26 @@ MovementMode = {
         ---@field add_quad fun(self:GUI):nil
         ---@field add_text fun(self:GUI, initial_text:string):nil
         ---@field is_node_hovered fun(self:GUI, node_index:integer):boolean
+        ---@field root_node_indices integer[]
+        ---@field get_root_index fun(self:GUI, index:integer):integer
+        ---@field get_root fun(self:GUI, index:integer):GUINode
+        ---@field add_root_index fun(self:GUI, index:integer):nil
+        ---@field remove_root_index_at fun(self:GUI, index:integer):nil
 
             ---@class GUINode
-            ---@field quad GUIQuad
-            ---@field text GUIText
             ---@field position Vector
             ---@field scale Vector
             ---@field hidden boolean
-            ---@field quad_index integer
-            ---@field text_index integer
+            ---@field quad_indices integer[]
+            ---@field text_indices integer[]
+            ---@field get_quad_index fun(self:GUINode, index:integer):integer
+            ---@field get_quad fun(self:GUINode, index:integer):GUIQuad
+            ---@field add_quad_index fun(self:GUINode, index:integer):nil
+            ---@field remove_quad_index_at fun(self:GUINode, index:integer):nil
+            ---@field get_text_index fun(self:GUINode, index:integer):integer
+            ---@field get_text fun(self:GUINode, index:integer):GUIText
+            ---@field add_text_index fun(self:GUINode, index:integer):nil
+            ---@field remove_text_index_at fun(self:GUINode, index:integer):nil
             ---@field get_child_index fun(self:GUINode, index:integer):integer
             ---@field add_child_index fun(self:GUINode, index:integer):nil
             ---@field remove_child_index_at fun(self:GUINode, index:integer):nil
@@ -77,6 +88,8 @@ MovementMode = {
                 ---@field position Vector
                 ---@field scale Vector
                 ---@field corner_radius number
+                ---@field absolute_position_x boolean
+                ---@field absolute_position_y boolean
 
                 ---@class GUIText
                 ---@field text_message string
@@ -85,6 +98,8 @@ MovementMode = {
                 ---@field auto_wrap_distance number
                 ---@field position Vector
                 ---@field scale Vector
+                ---@field absolute_position_x boolean
+                ---@field absolute_position_y boolean
                 
         ---@class SceneRenderer
         ---@field viewport Viewport
