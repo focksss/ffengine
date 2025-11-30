@@ -1,24 +1,20 @@
 use std::cell::RefCell;
 use std::{fs, slice};
 use std::collections::HashSet;
-use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Instant;
 use ash::vk;
 use ash::vk::{CommandBuffer, DescriptorType, Format, Handle, ShaderStageFlags};
 use json::JsonValue;
-use mlua::{UserData, UserDataFields, UserDataMethods};
 use winit::event::MouseButton;
 use crate::engine::get_command_buffer;
 use crate::client::client::*;
 use crate::math::*;
-use crate::scene::physics::player::MovementMode;
 use crate::render::render_helper::{Descriptor, DescriptorCreateInfo, DescriptorSetCreateInfo, Pass, PassCreateInfo, Renderpass, RenderpassCreateInfo, Texture, TextureCreateInfo};
 use crate::gui::text::font::Font;
 use crate::gui::text::text_render::{TextInformation, TextRenderer};
 use crate::render::render::MAX_FRAMES_IN_FLIGHT;
-use crate::render::vulkan_base::{VkBase, WINDOW_EXTENSION};
+use crate::render::vulkan_base::{VkBase};
 use crate::scripting::lua_engine::Lua;
 
 enum GUIInteractionResult {
@@ -82,7 +78,7 @@ impl GUI {
         let (x, y, left_pressed, left_just_pressed) = {
             let client = self.controller.borrow();
             let x = client.cursor_position.x as f32;
-            let y = self.window.inner_size().height as f32 - client.cursor_position.y as f32 - WINDOW_EXTENSION as f32;
+            let y = self.window.inner_size().height as f32 - client.cursor_position.y as f32;
             let left_pressed = client.pressed_mouse_buttons.contains(&MouseButton::Left);
             let left_just_pressed = client.new_pressed_mouse_buttons.contains(&MouseButton::Left);
             (x, y, left_pressed, left_just_pressed)
@@ -931,7 +927,7 @@ impl GUI {
         );
 
         let screen_clip = (
-            Vector::new2(0.0, -(WINDOW_EXTENSION as f32)),
+            Vector::empty(),
             Vector::new2(self.window.inner_size().width as f32, self.window.inner_size().height as f32),
         );
         for node_index in &self.gui_root_node_indices {
@@ -941,8 +937,8 @@ impl GUI {
                 command_buffer,
                 Vector::new2(0.0, 0.0),
                 Vector::new2(
-                    self.window.inner_size().width as f32 - WINDOW_EXTENSION as f32,
-                    self.window.inner_size().height as f32 - WINDOW_EXTENSION as f32
+                    self.window.inner_size().width as f32,
+                    self.window.inner_size().height as f32
                 ),
                 screen_clip,
                 &mut interactable_action_parameter_sets,

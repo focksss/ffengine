@@ -1,23 +1,11 @@
 use std::cell::RefCell;
 use std::collections::HashSet;
-use std::f32::consts::PI;
 use std::sync::Arc;
-use std::time::Instant;
-use ash::vk;
-use mlua::{UserData, UserDataMethods};
 use winit::dpi::PhysicalPosition;
 use winit::event::{DeviceEvent, ElementState, Event, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
-use winit::event_loop::EventLoopWindowTarget;
-use winit::keyboard::{KeyCode, PhysicalKey};
+use winit::keyboard::{PhysicalKey};
 use winit::window::CursorGrabMode;
-use crate::math::Vector;
-use crate::scene::physics::physics_engine::PhysicsEngine;
-use crate::scene::physics::player::{MovementMode, Player, PlayerPointer};
-use crate::render::render::{screenshot_texture, Renderer};
-use crate::render::vulkan_base::{VkBase, WINDOW_EXTENSION};
 use crate::scripting::lua_engine::Lua;
-use crate::scene::world::camera::Camera;
-use crate::scene::world::world::World;
 
 pub struct Client {
     pub window: Arc<winit::window::Window>,
@@ -47,8 +35,8 @@ pub struct Client {
 impl Client {
     pub fn new(window: Arc<winit::window::Window>) -> Client {
         window.set_cursor_position(PhysicalPosition::new(
-            (window.inner_size().width - WINDOW_EXTENSION) as f32 * 0.5,
-            (window.inner_size().height - WINDOW_EXTENSION) as f32 * 0.5))
+            window.inner_size().width as f32 * 0.5,
+            window.inner_size().height as f32 * 0.5))
             .expect("failed to reset mouse position");
         Client {
             window: window.clone(),
@@ -154,12 +142,12 @@ impl Client {
                 } => {
                     if controller.window.has_focus() && controller.cursor_locked {
                         controller.mouse_delta = (
-                            -position.x as f32 + 0.5 * (controller.window.inner_size().width - WINDOW_EXTENSION) as f32,
-                            position.y as f32 - 0.5 * (controller.window.inner_size().height - WINDOW_EXTENSION) as f32,
+                            -position.x as f32 + 0.5 * controller.window.inner_size().width as f32,
+                            position.y as f32 - 0.5 * controller.window.inner_size().height as f32,
                         );
                         controller.window.set_cursor_position(PhysicalPosition::new(
-                            (controller.window.inner_size().width - WINDOW_EXTENSION) as f32 * 0.5,
-                            (controller.window.inner_size().height - WINDOW_EXTENSION) as f32 * 0.5))
+                            controller.window.inner_size().width as f32 * 0.5,
+                            controller.window.inner_size().height as f32 * 0.5))
                             .expect("failed to reset mouse position");
                         should_mouse_move_event = true
                     } else {
