@@ -185,7 +185,7 @@ function Update()
 	maximize_button_node.hidden = maximized
 
 	has_set_target_cursor = false
-	---Engine.client:set_cursor_icon(target_cursor_icon)
+	Engine.client:set_cursor_icon(target_cursor_icon)
 	target_cursor_icon = CursorIcon.Default
 
 	if not resize_called_this_tick and resize_called_last_tick then

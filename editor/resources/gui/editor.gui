@@ -2,7 +2,7 @@
   "guis": [
     {
       "name": "editor",
-      "nodes": [0, 6, 11]
+      "nodes": [0, 6, 11, 14, 15, 16, 17, 18, 19, 20, 21]
     }
   ],
   "scripts": [
@@ -474,11 +474,100 @@
           }
         ]
       },
-      "position": [20, 0],
+      "position": [10, 0],
       "scale": [20, 1.0],
       "anchor_point": "right",
       "absolute_position": [true, false],
       "absolute_scale": [true, false]
+    },
+
+    {
+      "name": "top_left_resize",
+      "interactable_information": {
+        "left_hold_actions": [
+          {
+            "method": "drag_resize_northwest",
+            "script": 0
+          }
+        ],
+        "hover_actions": [
+          {
+            "method": "nw_resize_cursor",
+            "script": 0
+          }
+        ]
+      },
+      "position": [0, 0],
+      "scale": [12, 12],
+      "anchor_point": "top_left",
+      "absolute_position": [true, true],
+      "absolute_scale": [true, true]
+    },
+    {
+      "name": "top_right_resize",
+      "interactable_information": {
+        "left_hold_actions": [
+          {
+            "method": "drag_resize_northeast",
+            "script": 0
+          }
+        ],
+        "hover_actions": [
+          {
+            "method": "sw_resize_cursor",
+            "script": 0
+          }
+        ]
+      },
+      "position": [0, 0],
+      "scale": [12, 12],
+      "anchor_point": "top_right",
+      "absolute_position": [true, true],
+      "absolute_scale": [true, true]
+    },
+    {
+      "name": "bottom_right_resize",
+      "interactable_information": {
+        "left_hold_actions": [
+          {
+            "method": "drag_resize_southeast",
+            "script": 0
+          }
+        ],
+        "hover_actions": [
+          {
+            "method": "nw_resize_cursor",
+            "script": 0
+          }
+        ]
+      },
+      "position": [0, 0],
+      "scale": [12, 12],
+      "anchor_point": "bottom_right",
+      "absolute_position": [true, true],
+      "absolute_scale": [true, true]
+    },
+    {
+      "name": "bottom_left_resize",
+      "interactable_information": {
+        "left_hold_actions": [
+          {
+            "method": "drag_resize_southwest",
+            "script": 0
+          }
+        ],
+        "hover_actions": [
+          {
+            "method": "sw_resize_cursor",
+            "script": 0
+          }
+        ]
+      },
+      "position": [0, 0],
+      "scale": [12, 12],
+      "anchor_point": "bottom_left",
+      "absolute_position": [true, true],
+      "absolute_scale": [true, true]
     }
   ]
 }

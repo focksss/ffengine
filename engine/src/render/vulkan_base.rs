@@ -79,56 +79,6 @@ pub fn record_submit_commandbuffer<F: FnOnce(&Device, CommandBuffer)>(
             .expect("queue submit failed.");
     }
 }
-#[cfg(target_os = "windows")]
-use windows::Win32::UI::WindowsAndMessaging::*;
-#[cfg(target_os = "windows")]
-use windows::Win32::Foundation::*;
-use windows::Win32::UI::Controls::MARGINS;
-#[cfg(target_os = "windows")]
-use windows::Win32::UI::Shell::DefSubclassProc;
-#[cfg(target_os = "windows")]
-unsafe extern "system" fn custom_wndproc(
-    hwnd: HWND,
-    msg: u32,
-    wparam: WPARAM,
-    lparam: LPARAM,
-    _uidsubclass: usize,
-    _dwrefdata: usize,
-) -> LRESULT {
-    // Let DWM handle it first
-    let mut result = LRESULT(0);
-    if DwmDefWindowProc(hwnd, msg, wparam, lparam, &mut result).as_bool() {
-        return result;
-    }
-
-    if msg == WM_NCHITTEST {
-        // DWM didn't handle it, so we handle it
-        let mut rect: RECT = std::mem::zeroed();
-        GetWindowRect(hwnd, &mut rect);
-
-        let x = ((lparam.0 as i32) & 0xFFFF) as i16 as i32;
-        let y = (((lparam.0 as i32) >> 16) & 0xFFFF) as i16 as i32;
-
-        const RESIZE_BORDER: i32 = 10;
-
-        // Check extended area
-        let in_left = x >= rect.left - RESIZE_BORDER && x < rect.left + RESIZE_BORDER;
-        let in_right = x > rect.right - RESIZE_BORDER && x <= rect.right + RESIZE_BORDER;
-        let in_top = y >= rect.top - RESIZE_BORDER && y < rect.top + RESIZE_BORDER;
-        let in_bottom = y > rect.bottom - RESIZE_BORDER && y <= rect.bottom + RESIZE_BORDER;
-
-        if in_left && in_top { return LRESULT(HTTOPLEFT as isize); }
-        if in_right && in_top { return LRESULT(HTTOPRIGHT as isize); }
-        if in_left && in_bottom { return LRESULT(HTBOTTOMLEFT as isize); }
-        if in_right && in_bottom { return LRESULT(HTBOTTOMRIGHT as isize); }
-        if in_left { return LRESULT(HTLEFT as isize); }
-        if in_right { return LRESULT(HTRIGHT as isize); }
-        if in_top { return LRESULT(HTTOP as isize); }
-        if in_bottom { return LRESULT(HTBOTTOM as isize); }
-    }
-
-    DefSubclassProc(hwnd, msg, wparam, lparam)
-}
 
 unsafe extern "system" fn vulkan_debug_callback(
     message_severity: vk::DebugUtilsMessageSeverityFlagsEXT,
@@ -173,8 +123,6 @@ pub fn find_memorytype_index(
         })
         .map(|(index, _memory_type)| index as _)
 }
-
-pub const WINDOW_EXTENSION: u32 = 0;
 
 pub struct VkBase {
     pub needs_swapchain_recreate: bool,
@@ -223,43 +171,14 @@ impl VkBase {
             let window = WindowBuilder::new()
                 .with_title(window_title)
                 .with_decorations(false)
-                .with_transparent(true)
                 .with_blur(true)
                 .with_inner_size(winit::dpi::LogicalSize::new(
-                    f64::from(window_width + WINDOW_EXTENSION),
-                    f64::from(window_height + WINDOW_EXTENSION),
+                    f64::from(window_width),
+                    f64::from(window_height),
                 ))
                 .with_position(winit::dpi::LogicalPosition::new(0, 0))
                 .build(&event_loop)
                 .unwrap();
-
-            #[cfg(target_os = "windows")]
-            {
-                use raw_window_handle::HasWindowHandle;
-                use windows::Win32::UI::Shell::SetWindowSubclass;
-                use windows::Win32::Graphics::Dwm::*;
-
-                let hwnd = match window.window_handle().unwrap().as_raw() {
-                    raw_window_handle::RawWindowHandle::Win32(handle) => {
-                        HWND(handle.hwnd.get() as *mut _)
-                    },
-                    _ => panic!("Not Windows"),
-                };
-
-                // Extend the DWM frame OUTWARD by 10 pixels on all sides
-                // This creates an invisible resize border outside the window!
-                let margins = MARGINS {
-                    cxLeftWidth: 10,
-                    cxRightWidth: 10,
-                    cyTopHeight: 10,
-                    cyBottomHeight: 10,
-                };
-
-                let _ = DwmExtendFrameIntoClientArea(hwnd, &margins);
-
-                // Still subclass for custom hit testing
-                SetWindowSubclass(hwnd, Some(custom_wndproc), 1, 0);
-            }
 
             let entry = Entry::linked();
             let app_name = c"ffengine";
@@ -739,10 +658,7 @@ impl VkBase {
             .create_swapchain(&swapchain_create_info, None)
             .unwrap();
 
-        (surface_format, vk::Extent2D{
-            width: surface_resolution.width - WINDOW_EXTENSION,
-            height: surface_resolution.height - WINDOW_EXTENSION,
-        }, swapchain)
+        (surface_format, surface_resolution, swapchain)
     }}
     pub fn create_present_images(
         swapchain: &SwapchainKHR,
