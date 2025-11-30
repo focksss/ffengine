@@ -2,7 +2,7 @@
   "guis": [
     {
       "name": "editor",
-      "nodes": [0, 6, 9, 12, 13, 14, 15, 16, 17, 18, 19]
+      "nodes": [0, 6, 11, 14, 15, 16, 17, 18, 19, 20, 21]
     }
   ],
   "scripts": [
@@ -41,73 +41,45 @@
   ],
   "quads": [
     {
-      "position": [0.0, 0.0],
-      "scale": [1.0, 1.0],
-      "clip_min": [0.0, 0.0],
-      "clip_max": [1.0, 1.0],
       "color": [0.3, 0.3, 0.3, 0.8],
       "corner_radius": 5.0
     },
     {
-      "position": [0.0, 0.0],
-      "scale": [1.0, 1.0],
-      "clip_min": [0.0, 0.0],
-      "clip_max": [1.0, 1.0],
       "color": [0.3, 0.3, 0.3, 0.0],
       "corner_radius": 5.0,
       "image": 1
     },
     {
-      "position": [0.0, 0.0],
-      "scale": [1.0, 1.0],
-      "clip_min": [0.0, 0.0],
-      "clip_max": [1.0, 1.0],
       "color": [0.0, 0.0, 0.0, 0.0],
       "corner_radius": 5.0,
       "image": 0
     },
     {
-      "position": [0.0, 0.0],
-      "scale": [1.0, 1.0],
-      "clip_min": [0.0, 0.0],
-      "clip_max": [1.0, 1.0],
       "color": [0.3, 0.3, 0.3, 0.8],
       "corner_radius": 5.0
     },
     {
-      "position": [0.0, 0.0],
-      "scale": [1.0, 1.0],
-      "clip_min": [0.0, 0.0],
-      "clip_max": [1.0, 1.0],
       "color": [0.3, 0.3, 0.3, 0.4],
       "corner_radius": 5.0
     },
     {
-      "position": [0.0, 0.0],
-      "scale": [1.0, 1.0],
-      "clip_min": [0.0, 0.0],
-      "clip_max": [1.0, 1.0],
       "color": [0.0, 0.0, 0.0, 0.0],
       "corner_radius": 5.0,
       "image": 2
     },
     {
-      "position": [0.0, 0.0],
-      "scale": [1.0, 1.0],
-      "clip_min": [0.0, 0.0],
-      "clip_max": [1.0, 1.0],
       "color": [0.0, 0.0, 0.0, 0.0],
       "corner_radius": 5.0,
       "image": 3
     },
     {
-      "position": [0.0, 0.0],
-      "scale": [1.0, 1.0],
-      "clip_min": [0.0, 0.0],
-      "clip_max": [1.0, 1.0],
       "color": [0.0, 0.0, 0.0, 0.0],
       "corner_radius": 5.0,
       "image": 4
+    },
+    {
+      "color": [0.4, 0.4, 0.4, 1.0],
+      "corner_radius": 5.0
     }
   ],
   "texts": [
@@ -369,15 +341,29 @@
       },
       {
         "name": "scene_graph_area",
-        "children": [],
-        "position": [0, 30],
+        "children": [9, 10],
+        "position": [0, -30],
         "scale": [1.0, 0.5],
         "anchor_point": "top_left",
         "absolute_position": [false, true]
       },
+        {
+          "name": "graph_parent",
+          "children": [],
+          "position": [0, 0],
+          "scale": [1.0, 1.0],
+          "anchor_point": "top_left"
+        },
+        {
+          "name": "scene_graph_scroll_bar",
+          "scale": [10, 0.5],
+          "anchor_point": "top_right",
+          "absolute_scale": [true, false],
+          "quad": 8
+        },
     {
       "name": "scene_view",
-      "children": [10],
+      "children": [12],
       "position": [0, 0],
       "scale": [1920, 1040],
       "anchor_point": "bottom_left",
@@ -385,7 +371,7 @@
     },
       {
         "name": "hud",
-        "children": [11],
+        "children": [13],
         "position": [20, -10],
         "scale": [80, 20],
         "absolute_scale": [true, true],

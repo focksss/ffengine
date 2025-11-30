@@ -1,21 +1,42 @@
-local initial_mouse_pos = Vector.new()
-local initial_value = Vector.new()
+local target_cursor_icon
 
 local resize_called_last_tick = false
 local resize_called_this_tick = false
 
-local right_area_node_index = 6
-local scene_view_node_index = 9
+local gui
 
-local minimize_button_index = 2
-local maximize_button_index = 3
+local top_bar_node
+	local minimize_button_node
+	local maximize_button_node
 
-local scene_graph_index = 8
-local scene_graph_text_indices_start = 2
+local right_area_node
+	local scene_graph_node
+		local scene_graph_parent_node
 
-local target_cursor_icon = CursorIcon.Default
+		local scene_graph_text_indices_start
+		local scene_graph_scroll_bar_node
+		
+local scene_view_node
 
 function Awake()
+	target_cursor_icon = CursorIcon.Default
+	
+	gui = Engine.renderer:gui(0)
+
+	top_bar_node = gui:get_node(0)
+		minimize_button_node = top_bar_node:get_child(1)
+		maximize_button_node = top_bar_node:get_child(2)
+
+	right_area_node = gui:get_node(6)
+		scene_graph_node = gui:get_node(8)
+			scene_graph_parent_node = scene_graph_node:get_child(0)
+
+			scene_graph_text_indices_start = gui.num_texts
+
+			scene_graph_scroll_bar_node = scene_graph_node:get_child(1)
+
+	scene_view_node = gui:get_node(11)
+	
 	build_graph()
 end
 
@@ -78,15 +99,15 @@ function recompile()
 end
 
 function close_hovered()
-	Engine.renderer:gui(0).ActiveNode.quad.color = Vector.new4(1.0, 0.3, 0.3, 1.0)
+	gui.ActiveNode.quad.color = Vector.new4(1.0, 0.3, 0.3, 1.0)
 end
 
 function color_hovered()
-	Engine.renderer:gui(0).ActiveNode.quad.color = Vector.new4(2.0, 2.0, 2.0, 0.15)
+	gui.ActiveNode.quad.color = Vector.new4(2.0, 2.0, 2.0, 0.15)
 end
 
 function color_unhovered()
-	Engine.renderer:gui(0).ActiveNode.quad.color = Vector.new4(1.0, 1.0, 1.0, 0.0)
+	gui.ActiveNode.quad.color = Vector.new4(1.0, 1.0, 1.0, 0.0)
 end
 
 function drag_window() 
@@ -106,8 +127,6 @@ end
 function resize_right_area()
 	resize_called_this_tick = true
 
-	local gui = Engine.renderer:gui(0)
-	local right_area_node = gui:get_node(right_area_node_index)
 	local window_size = Engine.client.window_size
 	right_area_node.scale = Vector.new2(
 		window_size.x 
@@ -124,7 +143,7 @@ function update_fps()
 
 	if time_since_fps_update > 1.0 then 
 		local fps = frame_count / time_since_fps_update
-        Engine.renderer:gui(0).ActiveNode.text:update_text(string.format("FPS: %.1f", fps))
+        gui.ActiveNode.text:update_text(string.format("FPS: %.1f", fps))
         time_since_fps_update = 0
         frame_count = 0
 	end
@@ -132,13 +151,13 @@ end
 
 local stored_window_size = Vector.new2(0, 0)
 function Update()
-	local gui = Engine.renderer:gui(0)
+	if gui == nil then return end
+	
 	local window_size = Engine.client.window_size
-	local right_area_node = gui:get_node(right_area_node_index)
 
 	local maximized = Engine.client.maximized
-	gui:get_node(minimize_button_index).hidden = not maximized
-	gui:get_node(maximize_button_index).hidden = maximized
+	minimize_button_node.hidden = not maximized
+	maximize_button_node.hidden = maximized
 
 	Engine.client:set_cursor_icon(target_cursor_icon)
 	target_cursor_icon = CursorIcon.Default
@@ -168,20 +187,19 @@ function Update()
 	resize_called_last_tick = resize_called_this_tick
 	resize_called_this_tick = false
 
-	right_area_node.scale = Vector.new2(right_area_node.scale.x, window_size.y - 40)
+	right_area_node.scale = Vector.new2(right_area_node.scale.x, window_size.y - top_bar_node.scale.y)
 
-	local scene_view_node = gui:get_node(scene_view_node_index)
-	scene_view_node.scale = Vector.new2(window_size.x - right_area_node.scale.x, window_size.y - 40)
+	scene_view_node.scale = Vector.new2(window_size.x - right_area_node.scale.x, window_size.y - top_bar_node.scale.y)
 
 end
-
+--- on build_graph, set size of scroll bar to something / graph_level
 local expanded_entities = {}
 local node_to_entity_map = {}
 local graph_level = 0
 local used_text_count = 0
 local darker = false
 function toggle_graph_node() 
-	local gui = Engine.renderer:gui(0)
+	
 	local clicked_node = gui.ActiveNode
 	local clicked_node_index = clicked_node.index
 	
@@ -194,16 +212,13 @@ function toggle_graph_node()
 	end
 end
 function build_graph()
-	local gui = Engine.renderer:gui(0)
-	local scene_graph_node = gui:get_node(scene_graph_index)
-
 	-- remove existing children + quads
-	local num_children = #scene_graph_node.children_indices
+	local num_children = #scene_graph_parent_node.children_indices
 	for i = num_children, 1, -1 do
-		local child_index = scene_graph_node:get_child_index(i - 1)
+		local child_index = scene_graph_parent_node:get_child_index(i - 1)
 		gui:destroy_quad(gui:get_node(child_index).quad_index)
 		gui:destroy_node(child_index)
-		scene_graph_node:remove_child_index_at(i - 1)
+		scene_graph_parent_node:remove_child_index_at(i - 1)
 	end
 	
 	--- reset mapping for expansion tracking (root expanded)
@@ -222,10 +237,12 @@ function build_graph()
 	darker = false
 	
 	local root_entity = Engine.scene:get_entity(0)
-	build_graph_recursive(root_entity, 0, 0, scene_graph_node)
+	build_graph_recursive(root_entity, 0, 0, scene_graph_parent_node)
+
+	--- local visible_pixels = 
 end
 function build_graph_recursive(entity, entity_index, depth, parent_gui_node)
-	local gui = Engine.renderer:gui(0)
+	
 	
 	-- node
 	local node_index = gui.num_nodes

@@ -68,6 +68,8 @@ MovementMode = {
             ---@field anchor_point AnchorPoint
             ---@field set_anchor_point fun(self:GUINode, anchor_point:integer):nil
             ---@field add_left_tap_action fun(self:GUINode, method:string, script:integer):nil
+            ---@field index integer
+            ---@field get_child fun(self:GUINode, child_index:integer):GUINode
 
                 ---@class GUIQuad
                 ---@field color Vector

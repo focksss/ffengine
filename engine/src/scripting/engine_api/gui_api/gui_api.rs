@@ -272,6 +272,13 @@ impl UserData for GUINodePointer {
             with_gui!(lua, this.gui_index => gui);
             Ok(gui.gui_nodes[this.index].children_indices[val as usize])
         });
+        methods.add_method("get_child", |lua, this, val: i32| {
+            with_gui!(lua, this.gui_index => gui);
+            lua.create_userdata(GUINodePointer {
+                gui_index: this.gui_index,
+                index: gui.gui_nodes[this.index].children_indices[val as usize]
+            })
+        });
         methods.add_method_mut("add_child_index", |lua, this, val: i32| {
             with_gui_mut!(lua, this.gui_index => gui);
             Ok(gui.gui_nodes[this.index].children_indices.push(val as usize))

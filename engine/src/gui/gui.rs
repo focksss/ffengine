@@ -506,7 +506,7 @@ impl GUI {
                 }
             }
 
-            let mut scale = Vector::empty();
+            let mut scale = Vector::fill(1.0);
             if let JsonValue::Array(ref scale_json) = quad["scale"] {
                 if scale_json.len() >= 2 {
                     scale = Vector::new2(
@@ -526,7 +526,7 @@ impl GUI {
                 }
             }
 
-            let mut clip_max = Vector::empty();
+            let mut clip_max = Vector::fill(1.0);
             if let JsonValue::Array(ref clip_max_json) = quad["clip_max"] {
                 if clip_max_json.len() >= 2 {
                     clip_max = Vector::new2(
@@ -1052,7 +1052,7 @@ impl GUI {
                 (position.x + scale.x).min(node_clipping.1.x),
                 (position.y + scale.y).min(node_clipping.1.y)
             );
-            
+
             if bounds_min.x < bounds_max.x && bounds_min.y < bounds_max.y {
                 interactable_parameter_sets.push((node_index, bounds_min, bounds_max));
             }
