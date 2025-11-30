@@ -48,6 +48,7 @@ MovementMode = {
         ---@field add_node fun(self:GUI):nil
         ---@field add_quad fun(self:GUI):nil
         ---@field add_text fun(self:GUI, initial_text:string):nil
+        ---@field is_node_hovered fun(self:GUI, node_index:integer):boolean
 
             ---@class GUINode
             ---@field quad GUIQuad

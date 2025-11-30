@@ -29,8 +29,10 @@ void main() {
     discard;
 
     float radius = ubo.corner_radius;
-    vec2 inner_min = ubo.min + vec2(radius);
-    vec2 inner_max = ubo.max - vec2(radius);
+    vec2 rect_min = ubo.position;
+    vec2 rect_max = ubo.position + ubo.scale;
+    vec2 inner_min = rect_min + vec2(radius);
+    vec2 inner_max = rect_max - vec2(radius);
 
     vec2 nearest = clamp(frag_pos, inner_min, inner_max);
     float dist = length(frag_pos - nearest);

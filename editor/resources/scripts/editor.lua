@@ -1,4 +1,5 @@
 local target_cursor_icon
+local has_set_target_cursor = false
 
 local resize_called_last_tick = false
 local resize_called_this_tick = false
@@ -10,7 +11,7 @@ local top_bar_node
 	local maximize_button_node
 
 local right_area_node
-	local scene_graph_node
+	local scene_graph_area_node
 		local scene_graph_parent_node
 
 		local scene_graph_text_indices_start
@@ -28,12 +29,11 @@ function Awake()
 		maximize_button_node = top_bar_node:get_child(2)
 
 	right_area_node = gui:get_node(6)
-		scene_graph_node = gui:get_node(8)
-			scene_graph_parent_node = scene_graph_node:get_child(0)
+		scene_graph_area_node = gui:get_node(8)
+			scene_graph_parent_node = scene_graph_area_node:get_child(0)
+			scene_graph_scroll_bar_node = scene_graph_area_node:get_child(1)
 
 			scene_graph_text_indices_start = gui.num_texts
-
-			scene_graph_scroll_bar_node = scene_graph_node:get_child(1)
 
 	scene_view_node = gui:get_node(11)
 	
@@ -41,18 +41,43 @@ function Awake()
 end
 
 function horizontal_resize_cursor()
+	if has_set_target_cursor then
+		return
+	else
+		has_set_target_cursor = true
+	end
 	target_cursor_icon = CursorIcon.EResize
 end
 function vertical_resize_cursor()
+	if has_set_target_cursor then
+		return
+	else
+		has_set_target_cursor = true
+	end
 	target_cursor_icon = CursorIcon.NResize
 end
 function hover_cursor()
+	if has_set_target_cursor then
+		return
+	else
+		has_set_target_cursor = true
+	end
 	target_cursor_icon = CursorIcon.Pointer
 end
 function nw_resize_cursor()
+	if has_set_target_cursor then
+		return
+	else
+		has_set_target_cursor = true
+	end
 	target_cursor_icon = CursorIcon.NwResize
 end
 function sw_resize_cursor()
+	if has_set_target_cursor then
+		return
+	else
+		has_set_target_cursor = true
+	end
 	target_cursor_icon = CursorIcon.SwResize
 end
 
@@ -159,7 +184,8 @@ function Update()
 	minimize_button_node.hidden = not maximized
 	maximize_button_node.hidden = maximized
 
-	Engine.client:set_cursor_icon(target_cursor_icon)
+	has_set_target_cursor = false
+	---Engine.client:set_cursor_icon(target_cursor_icon)
 	target_cursor_icon = CursorIcon.Default
 
 	if not resize_called_this_tick and resize_called_last_tick then
@@ -192,12 +218,36 @@ function Update()
 	scene_view_node.scale = Vector.new2(window_size.x - right_area_node.scale.x, window_size.y - top_bar_node.scale.y)
 
 end
---- on build_graph, set size of scroll bar to something / graph_level
+
 local expanded_entities = {}
 local node_to_entity_map = {}
-local graph_level = 0
+local graph_height = 0
 local used_text_count = 0
 local darker = false
+local graph_scroll_pixels = 10
+local graph_entity_height = 20
+local graph_child_indent = 20
+function MouseScrolled()
+	if gui:is_node_hovered(scene_graph_area_node.index) then
+		local max_content_scroll = graph_height - scene_graph_area_node.scale.y
+		local max_scrollbar_travel = (1.0 - scene_graph_scroll_bar_node.scale.y) * scene_graph_area_node.scale.y
+		
+		scene_graph_scroll_bar_node.position = Vector.new2(
+			scene_graph_scroll_bar_node.position.x, 
+			math.max(
+				math.min(0, scene_graph_scroll_bar_node.position.y + Engine.client.scroll_delta.y * graph_scroll_pixels), --- clamp to top
+				-max_scrollbar_travel --- clamp to bottom
+			)
+		)
+		
+		-- Map scrollbar position to content position
+		local scroll_ratio = max_scrollbar_travel > 0 and (-scene_graph_scroll_bar_node.position.y / max_scrollbar_travel) or 0
+		scene_graph_parent_node.position = Vector.new2(
+			0,
+			scroll_ratio * max_content_scroll
+		)
+	end
+end
 function toggle_graph_node() 
 	
 	local clicked_node = gui.ActiveNode
@@ -230,8 +280,8 @@ function build_graph()
 	-- reset text usage counter
 	used_text_count = 0
 
-	-- reset length
-	graph_level = 0
+	-- reset height
+	graph_height = 0
 
 	-- reset alternating pattern
 	darker = false
@@ -239,7 +289,10 @@ function build_graph()
 	local root_entity = Engine.scene:get_entity(0)
 	build_graph_recursive(root_entity, 0, 0, scene_graph_parent_node)
 
-	--- local visible_pixels = 
+	scene_graph_scroll_bar_node.scale = Vector.new2(
+		scene_graph_scroll_bar_node.scale.x, 
+		math.min(1.0, scene_graph_area_node.scale.y / graph_height) --- visible pixels / total pixels
+	)
 end
 function build_graph_recursive(entity, entity_index, depth, parent_gui_node)
 	
@@ -294,7 +347,7 @@ function build_graph_recursive(entity, entity_index, depth, parent_gui_node)
 	used_text_count = used_text_count + 1
 
 	-- format
-	node.position = Vector.new2(depth * 20, -graph_level * 20)
+	node.position = Vector.new2(depth * graph_child_indent, -graph_height)
 	node.absolute_position_x = true
 	node.absolute_position_y = true
 
@@ -306,7 +359,7 @@ function build_graph_recursive(entity, entity_index, depth, parent_gui_node)
 	-- add as child of parent
 	parent_gui_node:add_child_index(node_index)
 	
-	graph_level = graph_level + 1
+	graph_height = graph_height + graph_entity_height
 
 	-- recursively process children
 	if is_expanded then

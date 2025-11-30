@@ -6,7 +6,7 @@ use std::time::Instant;
 use ash::vk;
 use mlua::{UserData, UserDataMethods};
 use winit::dpi::PhysicalPosition;
-use winit::event::{ElementState, Event, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
+use winit::event::{DeviceEvent, ElementState, Event, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::EventLoopWindowTarget;
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::CursorGrabMode;
@@ -14,7 +14,7 @@ use crate::math::Vector;
 use crate::scene::physics::physics_engine::PhysicsEngine;
 use crate::scene::physics::player::{MovementMode, Player, PlayerPointer};
 use crate::render::render::{screenshot_texture, Renderer};
-use crate::render::vulkan_base::VkBase;
+use crate::render::vulkan_base::{VkBase, WINDOW_EXTENSION};
 use crate::scripting::lua_engine::Lua;
 use crate::scene::world::camera::Camera;
 use crate::scene::world::world::World;
@@ -42,12 +42,13 @@ pub struct Client {
     pub cursor_locked: bool,
     pub saved_cursor_pos: PhysicalPosition<f64>,
     pub paused: bool,
+    cursor_inside_window: bool
 }
 impl Client {
     pub fn new(window: Arc<winit::window::Window>) -> Client {
         window.set_cursor_position(PhysicalPosition::new(
-            window.inner_size().width as f32 * 0.5,
-            window.inner_size().height as f32 * 0.5))
+            (window.inner_size().width - WINDOW_EXTENSION) as f32 * 0.5,
+            (window.inner_size().height - WINDOW_EXTENSION) as f32 * 0.5))
             .expect("failed to reset mouse position");
         Client {
             window: window.clone(),
@@ -65,6 +66,7 @@ impl Client {
             paused: false,
             button_pressed: MouseButton::Left,
             button_released: MouseButton::Left,
+            cursor_inside_window: false,
         }
     }
 
@@ -152,18 +154,44 @@ impl Client {
                 } => {
                     if controller.window.has_focus() && controller.cursor_locked {
                         controller.mouse_delta = (
-                            -position.x as f32 + 0.5 * controller.window.inner_size().width as f32,
-                            position.y as f32 - 0.5 * controller.window.inner_size().height as f32,
+                            -position.x as f32 + 0.5 * (controller.window.inner_size().width - WINDOW_EXTENSION) as f32,
+                            position.y as f32 - 0.5 * (controller.window.inner_size().height - WINDOW_EXTENSION) as f32,
                         );
                         controller.window.set_cursor_position(PhysicalPosition::new(
-                            controller.window.inner_size().width as f32 * 0.5,
-                            controller.window.inner_size().height as f32 * 0.5))
+                            (controller.window.inner_size().width - WINDOW_EXTENSION) as f32 * 0.5,
+                            (controller.window.inner_size().height - WINDOW_EXTENSION) as f32 * 0.5))
                             .expect("failed to reset mouse position");
                         should_mouse_move_event = true
                     } else {
                         controller.saved_cursor_pos = position;
                     }
                     controller.cursor_position = position;
+                    controller.cursor_inside_window = true;
+                }
+
+                Event::WindowEvent {
+                    event: WindowEvent::CursorLeft { .. },
+                    ..
+                } => {
+                    controller.cursor_inside_window = false;
+                }
+
+                Event::WindowEvent {
+                    event: WindowEvent::CursorEntered { .. },
+                    ..
+                } => {
+                    controller.cursor_inside_window = true;
+                }
+
+                Event::DeviceEvent {
+                    event: DeviceEvent::MouseMotion { delta },
+                    ..
+                } => {
+                    if controller.window.has_focus() && !controller.cursor_locked && !controller.cursor_inside_window {
+                        controller.cursor_position.x += delta.0;
+                        controller.cursor_position.y += delta.1;
+                        // println!("mouse moved, {:?}", controller.cursor_position);
+                    }
                 }
                 Event::WindowEvent {
                     event: WindowEvent::Focused(true),

@@ -5,8 +5,8 @@
 |-------------------|--------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | position          | `[float; 2]` | Position of object relative to parent.<br>Normalized to the parents scale by default,<br>in pixels if absolute_position is true                                                                                                 |
 | scale             | `[float; 2]` | Scale of an object.<br>Normalized to the parents scale by default,<br>in pixels if absolute_scale is true                                                                                                                       |
-| clip_min          | `[float; 2]` | Clipping bound minimum of the object.<br/>Normalized to parents scale                                                                                                                                                           |
-| clip_max          | `[float; 2]` | Clipping bound maximum of the object.<br/>Normalized to parents scale                                                                                                                                                           |
+| clip_min          | `[float; 2]` | Clipping bound minimum of the object.<br/>Normalized to this nodes scale, affects its children.                                                                                                                                 |
+| clip_max          | `[float; 2]` | Clipping bound maximum of the object.<br/>Normalized to this nodes scale, affects its children.                                                                                                                                 |
 | absolute_position | `[bool; 2]`  | Refer to description of position, each bool corresponds to the axis matching its index. Both default to false.                                                                                                                  |
 | absolute_scale    | `[bool; 2] ` | Refer to description of scale, each bool corresponds to the axis matching its index. Both default to false.                                                                                                                     |
 | color             | `[float; 4]` | Color of the object in RGBA, normalized. If the object has an image, this will be treated as an additive tint                                                                                                                   |
@@ -44,9 +44,7 @@
 | Key               | Type      | Description                                                           |
 |-------------------|-----------|-----------------------------------------------------------------------|
 | position          | Common    | Common                                                                |
-| scale             | Common    | Common                                                                |
-| clip_min          | Common    | Common                                                                |
-| clip_max          | Common    | Common                                                                |
+| scale             | Common    | Common                                                                | |
 | absolute_position | Common    | Common                                                                |
 | absolute_scale    | Common    | Common                                                                |
 | color             | Common    | Common                                                                |
@@ -60,8 +58,6 @@
 | text_information  | `TextInformation` | Refer to TextInformation Structure |
 | position          | Common            | Common                             |
 | scale             | Common            | Common                             |
-| clip_min          | Common            | Common                             |
-| clip_max          | Common            | Common                             |
 | absolute_position | Common            | Common                             |
 | absolute_scale    | Common            | Common                             |
 | color             | Common            | Common                             |
@@ -83,6 +79,8 @@
 | children                 | `[integer]`               | Array of children indices                  |
 | position                 | Common                    | Common                                     |
 | scale                    | Common                    | Common                                     |
+| clip_min                 | Common                    | Common                                     |
+| clip_max                 | Common                    | Common                                     |                                         |
 | absolute_position        | Common                    | Common                                     |
 | absolute_scale           | Common                    | Common                                     |
 | anchor_point             | Common                    | Common                                     |

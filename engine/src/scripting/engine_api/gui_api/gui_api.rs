@@ -335,6 +335,11 @@ impl UserData for GUIPointer {
         });
     }
     fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
+        methods.add_method("is_node_hovered", |lua, this, node_index: usize| {
+            with_gui!(lua, this.index => gui);
+            Ok(gui.hovered_nodes.contains(&node_index))
+        });
+
         methods.add_method("get_node", |lua, this, index: usize| {
             let node = GUINodePointer { gui_index: this.index, index };
             lua.create_userdata(node)

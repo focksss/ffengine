@@ -2,7 +2,7 @@
   "guis": [
     {
       "name": "editor",
-      "nodes": [0, 6, 11, 14, 15, 16, 17, 18, 19, 20, 21]
+      "nodes": [0, 6, 11]
     }
   ],
   "scripts": [
@@ -41,12 +41,10 @@
   ],
   "quads": [
     {
-      "color": [0.3, 0.3, 0.3, 0.8],
-      "corner_radius": 5.0
+      "color": [0.3, 0.3, 0.3, 0.8]
     },
     {
       "color": [0.3, 0.3, 0.3, 0.0],
-      "corner_radius": 5.0,
       "image": 1
     },
     {
@@ -64,17 +62,14 @@
     },
     {
       "color": [0.0, 0.0, 0.0, 0.0],
-      "corner_radius": 5.0,
       "image": 2
     },
     {
       "color": [0.0, 0.0, 0.0, 0.0],
-      "corner_radius": 5.0,
       "image": 3
     },
     {
       "color": [0.0, 0.0, 0.0, 0.0],
-      "corner_radius": 5.0,
       "image": 4
     },
     {
@@ -301,14 +296,6 @@
       },
     {
       "name": "right_area",
-      "interactable_information": {
-        "left_tap_actions": [
-          {
-            "method": "build_graph",
-            "script": 0
-          }
-        ]
-      },
       "children": [7, 8],
       "position": [0, -40],
       "scale": [200.0, 0.0],
@@ -341,28 +328,35 @@
       },
       {
         "name": "scene_graph_area",
+        "interactable_information": {},
         "children": [9, 10],
         "position": [0, -30],
-        "scale": [1.0, 0.5],
+        "scale": [1.0, 500],
         "anchor_point": "top_left",
-        "absolute_position": [false, true]
+        "absolute_position": [false, true],
+        "absolute_scale": [false, true]
       },
         {
           "name": "graph_parent",
           "children": [],
           "position": [0, 0],
           "scale": [1.0, 1.0],
-          "anchor_point": "top_left"
+          "clip_max": [1.0, 1000.0],
+          "clip_min": [0.0, -1000.0],
+          "anchor_point": "top_left",
+          "absolute_position": [false, true]
         },
         {
           "name": "scene_graph_scroll_bar",
           "scale": [10, 0.5],
           "anchor_point": "top_right",
           "absolute_scale": [true, false],
+          "absolute_position": [true, true],
           "quad": 8
         },
     {
       "name": "scene_view",
+      "interactable_information": {},
       "children": [12],
       "position": [0, 0],
       "scale": [1920, 1040],
@@ -436,7 +430,7 @@
           }
         ]
       },
-      "position": [0, 0],
+      "position": [0, -10],
       "scale": [1.0, 10],
       "anchor_point": "bottom_middle",
       "absolute_position": [false, true],
@@ -480,100 +474,11 @@
           }
         ]
       },
-      "position": [0, 0],
-      "scale": [10, 1.0],
+      "position": [20, 0],
+      "scale": [20, 1.0],
       "anchor_point": "right",
       "absolute_position": [true, false],
       "absolute_scale": [true, false]
-    },
-
-    {
-      "name": "top_left_resize",
-      "interactable_information": {
-        "left_hold_actions": [
-          {
-            "method": "drag_resize_northwest",
-            "script": 0
-          }
-        ],
-        "hover_actions": [
-          {
-            "method": "nw_resize_cursor",
-            "script": 0
-          }
-        ]
-      },
-      "position": [0, 0],
-      "scale": [12, 12],
-      "anchor_point": "top_left",
-      "absolute_position": [true, true],
-      "absolute_scale": [true, true]
-    },
-    {
-      "name": "top_right_resize",
-      "interactable_information": {
-        "left_hold_actions": [
-          {
-            "method": "drag_resize_northeast",
-            "script": 0
-          }
-        ],
-        "hover_actions": [
-          {
-            "method": "sw_resize_cursor",
-            "script": 0
-          }
-        ]
-      },
-      "position": [0, 0],
-      "scale": [12, 12],
-      "anchor_point": "top_right",
-      "absolute_position": [true, true],
-      "absolute_scale": [true, true]
-    },
-    {
-      "name": "bottom_right_resize",
-      "interactable_information": {
-        "left_hold_actions": [
-          {
-            "method": "drag_resize_southeast",
-            "script": 0
-          }
-        ],
-        "hover_actions": [
-          {
-            "method": "nw_resize_cursor",
-            "script": 0
-          }
-        ]
-      },
-      "position": [0, 0],
-      "scale": [12, 12],
-      "anchor_point": "bottom_right",
-      "absolute_position": [true, true],
-      "absolute_scale": [true, true]
-    },
-    {
-      "name": "bottom_left_resize",
-      "interactable_information": {
-        "left_hold_actions": [
-          {
-            "method": "drag_resize_southwest",
-            "script": 0
-          }
-        ],
-        "hover_actions": [
-          {
-            "method": "sw_resize_cursor",
-            "script": 0
-          }
-        ]
-      },
-      "position": [0, 0],
-      "scale": [12, 12],
-      "anchor_point": "bottom_left",
-      "absolute_position": [true, true],
-      "absolute_scale": [true, true]
     }
   ]
 }

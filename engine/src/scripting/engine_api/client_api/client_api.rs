@@ -8,6 +8,7 @@ use winit::keyboard::NativeKey::MacOS;
 use winit::window::{CursorGrabMode, CursorIcon, ResizeDirection};
 use crate::client::client::{Client, Flags};
 use crate::math::Vector;
+use crate::render::vulkan_base::WINDOW_EXTENSION;
 use crate::scene::physics::player::PlayerPointer;
 use crate::scripting::lua_engine::RegisterToLua;
 
@@ -44,8 +45,8 @@ impl UserData for ClientRef {
                     borrowed.window.set_cursor_visible(false);
                 }
                 borrowed.window.set_cursor_position(PhysicalPosition::new(
-                    borrowed.window.inner_size().width as f32 * 0.5,
-                    borrowed.window.inner_size().height as f32 * 0.5))
+                    (borrowed.window.inner_size().width - WINDOW_EXTENSION) as f32 * 0.5,
+                    (borrowed.window.inner_size().height - WINDOW_EXTENSION) as f32 * 0.5))
                     .expect("failed to reset mouse position");
             } else {
                 if let Err(err) = borrowed.window.set_cursor_grab(CursorGrabMode::None) {} else {
@@ -77,7 +78,7 @@ impl UserData for ClientRef {
         fields.add_field_method_get("window_size", |_, this| {
             let borrowed = this.0.borrow();
             let window = borrowed.window.clone();
-            Ok(Vector::new2(window.inner_size().width as f32, window.inner_size().height as f32))
+            Ok(Vector::new2(window.inner_size().width as f32 - WINDOW_EXTENSION as f32, window.inner_size().height as f32 - WINDOW_EXTENSION as f32))
         });
 
         fields.add_field_method_get("ButtonPressed", |_, this| {

@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::{fs, slice};
+use std::collections::HashSet;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -17,7 +18,7 @@ use crate::render::render_helper::{Descriptor, DescriptorCreateInfo, DescriptorS
 use crate::gui::text::font::Font;
 use crate::gui::text::text_render::{TextInformation, TextRenderer};
 use crate::render::render::MAX_FRAMES_IN_FLIGHT;
-use crate::render::vulkan_base::VkBase;
+use crate::render::vulkan_base::{VkBase, WINDOW_EXTENSION};
 use crate::scripting::lua_engine::Lua;
 
 enum GUIInteractionResult {
@@ -50,6 +51,7 @@ pub struct GUI {
     pub fonts: Vec<Arc<Font>>,
 
     pub active_node: usize,
+    pub hovered_nodes: HashSet<usize>,
 
     pub script_indices: Vec<usize>,
 
@@ -61,7 +63,7 @@ impl GUI {
         node_index: usize,
         min: Vector,
         max: Vector,
-        has_triggered_hover: &mut bool,
+        can_trigger_click_events: &mut bool,
     ) -> GUIInteractionResult {
         let mut result = GUIInteractionResult::None;
 
@@ -80,18 +82,18 @@ impl GUI {
         let (x, y, left_pressed, left_just_pressed) = {
             let client = self.controller.borrow();
             let x = client.cursor_position.x as f32;
-            let y = self.window.inner_size().height as f32 - client.cursor_position.y as f32;
+            let y = self.window.inner_size().height as f32 - client.cursor_position.y as f32 - WINDOW_EXTENSION as f32;
             let left_pressed = client.pressed_mouse_buttons.contains(&MouseButton::Left);
             let left_just_pressed = client.new_pressed_mouse_buttons.contains(&MouseButton::Left);
             (x, y, left_pressed, left_just_pressed)
         };
 
-        let hovered = if
-        x > min.x && x < max.x &&
-            y > min.y && y < max.y
-        { true } else { false };
+        let hovered =
+            x > min.x && x < max.x &&
+            y > min.y && y < max.y;
 
         if !hovered {
+            self.hovered_nodes.remove(&node_index);
             for unhover_action in interactable_information.unhover_actions.iter() {
                 Lua::cache_call(
                     unhover_action.1,
@@ -101,9 +103,13 @@ impl GUI {
                 )
             }
         } else {
-            if !*has_triggered_hover {
-                *has_triggered_hover = true;
-                for hover_action in interactable_information.hover_actions.iter() {
+            self.hovered_nodes.insert(node_index);
+            for hover_action in interactable_information.hover_actions.iter() {
+                if node_index == 14 {
+                    println!("{}, {}", x, y);
+                    println!("{}, {}", min.y, max.y);
+                    println!("{}", hovered);
+                }
                     Lua::cache_call(
                         hover_action.1,
                         hover_action.0.as_str(),
@@ -111,11 +117,13 @@ impl GUI {
                         Some(self.index)
                     )
                 }
-            }
         }
 
         if left_just_pressed && hovered {
-            interactable_information.was_initially_pressed = true;
+            if !interactable_information.left_tap_actions.is_empty() || !interactable_information.left_hold_actions.is_empty() {
+                interactable_information.was_initially_pressed = true;
+                *can_trigger_click_events = false;
+            }
         }
 
         // discard any buttons that happen to be hovered over while holding another down
@@ -123,6 +131,14 @@ impl GUI {
             return result;
         }
 
+        if !*can_trigger_click_events {
+            if !left_pressed {
+                interactable_information.was_initially_pressed = false;
+            }
+            return result;
+        }
+
+        *can_trigger_click_events = false;
         if left_pressed {
             for left_hold_action in interactable_information.left_hold_actions.iter() {
                 Lua::cache_call(
@@ -192,12 +208,12 @@ impl GUI {
             text_renderer,
 
             active_node: 0,
+            hovered_nodes: HashSet::new(),
 
             new_texts: Vec::new(),
         };
         gui.update_descriptors(&base);
         gui
-
     } }
     pub unsafe fn create_rendering_objects(base: &VkBase, null_info: vk::DescriptorImageInfo) -> (Arc<RefCell<Pass>>, Renderpass, TextRenderer) { unsafe {
         let pass_create_info = PassCreateInfo::new(base)
@@ -413,26 +429,6 @@ impl GUI {
                 }
             }
 
-            let mut clip_min = Vector::empty();
-            if let JsonValue::Array(ref clip_min_json) = text["clip_min"] {
-                if clip_min_json.len() >= 2 {
-                    clip_min = Vector::new2(
-                        clip_min_json[0].as_f32().unwrap(),
-                        clip_min_json[1].as_f32().unwrap(),
-                    );
-                }
-            }
-
-            let mut clip_max = Vector::empty();
-            if let JsonValue::Array(ref clip_max_json) = text["clip_max"] {
-                if clip_max_json.len() >= 2 {
-                    clip_max = Vector::new2(
-                        clip_max_json[0].as_f32().unwrap(),
-                        clip_max_json[1].as_f32().unwrap(),
-                    );
-                }
-            }
-
             let mut absolute_scale = (false, false);
             if let JsonValue::Array(ref absolute_scale_json) = text["absolute_scale"] {
                 if absolute_scale_json.len() >= 2 {
@@ -484,8 +480,6 @@ impl GUI {
                     .build_set_buffers(base)),
                 position,
                 scale,
-                clip_min,
-                clip_max,
                 absolute_position,
                 absolute_scale,
                 anchor_point,
@@ -512,26 +506,6 @@ impl GUI {
                     scale = Vector::new2(
                         scale_json[0].as_f32().unwrap(),
                         scale_json[1].as_f32().unwrap(),
-                    );
-                }
-            }
-
-            let mut clip_min = Vector::empty();
-            if let JsonValue::Array(ref clip_min_json) = quad["clip_min"] {
-                if clip_min_json.len() >= 2 {
-                    clip_min = Vector::new2(
-                        clip_min_json[0].as_f32().unwrap(),
-                        clip_min_json[1].as_f32().unwrap(),
-                    );
-                }
-            }
-
-            let mut clip_max = Vector::fill(1.0);
-            if let JsonValue::Array(ref clip_max_json) = quad["clip_max"] {
-                if clip_max_json.len() >= 2 {
-                    clip_max = Vector::new2(
-                        clip_max_json[0].as_f32().unwrap(),
-                        clip_max_json[1].as_f32().unwrap(),
                     );
                 }
             }
@@ -596,8 +570,6 @@ impl GUI {
             gui_quads.push(GUIQuad {
                 position,
                 scale,
-                clip_min,
-                clip_max,
                 absolute_position,
                 absolute_scale,
                 anchor_point,
@@ -959,16 +931,19 @@ impl GUI {
         );
 
         let screen_clip = (
-            Vector::fill(0.0),
-            Vector::new2(self.window.inner_size().width as f32, self.window.inner_size().height as f32)
+            Vector::new2(0.0, -(WINDOW_EXTENSION as f32)),
+            Vector::new2(self.window.inner_size().width as f32, self.window.inner_size().height as f32),
         );
         for node_index in &self.gui_root_node_indices {
             self.draw_node(
                 *node_index,
                 current_frame,
                 command_buffer,
-                Vector::fill(0.0),
-                Vector::new2(self.window.inner_size().width as f32, self.window.inner_size().height as f32),
+                Vector::new2(0.0, 0.0),
+                Vector::new2(
+                    self.window.inner_size().width as f32 - WINDOW_EXTENSION as f32,
+                    self.window.inner_size().height as f32 - WINDOW_EXTENSION as f32
+                ),
                 screen_clip,
                 &mut interactable_action_parameter_sets,
             );
@@ -977,14 +952,12 @@ impl GUI {
         self.device.cmd_end_render_pass(command_buffer);
         self.pass.borrow().transition_to_readable(command_buffer, current_frame);
 
-        let mut has_hover_actioned = false;
+        let mut can_trigger_click_event = true;
         for parameter_set in interactable_action_parameter_sets.iter().rev() {
             self.active_node = parameter_set.0;
-            match self.handle_gui_interaction(parameter_set.0, parameter_set.1, parameter_set.2, &mut has_hover_actioned) {
+            match self.handle_gui_interaction(parameter_set.0, parameter_set.1, parameter_set.2, &mut can_trigger_click_event) {
                 GUIInteractionResult::None => (),
-                _ => {
-                    return
-                }
+                _ => { }
             }
         }
     } }
@@ -1022,8 +995,8 @@ impl GUI {
             return;
         }
 
-        let node_clip_min = parent_position + parent_scale * node.clip_min;
-        let node_clip_max = parent_position + parent_scale * node.clip_max;
+        let node_clip_min = position + scale * node.clip_min;
+        let node_clip_max = position + scale * node.clip_max;
 
         let node_clipping = (
             Vector::new2(
@@ -1037,20 +1010,20 @@ impl GUI {
         );
 
         if let Some(quad) = &node.quad {
-            self.draw_quad(*quad, current_frame, command_buffer, position, scale, node_clipping);
+            self.draw_quad(*quad, current_frame, command_buffer, position, scale, parent_clipping);
         }
         if let Some(text) = &node.text {
-            self.draw_text(*text, current_frame, position, scale, node_clipping);
+            self.draw_text(*text, current_frame, position, scale, parent_clipping);
         }
 
         if node.interactable_information.is_some() {
             let bounds_min = Vector::new2(
-                position.x.max(node_clipping.0.x),
-                position.y.max(node_clipping.0.y)
+                position.x.max(parent_clipping.0.x),
+                position.y.max(parent_clipping.0.y)
             );
             let bounds_max = Vector::new2(
-                (position.x + scale.x).min(node_clipping.1.x),
-                (position.y + scale.y).min(node_clipping.1.y)
+                (position.x + scale.x).min(parent_clipping.1.x),
+                (position.y + scale.y).min(parent_clipping.1.y)
             );
 
             if bounds_min.x < bounds_max.x && bounds_min.y < bounds_max.y {
@@ -1072,19 +1045,6 @@ impl GUI {
         parent_clipping: (Vector, Vector),
     ) { unsafe {
         let quad = &self.gui_quads[quad];
-        let clip_min = parent_position + parent_scale * quad.clip_min; // + if quad.absolute_clip_min { quad.clip_min } else { scale * quad.clip_min }
-        let clip_max = parent_position + parent_scale * quad.clip_max; // + if quad.absolute_clip_max { quad.clip_max } else { scale * quad.clip_max }
-
-        let quad_clipping = (
-            Vector::new2(
-                clip_min.x.max(parent_clipping.0.x),
-                clip_min.y.max(parent_clipping.0.y)
-            ),
-            Vector::new2(
-                clip_max.x.min(parent_clipping.1.x),
-                clip_max.y.min(parent_clipping.1.y)
-            )
-        );
 
         let offset_factor = quad.anchor_point.offset_factor();
         let scale = Vector::new2(
@@ -1101,8 +1061,8 @@ impl GUI {
         let quad_constants = GUIQuadSendable {
             color: quad.color.to_array4(),
             resolution: [self.quad_renderpass.viewport.width as i32, self.quad_renderpass.viewport.height as i32],
-            clip_min: quad_clipping.0.to_array2(),
-            clip_max: quad_clipping.1.to_array2(),
+            clip_min: parent_clipping.0.to_array2(),
+            clip_max: parent_clipping.1.to_array2(),
             position: position.to_array2(),
             scale: scale.to_array2(),
             corner_radius: quad.corner_radius,
@@ -1141,20 +1101,6 @@ impl GUI {
     ) { unsafe {
         let text = &self.gui_texts[text];
 
-        let clip_min = parent_position + parent_scale * text.clip_min; // + if quad.absolute_clip_min { quad.clip_min } else { scale * quad.clip_min }
-        let clip_max = parent_position + parent_scale * text.clip_max; // + if quad.absolute_clip_max { quad.clip_max } else { scale * quad.clip_max }
-
-        let text_clipping = (
-            Vector::new2(
-                clip_min.x.max(parent_clipping.0.x),
-                clip_min.y.max(parent_clipping.0.y)
-            ),
-            Vector::new2(
-                clip_max.x.min(parent_clipping.1.x),
-                clip_max.y.min(parent_clipping.1.y)
-            )
-        );
-
         let offset_factor = text.anchor_point.offset_factor();
         let scale = Vector::new2(
             if text.absolute_scale.0 { text.scale.x } else { parent_scale.x * text.scale.x },
@@ -1167,7 +1113,14 @@ impl GUI {
             if text.absolute_position.1 { text.position.y } else { parent_scale.y * text.position.y }
         );
 
-        self.text_renderer.draw_gui_text(current_frame, &text.text_information.as_ref().unwrap(), position, scale, text_clipping.0, text_clipping.1);
+        self.text_renderer.draw_gui_text(
+            current_frame,
+            &text.text_information.as_ref().unwrap(),
+            position,
+            scale,
+            parent_clipping.0,
+            parent_clipping.1
+        );
     } }
 
     pub unsafe fn destroy(&mut self) { unsafe {
@@ -1324,8 +1277,6 @@ impl Default for GUIInteractableInformation {
 pub struct GUIQuad {
     pub position: Vector,
     pub scale: Vector,
-    pub clip_min: Vector,
-    pub clip_max: Vector,
     pub absolute_position: (bool, bool),
     pub absolute_scale: (bool, bool),
     pub anchor_point: AnchorPoint,
@@ -1338,8 +1289,6 @@ impl Default for GUIQuad {
         GUIQuad {
             position: Default::default(),
             scale: Vector::fill(1.0),
-            clip_min: Default::default(),
-            clip_max: Vector::fill(1.0),
             absolute_position: (false, false),
             absolute_scale: (false, false),
             anchor_point: AnchorPoint::default(),
@@ -1355,8 +1304,6 @@ pub struct GUIText {
 
     pub position: Vector,
     pub scale: Vector,
-    pub clip_min: Vector,
-    pub clip_max: Vector,
     pub absolute_position: (bool, bool),
     pub absolute_scale: (bool, bool),
     pub anchor_point: AnchorPoint,
@@ -1376,8 +1323,6 @@ impl Default for GUIText {
             text_information: None,
             position: Vector::fill(0.0),
             scale: Vector::fill(1.0),
-            clip_min: Vector::fill(0.0),
-            clip_max: Vector::fill(1.0),
             absolute_position: (false, false),
             absolute_scale: (false, false),
             anchor_point: AnchorPoint::default(),

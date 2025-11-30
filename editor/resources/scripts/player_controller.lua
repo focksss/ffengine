@@ -97,14 +97,16 @@ function Update()
 end
 
 function MouseScrolled()
-    local player = Engine.physics_engine:get_player(0);
-    if player.movement_mode == MovementMode.GHOST then
-        fly_speed = fly_speed * math.pow(1.1, Engine.client.scroll_delta.y)
-                fly_speed = math.max(0.01, fly_speed)
-    elseif player.movement_mode == MovementMode.EDITOR then
-        local zoom_factor = 1.0 - (Engine.client.scroll_delta.y * 0.1)
-        editor_distance = editor_distance * zoom_factor
-        editor_distance = math.max(0.01, editor_distance)
+    if Engine.renderer:gui(0):is_node_hovered(11) then
+        local player = Engine.physics_engine:get_player(0);
+        if player.movement_mode == MovementMode.GHOST then
+            fly_speed = fly_speed * math.pow(1.1, Engine.client.scroll_delta.y)
+                    fly_speed = math.max(0.01, fly_speed)
+        elseif player.movement_mode == MovementMode.EDITOR then
+            local zoom_factor = 1.0 - (Engine.client.scroll_delta.y * 0.1)
+            editor_distance = editor_distance * zoom_factor
+            editor_distance = math.max(0.01, editor_distance)
+        end
     end
 end
 
