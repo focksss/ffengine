@@ -101,18 +101,13 @@ impl GUI {
         } else {
             self.hovered_nodes.insert(node_index);
             for hover_action in interactable_information.hover_actions.iter() {
-                if node_index == 14 {
-                    println!("{}, {}", x, y);
-                    println!("{}, {}", min.y, max.y);
-                    println!("{}", hovered);
-                }
-                    Lua::cache_call(
-                        hover_action.1,
-                        hover_action.0.as_str(),
-                        Some(self.active_node),
-                        Some(self.index)
-                    )
-                }
+                Lua::cache_call(
+                    hover_action.1,
+                    hover_action.0.as_str(),
+                    Some(self.active_node),
+                    Some(self.index)
+                )
+            }
         }
 
         if left_just_pressed && hovered {
