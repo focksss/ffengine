@@ -55,6 +55,14 @@
       "children": [
         {
           "name": "title_bar",
+          "interactable_information": {
+            "left_hold_actions": [
+              {
+                "method": "drag_window",
+                "script": 0
+              }
+            ]
+          },
           "container": {
             "type": "Stack",
             "info": {
@@ -94,6 +102,30 @@
           "children": [
             {
               "name": "close_button",
+              "interactable_information": {
+                "hover_actions": [
+                  {
+                    "method": "close_hovered",
+                    "script": 0
+                  },
+                  {
+                    "method": "hover_cursor",
+                    "script": 0
+                  }
+                ],
+                "unhover_actions": [
+                  {
+                    "method": "color_image_unhovered",
+                    "script": 0
+                  }
+                ],
+                "left_tap_actions": [
+                  {
+                    "method": "close_window",
+                    "script": 0
+                  }
+                ]
+              },
               "width": {
                 "type": "Absolute",
                 "info": {
@@ -118,6 +150,30 @@
             },
             {
               "name": "toggle_maximize_button",
+              "interactable_information": {
+                "hover_actions": [
+                  {
+                    "method": "color_image_hovered",
+                    "script": 0
+                  },
+                  {
+                    "method": "hover_cursor",
+                    "script": 0
+                  }
+                ],
+                "unhover_actions": [
+                  {
+                    "method": "color_image_unhovered",
+                    "script": 0
+                  }
+                ],
+                "left_tap_actions": [
+                  {
+                    "method": "toggle_maximize",
+                    "script": 0
+                  }
+                ]
+              },
               "width": {
                 "type": "Absolute",
                 "info": {
@@ -136,6 +192,30 @@
             },
             {
               "name": "hide_button",
+              "interactable_information": {
+                "hover_actions": [
+                  {
+                    "method": "color_image_hovered",
+                    "script": 0
+                  },
+                  {
+                    "method": "hover_cursor",
+                    "script": 0
+                  }
+                ],
+                "unhover_actions": [
+                  {
+                    "method": "color_image_unhovered",
+                    "script": 0
+                  }
+                ],
+                "left_tap_actions": [
+                  {
+                    "method": "minimize_window",
+                    "script": 0
+                  }
+                ]
+              },
               "width": {
                 "type": "Absolute",
                 "info": {
@@ -181,7 +261,10 @@
       },
       "children": [
         {
-          "name": "resize_top",
+          "name": "top",
+          "container": {
+            "type": "Dock"
+          },
           "dock_mode": "Top",
           "width": {
             "type": "Factor",
@@ -192,20 +275,107 @@
           "height": {
             "type": "Absolute",
             "info": {
-              "pixels": 10.0
+              "pixels": 12.0
             }
           },
-          "elements": [
+          "children": [
             {
-              "type": "Quad",
-              "info": {
-                "color": [1.0, 0.0, 0.0, 1.0]
+              "name": "resize_tl",
+              "interactable_information": {
+                "left_hold_actions": [
+                  {
+                    "method": "drag_resize_northwest",
+                    "script": 0
+                  }
+                ],
+                "hover_actions": [
+                  {
+                    "method": "nw_resize_cursor",
+                    "script": 0
+                  }
+                ]
+              },
+              "dock_mode": "Left",
+              "width": {
+                "type": "Absolute",
+                "info": {
+                  "pixels": 12.0
+                }
+              },
+              "height": {
+                "type": "Absolute",
+                "info": {
+                  "pixels": 12.0
+                }
+              }
+            },
+            {
+              "name": "resize_tr",
+              "interactable_information": {
+                "left_hold_actions": [
+                  {
+                    "method": "drag_resize_northeast",
+                    "script": 0
+                  }
+                ],
+                "hover_actions": [
+                  {
+                    "method": "sw_resize_cursor",
+                    "script": 0
+                  }
+                ]
+              },
+              "dock_mode": "Right",
+              "width": {
+                "type": "Absolute",
+                "info": {
+                  "pixels": 12.0
+                }
+              },
+              "height": {
+                "type": "Absolute",
+                "info": {
+                  "pixels": 12.0
+                }
+              }
+            },
+            {
+              "name": "resize_top",
+              "interactable_information": {
+                "left_hold_actions": [
+                  {
+                    "method": "drag_resize_north",
+                    "script": 0
+                  }
+                ],
+                "hover_actions": [
+                  {
+                    "method": "vertical_resize_cursor",
+                    "script": 0
+                  }
+                ]
+              },
+              "dock_mode": "Top",
+              "width": {
+                "type": "Factor",
+                "info": {
+                  "factor": 1.0
+                }
+              },
+              "height": {
+                "type": "Absolute",
+                "info": {
+                  "pixels": 10.0
+                }
               }
             }
           ]
         },
         {
-          "name": "resize_bottom",
+          "name": "bottom",
+          "container": {
+            "type": "Dock"
+          },
           "dock_mode": "Bottom",
           "width": {
             "type": "Factor",
@@ -216,20 +386,118 @@
           "height": {
             "type": "Absolute",
             "info": {
-              "pixels": 5.0
+              "pixels": 12.0
             }
           },
-          "elements": [
+          "children": [
             {
-              "type": "Quad",
-              "info": {
-                "color": [1.0, 0.0, 1.0, 1.0]
+              "name": "resize_bl",
+              "interactable_information": {
+                "left_hold_actions": [
+                  {
+                    "method": "drag_resize_southwest",
+                    "script": 0
+                  }
+                ],
+                "hover_actions": [
+                  {
+                    "method": "sw_resize_cursor",
+                    "script": 0
+                  }
+                ]
+              },
+              "dock_mode": "Left",
+              "width": {
+                "type": "Absolute",
+                "info": {
+                  "pixels": 12.0
+                }
+              },
+              "height": {
+                "type": "Absolute",
+                "info": {
+                  "pixels": 12.0
+                }
+              }
+            },
+            {
+              "name": "resize_br",
+              "interactable_information": {
+                "left_hold_actions": [
+                  {
+                    "method": "drag_resize_southeast",
+                    "script": 0
+                  }
+                ],
+                "hover_actions": [
+                  {
+                    "method": "nw_resize_cursor",
+                    "script": 0
+                  }
+                ]
+              },
+              "dock_mode": "Right",
+              "width": {
+                "type": "Absolute",
+                "info": {
+                  "pixels": 12.0
+                }
+              },
+              "height": {
+                "type": "Absolute",
+                "info": {
+                  "pixels": 12.0
+                }
+              }
+            },
+            {
+              "name": "resize_bottom",
+              "interactable_information": {
+                "left_hold_actions": [
+                  {
+                    "method": "drag_resize_south",
+                    "script": 0
+                  }
+                ],
+                "hover_actions": [
+                  {
+                    "method": "vertical_resize_cursor",
+                    "script": 0
+                  }
+                ]
+              },
+              "dock_mode": "Bottom",
+              "width": {
+                "type": "Factor",
+                "info": {
+                  "factor": 1.0
+                }
+              },
+              "height": {
+                "type": "Absolute",
+                "info": {
+                  "pixels": 10.0
+                }
               }
             }
           ]
         },
         {
           "name": "resize_left",
+          "interactable_information": {
+            "left_hold_actions": [
+              {
+                "method": "drag_resize_west",
+                "script": 0
+              }
+            ],
+            "hover_actions": [
+              {
+                "method": "horizontal_resize_cursor",
+                "script": 0
+              }
+            ]
+          },
           "dock_mode": "Left",
           "width": {
             "type": "Absolute",
@@ -242,23 +510,29 @@
             "info": {
               "factor": 1.0
             }
-          },
-          "elements": [
-            {
-              "type": "Quad",
-              "info": {
-                "color": [1.0, 0.0, 0.0, 1.0]
-              }
-            }
-          ]
+          }
         },
         {
           "name": "resize_right",
+          "interactable_information": {
+            "left_hold_actions": [
+              {
+                "method": "drag_resize_east",
+                "script": 0
+              }
+            ],
+            "hover_actions": [
+              {
+                "method": "horizontal_resize_cursor",
+                "script": 0
+              }
+            ]
+          },
           "dock_mode": "Right",
           "width": {
             "type": "Absolute",
             "info": {
-              "pixels": 5.0
+              "pixels": 10.0
             }
           },
           "height": {
@@ -266,15 +540,7 @@
             "info": {
               "factor": 1.0
             }
-          },
-          "elements": [
-            {
-              "type": "Quad",
-              "info": {
-                "color": [1.0, 1.0, 0.0, 1.0]
-              }
-            }
-          ]
+          }
         }
       ]
     }

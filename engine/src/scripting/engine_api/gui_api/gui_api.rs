@@ -324,9 +324,52 @@ impl UserData for GUINodePointer {
                 }
             }
         });
+        methods.add_method("get_image_at", |lua, this, val: i32| {
+            with_gui!(lua, this.gui_index => gui);
+            let element_index = gui.nodes[this.index].element_indices[val as usize];
+            match gui.elements[element_index] {
+                Element::Image { .. } => {
+                    lua.create_userdata(GUIImagePointer {
+                        gui_index: this.gui_index,
+                        index: element_index
+                    })
+                },
+                _ => Err(mlua::Error::runtime("tried to get_image_at on a non image element"))
+            }
+        });
+        methods.add_method("get_quad_at", |lua, this, val: i32| {
+            with_gui!(lua, this.gui_index => gui);
+            let element_index = gui.nodes[this.index].element_indices[val as usize];
+            match gui.elements[element_index] {
+                Element::Quad { .. } => {
+                    lua.create_userdata(GUIQuadPointer {
+                        gui_index: this.gui_index,
+                        index: element_index
+                    })
+                },
+                _ => Err(mlua::Error::runtime("tried to get_quad_at on a non quad element"))
+            }
+        });
+        methods.add_method("get_text_at", |lua, this, val: i32| {
+            with_gui!(lua, this.gui_index => gui);
+            let element_index = gui.nodes[this.index].element_indices[val as usize];
+            match gui.elements[element_index] {
+                Element::Text { .. } => {
+                    lua.create_userdata(GUITextPointer {
+                        gui_index: this.gui_index,
+                        index: element_index
+                    })
+                },
+                _ => Err(mlua::Error::runtime("tried to get_text_at on a non text element"))
+            }
+        });
         methods.add_method_mut("add_element_index", |lua, this, val: i32| {
             with_gui_mut!(lua, this.gui_index => gui);
             Ok(gui.nodes[this.index].element_indices.push(val as usize))
+        });
+        methods.add_method_mut("set_element_index_at_to", |lua, this, vals: (i32, i32)| {
+            with_gui_mut!(lua, this.gui_index => gui);
+            Ok(gui.nodes[this.index].element_indices[vals.0 as usize] = vals.1 as usize)
         });
         methods.add_method_mut("remove_element_index_at", |lua, this, val: i32| {
             with_gui_mut!(lua, this.gui_index => gui);

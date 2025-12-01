@@ -77,7 +77,7 @@ impl GUI {
         let (x, y, left_pressed, left_just_pressed) = {
             let client = self.controller.borrow();
             let x = client.cursor_position.x as f32;
-            let y = self.window.inner_size().height as f32 - client.cursor_position.y as f32;
+            let y = client.cursor_position.y as f32;
             let left_pressed = client.pressed_mouse_buttons.contains(&MouseButton::Left);
             let left_just_pressed = client.new_pressed_mouse_buttons.contains(&MouseButton::Left);
             (x, y, left_pressed, left_just_pressed)
