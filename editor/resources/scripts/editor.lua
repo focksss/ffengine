@@ -87,6 +87,20 @@ function Update()
 
 end
 
+local time_since_fps_update = 0
+local frame_count = 0
+function update_fps()
+	frame_count = frame_count + 1
+	time_since_fps_update = time_since_fps_update + dt
+
+	if time_since_fps_update > 1.0 then 
+		local fps = frame_count / time_since_fps_update
+        gui.ActiveNode:get_text_at(0):update_text(string.format("FPS: %.1f", fps))
+        time_since_fps_update = 0
+        frame_count = 0
+	end
+end
+
 function resize_right_area()
 	resize_called_this_tick = true
 

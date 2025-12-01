@@ -19,6 +19,7 @@
   ],
   "elements": [
     {
+      "name": "minimize",
       "type": "Image",
       "info": {
         "uri": "editor\\resources\\gui\\images\\minimize.png",
@@ -27,10 +28,27 @@
       }
     },
     {
+      "name": "maximize",
       "type": "Image",
       "info": {
         "uri": "editor\\resources\\gui\\images\\maximize.png",
         "additive_tint": [1.0, 1.0, 1.0, 0.0]
+      }
+    },
+    {
+      "name": "scene graph light quad",
+      "type": "Quad",
+      "info": {
+        "color": [0.4, 0.4, 0.4, 1.0],
+        "corner_radius": 5.0
+      }
+    },
+    {
+      "name": "scene graph dark quad",
+      "type": "Quad",
+      "info": {
+        "color": [0.3, 0.3, 0.3, 1.0],
+        "corner_radius": 5.0
       }
     }
   ],
@@ -311,6 +329,55 @@
                     "corner_radius": 5.0
                   }
                 }
+              ],
+              "children": [
+                {
+                  "name": "scene_graph_root",
+                  "parent_relation": {
+                    "type": "Independent",
+                    "info": {
+                      "relative": true,
+                      "anchor": "TopLeft"
+                    }
+                  },
+                  "container": {
+                    "type": "Stack",
+                    "info": {
+                      "horizontal": false,
+                      "spacing": 0.0,
+                      "padding": {
+                        "left": 5.0,
+                        "right": 5.0,
+                        "top": 0.0,
+                        "bottom": 0.0
+                      },
+                      "packing": "Start",
+                      "stack_direction": "Normal",
+                      "alignment": "Start"
+                    }
+                  },
+                  "width": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "height": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 10.0
+                    }
+                  },
+                  "elements": [
+                    {
+                      "type": "Quad",
+                      "info": {
+                        "color": [1.0, 0.3, 0.3, 0.8],
+                        "corner_radius": 5.0
+                      }
+                    }
+                  ]
+                }
               ]
             },
             {
@@ -343,7 +410,11 @@
                 "type": "Independent",
                 "info": {
                   "relative": true,
-                  "anchor": "TopLeft"
+                  "anchor": "TopLeft",
+                  "offset_x": {
+                    "type": "Pixels",
+                    "value": -5.0
+                  }
                 }
               },
               "interactable_information": {
@@ -397,12 +468,90 @@
               "factor": 1.0
             }
           },
-          "elements": [
+          "children": [
             {
-              "type": "Quad",
-              "info": {
-                "color": [1.0, 0.3, 0.3, 0.2]
-              }
+              "name": "hud",
+              "parent_relation": {
+                "type": "Independent",
+                "info": {
+                  "relative": true,
+                  "anchor": "TopLeft",
+                  "offset_x": {
+                    "type": "Pixels",
+                    "value": 20.0
+                  },
+                  "offset_y": {
+                    "type": "Pixels",
+                    "value": 10.0
+                  }
+                }
+              },
+              "width": {
+                "type": "Absolute",
+                "info": {
+                  "pixels": 160.0
+                }
+              },
+              "height": {
+                "type": "Absolute",
+                "info": {
+                  "pixels": 80.0
+                }
+              },
+              "children": [
+                {
+                  "name": "fps",
+                  "interactable_information": {
+                    "passive_actions": [
+                      {
+                        "method": "update_fps",
+                        "script": 0
+                      }
+                    ]
+                  },
+                  "parent_relation": {
+                    "type": "Independent",
+                    "info": {
+                      "relative": true,
+                      "offset_y": {
+                        "type": "Pixels",
+                        "value": 0.0
+                      }
+                    }
+                  },
+                  "width": {
+                    "type": "Absolute",
+                    "info": {
+                      "pixels": 80.0
+                    }
+                  },
+                  "height": {
+                    "type": "Absolute",
+                    "info": {
+                      "pixels": 20.0
+                    }
+                  },
+                  "elements": [
+                    {
+                      "type": "Text",
+                      "info": {
+                        "text": "FPS: XXX.XX",
+                        "color": [1.0, 1.0, 1.0, 1.0],
+                        "font": 0,
+                        "font_size": 15.0,
+                        "newline_distance": 100.0
+                      }
+                    },
+                    {
+                      "type": "Quad",
+                      "info": {
+                        "color": [0.3, 0.3, 0.3, 0.4],
+                        "corner_radius": 5.0
+                      }
+                    }
+                  ]
+                }
+              ]
             }
           ]
         }

@@ -6,6 +6,7 @@ use ash::vk;
 use std::ptr::null_mut;
 use std::sync::Arc;
 use ash::vk::{CommandBuffer, DescriptorType, DeviceMemory, Format, Handle, SampleCountFlags, Sampler, ShaderStageFlags};
+use crate::gui::gui::Alignment;
 use crate::gui::text::{font::Font, glyph::{Glyph, GlyphQuadVertex}};
 use crate::math::Vector;
 use crate::offset_of;
@@ -182,53 +183,6 @@ impl TextRenderer {
     }}
 
     /**
-    * (0, 0) = bottom left, implemented in vertex shader
-    */
-    pub unsafe fn render_text(&self, frame: usize, text_info: &TextInformation, position: Vector) { unsafe {
-        let font = text_info.font.clone();
-        let frame_command_buffer = self.draw_command_buffers[frame];
-        let device = &self.device;
-
-        self.update_font_atlases(&vec![font.clone()], frame);
-        
-        self.renderpass.do_renderpass(frame, frame_command_buffer, Some(|| {
-            device.cmd_push_constants(frame_command_buffer, self.renderpass.pipeline_layout, ShaderStageFlags::ALL_GRAPHICS, 0, slice::from_raw_parts(
-                &TextPushConstants {
-                    clip_min: Vector::fill(0.0).to_array2(),
-                    clip_max: Vector::new2(1920.0, 1080.0).to_array2(),
-                    position: position.to_array2(),
-                    resolution: [self.renderpass.viewport.width as i32, self.renderpass.viewport.height as i32],
-                    glyph_size: font.glyph_size,
-                    distance_range: font.distance_range,
-                    font_index: 0,
-                    _pad: [0; 1]
-                } as *const TextPushConstants as *const u8,
-                size_of::<TextPushConstants>(),
-            ))
-        }), Some(|| {
-            device.cmd_bind_vertex_buffers(
-                frame_command_buffer,
-                0,
-                &[text_info.vertex_buffer[frame].0],
-                &[0],
-            );
-            device.cmd_bind_index_buffer(
-                frame_command_buffer,
-                text_info.index_buffer[frame].0,
-                0,
-                vk::IndexType::UINT32,
-            );
-            device.cmd_draw_indexed(
-                frame_command_buffer,
-                text_info.glyph_count * 6u32,
-                1,
-                0u32,
-                0,
-                0,
-            )
-        }), None)
-    } }
-    /**
     * Font index of each TexInformation must be the index of the correct font in the most recently bound font_atlas vector.
 
     * This function will not begin the renderpass, it assumes that the pass is already being recorded for.
@@ -269,7 +223,13 @@ impl TextRenderer {
                 glyph_size: text_info.font.glyph_size,
                 distance_range: text_info.font.distance_range,
                 font_index: text_info.font_index.unwrap_or(0),
-                _pad: [0; 1]
+                align_shift: match text_info.alignment {
+                    BaselineAlignment::Top => text_info.font.ascent,
+                    BaselineAlignment::Center => (text_info.font.ascent + text_info.font.descent) / 2.0,
+                    BaselineAlignment::Bottom => -text_info.font.descent,
+                },
+                font_size: text_info.font_size,
+                _pad: [0; 3]
             } as *const TextPushConstants as *const u8,
             size_of::<TextPushConstants>(),
         ));
@@ -308,11 +268,19 @@ pub struct TextInformation {
     pub bold: bool,
     pub italic: bool,
 
+    pub alignment: BaselineAlignment,
+
     pub glyph_count: u32,
     pub vertex_buffer: Vec<(vk::Buffer, DeviceMemory)>,
     pub vertex_staging_buffer: (vk::Buffer, DeviceMemory, *mut c_void),
     pub index_buffer: Vec<(vk::Buffer, DeviceMemory)>,
     pub index_staging_buffer: (vk::Buffer, DeviceMemory, *mut c_void),
+}
+#[derive(Debug)]
+pub enum BaselineAlignment {
+    Top,
+    Center,
+    Bottom,
 }
 impl TextInformation {
     pub fn new(font: Arc<Font>) -> TextInformation {
@@ -328,6 +296,8 @@ impl TextInformation {
             auto_wrap_distance: 20.0,
             bold: false,
             italic: false,
+
+            alignment: BaselineAlignment::Top,
 
             glyph_count: 0,
             vertex_buffer: vec![(vk::Buffer::null(), DeviceMemory::null()); MAX_FRAMES_IN_FLIGHT],
@@ -527,12 +497,17 @@ impl TextInformation {
 struct TextPushConstants {
     clip_min: [f32; 2],
     clip_max: [f32; 2],
+
     position: [f32; 2],
     resolution: [i32; 2],
+
     glyph_size: u32,
     distance_range: f32,
     font_index: u32,
-    _pad: [u32; 1],
+    align_shift: f32,
+
+    font_size: f32,
+    _pad: [u32; 3],
 }
 
 

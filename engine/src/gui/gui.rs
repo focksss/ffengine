@@ -285,6 +285,7 @@ impl GUI {
                 font_index: usize,
             }
          */
+        let idx = self.elements.len();
         let mut element = Element::default();
         if let JsonValue::Object(ref element_info) = element_json["info"] {
             match element_type {
@@ -377,6 +378,60 @@ impl GUI {
                         memory: vk::DeviceMemory::null(),
                     }
                 },
+                "Text" => {
+                    let mut text_font = 0usize;
+                    let mut text_text = "placeholder text";
+                    let mut text_font_size = 32.0;
+                    let mut text_newline_size = 1720.0;
+
+
+                    if let JsonValue::Number(ref text_information_font_json) = element_info["font"] {
+                        if let Ok(v) = text_information_font_json.to_string().parse::<usize>() {
+                            text_font = v;
+                        }
+                    }
+                    match &element_info["text"] {
+                        JsonValue::String(s) => {
+                            text_text = s.as_str();
+                        }
+                        JsonValue::Short(s) => {
+                            text_text = s.as_str();
+                        }
+                        _ => {}
+                    }
+                    if let JsonValue::Number(ref text_information_font_size_json) = element_info["font_size"] {
+                        if let Ok(v) = text_information_font_size_json.to_string().parse::<f32>() {
+                            text_font_size = v;
+                        }
+                    }
+                    if let JsonValue::Number(ref text_information_newline_distance_json) = element_info["newline_distance"] {
+                        if let Ok(v) = text_information_newline_distance_json.to_string().parse::<f32>() {
+                            text_newline_size = v;
+                        }
+                    }
+
+                    let mut color = Vector::empty();
+                    if let JsonValue::Array(ref color_json) = element_info["color"] {
+                        if color_json.len() >= 4 {
+                            color = Vector::new4(
+                                color_json[0].as_f32().unwrap(),
+                                color_json[1].as_f32().unwrap(),
+                                color_json[2].as_f32().unwrap(),
+                                color_json[3].as_f32().unwrap(),
+                            );
+                        }
+                    }
+
+                    element = Element::Text {
+                        text_information: Some(TextInformation::new(self.fonts[text_font].clone())
+                            .text(text_text)
+                            .font_size(text_font_size)
+                            .newline_distance(text_newline_size)),
+                        font_index: text_font,
+                        color,
+                    };
+                    self.new_texts.push(idx)
+                },
                 _ => {
                     panic!("unknown element type: {}", element_type);
                 }
@@ -384,7 +439,6 @@ impl GUI {
         } else {
             panic!("no info given for element of type: {}", element_type);
         }
-        let idx = self.elements.len();
         self.elements.push(element);
         idx
     }
@@ -1153,6 +1207,7 @@ impl GUI {
                 .font_size(17.0)
                 .newline_distance(100.0)),
             font_index: 0,
+            color: Vector::fill(1.0)
         };
         self.new_texts.push(self.elements.len());
         self.elements.push(new_text);
@@ -1923,6 +1978,7 @@ pub enum Element {
     Text {
         text_information: Option<TextInformation>,
         font_index: usize,
+        color: Vector,
     }
 }
 impl Element {

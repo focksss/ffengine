@@ -19,6 +19,8 @@ layout(push_constant) uniform constants {
     int glyph_size;
     float distance_range;
     uint font_index;
+    float align_shift;
+    float font_size;
 } ubo;
 
 float median(float r, float g, float b) {
