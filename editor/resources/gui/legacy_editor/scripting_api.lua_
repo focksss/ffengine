@@ -1,3 +1,4 @@
+--[[
 ---@meta
 
 ---@type EngineClass
@@ -40,9 +41,11 @@ MovementMode = {
         ---@field get_node fun(self:GUI, index:integer):GUINode
         ---@field get_quad fun(self:GUI, index:integer):GUIQuad
         ---@field get_text fun(self:GUI, index:integer):GUIText
-        ---@field get_image fun(self:GUI, index:integer):GUIImage
         ---@field destroy_node fun(self:GUI, index:integer):nil
-        ---@field num_elements integer
+        ---@field destroy_quad fun(self:GUI, index:integer):nil
+        ---@field num_nodes integer
+        ---@field num_quads integer
+        ---@field num_texts integer
         ---@field add_node fun(self:GUI):nil
         ---@field add_quad fun(self:GUI):nil
         ---@field add_text fun(self:GUI, initial_text:string):nil
@@ -54,35 +57,50 @@ MovementMode = {
         ---@field remove_root_index_at fun(self:GUI, index:integer):nil
 
             ---@class GUINode
+            ---@field position Vector
+            ---@field scale Vector
             ---@field hidden boolean
-            ---@field element_indices integer[]
-            ---@field get_element_index fun(self:GUINode, index:integer):integer
-            ---@field get_element fun(self:GUINode, index:integer)
-            ---@field add_element_index fun(self:GUINode, index:integer):nil
-            ---@field remove_element_index_at fun(self:GUINode, index:integer):nil
+            ---@field quad_indices integer[]
+            ---@field text_indices integer[]
+            ---@field get_quad_index fun(self:GUINode, index:integer):integer
+            ---@field get_quad fun(self:GUINode, index:integer):GUIQuad
+            ---@field add_quad_index fun(self:GUINode, index:integer):nil
+            ---@field remove_quad_index_at fun(self:GUINode, index:integer):nil
+            ---@field get_text_index fun(self:GUINode, index:integer):integer
+            ---@field get_text fun(self:GUINode, index:integer):GUIText
+            ---@field add_text_index fun(self:GUINode, index:integer):nil
+            ---@field remove_text_index_at fun(self:GUINode, index:integer):nil
             ---@field get_child_index fun(self:GUINode, index:integer):integer
             ---@field add_child_index fun(self:GUINode, index:integer):nil
             ---@field remove_child_index_at fun(self:GUINode, index:integer):nil
             ---@field children_indices integer[]
+            ---@field absolute_position_x boolean
+            ---@field absolute_position_y boolean
+            ---@field absolute_scale_x boolean
+            ---@field absolute_scale_y boolean
+            ---@field anchor_point AnchorPoint
+            ---@field set_anchor_point fun(self:GUINode, anchor_point:integer):nil
             ---@field add_left_tap_action fun(self:GUINode, method:string, script:integer):nil
             ---@field index integer
             ---@field get_child fun(self:GUINode, child_index:integer):GUINode
 
                 ---@class GUIQuad
                 ---@field color Vector
+                ---@field position Vector
+                ---@field scale Vector
                 ---@field corner_radius number
+                ---@field absolute_position_x boolean
+                ---@field absolute_position_y boolean
 
                 ---@class GUIText
                 ---@field text_message string
                 ---@field update_text fun(self:GUIText, text:string):nil
                 ---@field font_size number
                 ---@field auto_wrap_distance number
-                
-                ---@class GUIImage
-                ---@field index integer
-                ---@field corner_radius number
-                ---@field additive_tint Vector
-                ---@field multiplicative_tint Vector
+                ---@field position Vector
+                ---@field scale Vector
+                ---@field absolute_position_x boolean
+                ---@field absolute_position_y boolean
                 
         ---@class SceneRenderer
         ---@field viewport Viewport
@@ -697,3 +715,5 @@ KeyCode = {
     F34 = 193,
     F35 = 194,
 }
+
+--]]

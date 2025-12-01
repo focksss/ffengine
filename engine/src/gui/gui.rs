@@ -344,7 +344,6 @@ impl GUI {
                             );
                         }
                     }
-                    println!("additive_tint: {:?}", additive_tint);
 
                     let mut multiplicative_tint = Vector::fill(1.0);
                     if let JsonValue::Array(ref multiplicative_tint_json) = element_info["multiplicative_tint"] {
@@ -1784,6 +1783,9 @@ impl Element {
             }
             _ => ()
         }
+    }
+    pub fn default_quad() -> Self {
+        Self::default()
     }
 }
 impl Default for Element {
