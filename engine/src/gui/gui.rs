@@ -589,9 +589,9 @@ impl GUI {
                 _ => ()
             }
 
-            if let JsonValue::Object(ref container_info_json) = container_json["info"] {
-                match container_type {
-                    "Stack" => {
+            match container_type {
+                "Stack" => {
+                    if let JsonValue::Object(ref container_info_json) = container_json["info"] {
                         let mut horizontal = false;
                         if let JsonValue::Boolean(ref horizontal_json) = container_info_json["horizontal"] {
                             horizontal = *horizontal_json;
@@ -693,15 +693,15 @@ impl GUI {
                             alignment,
                             stack_direction,
                         }
-                    },
-                    "None" => {
-                        container = Container::None;
-                    },
-                    "Dock" => {
-                        container = Container::Dock;
-                    },
-                    _ => { panic!("unknown container type: {}", container_type) }
-                }
+                    }
+                },
+                "None" => {
+                    container = Container::None;
+                },
+                "Dock" => {
+                    container = Container::Dock;
+                },
+                _ => { panic!("unknown container type: {}", container_type) }
             }
         }
 
@@ -995,7 +995,7 @@ impl GUI {
     fn print_hierarchy(&self, index: usize, depth: usize) {
         let indent = "  ".repeat(depth);
         let node = &self.nodes[index];
-        println!("{}[{}] {}", indent, index, node.name);
+        println!("{}[{}] {}, {:?}, {}", indent, index, node.name, node.dock_mode, node.container == Container::Dock);
         for &child_index in &node.children_indices {
             self.print_hierarchy(child_index, depth + 1);
         }
@@ -1142,7 +1142,6 @@ impl GUI {
                 );
             },
             Container::None => {
-                // Children position themselves - just recurse
                 for &child_index in &children_indices {
                     Self::layout_node(
                         nodes,
@@ -1709,7 +1708,7 @@ impl Default for Alignment {
         Alignment::Start
     }
 }
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum DockMode {
     Left,
     Right,

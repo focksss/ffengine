@@ -2,7 +2,7 @@
   "guis": [
     {
       "name": "editor",
-      "nodes": [0]
+      "nodes": [0, 1]
     }
   ],
   "scripts": [
@@ -157,6 +157,122 @@
                   }
                 }
               ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "resize_handles",
+      "container": {
+        "type": "Dock"
+      },
+      "width": {
+        "type": "Factor",
+        "info": {
+          "factor": 1.0
+        }
+      },
+      "height": {
+        "type": "Factor",
+        "info": {
+          "factor": 1.0
+        }
+      },
+      "children": [
+        {
+          "name": "resize_top",
+          "dock_mode": "Top",
+          "width": {
+            "type": "Factor",
+            "info": {
+              "factor": 1.0
+            }
+          },
+          "height": {
+            "type": "Absolute",
+            "info": {
+              "pixels": 10.0
+            }
+          },
+          "elements": [
+            {
+              "type": "Quad",
+              "info": {
+                "color": [1.0, 0.0, 0.0, 1.0]
+              }
+            }
+          ]
+        },
+        {
+          "name": "resize_bottom",
+          "dock_mode": "Bottom",
+          "width": {
+            "type": "Factor",
+            "info": {
+              "factor": 1.0
+            }
+          },
+          "height": {
+            "type": "Absolute",
+            "info": {
+              "pixels": 5.0
+            }
+          },
+          "elements": [
+            {
+              "type": "Quad",
+              "info": {
+                "color": [1.0, 0.0, 1.0, 1.0]
+              }
+            }
+          ]
+        },
+        {
+          "name": "resize_left",
+          "dock_mode": "Left",
+          "width": {
+            "type": "Absolute",
+            "info": {
+              "pixels": 10.0
+            }
+          },
+          "height": {
+            "type": "Factor",
+            "info": {
+              "factor": 1.0
+            }
+          },
+          "elements": [
+            {
+              "type": "Quad",
+              "info": {
+                "color": [1.0, 0.0, 0.0, 1.0]
+              }
+            }
+          ]
+        },
+        {
+          "name": "resize_right",
+          "dock_mode": "Right",
+          "width": {
+            "type": "Absolute",
+            "info": {
+              "pixels": 5.0
+            }
+          },
+          "height": {
+            "type": "Factor",
+            "info": {
+              "factor": 1.0
+            }
+          },
+          "elements": [
+            {
+              "type": "Quad",
+              "info": {
+                "color": [1.0, 1.0, 0.0, 1.0]
+              }
             }
           ]
         }
