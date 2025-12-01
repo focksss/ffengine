@@ -24,9 +24,9 @@ layout (location = 1) out vec2 o_pos;
 void main() {
     uv = vertices[gl_VertexIndex];
 
-    vec2 pos = ((ubo.position + ubo.scale * vec2(uv.x, 1.0 - uv.y)) / vec2(ubo.resolution));
+    vec2 pos = ((ubo.position + ubo.scale * vec2(uv.x, uv.y)) / vec2(ubo.resolution));
     o_pos = pos;
     vec2 ndc = pos * 2.0 - 1.0;
 
-    gl_Position = vec4(ndc * vec2(1, -1), 0.0, 1.0);
+    gl_Position = vec4(ndc, 0.0, 1.0);
 }

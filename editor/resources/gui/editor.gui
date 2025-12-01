@@ -45,7 +45,7 @@
                 "bottom": 0.0
               },
               "packing": "End",
-              "alignment": "End"
+              "stack_direction": "Reverse"
             }
           },
           "dock_mode": "Top",
@@ -68,6 +68,77 @@
                 "color": [0.3, 0.3, 0.3, 0.5],
                 "corner_radius": 5.0
               }
+            }
+          ],
+          "children": [
+            {
+              "name": "close_button",
+              "width": {
+                "type": "Absolute",
+                "info": {
+                  "pixels": 40
+                }
+              },
+              "height": {
+                "type": "Factor",
+                "info": {
+                  "factor": 1.0
+                }
+              },
+              "elements": [
+                {
+                  "type": "Quad",
+                  "info": {
+                    "color": [0.9, 0.3, 0.3, 1.0]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "toggle_maximize_button",
+              "width": {
+                "type": "Absolute",
+                "info": {
+                  "pixels": 40
+                }
+              },
+              "height": {
+                "type": "Factor",
+                "info": {
+                  "factor": 1.0
+                }
+              },
+              "elements": [
+                {
+                  "type": "Quad",
+                  "info": {
+                    "color": [0.1, 0.1, 0.1, 1.0]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "hide_button",
+              "width": {
+                "type": "Absolute",
+                "info": {
+                  "pixels": 40
+                }
+              },
+              "height": {
+                "type": "Factor",
+                "info": {
+                  "factor": 1.0
+                }
+              },
+              "elements": [
+                {
+                  "type": "Quad",
+                  "info": {
+                    "color": [0.1, 0.1, 0.1, 1.0]
+                  }
+                }
+              ]
             }
           ]
         }

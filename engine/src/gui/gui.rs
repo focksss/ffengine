@@ -301,7 +301,7 @@ impl GUI {
                             );
                         }
                     }
-                    let mut corner_radius = 5.0;
+                    let mut corner_radius = 0.0;
                     if let JsonValue::Number(ref corner_radius_json) = element_info["corner_radius"] {
                         if let Ok(v) = corner_radius_json.to_string().parse::<f32>() {
                             corner_radius = v;
@@ -327,7 +327,7 @@ impl GUI {
                     };
 
                     let mut alpha_threshold = 5.0;
-                    if let JsonValue::Number(ref alpha_threshold_json) = element_info["corner_radius"] {
+                    if let JsonValue::Number(ref alpha_threshold_json) = element_info["alpha_threshold"] {
                         if let Ok(v) = alpha_threshold_json.to_string().parse::<f32>() {
                             alpha_threshold = v;
                         }
@@ -598,7 +598,7 @@ impl GUI {
                         }
 
                         let mut spacing = 0.0;
-                        if let JsonValue::Number(ref spacing_json) = container_info_json["corner_radius"] {
+                        if let JsonValue::Number(ref spacing_json) = container_info_json["spacing"] {
                             if let Ok(v) = spacing_json.to_string().parse::<f32>() {
                                 spacing = v;
                             }
@@ -667,12 +667,31 @@ impl GUI {
                             _ => ()
                         }
 
+                        let mut stack_direction = StackDirection::default();
+                        let mut stack_direction_str = "";
+                        match &container_info_json["stack_direction"] {
+                            JsonValue::String(s) => {
+                                stack_direction_str = (*s).as_str();
+                            }
+                            JsonValue::Short(s) => {
+                                stack_direction_str = (*s).as_str();
+                            }
+                            _ => ()
+                        }
+                        match stack_direction_str {
+                            "Alternating" => { stack_direction = StackDirection::Alternating },
+                            "Normal" => { stack_direction = StackDirection::Normal },
+                            "Reverse" => { stack_direction = StackDirection::Reverse },
+                            _ => ()
+                        }
+
                         container = Container::Stack {
                             horizontal,
                             spacing,
                             padding,
                             packing,
                             alignment,
+                            stack_direction,
                         }
                     },
                     "None" => {
@@ -926,8 +945,7 @@ impl GUI {
         self.nodes.clear();
         let mut unparented_true_indices = Vec::new();
         for node in json["nodes"].members() {
-            unparented_true_indices.push(unparented_true_indices.len());
-            self.parse_node(node, &unparented_true_indices);
+            unparented_true_indices.push(self.parse_node(node, &unparented_true_indices));
         }
 
         unsafe {
@@ -968,6 +986,19 @@ impl GUI {
             guis.push(nodes);
         }
         self.root_node_indices = guis[0].clone();
+
+        println!("\nGUI Hierarchy:");
+        for &root_index in &self.root_node_indices {
+            self.print_hierarchy(root_index, 0);
+        }
+    }
+    fn print_hierarchy(&self, index: usize, depth: usize) {
+        let indent = "  ".repeat(depth);
+        let node = &self.nodes[index];
+        println!("{}[{}] {}", indent, index, node.name);
+        for &child_index in &node.children_indices {
+            self.print_hierarchy(child_index, depth + 1);
+        }
     }
     unsafe fn update_descriptors(&self, base: &VkBase) {
         let mut image_infos: Vec<vk::DescriptorImageInfo> = Vec::with_capacity(1024);
@@ -1026,60 +1057,407 @@ impl GUI {
     }
 
     fn layout(&mut self) {
-        let mut positions: Vec<Option<(f32, f32)>> = vec![None; self.nodes.len()];
-        let mut sizes: Vec<Option<(f32, f32)>> = vec![None; self.nodes.len()];
-        let mut clip_mins: Vec<Option<(f32, f32)>> = vec![None; self.nodes.len()];
-        let mut clip_maxes: Vec<Option<(f32, f32)>> = vec![None; self.nodes.len()];
-
-        let window_size = (self.window.inner_size().width as f32, self.window.inner_size().height as f32);
+        let window_size = (
+            self.window.inner_size().width as f32,
+            self.window.inner_size().height as f32
+        );
 
         for root_node_index in self.root_node_indices.iter() {
             Self::layout_node(
                 &mut self.nodes,
                 *root_node_index,
+                (0.0, 0.0),
                 window_size,
                 ((0.0, 0.0), window_size),
-                // &mut positions,
-                // &mut sizes,
-                // &mut clip_mins,
-                // &mut clip_maxes,
-            )
+            );
         }
-
-        /*
-        for i in 0..self.nodes.len() {
-            if let Some(position) = positions[i] {
-                self.nodes[i].position.x = position.0;
-                self.nodes[i].position.y = position.1;
-            }
-            if let Some(size) = sizes[i] {
-                self.nodes[i].size.x = size.0;
-                self.nodes[i].size.y = size.1;
-            }
-            if let Some(clip_min) = clip_mins[i] {
-                self.nodes[i].clip_min.x = clip_min.0;
-                self.nodes[i].clip_min.y = clip_min.1;
-            }
-            if let Some(clip_max) = clip_maxes[i] {
-                self.nodes[i].clip_max.x = clip_max.0;
-                self.nodes[i].clip_max.y = clip_max.1;
-            }
-        }
-        */
     }
     fn layout_node(
         nodes: &mut Vec<Node>,
         node_index: usize,
-        remaining_space: (f32, f32),
+        parent_position: (f32, f32),
+        available_space: (f32, f32),
         parent_clipping: ((f32, f32), (f32, f32)),
-        // positions: &mut Vec<Option<(f32, f32)>>,
-        // sizes: &mut Vec<Option<(f32, f32)>>,
-        // clip_mins: &mut Vec<Option<(f32, f32)>>,
-        // clip_maxes: &mut Vec<Option<(f32, f32)>>,
     ) {
-        let node = &mut nodes[node_index];
+        let node_size = Self::calculate_size(nodes, node_index, available_space);
 
+        nodes[node_index].size.x = node_size.0;
+        nodes[node_index].size.y = node_size.1;
 
+        if nodes[node_index].container == Container::None {
+            nodes[node_index].position.x = parent_position.0;
+            nodes[node_index].position.y = parent_position.1;
+        }
+
+        // fetch children and container type before borrowing mutably
+        let container = nodes[node_index].container.clone();
+        let children_indices = nodes[node_index].children_indices.clone();
+        let node_pos = (nodes[node_index].position.x, nodes[node_index].position.y);
+        let node_size = (nodes[node_index].size.x, nodes[node_index].size.y);
+        let node_clipping = nodes[node_index].clipping;
+
+        let node_clip_bounds = if node_clipping {
+            let clip_min = (
+                node_pos.0.max(parent_clipping.0.0),
+                node_pos.1.max(parent_clipping.0.1),
+            );
+            let clip_max = (
+                (node_pos.0 + node_size.0).min(parent_clipping.1.0),
+                (node_pos.1 + node_size.1).min(parent_clipping.1.1),
+            );
+            (clip_min, clip_max)
+        } else {
+            parent_clipping
+        };
+
+        nodes[node_index].clip_min.x = node_clip_bounds.0.0;
+        nodes[node_index].clip_min.y = node_clip_bounds.0.1;
+        nodes[node_index].clip_max.x = node_clip_bounds.1.0;
+        nodes[node_index].clip_max.y = node_clip_bounds.1.1;
+
+        // layout children based on this container type
+        match container {
+            Container::Stack { horizontal, spacing, padding, packing, alignment, stack_direction } => {
+                Self::layout_stack(
+                    nodes,
+                    &children_indices,
+                    node_pos,
+                    node_size,
+                    horizontal,
+                    spacing,
+                    padding,
+                    packing,
+                    alignment,
+                    stack_direction,
+                    node_clip_bounds,
+                );
+            },
+            Container::Dock => {
+                Self::layout_dock(
+                    nodes,
+                    &children_indices,
+                    node_pos,
+                    node_size,
+                    node_clip_bounds,
+                );
+            },
+            Container::None => {
+                // Children position themselves - just recurse
+                for &child_index in &children_indices {
+                    Self::layout_node(
+                        nodes,
+                        child_index,
+                        node_pos,
+                        node_size,
+                        node_clip_bounds,
+                    );
+                }
+            }
+        }
+    }
+    fn calculate_size(
+        nodes: &Vec<Node>,
+        node_index: usize,
+        available_space: (f32, f32),
+    ) -> (f32, f32) {
+        let node = &nodes[node_index];
+
+        let width = match node.width {
+            Size::Absolute(w) => w,
+            Size::Factor(f) => available_space.0 * f,
+            Size::FillFactor(_) => available_space.0, // recalculated in container
+            Size::Auto => 100.0, // TODO: Calculate from content
+        };
+
+        let height = match node.height {
+            Size::Absolute(h) => h,
+            Size::Factor(f) => available_space.1 * f,
+            Size::FillFactor(_) => available_space.1, // recalculated in container
+            Size::Auto => 100.0, // TODO: Calculate from content
+        };
+
+        (width, height)
+    }
+    fn layout_dock(
+        nodes: &mut Vec<Node>,
+        children_indices: &Vec<usize>,
+        node_position: (f32, f32),
+        node_size: (f32, f32),
+        parent_clipping: ((f32, f32), (f32, f32)),
+    ) {
+        let mut remaining_space = node_size;
+        let mut offset = (0.0, 0.0);
+
+        for &child_index in children_indices {
+            let child = &nodes[child_index];
+            let dock_mode = child.dock_mode.clone();
+
+            // child size based on remaining space
+            let child_size = Self::calculate_size(nodes, child_index, remaining_space);
+
+            // position and update remaining space based on dock mode
+            let (child_pos, child_final_size) = match dock_mode {
+                Some(DockMode::Top) => {
+                    let pos = (node_position.0 + offset.0, node_position.1 + offset.1);
+                    let size = (remaining_space.0, child_size.1);
+
+                    offset.1 += child_size.1;
+                    remaining_space.1 -= child_size.1;
+
+                    (pos, size)
+                },
+                Some(DockMode::Bottom) => {
+                    remaining_space.1 -= child_size.1;
+                    let pos = (
+                        node_position.0 + offset.0,
+                        node_position.1 + offset.1 + remaining_space.1
+                    );
+                    let size = (remaining_space.0, child_size.1);
+
+                    (pos, size)
+                },
+                Some(DockMode::Left) => {
+                    let pos = (node_position.0 + offset.0, node_position.1 + offset.1);
+                    let size = (child_size.0, remaining_space.1);
+
+                    offset.0 += child_size.0;
+                    remaining_space.0 -= child_size.0;
+
+                    (pos, size)
+                },
+                Some(DockMode::Right) => {
+                    remaining_space.0 -= child_size.0;
+                    let pos = (
+                        node_position.0 + offset.0 + remaining_space.0,
+                        node_position.1 + offset.1
+                    );
+                    let size = (child_size.0, remaining_space.1);
+
+                    (pos, size)
+                },
+                None => {
+                    // Fill remaining space
+                    let pos = (node_position.0 + offset.0, node_position.1 + offset.1);
+                    let size = remaining_space;
+
+                    (pos, size)
+                }
+            };
+
+            nodes[child_index].position.x = child_pos.0;
+            nodes[child_index].position.y = child_pos.1;
+            nodes[child_index].size.x = child_final_size.0;
+            nodes[child_index].size.y = child_final_size.1;
+
+            // layout this child
+            Self::layout_node(
+                nodes,
+                child_index,
+                child_pos,
+                child_final_size,
+                parent_clipping,
+            );
+        }
+    }
+    fn layout_stack(
+        nodes: &mut Vec<Node>,
+        children_indices: &Vec<usize>,
+        node_position: (f32, f32),
+        node_size: (f32, f32),
+        horizontal: bool,
+        spacing: f32,
+        padding: Padding,
+        packing: PackingMode,
+        alignment: Alignment,
+        stack_direction: StackDirection,
+        parent_clipping: ((f32, f32), (f32, f32)),
+    ) {
+        if children_indices.is_empty() {
+            return;
+        }
+
+        // inner space AFTER padding
+        let inner_space = (
+            node_size.0 - padding.left - padding.right,
+            node_size.1 - padding.top - padding.bottom,
+        );
+
+        // calculate sizes + determine fill distribution
+        let mut total_fill_weight = 0.0;
+        let mut used_space = 0.0;
+        let mut child_sizes = Vec::new();
+
+        let mut children_iterable: Vec<usize> = children_indices.clone();
+
+        // apply reversals
+        if matches!(packing, PackingMode::End) {
+            children_iterable.reverse();
+        }
+        if matches!(stack_direction, StackDirection::Reverse) {
+            children_iterable.reverse();
+        }
+
+        for &child_index in &children_iterable {
+            let child = &nodes[child_index];
+            let size_mode = if horizontal { &child.width } else { &child.height };
+
+            match size_mode {
+                Size::Absolute(s) => {
+                    used_space += s;
+                    child_sizes.push(*s);
+                },
+                Size::Factor(f) => {
+                    let size = if horizontal { inner_space.0 * f } else { inner_space.1 * f };
+                    used_space += size;
+                    child_sizes.push(size);
+                },
+                Size::FillFactor(weight) => {
+                    total_fill_weight += weight;
+                    child_sizes.push(0.0); // replaced later
+                },
+                Size::Auto => {
+                    let size = 100.0; // TODO: Calculate from content
+                    used_space += size;
+                    child_sizes.push(size);
+                },
+            }
+        }
+
+        // implement spacing
+        if children_indices.len() > 1 {
+            used_space += spacing * (children_indices.len() - 1) as f32;
+        }
+
+        // distribute remaining space to FillFactor children
+        let primary_axis_space = if horizontal { inner_space.0 } else { inner_space.1 };
+        let remaining_space = (primary_axis_space - used_space).max(0.0);
+
+        for (idx, &child_index) in children_iterable.iter().enumerate() {
+            let child = &nodes[child_index];
+            let size_mode = if horizontal { &child.width } else { &child.height };
+
+            if let Size::FillFactor(weight) = size_mode {
+                child_sizes[idx] = if total_fill_weight > 0.0 {
+                    remaining_space * (weight / total_fill_weight)
+                } else {
+                    0.0
+                };
+            }
+        }
+
+        // starting position based on packing
+        let mut current_pos = match packing {
+            PackingMode::Start => 0.0,
+            PackingMode::End => primary_axis_space,
+            PackingMode::Center => (primary_axis_space - used_space) * 0.5,
+            PackingMode::SpaceIncludeEdge => {
+                if children_indices.len() > 0 {
+                    primary_axis_space / (children_indices.len() + 1) as f32
+                } else {
+                    0.0
+                }
+            },
+            PackingMode::SpaceExcludeEdge => 0.0,
+        };
+
+        let item_spacing = match packing {
+            PackingMode::SpaceIncludeEdge => {
+                if children_indices.len() > 0 {
+                    primary_axis_space / (children_indices.len() + 1) as f32
+                } else {
+                    0.0
+                }
+            },
+            PackingMode::SpaceExcludeEdge => {
+                if children_indices.len() > 1 {
+                    (remaining_space + spacing * (children_indices.len() - 1) as f32) / (children_indices.len() - 1) as f32
+                } else {
+                    0.0
+                }
+            },
+            _ => spacing,
+        };
+
+        // position children
+        for (idx, &child_index) in children_iterable.iter().enumerate() {
+            let child = &nodes[child_index];
+            let primary_size = child_sizes[idx];
+
+            // flip if end
+            let actual_pos = if matches!(packing, PackingMode::End) {
+                current_pos - primary_size
+            } else {
+                current_pos
+            };
+
+            // cross-axis size
+            let cross_size = if horizontal {
+                match child.height {
+                    Size::Absolute(h) => h,
+                    Size::Factor(f) => inner_space.1 * f,
+                    Size::FillFactor(_) => inner_space.1,
+                    Size::Auto => 100.0,
+                }
+            } else {
+                match child.width {
+                    Size::Absolute(w) => w,
+                    Size::Factor(f) => inner_space.0 * f,
+                    Size::FillFactor(_) => inner_space.0,
+                    Size::Auto => 100.0,
+                }
+            };
+
+            // cross-axis position based on alignment
+            let cross_pos = match alignment {
+                Alignment::Start => 0.0,
+                Alignment::Center => (if horizontal { inner_space.1 } else { inner_space.0 } - cross_size) / 2.0,
+                Alignment::End => if horizontal { inner_space.1 - cross_size } else { inner_space.0 - cross_size },
+                Alignment::Stretch => 0.0,
+            };
+
+            let final_cross_size = match alignment {
+                Alignment::Stretch => if horizontal { inner_space.1 } else { inner_space.0 },
+                _ => cross_size,
+            };
+
+            let (child_pos, child_final_size) = if horizontal {
+                (
+                    (
+                        node_position.0 + padding.left + actual_pos,
+                        node_position.1 + padding.top + cross_pos
+                    ),
+                    (primary_size, final_cross_size)
+                )
+            } else {
+                (
+                    (
+                        node_position.0 + padding.left + cross_pos,
+                        node_position.1 + padding.top + actual_pos
+                    ),
+                    (final_cross_size, primary_size)
+                )
+            };
+
+            nodes[child_index].position.x = child_pos.0;
+            nodes[child_index].position.y = child_pos.1;
+            nodes[child_index].size.x = child_final_size.0;
+            nodes[child_index].size.y = child_final_size.1;
+
+            Self::layout_node(
+                nodes,
+                child_index,
+                child_pos,
+                child_final_size,
+                parent_clipping,
+            );
+
+            // to next child start pos
+            if matches!(packing, PackingMode::End) {
+                current_pos -= primary_size + item_spacing;
+            } else {
+                current_pos += primary_size + item_spacing;
+            }
+        }
     }
 
     pub unsafe fn draw(&mut self, current_frame: usize, command_buffer: CommandBuffer,) { unsafe {
@@ -1135,6 +1513,7 @@ impl GUI {
                     color,
                     corner_radius
                 } => {
+                    //println!("{}", node.index);
                     let quad_constants = GUIQuadSendable {
                         color: color.to_array4(),
                         resolution: [self.quad_renderpass.viewport.width as i32, self.quad_renderpass.viewport.height as i32],
@@ -1254,6 +1633,7 @@ pub enum Container {
         spacing: f32,
         padding: Padding,
         packing: PackingMode,
+        stack_direction: StackDirection,
         alignment: Alignment,
     },
     Dock,
@@ -1262,6 +1642,16 @@ pub enum Container {
 impl Default for Container {
     fn default() -> Self {
         Container::None
+    }
+}
+impl PartialEq for Container {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Container::None, Container::None) => true,
+            (Container::Dock, Container::Dock) => true,
+            (Container::Stack { .. }, Container::Stack { .. }) => true,
+            _ => false,
+        }
     }
 }
 #[derive(Clone)]
@@ -1277,6 +1667,7 @@ impl Default for PackingMode {
         PackingMode::Start
     }
 }
+#[derive(Clone)]
 pub enum StackDirection {
     Reverse,
     Normal,
