@@ -3,8 +3,8 @@ use std::cmp::PartialEq;
 use std::sync::Arc;
 use mlua::{FromLua, IntoLua, Lua, UserData, UserDataFields, UserDataMethods, Value};
 use mlua::prelude::LuaError;
-use crate::engine::EngineRef;
-use crate::gui::gui::{GUIInteractableInformation, GUI};
+use crate::engine::{get_command_buffer, EngineRef};
+use crate::gui::gui::{Element, GUIInteractableInformation, GUI};
 use crate::math::Vector;
 use crate::scripting::lua_engine::RegisterToLua;
 
@@ -22,7 +22,7 @@ macro_rules! with_gui_mut {
         let mut $gui = __renderer.guis[$gui_index].borrow_mut();
     };
 }
-/*
+
 pub struct GUITextPointer {
     gui_index: usize,
     index: usize
@@ -31,75 +31,73 @@ impl UserData for GUITextPointer {
     fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
         fields.add_field_method_get("text_message", |lua, this| {
             with_gui!(lua, this.gui_index => gui);
-            Ok(gui.gui_texts[this.index].text_information.as_ref().unwrap().text.clone())
+            match &gui.elements[this.index] {
+                Element::Text { text_information, .. } => {
+                    Ok(text_information.as_ref().unwrap().text.clone())
+                }
+                _ => Err(mlua::Error::runtime("Element is not a text"))
+            }
         });
 
         fields.add_field_method_get("font_size", |lua, this| {
             with_gui!(lua, this.gui_index => gui);
-            Ok(gui.gui_texts[this.index].text_information.as_ref().map_or(-1.0, |t| t.font_size))
+            match &gui.elements[this.index] {
+                Element::Text { text_information, .. } => {
+                    Ok(text_information.as_ref().map_or(-1.0, |t| t.font_size))
+                }
+                _ => Err(mlua::Error::runtime("Element is not a text"))
+            }
         });
         fields.add_field_method_set("font_size", |lua, this, val: f32| {
             with_gui_mut!(lua, this.gui_index => gui);
-            if let Some(text_info) = gui.gui_texts[this.index].text_information.as_mut() {
-                text_info.font_size = val;
+            match &mut gui.elements[this.index] {
+                Element::Text { text_information, .. } => {
+                    if let Some(text_info) = text_information.as_mut() {
+                        text_info.font_size = val;
+                    }
+                    Ok(())
+                }
+                _ => Err(mlua::Error::runtime("Element is not a text"))
             }
-            Ok(())
         });
 
         fields.add_field_method_get("auto_wrap_distance", |lua, this| {
             with_gui!(lua, this.gui_index => gui);
-            Ok(gui.gui_texts[this.index].text_information.as_ref().map_or(200.0, |t| t.auto_wrap_distance))
+            match &gui.elements[this.index] {
+                Element::Text { text_information, .. } => {
+                    Ok(text_information.as_ref().map_or(-1.0, |t| t.auto_wrap_distance))
+                }
+                _ => Err(mlua::Error::runtime("Element is not a text"))
+            }
         });
         fields.add_field_method_set("auto_wrap_distance", |lua, this, val: f32| {
             with_gui_mut!(lua, this.gui_index => gui);
-            if let Some(text_info) = gui.gui_texts[this.index].text_information.as_mut() {
-                text_info.auto_wrap_distance = val;
+            match &mut gui.elements[this.index] {
+                Element::Text { text_information, .. } => {
+                    if let Some(text_info) = text_information.as_mut() {
+                        text_info.auto_wrap_distance = val;
+                    }
+                    Ok(())
+                }
+                _ => Err(mlua::Error::runtime("Element is not a text"))
             }
-            Ok(())
-        });
-
-        fields.add_field_method_get("position", |lua, this| {
-            with_gui!(lua, this.gui_index => gui);
-            Ok(gui.gui_texts[this.index].position)
-        });
-        fields.add_field_method_set("position", |lua, this, val: Vector| {
-            with_gui_mut!(lua, this.gui_index => gui);
-            Ok(gui.gui_texts[this.index].position = val)
-        });
-
-        fields.add_field_method_get("scale", |lua, this| {
-            with_gui!(lua, this.gui_index => gui);
-            Ok(gui.gui_texts[this.index].scale)
-        });
-        fields.add_field_method_set("scale", |lua, this, val: Vector| {
-            with_gui_mut!(lua, this.gui_index => gui);
-            Ok(gui.gui_texts[this.index].scale = val)
-        });
-
-        fields.add_field_method_get("absolute_position_x", |lua, this| {
-            with_gui!(lua, this.gui_index => gui);
-            Ok(gui.gui_texts[this.index].absolute_position.0)
-        });
-        fields.add_field_method_set("absolute_position_x", |lua, this, val: bool| {
-            with_gui_mut!(lua, this.gui_index => gui);
-            gui.gui_texts[this.index].absolute_position.0 = val;
-            Ok(())
-        });
-        fields.add_field_method_get("absolute_position_y", |lua, this| {
-            with_gui!(lua, this.gui_index => gui);
-            Ok(gui.gui_texts[this.index].absolute_position.1)
-        });
-        fields.add_field_method_set("absolute_position_y", |lua, this, val: bool| {
-            with_gui_mut!(lua, this.gui_index => gui);
-            gui.gui_texts[this.index].absolute_position.1 = val;
-            Ok(())
         });
     }
     fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
         methods.add_method_mut("update_text", |lua, this, text: String| {
             with_gui_mut!(lua, this.gui_index => gui);
-            gui.gui_texts[this.index].update_text(text.as_str());
-            Ok(())
+            match &mut gui.elements[this.index] {
+                Element::Text { text_information, .. } => {
+                    if let Some(text_info) = text_information.as_mut() {
+                        let command_buffer = get_command_buffer();
+
+                        text_information.as_mut().unwrap().update_text(text.as_str());
+                        text_information.as_mut().unwrap().update_buffers_all_frames(command_buffer);
+                    }
+                    Ok(())
+                }
+                _ => Err(mlua::Error::runtime("Element is not a text"))
+            }
         });
     }
 }
@@ -112,64 +110,134 @@ impl UserData for GUIQuadPointer {
     fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
         fields.add_field_method_get("color", |lua, this| {
             with_gui!(lua, this.gui_index => gui);
-            Ok(gui.gui_quads[this.index].color)
+            match &gui.elements[this.index] {
+                Element::Quad { color, .. } => {
+                    Ok(color.clone())
+                }
+                _ => Err(mlua::Error::runtime("Element is not a quad"))
+            }
         });
         fields.add_field_method_set("color", |lua, this, val: Value| {
             with_gui_mut!(lua, this.gui_index => gui);
-            gui.gui_quads[this.index].color = Vector::from_lua(val, lua)?;
-            Ok(())
-        });
-
-        fields.add_field_method_get("position", |lua, this| {
-            with_gui!(lua, this.gui_index => gui);
-            Ok(gui.gui_quads[this.index].position)
-        });
-        fields.add_field_method_set("position", |lua, this, val: Value| {
-            with_gui_mut!(lua, this.gui_index => gui);
-            gui.gui_quads[this.index].position = Vector::from_lua(val, lua)?;
-            Ok(())
-        });
-
-        fields.add_field_method_get("scale", |lua, this| {
-            with_gui!(lua, this.gui_index => gui);
-            Ok(gui.gui_quads[this.index].scale)
-        });
-        fields.add_field_method_set("scale", |lua, this, val: Value| {
-            with_gui_mut!(lua, this.gui_index => gui);
-            gui.gui_quads[this.index].scale = Vector::from_lua(val, lua)?;
-            Ok(())
-        });
-
-        fields.add_field_method_get("absolute_position_x", |lua, this| {
-            with_gui!(lua, this.gui_index => gui);
-            Ok(gui.gui_quads[this.index].absolute_position.0)
-        });
-        fields.add_field_method_set("absolute_position_x", |lua, this, val: bool| {
-            with_gui_mut!(lua, this.gui_index => gui);
-            gui.gui_quads[this.index].absolute_position.0 = val;
-            Ok(())
-        });
-        fields.add_field_method_get("absolute_position_y", |lua, this| {
-            with_gui!(lua, this.gui_index => gui);
-            Ok(gui.gui_quads[this.index].absolute_position.1)
-        });
-        fields.add_field_method_set("absolute_position_y", |lua, this, val: bool| {
-            with_gui_mut!(lua, this.gui_index => gui);
-            gui.gui_quads[this.index].absolute_position.1 = val;
-            Ok(())
+            match &mut gui.elements[this.index] {
+                Element::Quad { color: quad_color, .. } => {
+                    *quad_color = Vector::from_lua(val, lua)?;
+                    Ok(())
+                }
+                _ => Err(mlua::Error::runtime("Element is not a quad"))
+            }
         });
 
         fields.add_field_method_get("corner_radius", |lua, this| {
             with_gui!(lua, this.gui_index => gui);
-            Ok(gui.gui_quads[this.index].corner_radius)
+            match &gui.elements[this.index] {
+                Element::Quad { corner_radius, .. } => {
+                    Ok(*corner_radius)
+                }
+                _ => Err(mlua::Error::runtime("Element is not a quad"))
+            }
         });
         fields.add_field_method_set("corner_radius", |lua, this, val: f32| {
             with_gui_mut!(lua, this.gui_index => gui);
-            Ok(gui.gui_quads[this.index].corner_radius = val)
+            match &mut gui.elements[this.index] {
+                Element::Quad { corner_radius, .. } => {
+                    *corner_radius = val;
+                    Ok(())
+                }
+                _ => Err(mlua::Error::runtime("Element is not a quad"))
+            }
         })
     }
 }
 
+pub struct GUIImagePointer {
+    gui_index: usize,
+    index: usize
+}
+impl UserData for GUIImagePointer {
+    fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
+        fields.add_field_method_get("additive_tint", |lua, this| {
+            with_gui!(lua, this.gui_index => gui);
+            match &gui.elements[this.index] {
+                Element::Image { additive_tint, .. } => {
+                    Ok(additive_tint.clone())
+                }
+                _ => Err(mlua::Error::runtime("Element is not an image"))
+            }
+        });
+        fields.add_field_method_set("additive_tint", |lua, this, val: Value| {
+            with_gui_mut!(lua, this.gui_index => gui);
+            match &mut gui.elements[this.index] {
+                Element::Image { additive_tint: quad_additive_tint, .. } => {
+                    *quad_additive_tint = Vector::from_lua(val, lua)?;
+                    Ok(())
+                }
+                _ => Err(mlua::Error::runtime("Element is not an image"))
+            }
+        });
+
+        fields.add_field_method_get("multiplicative_tint", |lua, this| {
+            with_gui!(lua, this.gui_index => gui);
+            match &gui.elements[this.index] {
+                Element::Image { multiplicative_tint, .. } => {
+                    Ok(multiplicative_tint.clone())
+                }
+                _ => Err(mlua::Error::runtime("Element is not an image"))
+            }
+        });
+        fields.add_field_method_set("multiplicative_tint", |lua, this, val: Value| {
+            with_gui_mut!(lua, this.gui_index => gui);
+            match &mut gui.elements[this.index] {
+                Element::Image { multiplicative_tint: quad_multiplicative_tint, .. } => {
+                    *quad_multiplicative_tint = Vector::from_lua(val, lua)?;
+                    Ok(())
+                }
+                _ => Err(mlua::Error::runtime("Element is not an image"))
+            }
+        });
+
+        fields.add_field_method_get("index", |lua, this| {
+            with_gui!(lua, this.gui_index => gui);
+            match &gui.elements[this.index] {
+                Element::Image { index, .. } => {
+                    Ok(*index)
+                }
+                _ => Err(mlua::Error::runtime("Element is not an image"))
+            }
+        });
+        fields.add_field_method_set("index", |lua, this, val: usize| {
+            with_gui_mut!(lua, this.gui_index => gui);
+            match &mut gui.elements[this.index] {
+                Element::Image { index, .. } => {
+                    *index = val;
+                    Ok(())
+                }
+                _ => Err(mlua::Error::runtime("Element is not an image"))
+            }
+        });
+
+        fields.add_field_method_get("corner_radius", |lua, this| {
+            with_gui!(lua, this.gui_index => gui);
+            match &gui.elements[this.index] {
+                Element::Image { corner_radius, .. } => {
+                    Ok(*corner_radius)
+                }
+                _ => Err(mlua::Error::runtime("Element is not an image"))
+            }
+        });
+        fields.add_field_method_set("corner_radius", |lua, this, val: f32| {
+            with_gui_mut!(lua, this.gui_index => gui);
+            match &mut gui.elements[this.index] {
+                Element::Image { corner_radius, .. } => {
+                    *corner_radius = val;
+                    Ok(())
+                }
+                _ => Err(mlua::Error::runtime("Element is not an image"))
+            }
+        });
+    }
+}
+/*
 pub struct GUINodePointer {
     gui_index: usize,
     index: usize
@@ -466,70 +534,3 @@ impl UserData for GUIPointer {
     }
      */
 }
-/*
-pub struct LuaAnchorPoint(pub AnchorPoint);
-impl RegisterToLua for LuaAnchorPoint {
-    fn register_to_lua(lua: &mlua::Lua) -> mlua::Result<()> {
-        let globals = lua.globals();
-        let table = lua.create_table()?;
-        for (idx, key) in ALL_ANCHOR_POINTS.iter().enumerate() {
-            table.set(format!("{:?}", key), idx as u32)?;
-        }
-        globals.set("AnchorPoint", table)?;
-        Ok(())
-    }
-}
-impl PartialEq for AnchorPoint {
-    fn eq(&self, other: &Self) -> bool {
-        match other {
-            AnchorPoint::BottomLeft => { self.eq(&AnchorPoint::BottomLeft) }
-            AnchorPoint::BottomMiddle => { self.eq(&AnchorPoint::BottomMiddle) }
-            AnchorPoint::BottomRight => { self.eq(&AnchorPoint::BottomRight) }
-            AnchorPoint::Center => { self.eq(&AnchorPoint::Center) }
-            AnchorPoint::Left => { self.eq(&AnchorPoint::Left) }
-            AnchorPoint::Right => { self.eq(&AnchorPoint::Right) }
-            AnchorPoint::TopLeft => { self.eq(&AnchorPoint::TopLeft) }
-            AnchorPoint::TopMiddle => { self.eq(&AnchorPoint::TopMiddle) }
-            AnchorPoint::TopRight => { self.eq(&AnchorPoint::TopRight) }
-        }
-    }
-}
-impl<'lua> IntoLua<'lua> for LuaAnchorPoint {
-    fn into_lua(self, lua: &'lua mlua::Lua) -> mlua::Result<Value<'lua>> {
-        let index = ALL_ANCHOR_POINTS
-            .iter()
-            .position(|k| *k == self.0)
-            .ok_or_else(|| mlua::Error::ToLuaConversionError {
-                from: "LuaAnchorPoint",
-                to: "Value",
-                message: Some("AnchorPoint not found in ALL_ANCHOR_POINTS".into()),
-            })?;
-        (index as u32).into_lua(lua)
-    }
-}
-impl<'lua> FromLua<'lua> for LuaAnchorPoint {
-    fn from_lua(value: Value<'lua>, _: &'lua mlua::Lua) -> mlua::Result<Self> {
-        if let Value::Integer(i) = value {
-            if i >= 0 && (i as usize) < ALL_ANCHOR_POINTS.len() {
-                return Ok(LuaAnchorPoint(ALL_ANCHOR_POINTS[i as usize].clone()));
-            }
-        }
-        Err(mlua::Error::FromLuaConversionError {
-            from: value.type_name(),
-            to: "LuaAnchorPoint",
-            message: Some("invalid AnchorPoint value".into()),
-        })
-    }
-}
-const ALL_ANCHOR_POINTS: &[AnchorPoint] = &[
-    AnchorPoint::BottomLeft,
-    AnchorPoint::BottomMiddle,
-    AnchorPoint::BottomRight,
-    AnchorPoint::Right,
-    AnchorPoint::TopRight,
-    AnchorPoint::TopMiddle,
-    AnchorPoint::TopLeft,
-    AnchorPoint::Left,
-    AnchorPoint::Center,
-];
-*/

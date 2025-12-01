@@ -5,6 +5,11 @@
       "nodes": [0]
     }
   ],
+  "scripts": [
+    {
+      "uri": "editor\\resources\\scripts\\editor.lua"
+    }
+  ],
   "fonts": [
     {
       "uri": "editor\\resources\\fonts\\Oxygen-Regular.ttf",
@@ -145,9 +150,10 @@
               },
               "elements": [
                 {
-                  "type": "Quad",
+                  "type": "Image",
                   "info": {
-                    "color": [0.1, 0.1, 0.1, 1.0]
+                    "uri": "editor\\resources\\gui\\images\\minimize_window.png",
+                    "additive_tint": [1.0, 1.0, 1.0, 0.0]
                   }
                 }
               ]
