@@ -274,6 +274,23 @@ impl UserData for GUINodePointer {
             }
             Ok(table)
         });
+
+        fields.add_field_method_get("position", |lua, this| {
+            with_gui!(lua, this.gui_index => gui);
+            Ok(gui.nodes[this.index].position)
+        });
+        fields.add_field_method_get("size", |lua, this| {
+            with_gui!(lua, this.gui_index => gui);
+            Ok(gui.nodes[this.index].size)
+        });
+        fields.add_field_method_get("clip_min", |lua, this| {
+            with_gui!(lua, this.gui_index => gui);
+            Ok(gui.nodes[this.index].clip_min)
+        });
+        fields.add_field_method_get("clip_max", |lua, this| {
+            with_gui!(lua, this.gui_index => gui);
+            Ok(gui.nodes[this.index].clip_max)
+        });
     }
     fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
         methods.add_method("get_child_index", |lua, this, val: i32| {

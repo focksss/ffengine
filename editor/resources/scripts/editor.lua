@@ -1,18 +1,20 @@
 local target_cursor_icon
 local has_set_target_cursor = false
 
+local stored_window_size = Vector.new2(0, 0)
+
 local resize_called_last_tick = false
 local resize_called_this_tick = false
 
 local gui
 
 	local root_node
-
 		local titlebar_node
-
 			local close_button_node
 			local toggle_maximize_button_node
 			local minimize_window_button_node
+		local right_area_node
+		local scene_view_area_node
 
 	local resize_root_node
 		local resize_top_root_node
@@ -32,12 +34,12 @@ function Awake()
 	gui = Engine.renderer:gui(0)
 
 	root_node = gui:get_root(0)
-
 		titlebar_node = root_node:get_child(0)
-
 			close_button_node = titlebar_node:get_child(0)
 			toggle_maximize_button_node = titlebar_node:get_child(1)
 			minimize_window_button_node = titlebar_node:get_child(1)
+		right_area_node = root_node:get_child(1)
+		scene_view_area_node = root_node:get_child(2)
 
 	resize_root_node = gui:get_root(1)
 		resize_top_root_node = resize_root_node:get_child(0)
@@ -66,6 +68,22 @@ function Update()
 	has_set_target_cursor = false
 	Engine.client:set_cursor_icon(target_cursor_icon)
 	target_cursor_icon = CursorIcon.Default
+
+	local scene_viewport = Engine.renderer.scene_renderer.viewport
+	if 
+		not resize_called_this_tick and
+		not resize_called_last_tick and
+		(scene_viewport.width ~= scene_view_area_node.size.x or
+		 scene_viewport.height ~= scene_view_area_node.size.y + 40)
+	then
+		scene_viewport.width = scene_view_area_node.size.x
+		scene_viewport.height = scene_view_area_node.size.y + 40
+		
+		Engine.client.flags.reload_rendering_queued = true
+	end
+
+	resize_called_last_tick = resize_called_this_tick
+	resize_called_this_tick = false
 
 end
 

@@ -71,6 +71,10 @@ MovementMode = {
             ---@field get_text_at fun(self:GUINode, element_index:integer):GUIText
             ---@field get_image_at fun(self:GUINode, element_index:integer):GUIImage
             ---@field set_element_index_at_to fun(self:GUINode, node_element_index:integer, target_element_index:integer):nil
+            ---@field position Vector
+            ---@field size Vector
+            ---@field clip_min Vector
+            ---@field clip_max Vector
 
                 ---@class GUIQuad
                 ---@field color Vector

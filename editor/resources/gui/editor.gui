@@ -239,6 +239,70 @@
               ]
             }
           ]
+        },
+        {
+          "name": "right_area",
+          "container": {
+            "type": "Stack",
+            "info": {
+              "horizontal": false,
+              "spacing": 0.0,
+              "padding": {
+                "left": 0.0,
+                "right": 0.0,
+                "top": 0.0,
+                "bottom": 0.0
+              },
+              "packing": "End",
+              "stack_direction": "Reverse"
+            }
+          },
+          "dock_mode": "Right",
+          "width": {
+            "type": "Absolute",
+            "info": {
+              "pixels": 500.0
+            }
+          },
+          "height": {
+            "type": "FillFactor",
+            "info": {
+              "pixels": 1.0
+            }
+          },
+          "elements": [
+            {
+              "type": "Quad",
+              "info": {
+                "color": [0.3, 0.3, 0.3, 0.8],
+                "corner_radius": 5.0
+              }
+            }
+          ]
+        },
+        {
+          "name": "scene_view_area",
+          "dock_mode": "Right",
+          "width": {
+            "type": "FillFactor",
+            "info": {
+              "factor": 1.0
+            }
+          },
+          "height": {
+            "type": "FillFactor",
+            "info": {
+              "factor": 1.0
+            }
+          },
+          "elements": [
+            {
+              "type": "Quad",
+              "info": {
+                "color": [1.0, 0.3, 0.3, 0.2]
+              }
+            }
+          ]
         }
       ]
     },
