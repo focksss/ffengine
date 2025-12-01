@@ -7,7 +7,6 @@ use ash::vk;
 use ash::vk::{CommandBuffer, DescriptorType, Format, Handle, ShaderStageFlags};
 use json::JsonValue;
 use winit::event::MouseButton;
-use crate::engine::get_command_buffer;
 use crate::client::client::*;
 use crate::math::*;
 use crate::render::render_helper::{Descriptor, DescriptorCreateInfo, DescriptorSetCreateInfo, Pass, PassCreateInfo, Renderpass, RenderpassCreateInfo, Texture, TextureCreateInfo};
@@ -695,10 +694,84 @@ impl GUI {
                         }
                     }
                 },
-                "None" => {
-                    if let JsonValue::Object(ref container_info_json) = container_json["info"] {
+                "Dock" => {
+                    container = Container::Dock;
+                },
+                _ => { panic!("unknown container type: {}", container_type) }
+            }
+        }
+
+        let mut parent_relation = None;
+        if let JsonValue::Object(ref parent_relation_json) = node_json["parent_relation"] {
+            let mut type_str = "";
+            match &parent_relation_json["type"] {
+                JsonValue::String(s) => {
+                    type_str = (*s).as_str();
+                }
+                JsonValue::Short(s) => {
+                    type_str = (*s).as_str();
+                }
+                _ => panic!("no type given for parent relation")
+            }
+
+            match type_str {
+                "Docking" => {
+                    if let JsonValue::Object(ref relation_info_json) = parent_relation_json["info"] {
+                        let mut dock_mode = DockMode::default();
+                        let mut dock_mode_str = "";
+                        match &relation_info_json["mode"] {
+                            JsonValue::String(s) => {
+                                dock_mode_str = (*s).as_str();
+                            }
+                            JsonValue::Short(s) => {
+                                dock_mode_str = (*s).as_str();
+                            }
+                            _ => ()
+                        }
+                        match dock_mode_str {
+                            "Top" => { dock_mode = DockMode::Top },
+                            "Bottom" => { dock_mode = DockMode::Bottom },
+                            "Left" => { dock_mode = DockMode::Left },
+                            "Right" => { dock_mode = DockMode::Right },
+                            _ => ()
+                        }
+
+                        parent_relation = Some(ParentRelation::Docking( dock_mode ));
+                    }
+                },
+                "Independent" => {
+                    if let JsonValue::Object(ref independent_info_json) = parent_relation_json["info"] {
+                        let mut relative = true;
+                        if let JsonValue::Boolean(ref relative_json) = independent_info_json["relative"] {
+                            relative = *relative_json;
+                        }
+
+                        let mut anchor = AnchorPoint::default();
+                        let mut anchor_str = "";
+                        match &independent_info_json["anchor"] {
+                            JsonValue::String(s) => {
+                                anchor_str = (*s).as_str();
+                            }
+                            JsonValue::Short(s) => {
+                                anchor_str = (*s).as_str();
+                            }
+                            _ => ()
+                        }
+                        match anchor_str {
+                            "TopLeft" => { anchor = AnchorPoint::TopLeft },
+                            "TopCenter" => { anchor = AnchorPoint::TopCenter },
+                            "TopRight" => { anchor = AnchorPoint::TopRight },
+                            "BottomLeft" => { anchor = AnchorPoint::BottomLeft },
+                            "BottomCenter" => { anchor = AnchorPoint::BottomCenter },
+                            "BottomRight" => { anchor = AnchorPoint::BottomRight },
+                            "CenterLeft" => { anchor = AnchorPoint::CenterLeft },
+                            "Center" => { anchor = AnchorPoint::Center },
+                            "CenterRight" => { anchor = AnchorPoint::CenterRight },
+                            _ => ()
+                        }
+
                         let mut offset_x = Offset::Pixels(0.0);
-                        if let JsonValue::Object(ref offset_x_json) = container_info_json["offset_x"] {
+                        if let JsonValue::Object(ref offset_x_json) = independent_info_json["offset_x"] {
                             let mut value = 0.0;
                             if let JsonValue::Number(ref val_json) = offset_x_json["value"] {
                                 if let Ok(v) = val_json.to_string().parse::<f32>() {
@@ -724,7 +797,7 @@ impl GUI {
                         }
 
                         let mut offset_y = Offset::Pixels(0.0);
-                        if let JsonValue::Object(ref offset_y_json) = container_info_json["offset_y"] {
+                        if let JsonValue::Object(ref offset_y_json) = independent_info_json["offset_y"] {
                             let mut value = 0.0;
                             if let JsonValue::Number(ref val_json) = offset_y_json["value"] {
                                 if let Ok(v) = val_json.to_string().parse::<f32>() {
@@ -749,36 +822,17 @@ impl GUI {
                             }
                         }
 
-                        container = Container::None {
+                        parent_relation = Some(ParentRelation::Independent {
+                            relative,
+                            anchor,
                             offset_x,
-                            offset_y,
-                        }
+                            offset_y
+                        })
                     }
                 },
-                "Dock" => {
-                    container = Container::Dock;
-                },
-                _ => { panic!("unknown container type: {}", container_type) }
+                _ => ()
             }
         }
-
-        let mut dock_mode_str = "";
-        match &node_json["dock_mode"] {
-            JsonValue::String(s) => {
-                dock_mode_str = (*s).as_str();
-            }
-            JsonValue::Short(s) => {
-                dock_mode_str = (*s).as_str();
-            }
-            _ => ()
-        }
-        let dock_mode = match dock_mode_str {
-            "Left" => { Some(DockMode::Left) },
-            "Right" => { Some(DockMode::Right) },
-            "Top" => { Some(DockMode::Top) },
-            "Bottom" => { Some(DockMode::Bottom) },
-            _ => { None }
-        };
 
         let mut width = Size::default();
         if let JsonValue::Object(ref width_json) = node_json["width"] {
@@ -927,7 +981,7 @@ impl GUI {
             hidden,
             clipping,
             container,
-            dock_mode,
+            parent_relation,
             width,
             height,
             element_indices,
@@ -1052,7 +1106,7 @@ impl GUI {
     fn print_hierarchy(&self, index: usize, depth: usize) {
         let indent = "  ".repeat(depth);
         let node = &self.nodes[index];
-        println!("{}[{}] {}, {:?}, {}", indent, index, node.name, node.dock_mode, node.container == Container::Dock);
+        println!("{}[{}] {}, {:?}, {}", indent, index, node.name, node.parent_relation, node.container == Container::Dock);
         for &child_index in &node.children_indices {
             self.print_hierarchy(child_index, depth + 1);
         }
@@ -1121,44 +1175,60 @@ impl GUI {
 
         for root_node_index in self.root_node_indices.iter() {
             Self::layout_node(
+                &window_size,
                 &mut self.nodes,
                 *root_node_index,
-                (0.0, 0.0),
-                (0.0, 0.0),
-                window_size,
-                window_size,
-                ((0.0, 0.0), window_size),
+                &(0.0, 0.0),
+                &window_size,
+                &((0.0, 0.0), window_size),
             );
         }
     }
     fn layout_node(
+        gui_viewport: &(f32, f32),
         nodes: &mut Vec<Node>,
         node_index: usize,
-        parent_position: (f32, f32),
-        parent_origin: (f32, f32),
-        parent_size: (f32, f32),
-        node_size: (f32, f32),
-        parent_clipping: ((f32, f32), (f32, f32)),
+        parent_origin: &(f32, f32),
+        parent_size: &(f32, f32),
+        parent_clipping: &((f32, f32), (f32, f32)),
     ) {
+        // set size and position if this container is independent, otherwise it was already set by the parent
+        {
+            let node = &mut nodes[node_index];
+            if let Some(relation) = &node.parent_relation {
+                match relation {
+                    ParentRelation::Independent { relative, anchor, offset_x, offset_y } => {
+                        let anchor_factor = match anchor {
+                            AnchorPoint::TopLeft => (0.0, 0.0),
+                            AnchorPoint::TopCenter => (0.5, 0.0),
+                            AnchorPoint::TopRight => (1.0, 0.0),
+                            AnchorPoint::CenterLeft => (0.0, 0.5),
+                            AnchorPoint::Center => (0.5, 0.5),
+                            AnchorPoint::CenterRight => (1.0, 0.5),
+                            AnchorPoint::BottomLeft => (0.0, 1.0),
+                            AnchorPoint::BottomCenter => (0.5, 1.0),
+                            AnchorPoint::BottomRight => (1.0, 1.0),
+                        };
+                        let final_parent_size = if *relative { parent_size } else { gui_viewport };
 
-        nodes[node_index].size.x = node_size.0;
-        nodes[node_index].size.y = node_size.1;
+                        let node_size = Self::calculate_size(&node.width, &node.height, &final_parent_size);
+                        node.size = Vector::new2(node_size.0, node_size.1);
 
-        if let Container::None { offset_x, offset_y } = &nodes[node_index].container {
-            let x_offset = match offset_x {
-                Offset::Pixels(px) => *px,
-                Offset::Factor(f) => parent_size.0 * f,
-            };
-            let y_offset = match offset_y {
-                Offset::Pixels(px) => *px,
-                Offset::Factor(f) => parent_size.1 * f,
-            };
-
-            nodes[node_index].position.x = parent_origin.0 + x_offset;
-            nodes[node_index].position.y = parent_origin.1 + y_offset;
+                        node.position.x = parent_origin.0 + final_parent_size.0*anchor_factor.0 + match offset_x {
+                            Offset::Pixels(p) => *p,
+                            Offset::Factor(f) => *f * final_parent_size.0
+                        };
+                        node.position.y = parent_origin.1 + final_parent_size.1*anchor_factor.1 + match offset_y {
+                            Offset::Pixels(p) => *p,
+                            Offset::Factor(f) => *f * final_parent_size.1
+                        }
+                    },
+                    _ => ()
+                }
+            }
         }
 
-        // fetch children and container type before borrowing mutably
+        // fetch properties first to avoid borrow checker issues
         let container = nodes[node_index].container.clone();
         let children_indices = nodes[node_index].children_indices.clone();
         let node_pos = (nodes[node_index].position.x, nodes[node_index].position.y);
@@ -1188,6 +1258,7 @@ impl GUI {
         match container {
             Container::Stack { horizontal, spacing, padding, packing, alignment, stack_direction } => {
                 Self::layout_stack(
+                    gui_viewport,
                     nodes,
                     &children_indices,
                     node_pos,
@@ -1203,6 +1274,7 @@ impl GUI {
             },
             Container::Dock => {
                 Self::layout_dock(
+                    gui_viewport,
                     nodes,
                     &children_indices,
                     node_pos,
@@ -1210,45 +1282,31 @@ impl GUI {
                     node_clip_bounds,
                 );
             },
-            Container::None { .. }=> {
-                for &child_index in &children_indices {
-                    Self::layout_node(
-                        nodes,
-                        child_index,
-                        node_pos,
-                        node_pos,
-                        node_size,
-                        node_size,
-                        node_clip_bounds,
-                    );
-                }
-            }
         }
     }
     fn calculate_size(
-        nodes: &Vec<Node>,
-        node_index: usize,
-        available_space: (f32, f32),
+        width: &Size,
+        height: &Size,
+        parent_size: &(f32, f32),
     ) -> (f32, f32) {
-        let node = &nodes[node_index];
-
-        let width = match node.width {
-            Size::Absolute(w) => w,
-            Size::Factor(f) => available_space.0 * f,
-            Size::FillFactor(_) => available_space.0, // recalculated in container
+        let width = match width {
+            Size::Absolute(w) => *w,
+            Size::Factor(f) => parent_size.0 * *f,
+            Size::FillFactor(_) => parent_size.0, // recalculated in container
             Size::Auto => 100.0, // TODO: Calculate from content
         };
 
-        let height = match node.height {
-            Size::Absolute(h) => h,
-            Size::Factor(f) => available_space.1 * f,
-            Size::FillFactor(_) => available_space.1, // recalculated in container
+        let height = match height {
+            Size::Absolute(h) => *h,
+            Size::Factor(f) => parent_size.1 * *f,
+            Size::FillFactor(_) => parent_size.1, // recalculated in container
             Size::Auto => 100.0, // TODO: Calculate from content
         };
 
         (width, height)
     }
     fn layout_dock(
+        gui_viewport: &(f32, f32),
         nodes: &mut Vec<Node>,
         children_indices: &Vec<usize>,
         node_position: (f32, f32),
@@ -1260,14 +1318,23 @@ impl GUI {
 
         for &child_index in children_indices {
             let child = &nodes[child_index];
-            let dock_mode = child.dock_mode.clone();
+            let mut dock_mode = DockMode::default();
+            if let Some(relation) = &child.parent_relation {
+                match relation {
+                    ParentRelation::Independent { .. } => continue,
+                    ParentRelation::Docking(mode) => dock_mode = mode.clone(),
+                    _ => continue,
+                }
+            } else {
+                continue
+            }
 
             // child size based on remaining space
-            let child_size = Self::calculate_size(nodes, child_index, remaining_space);
+            let child_size = Self::calculate_size(&child.width, &child.height, &remaining_space);
 
             // position and update remaining space based on dock mode
             let (child_pos, child_final_size) = match dock_mode {
-                Some(DockMode::Top) => {
+                DockMode::Top => {
                     let pos = (node_position.0 + offset.0, node_position.1 + offset.1);
                     let size = (remaining_space.0, child_size.1);
 
@@ -1276,7 +1343,7 @@ impl GUI {
 
                     (pos, size)
                 },
-                Some(DockMode::Bottom) => {
+                DockMode::Bottom => {
                     remaining_space.1 -= child_size.1;
                     let pos = (
                         node_position.0 + offset.0,
@@ -1286,7 +1353,7 @@ impl GUI {
 
                     (pos, size)
                 },
-                Some(DockMode::Left) => {
+                DockMode::Left => {
                     let pos = (node_position.0 + offset.0, node_position.1 + offset.1);
                     let size = (child_size.0, remaining_space.1);
 
@@ -1295,7 +1362,7 @@ impl GUI {
 
                     (pos, size)
                 },
-                Some(DockMode::Right) => {
+                DockMode::Right => {
                     remaining_space.0 -= child_size.0;
                     let pos = (
                         node_position.0 + offset.0 + remaining_space.0,
@@ -1305,13 +1372,6 @@ impl GUI {
 
                     (pos, size)
                 },
-                None => {
-                    // Fill remaining space
-                    let pos = (node_position.0 + offset.0, node_position.1 + offset.1);
-                    let size = remaining_space;
-
-                    (pos, size)
-                }
             };
 
             nodes[child_index].position.x = child_pos.0;
@@ -1319,19 +1379,18 @@ impl GUI {
             nodes[child_index].size.x = child_final_size.0;
             nodes[child_index].size.y = child_final_size.1;
 
-            // layout this child
             Self::layout_node(
+                gui_viewport,
                 nodes,
                 child_index,
-                child_pos,
-                node_position,
-                node_size,
-                child_final_size,
-                parent_clipping,
+                &node_position,
+                &node_size,
+                &parent_clipping,
             );
         }
     }
     fn layout_stack(
+        gui_viewport: &(f32, f32),
         nodes: &mut Vec<Node>,
         children_indices: &Vec<usize>,
         node_position: (f32, f32),
@@ -1516,13 +1575,12 @@ impl GUI {
             nodes[child_index].size.y = child_final_size.1;
 
             Self::layout_node(
+                gui_viewport,
                 nodes,
                 child_index,
-                child_pos,
-                node_position,
-                node_size,
-                child_final_size,
-                parent_clipping,
+                &node_position,
+                &node_size,
+                &parent_clipping,
             );
 
             // to next child start pos
@@ -1713,13 +1771,9 @@ pub enum Container {
         alignment: Alignment,
     },
     Dock,
-    None {
-        offset_x: Offset,
-        offset_y: Offset,
-    },
 }
-#[derive(Clone)]
-enum Offset {
+#[derive(Clone, Debug)]
+pub enum Offset {
     Pixels(f32),
     Factor(f32),
 }
@@ -1731,7 +1785,6 @@ impl Default for Container {
 impl PartialEq for Container {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (Container::None { .. }, Container::None { .. }) => true,
             (Container::Dock, Container::Dock) => true,
             (Container::Stack { .. }, Container::Stack { .. }) => true,
             _ => false,
@@ -1789,6 +1842,34 @@ pub enum Alignment {
 impl Default for Alignment {
     fn default() -> Alignment {
         Alignment::Start
+    }
+}
+#[derive(Clone, Debug)]
+pub enum ParentRelation {
+    Docking(DockMode),
+    Independent {
+        relative: bool,
+        anchor: AnchorPoint,
+        offset_x: Offset,
+        offset_y: Offset,
+    }
+}
+#[derive(Clone)]
+#[derive(Debug)]
+pub enum AnchorPoint {
+    TopLeft,
+    TopCenter,
+    TopRight,
+    CenterLeft,
+    Center,
+    CenterRight,
+    BottomLeft,
+    BottomCenter,
+    BottomRight,
+}
+impl Default for AnchorPoint {
+    fn default() -> AnchorPoint {
+        AnchorPoint::TopLeft
     }
 }
 #[derive(Clone, Debug)]
@@ -1889,7 +1970,7 @@ pub struct Node {
     pub clipping: bool, // clips to parent, recursively affects clipping enabled children
 
     pub container: Container,
-    pub dock_mode: Option<DockMode>,
+    pub parent_relation: Option<ParentRelation>,
     pub width: Size,
     pub height: Size,
 
@@ -1913,7 +1994,7 @@ impl Node {
             clipping: true,
 
             container: Container::Dock,
-            dock_mode: None,
+            parent_relation: None,
             width: Size::FillFactor(1.0),
             height: Size::FillFactor(1.0),
 

@@ -2,7 +2,7 @@
   "guis": [
     {
       "name": "editor",
-      "nodes": [0, 1, 2]
+      "nodes": [0, 1]
     }
   ],
   "scripts": [
@@ -39,6 +39,13 @@
       "name": "root",
       "container": {
         "type": "Dock"
+      },
+      "parent_relation": {
+        "type": "Independent",
+        "info": {
+          "relative": false,
+          "anchor": "TopLeft"
+        }
       },
       "width": {
         "type": "Factor",
@@ -78,7 +85,12 @@
               "stack_direction": "Reverse"
             }
           },
-          "dock_mode": "Top",
+          "parent_relation": {
+            "type": "Docking",
+            "info": {
+              "mode": "Top"
+            }
+          },
           "width": {
             "type": "FillFactor",
             "info": {
@@ -258,7 +270,12 @@
               "alignment": "Start"
             }
           },
-          "dock_mode": "Right",
+          "parent_relation": {
+            "type": "Docking",
+            "info": {
+              "mode": "Right"
+            }
+          },
           "width": {
             "type": "Absolute",
             "info": {
@@ -297,7 +314,38 @@
               ]
             },
             {
+              "name": "entity_editor_area",
+              "width": {
+                "type": "Factor",
+                "info": {
+                  "factor": 1.0
+                }
+              },
+              "height": {
+                "type": "Factor",
+                "info": {
+                  "factor": 0.5
+                }
+              },
+              "elements": [
+                {
+                  "type": "Quad",
+                  "info": {
+                    "color": [0.8, 0.3, 0.3, 0.8],
+                    "corner_radius": 5.0
+                  }
+                }
+              ]
+            },
+            {
               "name": "right_area_resize",
+              "parent_relation": {
+                "type": "Independent",
+                "info": {
+                  "relative": true,
+                  "anchor": "TopLeft"
+                }
+              },
               "interactable_information": {
                 "left_hold_actions": [
                   {
@@ -311,19 +359,6 @@
                     "script": 0
                   }
                 ]
-              },
-              "container": {
-                "type": "None",
-                "info": {
-                  "offset_x": {
-                    "type": "Pixels",
-                    "value": -5.0
-                  },
-                  "offset_y": {
-                    "type": "Pixels",
-                    "value": 0.0
-                  }
-                }
               },
               "clipping": false,
               "width": {
@@ -344,7 +379,12 @@
         {
           "name": "scene_view_area",
           "interactable_information": {},
-          "dock_mode": "Right",
+          "parent_relation": {
+            "type": "Docking",
+            "info": {
+              "mode": "Right"
+            }
+          },
           "width": {
             "type": "FillFactor",
             "info": {
@@ -370,6 +410,13 @@
     },
     {
       "name": "resize_handles",
+      "parent_relation": {
+        "type": "Independent",
+        "info": {
+          "relative": false,
+          "anchor": "TopLeft"
+        }
+      },
       "container": {
         "type": "Dock"
       },
@@ -391,7 +438,12 @@
           "container": {
             "type": "Dock"
           },
-          "dock_mode": "Top",
+          "parent_relation": {
+            "type": "Docking",
+            "info": {
+              "mode": "Top"
+            }
+          },
           "width": {
             "type": "Factor",
             "info": {
@@ -421,7 +473,12 @@
                   }
                 ]
               },
-              "dock_mode": "Left",
+              "parent_relation": {
+                "type": "Docking",
+                "info": {
+                  "mode": "Left"
+                }
+              },
               "width": {
                 "type": "Absolute",
                 "info": {
@@ -451,7 +508,12 @@
                   }
                 ]
               },
-              "dock_mode": "Right",
+              "parent_relation": {
+                "type": "Docking",
+                "info": {
+                  "mode": "Right"
+                }
+              },
               "width": {
                 "type": "Absolute",
                 "info": {
@@ -481,7 +543,12 @@
                   }
                 ]
               },
-              "dock_mode": "Top",
+              "parent_relation": {
+                "type": "Docking",
+                "info": {
+                  "mode": "Top"
+                }
+              },
               "width": {
                 "type": "Factor",
                 "info": {
@@ -502,7 +569,12 @@
           "container": {
             "type": "Dock"
           },
-          "dock_mode": "Bottom",
+          "parent_relation": {
+            "type": "Docking",
+            "info": {
+              "mode": "Bottom"
+            }
+          },
           "width": {
             "type": "Factor",
             "info": {
@@ -532,7 +604,12 @@
                   }
                 ]
               },
-              "dock_mode": "Left",
+              "parent_relation": {
+                "type": "Docking",
+                "info": {
+                  "mode": "Left"
+                }
+              },
               "width": {
                 "type": "Absolute",
                 "info": {
@@ -562,7 +639,12 @@
                   }
                 ]
               },
-              "dock_mode": "Right",
+              "parent_relation": {
+                "type": "Docking",
+                "info": {
+                  "mode": "Right"
+                }
+              },
               "width": {
                 "type": "Absolute",
                 "info": {
@@ -592,7 +674,12 @@
                   }
                 ]
               },
-              "dock_mode": "Bottom",
+              "parent_relation": {
+                "type": "Docking",
+                "info": {
+                  "mode": "Bottom"
+                }
+              },
               "width": {
                 "type": "Factor",
                 "info": {
@@ -667,95 +754,6 @@
               "factor": 1.0
             }
           }
-        }
-      ]
-    },
-    {
-      "name": "test_root",
-      "container": {
-        "type": "Dock"
-      },
-      "width": {
-        "type": "Factor",
-        "info": {
-          "factor": 1.0
-        }
-      },
-      "height": {
-        "type": "Factor",
-        "info": {
-          "factor": 1.0
-        }
-      },
-      "children": [
-        {
-          "name": "right_area",
-          "container": "Dock",
-          "dock_mode": "Left",
-          "width": {
-            "type": "Absolute",
-            "info": {
-              "pixels": 500.0
-            }
-          },
-          "height": {
-            "type": "FillFactor",
-            "info": {
-              "pixels": 1.0
-            }
-          },
-          "children": [
-            {
-              "name": "scene_graph_area",
-              "dock_mode": "Left",
-              "height": {
-                "type": "Factor",
-                "info": {
-                  "factor": 1.0
-                }
-              },
-              "width": {
-                "type": "Factor",
-                "info": {
-                  "factor": 0.5
-                }
-              },
-              "elements": [
-                {
-                  "type": "Quad",
-                  "info": {
-                    "color": [0.3, 0.3, 0.3, 0.8],
-                    "corner_radius": 5.0
-                  }
-                }
-              ]
-            },
-            {
-              "name": "other_area",
-              "dock_mode": "Left",
-              "height": {
-                "type": "Factor",
-                "info": {
-                  "factor": 1.0
-                }
-              },
-              "width": {
-                "type": "FillFactor",
-                "info": {
-                  "factor": 1.0
-                }
-              },
-              "elements": [
-                {
-                  "type": "Quad",
-                  "info": {
-                    "color": [0.8, 0.3, 0.3, 0.8],
-                    "corner_radius": 5.0
-                  }
-                }
-              ]
-            }
-          ]
         }
       ]
     }
