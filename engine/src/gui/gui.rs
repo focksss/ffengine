@@ -1137,10 +1137,9 @@ impl GUI {
         parent_position: (f32, f32),
         parent_origin: (f32, f32),
         parent_size: (f32, f32),
-        available_space: (f32, f32),
+        node_size: (f32, f32),
         parent_clipping: ((f32, f32), (f32, f32)),
     ) {
-        let node_size = Self::calculate_size(nodes, node_index, available_space);
 
         nodes[node_index].size.x = node_size.0;
         nodes[node_index].size.y = node_size.1;

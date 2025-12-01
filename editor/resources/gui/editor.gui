@@ -2,7 +2,7 @@
   "guis": [
     {
       "name": "editor",
-      "nodes": [0, 1]
+      "nodes": [0, 1, 2]
     }
   ],
   "scripts": [
@@ -667,6 +667,95 @@
               "factor": 1.0
             }
           }
+        }
+      ]
+    },
+    {
+      "name": "test_root",
+      "container": {
+        "type": "Dock"
+      },
+      "width": {
+        "type": "Factor",
+        "info": {
+          "factor": 1.0
+        }
+      },
+      "height": {
+        "type": "Factor",
+        "info": {
+          "factor": 1.0
+        }
+      },
+      "children": [
+        {
+          "name": "right_area",
+          "container": "Dock",
+          "dock_mode": "Left",
+          "width": {
+            "type": "Absolute",
+            "info": {
+              "pixels": 500.0
+            }
+          },
+          "height": {
+            "type": "FillFactor",
+            "info": {
+              "pixels": 1.0
+            }
+          },
+          "children": [
+            {
+              "name": "scene_graph_area",
+              "dock_mode": "Left",
+              "height": {
+                "type": "Factor",
+                "info": {
+                  "factor": 1.0
+                }
+              },
+              "width": {
+                "type": "Factor",
+                "info": {
+                  "factor": 0.5
+                }
+              },
+              "elements": [
+                {
+                  "type": "Quad",
+                  "info": {
+                    "color": [0.3, 0.3, 0.3, 0.8],
+                    "corner_radius": 5.0
+                  }
+                }
+              ]
+            },
+            {
+              "name": "other_area",
+              "dock_mode": "Left",
+              "height": {
+                "type": "Factor",
+                "info": {
+                  "factor": 1.0
+                }
+              },
+              "width": {
+                "type": "FillFactor",
+                "info": {
+                  "factor": 1.0
+                }
+              },
+              "elements": [
+                {
+                  "type": "Quad",
+                  "info": {
+                    "color": [0.8, 0.3, 0.3, 0.8],
+                    "corner_radius": 5.0
+                  }
+                }
+              ]
+            }
+          ]
         }
       ]
     }
