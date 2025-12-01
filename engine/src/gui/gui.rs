@@ -696,7 +696,64 @@ impl GUI {
                     }
                 },
                 "None" => {
-                    container = Container::None;
+                    if let JsonValue::Object(ref container_info_json) = container_json["info"] {
+                        let mut offset_x = Offset::Pixels(0.0);
+                        if let JsonValue::Object(ref offset_x_json) = container_info_json["offset_x"] {
+                            let mut value = 0.0;
+                            if let JsonValue::Number(ref val_json) = offset_x_json["value"] {
+                                if let Ok(v) = val_json.to_string().parse::<f32>() {
+                                    value = v;
+                                }
+                            }
+
+                            let mut type_str = "";
+                            match &offset_x_json["type"] {
+                                JsonValue::String(s) => {
+                                    type_str = (*s).as_str();
+                                }
+                                JsonValue::Short(s) => {
+                                    type_str = (*s).as_str();
+                                }
+                                _ => ()
+                            }
+                            match type_str {
+                                "Pixels" => { offset_x = Offset::Pixels(value); },
+                                "Factor" => { offset_x = Offset::Factor(value); },
+                                _ => ()
+                            }
+                        }
+
+                        let mut offset_y = Offset::Pixels(0.0);
+                        if let JsonValue::Object(ref offset_y_json) = container_info_json["offset_y"] {
+                            let mut value = 0.0;
+                            if let JsonValue::Number(ref val_json) = offset_y_json["value"] {
+                                if let Ok(v) = val_json.to_string().parse::<f32>() {
+                                    value = v;
+                                }
+                            }
+
+                            let mut type_str = "";
+                            match &offset_y_json["type"] {
+                                JsonValue::String(s) => {
+                                    type_str = (*s).as_str();
+                                }
+                                JsonValue::Short(s) => {
+                                    type_str = (*s).as_str();
+                                }
+                                _ => ()
+                            }
+                            match type_str {
+                                "Pixels" => { offset_y = Offset::Pixels(value); },
+                                "Factor" => { offset_y = Offset::Factor(value); },
+                                _ => ()
+                            }
+                        }
+
+                        container = Container::None {
+                            offset_x,
+                            offset_y,
+                        }
+                    }
                 },
                 "Dock" => {
                     container = Container::Dock;
@@ -1068,6 +1125,7 @@ impl GUI {
                 *root_node_index,
                 (0.0, 0.0),
                 window_size,
+                window_size,
                 ((0.0, 0.0), window_size),
             );
         }
@@ -1076,6 +1134,7 @@ impl GUI {
         nodes: &mut Vec<Node>,
         node_index: usize,
         parent_position: (f32, f32),
+        parent_size: (f32, f32),
         available_space: (f32, f32),
         parent_clipping: ((f32, f32), (f32, f32)),
     ) {
@@ -1084,9 +1143,18 @@ impl GUI {
         nodes[node_index].size.x = node_size.0;
         nodes[node_index].size.y = node_size.1;
 
-        if nodes[node_index].container == Container::None {
-            nodes[node_index].position.x = parent_position.0;
-            nodes[node_index].position.y = parent_position.1;
+        if let Container::None { offset_x, offset_y } = &nodes[node_index].container {
+            let x_offset = match offset_x {
+                Offset::Pixels(px) => *px,
+                Offset::Factor(f) => parent_size.0 * f,
+            };
+            let y_offset = match offset_y {
+                Offset::Pixels(px) => *px,
+                Offset::Factor(f) => parent_size.1 * f,
+            };
+
+            nodes[node_index].position.x = parent_position.0 + x_offset;
+            nodes[node_index].position.y = parent_position.1 + y_offset;
         }
 
         // fetch children and container type before borrowing mutably
@@ -1107,7 +1175,7 @@ impl GUI {
             );
             (clip_min, clip_max)
         } else {
-            parent_clipping
+            (node_pos, (node_pos.0 + node_size.0, node_pos.1 + node_size.1))
         };
 
         nodes[node_index].clip_min.x = node_clip_bounds.0.0;
@@ -1141,12 +1209,13 @@ impl GUI {
                     node_clip_bounds,
                 );
             },
-            Container::None => {
+            Container::None { .. }=> {
                 for &child_index in &children_indices {
                     Self::layout_node(
                         nodes,
                         child_index,
                         node_pos,
+                        node_size,
                         node_size,
                         node_clip_bounds,
                     );
@@ -1253,6 +1322,7 @@ impl GUI {
                 nodes,
                 child_index,
                 child_pos,
+                node_size,
                 child_final_size,
                 parent_clipping,
             );
@@ -1446,6 +1516,7 @@ impl GUI {
                 nodes,
                 child_index,
                 child_pos,
+                node_size,
                 child_final_size,
                 parent_clipping,
             );
@@ -1638,17 +1709,25 @@ pub enum Container {
         alignment: Alignment,
     },
     Dock,
-    None,
+    None {
+        offset_x: Offset,
+        offset_y: Offset,
+    },
+}
+#[derive(Clone)]
+enum Offset {
+    Pixels(f32),
+    Factor(f32),
 }
 impl Default for Container {
     fn default() -> Self {
-        Container::None
+        Container::None {  offset_x: Offset::Pixels(0.0), offset_y: Offset::Pixels(0.0) }
     }
 }
 impl PartialEq for Container {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (Container::None, Container::None) => true,
+            (Container::None { .. }, Container::None { .. }) => true,
             (Container::Dock, Container::Dock) => true,
             (Container::Stack { .. }, Container::Stack { .. }) => true,
             _ => false,

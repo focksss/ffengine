@@ -87,6 +87,13 @@ function Update()
 
 end
 
+function resize_right_area()
+	resize_called_this_tick = true
+
+	local window_size = Engine.client.window_size
+	right_area_node:set_width("Absolute", window_size.x - Engine.client.cursor_position.x)
+end
+
 function drag_window() 
 	Engine.client:drag_window()
 end

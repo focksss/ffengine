@@ -75,6 +75,8 @@ MovementMode = {
             ---@field size Vector
             ---@field clip_min Vector
             ---@field clip_max Vector
+            ---@field set_width fun(self:GUINode, size_type:string, value:number):nil
+            ---@field set_height fun(self:GUINode, size_type:string, value:number):nil
 
                 ---@class GUIQuad
                 ---@field color Vector

@@ -278,6 +278,51 @@
                 "corner_radius": 5.0
               }
             }
+          ],
+          "children": [
+            {
+              "name": "right_area_resize",
+              "interactable_information": {
+                "left_hold_actions": [
+                  {
+                    "method": "resize_right_area",
+                    "script": 0
+                  }
+                ],
+                "hover_actions": [
+                  {
+                    "method": "horizontal_resize_cursor",
+                    "script": 0
+                  }
+                ]
+              },
+              "container": {
+                "type": "None",
+                "info": {
+                  "offset_x": {
+                    "type": "Pixels",
+                    "value": -5.0
+                  },
+                  "offset_y": {
+                    "type": "Pixels",
+                    "value": 0.0
+                  }
+                }
+              },
+              "clipping": false,
+              "width": {
+                "type": "Absolute",
+                "info": {
+                  "pixels": 10.0
+                }
+              },
+              "height": {
+                "type": "Factor",
+                "info": {
+                  "factor": 1.0
+                }
+              }
+            }
           ]
         },
         {

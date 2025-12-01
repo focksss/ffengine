@@ -4,7 +4,7 @@ use std::sync::Arc;
 use mlua::{FromLua, IntoLua, Lua, UserData, UserDataFields, UserDataMethods, Value};
 use mlua::prelude::LuaError;
 use crate::engine::{get_command_buffer, EngineRef};
-use crate::gui::gui::{Element, GUIInteractableInformation, Node, GUI};
+use crate::gui::gui::{Element, GUIInteractableInformation, Node, Size, GUI};
 use crate::math::Vector;
 use crate::scripting::lua_engine::RegisterToLua;
 
@@ -405,7 +405,30 @@ impl UserData for GUINodePointer {
                 node.interactable_information = Some(new_interactable_information);
             }
             Ok(())
-        })
+        });
+
+        methods.add_method_mut("set_width", |lua, this, val: (String, f32)| {
+            with_gui_mut!(lua, this.gui_index => gui);
+            gui.nodes[this.index].width = match val.0.as_str() {
+                "Factor" => Size::Factor(val.1),
+                "Auto" => Size::Auto,
+                "Absolute" => Size::Absolute(val.1),
+                "FillFactor" => Size::FillFactor(val.1),
+                _ => panic!("Invalid size_type: {}", val.1)
+            };
+            Ok(())
+        });
+        methods.add_method_mut("set_height", |lua, this, val: (String, f32)| {
+            with_gui_mut!(lua, this.gui_index => gui);
+            gui.nodes[this.index].height = match val.0.as_str() {
+                "Factor" => Size::Factor(val.1),
+                "Auto" => Size::Auto,
+                "Absolute" => Size::Absolute(val.1),
+                "FillFactor" => Size::FillFactor(val.1),
+                _ => panic!("Invalid size_type: {}", val.1)
+            };
+            Ok(())
+        });
     }
 }
 
