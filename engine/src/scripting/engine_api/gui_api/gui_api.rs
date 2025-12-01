@@ -4,7 +4,7 @@ use std::sync::Arc;
 use mlua::{FromLua, IntoLua, Lua, UserData, UserDataFields, UserDataMethods, Value};
 use mlua::prelude::LuaError;
 use crate::engine::EngineRef;
-use crate::gui::gui::{AnchorPoint, GUIInteractableInformation, GUINode, GUIQuad, GUIText, GUI};
+use crate::gui::gui::{GUIInteractableInformation, GUI};
 use crate::math::Vector;
 use crate::scripting::lua_engine::RegisterToLua;
 
@@ -22,7 +22,7 @@ macro_rules! with_gui_mut {
         let mut $gui = __renderer.guis[$gui_index].borrow_mut();
     };
 }
-
+/*
 pub struct GUITextPointer {
     gui_index: usize,
     index: usize
@@ -357,11 +357,12 @@ impl UserData for GUINodePointer {
         })
     }
 }
-
+*/
 pub struct GUIPointer {
     pub(crate) index: usize
 }
 impl UserData for GUIPointer {
+    /*
     fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
         fields.add_field_method_get("ActiveNode", |lua, this| {
             with_gui!(lua, this.index => gui);
@@ -463,8 +464,9 @@ impl UserData for GUIPointer {
             Ok(())
         });
     }
+     */
 }
-
+/*
 pub struct LuaAnchorPoint(pub AnchorPoint);
 impl RegisterToLua for LuaAnchorPoint {
     fn register_to_lua(lua: &mlua::Lua) -> mlua::Result<()> {
@@ -530,3 +532,4 @@ const ALL_ANCHOR_POINTS: &[AnchorPoint] = &[
     AnchorPoint::Left,
     AnchorPoint::Center,
 ];
+*/

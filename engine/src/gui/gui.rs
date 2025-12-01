@@ -35,12 +35,11 @@ pub struct GUI {
     pub text_renderer: TextRenderer,
     pub quad_renderpass: Renderpass,
 
-    pub gui_nodes: Vec<GUINode>,
-    pub gui_root_node_indices: Vec<usize>,
+    pub nodes: Vec<Node>,
+    pub root_node_indices: Vec<usize>,
 
-    pub gui_quads: Vec<GUIQuad>,
-    pub gui_texts: Vec<GUIText>,
-    pub gui_images: Vec<GUIImage>,
+    pub elements: Vec<Element>,
+    image_count: usize,
 
     pub interactable_node_indices: Vec<usize>,
 
@@ -63,7 +62,7 @@ impl GUI {
     ) -> GUIInteractionResult {
         let mut result = GUIInteractionResult::None;
 
-        let node = &mut self.gui_nodes[node_index];
+        let node = &mut self.nodes[node_index];
         let interactable_information = node.interactable_information.as_mut().unwrap();
 
         for passive_action in interactable_information.passive_actions.iter() {
@@ -183,12 +182,11 @@ impl GUI {
             pass: pass_ref.clone(),
             quad_renderpass,
 
-            gui_nodes: Vec::new(),
-            gui_root_node_indices: Vec::new(),
+            nodes: Vec::new(),
+            root_node_indices: Vec::new(),
 
-            gui_quads: Vec::new(),
-            gui_texts: Vec::new(),
-            gui_images: Vec::new(),
+            elements: Vec::new(),
+            image_count: 0,
 
             interactable_node_indices: Vec::new(),
 
@@ -270,33 +268,626 @@ impl GUI {
     * * Refer to default.gui in resources/gui
     * * Nodes are drawn recursively and without depth testing. To make a node appear in front of another, define it after another.
     */
-    pub unsafe fn load_from_file(&mut self, base: &VkBase, path: &str) {
-        for text in self.gui_texts.iter() {
-            text.text_information.as_ref().unwrap().destroy();
+    fn parse_element(&mut self, element_json: &JsonValue) -> usize {
+        let mut element_type = "";
+        match &element_json["type"] {
+            JsonValue::String(s) => {
+                element_type = (*s).as_str();
+            }
+            JsonValue::Short(s) => {
+                element_type = (*s).as_str();
+            }
+            _ => ()
         }
-        unsafe {
-            for image in self.gui_images.iter() {
-                image.destroy(&self.device);
+
+        /*
+            Text {
+                text_information: Option<TextInformation>,
+                font_index: usize,
+            }
+         */
+        let mut element = Element::default();
+        if let JsonValue::Object(ref element_info) = element_json["info"] {
+            match element_type {
+                "Quad" => {
+                    let mut color = Vector::fill(1.0);
+                    if let JsonValue::Array(ref color_json) = element_info["color"] {
+                        if color_json.len() >= 4 {
+                            color = Vector::new4(
+                                color_json[0].as_f32().unwrap(),
+                                color_json[1].as_f32().unwrap(),
+                                color_json[2].as_f32().unwrap(),
+                                color_json[3].as_f32().unwrap(),
+                            );
+                        }
+                    }
+                    let mut corner_radius = 5.0;
+                    if let JsonValue::Number(ref corner_radius_json) = element_info["corner_radius"] {
+                        if let Ok(v) = corner_radius_json.to_string().parse::<f32>() {
+                            corner_radius = v;
+                        }
+                    }
+                    element = Element::Quad {
+                        color,
+                        corner_radius,
+                    }
+                },
+                "Image" => {
+                    let index = self.image_count;
+                    self.image_count += 1;
+
+                    let uri: String = match &element_json["uri"] {
+                        JsonValue::String(s) => {
+                            (*s).parse().expect("failed to parse URI")
+                        }
+                        JsonValue::Short(s) => {
+                            (*s).parse().expect("failed to parse URI")
+                        }
+                        _ => panic!("no uri given for image")
+                    };
+
+                    let mut alpha_threshold = 5.0;
+                    if let JsonValue::Number(ref alpha_threshold_json) = element_info["corner_radius"] {
+                        if let Ok(v) = alpha_threshold_json.to_string().parse::<f32>() {
+                            alpha_threshold = v;
+                        }
+                    }
+
+                    let mut additive_tint = Vector::fill(0.0);
+                    if let JsonValue::Array(ref additive_tint_json) = element_info["additive_tint"] {
+                        if additive_tint_json.len() >= 4 {
+                            additive_tint = Vector::new4(
+                                additive_tint_json[0].as_f32().unwrap(),
+                                additive_tint_json[1].as_f32().unwrap(),
+                                additive_tint_json[2].as_f32().unwrap(),
+                                additive_tint_json[3].as_f32().unwrap(),
+                            );
+                        }
+                    }
+
+                    let mut multiplicative_tint = Vector::fill(0.0);
+                    if let JsonValue::Array(ref multiplicative_tint_json) = element_info["multiplicative_tint"] {
+                        if multiplicative_tint_json.len() >= 4 {
+                            multiplicative_tint = Vector::new4(
+                                multiplicative_tint_json[0].as_f32().unwrap(),
+                                multiplicative_tint_json[1].as_f32().unwrap(),
+                                multiplicative_tint_json[2].as_f32().unwrap(),
+                                multiplicative_tint_json[3].as_f32().unwrap(),
+                            );
+                        }
+                    }
+
+                    element = Element::Image {
+                        index,
+                        uri,
+                        alpha_threshold,
+                        additive_tint,
+                        multiplicative_tint,
+
+                        image_view: vk::ImageView::null(),
+                        sampler: vk::Sampler::null(),
+                        image: vk::Image::null(),
+                        memory: vk::DeviceMemory::null(),
+                    }
+                },
+                _ => {
+                    panic!("unknown element type: {}", element_type);
+                }
+            }
+        } else {
+            panic!("no info given for element of type: {}", element_type);
+        }
+        let idx = self.elements.len();
+        self.elements.push(element);
+        idx
+    }
+    fn parse_node(&mut self, node_json: &JsonValue, unparented_true_indices: &Vec<usize>) -> usize {
+        let mut name = String::from("unnamed node");
+        match &node_json["name"] {
+            JsonValue::String(s) => {
+                name = (*s).parse().unwrap();
+            }
+            JsonValue::Short(s) => {
+                name = (*s).parse().unwrap();
+            }
+            _ => ()
+        }
+
+        let mut interactable_information = None;
+        if let JsonValue::Object(ref interactable_information_json) = node_json["interactable_information"] {
+            let mut interactable_passive_actions = Vec::new();
+            let mut interactable_hover_actions = Vec::new();
+            let mut interactable_unhover_actions = Vec::new();
+            let mut interactable_left_tap_actions = Vec::new();
+            let mut interactable_right_tap_actions = Vec::new();
+            let mut interactable_left_hold_actions = Vec::new();
+            let mut interactable_right_hold_actions = Vec::new();
+
+            match &interactable_information_json["passive_actions"] {
+                JsonValue::Array(arr) => {
+                    for method in arr {
+                        let name = match &method["method"] {
+                            JsonValue::String(s) => {
+                                s.as_str()
+                            }
+                            JsonValue::Short(s) => {
+                                s.as_str()
+                            }
+                            _ => ""
+                        };
+                        interactable_passive_actions.push((
+                            String::from(name),
+                            self.script_indices[method["script"].as_usize().expect("interactable passive_action index parse error")]
+                        ));
+                    }
+                }
+                _ => {}
+            }
+            match &interactable_information_json["hover_actions"] {
+                JsonValue::Array(arr) => {
+                    for method in arr {
+                        let name = match &method["method"] {
+                            JsonValue::String(s) => {
+                                s.as_str()
+                            }
+                            JsonValue::Short(s) => {
+                                s.as_str()
+                            }
+                            _ => ""
+                        };
+                        interactable_hover_actions.push((
+                            String::from(name),
+                            self.script_indices[method["script"].as_usize().expect("interactable hover_action index parse error")]
+                        ));
+                    }
+                }
+                _ => {}
+            }
+            match &interactable_information_json["unhover_actions"] {
+                JsonValue::Array(arr) => {
+                    for method in arr {
+                        let name = match &method["method"] {
+                            JsonValue::String(s) => {
+                                s.as_str()
+                            }
+                            JsonValue::Short(s) => {
+                                s.as_str()
+                            }
+                            _ => ""
+                        };
+                        interactable_unhover_actions.push((
+                            String::from(name),
+                            self.script_indices[method["script"].as_usize().expect("interactable unhover_action index parse error")]
+                        ));
+                    }
+                }
+                _ => {}
+            }
+            match &interactable_information_json["left_tap_actions"] {
+                JsonValue::Array(arr) => {
+                    for method in arr {
+                        let name = match &method["method"] {
+                            JsonValue::String(s) => {
+                                s.as_str()
+                            }
+                            JsonValue::Short(s) => {
+                                s.as_str()
+                            }
+                            _ => ""
+                        };
+                        interactable_left_tap_actions.push((
+                            String::from(name),
+                            self.script_indices[method["script"].as_usize().expect("interactable left_tap_action index parse error")]
+                        ));
+                    }
+                }
+                _ => {}
+            }
+            match &interactable_information_json["right_tap_actions"] {
+                JsonValue::Array(arr) => {
+                    for method in arr {
+                        let name = match &method["method"] {
+                            JsonValue::String(s) => {
+                                s.as_str()
+                            }
+                            JsonValue::Short(s) => {
+                                s.as_str()
+                            }
+                            _ => ""
+                        };
+                        interactable_right_tap_actions.push((
+                            String::from(name),
+                            self.script_indices[method["script"].as_usize().expect("interactable right_tap_actions index parse error")]
+                        ));
+                    }
+                }
+                _ => {}
+            }
+            match &interactable_information_json["left_hold_actions"] {
+                JsonValue::Array(arr) => {
+                    for method in arr {
+                        let name = match &method["method"] {
+                            JsonValue::String(s) => {
+                                s.as_str()
+                            }
+                            JsonValue::Short(s) => {
+                                s.as_str()
+                            }
+                            _ => ""
+                        };
+                        interactable_left_hold_actions.push((
+                            String::from(name),
+                            self.script_indices[method["script"].as_usize().expect("interactable left_hold_actions index parse error")]
+                        ));
+                    }
+                }
+                _ => {}
+            }
+            match &interactable_information_json["right_hold_actions"] {
+                JsonValue::Array(arr) => {
+                    for method in arr {
+                        let name = match &method["method"] {
+                            JsonValue::String(s) => {
+                                s.as_str()
+                            }
+                            JsonValue::Short(s) => {
+                                s.as_str()
+                            }
+                            _ => ""
+                        };
+                        interactable_right_hold_actions.push((
+                            String::from(name),
+                            self.script_indices[method["script"].as_usize().expect("interactable right_hold_actions index parse error")]
+                        ));
+                    }
+                }
+                _ => {}
+            }
+
+            let temp = GUIInteractableInformation {
+                was_initially_pressed: false,
+
+                passive_actions: interactable_passive_actions,
+                hover_actions: interactable_hover_actions,
+                unhover_actions: interactable_unhover_actions,
+                left_tap_actions: interactable_left_tap_actions,
+                left_hold_actions: interactable_left_hold_actions,
+                right_tap_actions: interactable_right_tap_actions,
+                right_hold_actions: interactable_right_hold_actions,
+            };
+            interactable_information = Some(temp);
+        }
+
+        let mut hidden = false;
+        if let JsonValue::Boolean(ref hidden_json) = node_json["hidden"] {
+            hidden = *hidden_json;
+        }
+
+        let mut clipping = true;
+        if let JsonValue::Boolean(ref clipping_json) = node_json["clipping"] {
+            clipping = *clipping_json;
+        }
+
+        let mut container = Container::default();
+        if let JsonValue::Object(ref container_json) = node_json["container"] {
+            let mut container_type = "";
+            match &container_json["type"] {
+                JsonValue::String(s) => {
+                    container_type = (*s).as_str();
+                }
+                JsonValue::Short(s) => {
+                    container_type = (*s).as_str();
+                }
+                _ => ()
+            }
+
+            if let JsonValue::Object(ref container_info_json) = container_json["info"] {
+                match container_type {
+                    "Stack" => {
+                        let mut horizontal = false;
+                        if let JsonValue::Boolean(ref horizontal_json) = container_info_json["horizontal"] {
+                            horizontal = *horizontal_json;
+                        }
+
+                        let mut spacing = 0.0;
+                        if let JsonValue::Number(ref spacing_json) = container_info_json["corner_radius"] {
+                            if let Ok(v) = spacing_json.to_string().parse::<f32>() {
+                                spacing = v;
+                            }
+                        }
+
+                        let mut padding = Padding::default();
+                        if let JsonValue::Object(ref padding_json) = container_info_json["padding"] {
+                            if let JsonValue::Number(ref json) = padding_json["left"] {
+                                if let Ok(v) = json.to_string().parse::<f32>() {
+                                    padding.left = v;
+                                }
+                            }
+                            if let JsonValue::Number(ref json) = padding_json["right"] {
+                                if let Ok(v) = json.to_string().parse::<f32>() {
+                                    padding.right = v;
+                                }
+                            }
+                            if let JsonValue::Number(ref json) = padding_json["top"] {
+                                if let Ok(v) = json.to_string().parse::<f32>() {
+                                    padding.top = v;
+                                }
+                            }
+                            if let JsonValue::Number(ref json) = padding_json["bottom"] {
+                                if let Ok(v) = json.to_string().parse::<f32>() {
+                                    padding.bottom = v;
+                                }
+                            }
+                        }
+
+                        let mut packing = PackingMode::default();
+                        let mut packing_str = "";
+                        match &container_info_json["packing"] {
+                            JsonValue::String(s) => {
+                                packing_str = (*s).as_str();
+                            }
+                            JsonValue::Short(s) => {
+                                packing_str = (*s).as_str();
+                            }
+                            _ => ()
+                        }
+                        match packing_str {
+                            "End" => { packing = PackingMode::End },
+                            "Start" => { packing = PackingMode::Start },
+                            "Center" => { packing = PackingMode::Center },
+                            "SpaceExcludeEdge" => { packing = PackingMode::SpaceExcludeEdge },
+                            "SpaceIncludeEdge" => { packing = PackingMode::SpaceIncludeEdge },
+                            _ => ()
+                        }
+
+                        let mut alignment = Alignment::default();
+                        let mut alignment_str = "";
+                        match &container_info_json["alignment"] {
+                            JsonValue::String(s) => {
+                                alignment_str = (*s).as_str();
+                            }
+                            JsonValue::Short(s) => {
+                                alignment_str = (*s).as_str();
+                            }
+                            _ => ()
+                        }
+                        match alignment_str {
+                            "End" => { alignment = Alignment::End },
+                            "Start" => { alignment = Alignment::Start },
+                            "Center" => { alignment = Alignment::Center },
+                            "Stretch" => { alignment = Alignment::Stretch },
+                            _ => ()
+                        }
+
+                        container = Container::Stack {
+                            horizontal,
+                            spacing,
+                            padding,
+                            packing,
+                            alignment,
+                        }
+                    },
+                    "None" => {
+                        container = Container::None;
+                    },
+                    "Dock" => {
+                        container = Container::Dock;
+                    },
+                    _ => { panic!("unknown container type: {}", container_type) }
+                }
             }
         }
-        self.gui_images.clear();
+
+        let mut dock_mode_str = "";
+        match &node_json["dock_mode"] {
+            JsonValue::String(s) => {
+                dock_mode_str = (*s).as_str();
+            }
+            JsonValue::Short(s) => {
+                dock_mode_str = (*s).as_str();
+            }
+            _ => ()
+        }
+        let dock_mode = match dock_mode_str {
+            "Left" => { Some(DockMode::Left) },
+            "Right" => { Some(DockMode::Right) },
+            "Top" => { Some(DockMode::Top) },
+            "Bottom" => { Some(DockMode::Bottom) },
+            _ => { None }
+        };
+
+        let mut width = Size::default();
+        if let JsonValue::Object(ref width_json) = node_json["width"] {
+            let mut width_type = "";
+            match &width_json["type"] {
+                JsonValue::String(s) => {
+                    width_type = (*s).as_str();
+                }
+                JsonValue::Short(s) => {
+                    width_type = (*s).as_str();
+                }
+                _ => ()
+            }
+
+            if let JsonValue::Object(ref width_info_json) = width_json["info"] {
+                match width_type {
+                    "Absolute" => {
+                        let mut pixels = 0.0;
+                        if let JsonValue::Number(ref pixels_json) = width_info_json["pixels"] {
+                            if let Ok(v) = pixels_json.to_string().parse::<f32>() {
+                                pixels = v;
+                            }
+                        }
+
+                        width = Size::Absolute(pixels)
+                    },
+                    "Factor" => {
+                        let mut factor = 0.0;
+                        if let JsonValue::Number(ref factor_json) = width_info_json["factor"] {
+                            if let Ok(v) = factor_json.to_string().parse::<f32>() {
+                                factor = v;
+                            }
+                        }
+
+                        width = Size::Factor(factor)
+                    },
+                    "FillFactor" => {
+                        let mut factor = 0.0;
+                        if let JsonValue::Number(ref factor_json) = width_info_json["factor"] {
+                            if let Ok(v) = factor_json.to_string().parse::<f32>() {
+                                factor = v;
+                            }
+                        }
+
+                        width = Size::FillFactor(factor)
+                    },
+                    "Auto" => {
+                        width = Size::Auto
+                    },
+                    _ => { panic!("unknown width size type: {}", width_type) }
+                }
+            }
+        }
+
+        let mut height = Size::default();
+        if let JsonValue::Object(ref height_json) = node_json["height"] {
+            let mut height_type = "";
+            match &height_json["type"] {
+                JsonValue::String(s) => {
+                    height_type = (*s).as_str();
+                }
+                JsonValue::Short(s) => {
+                    height_type = (*s).as_str();
+                }
+                _ => ()
+            }
+
+            if let JsonValue::Object(ref height_info_json) = height_json["info"] {
+                match height_type {
+                    "Absolute" => {
+                        let mut pixels = 0.0;
+                        if let JsonValue::Number(ref pixels_json) = height_info_json["pixels"] {
+                            if let Ok(v) = pixels_json.to_string().parse::<f32>() {
+                                pixels = v;
+                            }
+                        }
+
+                        height = Size::Absolute(pixels)
+                    },
+                    "Factor" => {
+                        let mut factor = 0.0;
+                        if let JsonValue::Number(ref factor_json) = height_info_json["factor"] {
+                            if let Ok(v) = factor_json.to_string().parse::<f32>() {
+                                factor = v;
+                            }
+                        }
+
+                        height = Size::Factor(factor)
+                    },
+                    "FillFactor" => {
+                        let mut factor = 0.0;
+                        if let JsonValue::Number(ref factor_json) = height_info_json["factor"] {
+                            if let Ok(v) = factor_json.to_string().parse::<f32>() {
+                                factor = v;
+                            }
+                        }
+
+                        height = Size::FillFactor(factor)
+                    },
+                    "Auto" => {
+                        height = Size::Auto
+                    },
+                    _ => { panic!("unknown height size type: {}", height_type) }
+                }
+            }
+        }
+
+        let mut element_indices = Vec::new();
+        if let JsonValue::Array(ref elements_json) = node_json["elements"] {
+            for element_json in elements_json {
+                match element_json {
+                    JsonValue::Number(_) => {
+                        element_indices.push(element_json.as_usize().expect("element should be a usize if its a number"));
+                    },
+                    JsonValue::Object(_) => {
+                        element_indices.push(self.parse_element(element_json))
+                    },
+                    _ => { panic!("element should be a usize or element"); }
+                }
+            }
+        }
+
+        let mut children_indices = Vec::new();
+        if let JsonValue::Array(ref elements_json) = node_json["children"] {
+            for child_json in elements_json {
+                match child_json {
+                    JsonValue::Number(_) => {
+                        children_indices.push(unparented_true_indices[child_json.as_usize().expect("element should be a usize if its a number")]);
+                    },
+                    JsonValue::Object(_) => {
+                        children_indices.push(self.parse_node(child_json, unparented_true_indices))
+                    },
+                    _ => { panic!("element should be a usize or element"); }
+                }
+            }
+        }
+
+        let index = self.nodes.len();
+        self.nodes.push(Node {
+            index,
+            name,
+            interactable_information,
+            hidden,
+            clipping,
+            container,
+            dock_mode,
+            width,
+            height,
+            element_indices,
+            children_indices,
+
+            position: Vector::empty(),
+            scale: Vector::empty(),
+            clip_min: Vector::empty(),
+            clip_max: Vector::empty(),
+        });
+        index
+    }
+    pub unsafe fn load_from_file(&mut self, base: &VkBase, path: &str) {
+        unsafe {
+            for element in self.elements.drain(..) {
+                element.destroy(&self.device)
+            }
+        }
 
         let json = json::parse(fs::read_to_string(path).expect("failed to load json file").as_str()).expect("json parse error");
 
         let mut script_uris = Vec::new();
         for script in json["scripts"].members() {
-            if let JsonValue::String(ref uri_json) = script["uri"] {
-                let path = Path::new(uri_json);
-                script_uris.push(path);
+            match &script["uri"] {
+                JsonValue::String(s) => {
+                    script_uris.push(Path::new((*s).as_str()));
+                }
+                JsonValue::Short(s) => {
+                    script_uris.push(Path::new((*s).as_str()));
+                }
+                _ => ()
             }
         }
         let script_indices = Lua::load_scripts(script_uris).expect("script loading error");
+        self.script_indices = script_indices;
 
         let mut fonts = Vec::new();
         for font in json["fonts"].members() {
             let mut uri = String::from("engine\\resources\\fonts\\Oxygen-Regular.ttf");
-            if let JsonValue::String(ref uri_json) = font["uri"] {
-                uri = (*uri_json).parse().expect("font uri parse error");
+            match &font["uri"] {
+                JsonValue::String(s) => {
+                    uri = (*s).parse().expect("font uri parse error");
+                }
+                JsonValue::Short(s) => {
+                    uri = (*s).parse().expect("font uri parse error");
+                }
+                _ => ()
             }
 
             let mut glyph_msdf_size = 32u32;
@@ -317,41 +908,40 @@ impl GUI {
         }
         unsafe { self.set_fonts(fonts) };
 
-        let mut image_uris = Vec::new();
-        let mut image_alpha_thresholds = Vec::new();
-        for image in json["images"].members() {
-            let mut uri = None;
-            if let JsonValue::String(ref uri_json) = image["uri"] {
-                uri = Some((*uri_json).as_str());
-            }
-            image_uris.push(uri);
-
-            let mut alpha_threshold = 0.1;
-            if let JsonValue::Number(ref alpha_threshold_json) = image["alpha_threshold"] {
-                if let Ok(v) = alpha_threshold_json.to_string().parse::<f32>() {
-                    alpha_threshold = v;
-                }
-            }
-            image_alpha_thresholds.push(alpha_threshold);
+        for element_json in json["elements"].members() {
+            self.parse_element(element_json);
         }
+
+        self.nodes.clear();
+        let mut unparented_true_indices = Vec::new();
+        for node in json["nodes"].members() {
+            unparented_true_indices.push(unparented_true_indices.len());
+            self.parse_node(node, &unparented_true_indices);
+        }
+
         unsafe {
-            let uris: Vec<PathBuf> = image_uris.iter().map(|uri| { PathBuf::from(uri.expect("gui image did not have uri")) }).collect();
+            let uris: Vec<PathBuf> = self.elements.iter()
+                .filter_map(|element| { match element {
+                    Element::Image { uri, ..} => { Some(PathBuf::from(uri)) }
+                    _ => None
+                }}).collect();
             let textures = base.load_textures_batched(uris.as_slice(), true);
-            let gui_images: Vec<GUIImage> = textures.iter().enumerate().map(|(i, texture)| {
-                GUIImage {
-                    image: texture.1.0,
-                    image_view: texture.0.0,
-                    memory: texture.1.1,
-                    sampler: texture.0.1,
 
-                    alpha_threshold: image_alpha_thresholds[i]
+            for element in self.elements.iter_mut() {
+                if let Element::Image {
+                    index,
+                    image_view,
+                    image,
+                    memory,
+                    sampler,
+                    ..
+                } = element {
+                    let tex = textures[*index];
+                    (*image, *image_view, *memory, *sampler) = (tex.1.0, tex.0.0, tex.1.1, tex.0.1)
                 }
-            }).collect();
-
-            self.gui_images = gui_images;
+            }
 
             self.update_descriptors(base);
-
         };
 
         let mut guis = Vec::new();
@@ -359,549 +949,26 @@ impl GUI {
             let mut nodes = Vec::new();
             if let JsonValue::Array(ref nodes_json) = gui["nodes"] {
                 for node_json in nodes_json {
-                    nodes.push(node_json.as_usize().expect("node child index parse error"));
+                    nodes.push(
+                        unparented_true_indices[node_json.as_usize().expect("node child index parse error")]
+                    );
                 }
             }
             guis.push(nodes);
         }
-        self.gui_root_node_indices = guis[0].clone();
-
-        let mut gui_texts = Vec::new();
-        for text in json["texts"].members() {
-            let mut text_font = 0usize;
-            let mut text_text = "placeholder text";
-            let mut text_font_size = 32.0;
-            let mut text_newline_size = 1720.0;
-
-            if let JsonValue::Object(ref text_information_json) = text["text_information"] {
-                if let JsonValue::Number(ref text_information_font_json) = text_information_json["font"] {
-                    if let Ok(v) = text_information_font_json.to_string().parse::<usize>() {
-                        text_font = v;
-                    }
-                }
-                match &text_information_json["text"] {
-                    JsonValue::String(s) => {
-                        text_text = s.as_str();
-                    }
-                    JsonValue::Short(s) => {
-                        text_text = s.as_str();
-                    }
-                    _ => {}
-                }
-                if let JsonValue::Number(ref text_information_font_size_json) = text_information_json["font_size"] {
-                    if let Ok(v) = text_information_font_size_json.to_string().parse::<f32>() {
-                        text_font_size = v;
-                    }
-                }
-                if let JsonValue::Number(ref text_information_newline_distance_json) = text_information_json["newline_distance"] {
-                    if let Ok(v) = text_information_newline_distance_json.to_string().parse::<f32>() {
-                        text_newline_size = v;
-                    }
-                }
-            }
-
-            let mut position = Vector::empty();
-            if let JsonValue::Array(ref position_json) = text["position"] {
-                if position_json.len() >= 2 {
-                    position = Vector::new2(
-                        position_json[0].as_f32().unwrap(),
-                        position_json[1].as_f32().unwrap(),
-                    );
-                }
-            }
-
-            let mut scale = Vector::empty();
-            if let JsonValue::Array(ref scale_json) = text["scale"] {
-                if scale_json.len() >= 2 {
-                    scale = Vector::new2(
-                        scale_json[0].as_f32().unwrap(),
-                        scale_json[1].as_f32().unwrap(),
-                    );
-                }
-            }
-
-            let mut absolute_scale = (false, false);
-            if let JsonValue::Array(ref absolute_scale_json) = text["absolute_scale"] {
-                if absolute_scale_json.len() >= 2 {
-                    absolute_scale = (
-                        absolute_scale_json[0].as_bool().unwrap(),
-                        absolute_scale_json[1].as_bool().unwrap(),
-                    )
-                }
-            }
-
-            let mut absolute_position = (false, false);
-            if let JsonValue::Array(ref absolute_position_json) = text["absolute_position"] {
-                if absolute_position_json.len() >= 2 {
-                    absolute_position = (
-                        absolute_position_json[0].as_bool().unwrap(),
-                        absolute_position_json[1].as_bool().unwrap(),
-                    )
-                }
-            }
-
-            let mut additive_scale = (false, false);
-            if let JsonValue::Array(ref additive_scale_json) = text["additive_scale"] {
-                if additive_scale_json.len() >= 2 {
-                    additive_scale = (
-                        additive_scale_json[0].as_bool().unwrap(),
-                        additive_scale_json[1].as_bool().unwrap(),
-                    )
-                }
-            }
-
-            let mut anchor_point = AnchorPoint::default();
-            match &text["anchor_point"] {
-                JsonValue::String(s) => {
-                    anchor_point = AnchorPoint::from_string(s.as_str());
-                }
-                JsonValue::Short(s) => {
-                    anchor_point = AnchorPoint::from_string(s.as_str());
-                }
-                _ => ()
-            }
-
-            let mut color = Vector::empty();
-            if let JsonValue::Array(ref color_json) = text["color"] {
-                if color_json.len() >= 4 {
-                    color = Vector::new4(
-                        color_json[0].as_f32().unwrap(),
-                        color_json[1].as_f32().unwrap(),
-                        color_json[2].as_f32().unwrap(),
-                        color_json[3].as_f32().unwrap(),
-                    );
-                }
-            }
-
-            gui_texts.push(GUIText {
-                text_information: Some(TextInformation::new(self.fonts[text_font].clone())
-                    .text(text_text)
-                    .font_size(text_font_size)
-                    .newline_distance(text_newline_size)
-                    .build_set_buffers(base)),
-                position,
-                scale,
-                absolute_position,
-                absolute_scale,
-                additive_scale,
-                anchor_point,
-                color,
-            })
-        }
-        self.gui_texts = gui_texts;
-
-        let mut gui_quads = Vec::new();
-        for quad in json["quads"].members() {
-            let mut position = Vector::empty();
-            if let JsonValue::Array(ref position_json) = quad["position"] {
-                if position_json.len() >= 2 {
-                    position = Vector::new2(
-                        position_json[0].as_f32().unwrap(),
-                        position_json[1].as_f32().unwrap(),
-                    );
-                }
-            }
-
-            let mut scale = Vector::fill(1.0);
-            if let JsonValue::Array(ref scale_json) = quad["scale"] {
-                if scale_json.len() >= 2 {
-                    scale = Vector::new2(
-                        scale_json[0].as_f32().unwrap(),
-                        scale_json[1].as_f32().unwrap(),
-                    );
-                }
-            }
-
-            let mut absolute_scale = (false, false);
-            if let JsonValue::Array(ref absolute_scale_json) = quad["absolute_scale"] {
-                if absolute_scale_json.len() >= 2 {
-                    absolute_scale = (
-                        absolute_scale_json[0].as_bool().unwrap(),
-                        absolute_scale_json[1].as_bool().unwrap(),
-                    )
-                }
-            }
-
-            let mut absolute_position = (false, false);
-            if let JsonValue::Array(ref absolute_position_json) = quad["absolute_position"] {
-                if absolute_position_json.len() >= 2 {
-                    absolute_position = (
-                        absolute_position_json[0].as_bool().unwrap(),
-                        absolute_position_json[1].as_bool().unwrap(),
-                    )
-                }
-            }
-
-            let mut additive_scale = (false, false);
-            if let JsonValue::Array(ref additive_scale_json) = quad["additive_scale"] {
-                if additive_scale_json.len() >= 2 {
-                    additive_scale = (
-                        additive_scale_json[0].as_bool().unwrap(),
-                        additive_scale_json[1].as_bool().unwrap(),
-                    )
-                }
-            }
-
-            let mut anchor_point = AnchorPoint::default();
-            match &quad["anchor_point"] {
-                JsonValue::String(s) => {
-                    anchor_point = AnchorPoint::from_string(s.as_str());
-                }
-                JsonValue::Short(s) => {
-                    anchor_point = AnchorPoint::from_string(s.as_str());
-                }
-                _ => ()
-            }
-
-            let mut color = Vector::empty();
-            if let JsonValue::Array(ref color_json) = quad["color"] {
-                if color_json.len() >= 4 {
-                    color = Vector::new4(
-                        color_json[0].as_f32().unwrap(),
-                        color_json[1].as_f32().unwrap(),
-                        color_json[2].as_f32().unwrap(),
-                        color_json[3].as_f32().unwrap(),
-                    );
-                }
-            }
-
-            let mut corner_radius = 0.0;
-            if let JsonValue::Number(ref corner_radius_json) = quad["corner_radius"] {
-                if let Ok(v) = corner_radius_json.to_string().parse::<f32>() {
-                    corner_radius = v;
-                }
-            }
-
-            let mut image = None;
-            if let JsonValue::Number(ref image_json) = quad["image"] {
-                if let Ok(v) = image_json.to_string().parse::<i32>() {
-                    image = Some(v);
-                }
-            }
-
-            gui_quads.push(GUIQuad {
-                position,
-                scale,
-                absolute_position,
-                absolute_scale,
-                additive_scale,
-                anchor_point,
-                color,
-                corner_radius,
-                image
-            })
-        }
-        self.gui_quads = gui_quads;
-
-        let mut nodes = Vec::new();
-        for node in json["nodes"].members() {
-            let mut name = String::from("unnamed node");
-            if let JsonValue::String(ref name_json) = node["name"] {
-                name = (*name_json).parse().expect("node name parse error");
-            }
-
-            let mut interactable_information = None;
-            if let JsonValue::Object(ref interactable_information_json) = node["interactable_information"] {
-                let mut interactable_passive_actions = Vec::new();
-                let mut interactable_hover_actions = Vec::new();
-                let mut interactable_unhover_actions = Vec::new();
-                let mut interactable_left_tap_actions = Vec::new();
-                let mut interactable_right_tap_actions = Vec::new();
-                let mut interactable_left_hold_actions = Vec::new();
-                let mut interactable_right_hold_actions = Vec::new();
-
-                match &interactable_information_json["passive_actions"] {
-                    JsonValue::Array(arr) => {
-                        for method in arr {
-                            let name = match &method["method"] {
-                                JsonValue::String(s) => {
-                                    s.as_str()
-                                }
-                                JsonValue::Short(s) => {
-                                    s.as_str()
-                                }
-                                _ => ""
-                            };
-                            interactable_passive_actions.push((
-                                String::from(name),
-                                script_indices[method["script"].as_usize().expect("interactable passive_action index parse error")]
-                            ));
-                        }
-                    }
-                    _ => {}
-                }
-                match &interactable_information_json["hover_actions"] {
-                    JsonValue::Array(arr) => {
-                        for method in arr {
-                            let name = match &method["method"] {
-                                JsonValue::String(s) => {
-                                    s.as_str()
-                                }
-                                JsonValue::Short(s) => {
-                                    s.as_str()
-                                }
-                                _ => ""
-                            };
-                            interactable_hover_actions.push((
-                                String::from(name),
-                                script_indices[method["script"].as_usize().expect("interactable hover_action index parse error")]
-                            ));
-                        }
-                    }
-                    _ => {}
-                }
-                match &interactable_information_json["unhover_actions"] {
-                    JsonValue::Array(arr) => {
-                        for method in arr {
-                            let name = match &method["method"] {
-                                JsonValue::String(s) => {
-                                    s.as_str()
-                                }
-                                JsonValue::Short(s) => {
-                                    s.as_str()
-                                }
-                                _ => ""
-                            };
-                            interactable_unhover_actions.push((
-                                String::from(name),
-                                script_indices[method["script"].as_usize().expect("interactable unhover_action index parse error")]
-                            ));
-                        }
-                    }
-                    _ => {}
-                }
-                match &interactable_information_json["left_tap_actions"] {
-                    JsonValue::Array(arr) => {
-                        for method in arr {
-                            let name = match &method["method"] {
-                                JsonValue::String(s) => {
-                                    s.as_str()
-                                }
-                                JsonValue::Short(s) => {
-                                    s.as_str()
-                                }
-                                _ => ""
-                            };
-                            interactable_left_tap_actions.push((
-                                String::from(name),
-                                script_indices[method["script"].as_usize().expect("interactable left_tap_action index parse error")]
-                            ));
-                        }
-                    }
-                    _ => {}
-                }
-                match &interactable_information_json["right_tap_actions"] {
-                    JsonValue::Array(arr) => {
-                        for method in arr {
-                            let name = match &method["method"] {
-                                JsonValue::String(s) => {
-                                    s.as_str()
-                                }
-                                JsonValue::Short(s) => {
-                                    s.as_str()
-                                }
-                                _ => ""
-                            };
-                            interactable_right_tap_actions.push((
-                                String::from(name),
-                                script_indices[method["script"].as_usize().expect("interactable right_tap_actions index parse error")]
-                            ));
-                        }
-                    }
-                    _ => {}
-                }
-                match &interactable_information_json["left_hold_actions"] {
-                    JsonValue::Array(arr) => {
-                        for method in arr {
-                            let name = match &method["method"] {
-                                JsonValue::String(s) => {
-                                    s.as_str()
-                                }
-                                JsonValue::Short(s) => {
-                                    s.as_str()
-                                }
-                                _ => ""
-                            };
-                            interactable_left_hold_actions.push((
-                                String::from(name),
-                                script_indices[method["script"].as_usize().expect("interactable left_hold_actions index parse error")]
-                            ));
-                        }
-                    }
-                    _ => {}
-                }
-                match &interactable_information_json["right_hold_actions"] {
-                    JsonValue::Array(arr) => {
-                        for method in arr {
-                            let name = match &method["method"] {
-                                JsonValue::String(s) => {
-                                    s.as_str()
-                                }
-                                JsonValue::Short(s) => {
-                                    s.as_str()
-                                }
-                                _ => ""
-                            };
-                            interactable_right_hold_actions.push((
-                                String::from(name),
-                                script_indices[method["script"].as_usize().expect("interactable right_hold_actions index parse error")]
-                            ));
-                        }
-                    }
-                    _ => {}
-                }
-
-                let temp = GUIInteractableInformation {
-                    was_initially_pressed: false,
-
-                    passive_actions: interactable_passive_actions,
-                    hover_actions: interactable_hover_actions,
-                    unhover_actions: interactable_unhover_actions,
-                    left_tap_actions: interactable_left_tap_actions,
-                    left_hold_actions: interactable_left_hold_actions,
-                    right_tap_actions: interactable_right_tap_actions,
-                    right_hold_actions: interactable_right_hold_actions,
-                };
-                interactable_information = Some(temp);
-            }
-
-            let mut hidden = false;
-            if let JsonValue::Boolean(ref hidden_json) = node["hidden"] {
-                hidden = *hidden_json;
-            }
-
-            let mut children_indices = Vec::new();
-            if let JsonValue::Array(ref children_json) = node["children"] {
-                for child_json in children_json {
-                    children_indices.push(child_json.as_usize().expect("node child index parse error"));
-                }
-            }
-
-            let mut position = Vector::empty();
-            if let JsonValue::Array(ref position_json) = node["position"] {
-                if position_json.len() >= 2 {
-                    position = Vector::new2(
-                        position_json[0].as_f32().unwrap(),
-                        position_json[1].as_f32().unwrap(),
-                    );
-                }
-            }
-
-            let mut scale = Vector::empty();
-            if let JsonValue::Array(ref scale_json) = node["scale"] {
-                if scale_json.len() >= 2 {
-                    scale = Vector::new2(
-                        scale_json[0].as_f32().unwrap(),
-                        scale_json[1].as_f32().unwrap(),
-                    );
-                }
-            }
-
-            let mut clip_min = Vector::empty();
-            if let JsonValue::Array(ref clip_json) = node["clip_min"] {
-                if clip_json.len() >= 2 {
-                    clip_min = Vector::new2(
-                        clip_json[0].as_f32().unwrap(),
-                        clip_json[1].as_f32().unwrap(),
-                    );
-                }
-            }
-
-            let mut clip_max = Vector::fill(1.0);
-            if let JsonValue::Array(ref clip_json) = node["clip_max"] {
-                if clip_json.len() >= 2 {
-                    clip_max = Vector::new2(
-                        clip_json[0].as_f32().unwrap(),
-                        clip_json[1].as_f32().unwrap(),
-                    );
-                }
-            }
-
-            let mut absolute_scale = (false, false);
-            if let JsonValue::Array(ref absolute_scale_json) = node["absolute_scale"] {
-                if absolute_scale_json.len() >= 2 {
-                    absolute_scale = (
-                        absolute_scale_json[0].as_bool().unwrap(),
-                        absolute_scale_json[1].as_bool().unwrap(),
-                    )
-                }
-            }
-
-            let mut absolute_position = (false, false);
-            if let JsonValue::Array(ref absolute_position_json) = node["absolute_position"] {
-                if absolute_position_json.len() >= 2 {
-                    absolute_position = (
-                        absolute_position_json[0].as_bool().unwrap(),
-                        absolute_position_json[1].as_bool().unwrap(),
-                    )
-                }
-            }
-
-            let mut additive_scale = (false, false);
-            if let JsonValue::Array(ref additive_scale_json) = node["additive_scale"] {
-                if additive_scale_json.len() >= 2 {
-                    additive_scale = (
-                        additive_scale_json[0].as_bool().unwrap(),
-                        additive_scale_json[1].as_bool().unwrap(),
-                    )
-                }
-            }
-
-            let mut anchor_point = AnchorPoint::default();
-            match &node["anchor_point"] {
-                JsonValue::String(s) => {
-                    anchor_point = AnchorPoint::from_string(s.as_str());
-                }
-                JsonValue::Short(s) => {
-                    anchor_point = AnchorPoint::from_string(s.as_str());
-                }
-                _ => ()
-            }
-
-            let mut texts = Vec::new();
-            if let JsonValue::Array(ref text_indices_json) = node["texts"] {
-                for text_index in text_indices_json {
-                    texts.push(text_index.as_usize().expect("node text index parse error"));
-                }
-            }
-
-            let mut quads = Vec::new();
-            if let JsonValue::Array(ref quad_indices_json) = node["quads"] {
-                for quad_index in quad_indices_json {
-                    quads.push(quad_index.as_usize().expect("node quad index parse error"));
-                }
-            }
-
-            nodes.push(GUINode {
-                index: nodes.len(),
-                name,
-                interactable_information,
-                hidden,
-                position,
-                scale,
-                clip_min,
-                clip_max,
-                children_indices,
-                absolute_position,
-                absolute_scale,
-                additive_scale,
-                anchor_point,
-                text_indices: texts,
-                quad_indices: quads,
-            })
-        }
-        self.gui_nodes = nodes;
-        self.script_indices = script_indices;
+        self.root_node_indices = guis[0].clone();
     }
     unsafe fn update_descriptors(&self, base: &VkBase) {
         let mut image_infos: Vec<vk::DescriptorImageInfo> = Vec::with_capacity(1024);
 
-        for texture in &self.gui_images {
-            image_infos.push(vk::DescriptorImageInfo {
-                image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                image_view: texture.image_view,
-                sampler: texture.sampler,
-            })
+        for element in self.elements.iter() {
+            if let Element::Image { image_view, sampler, ..} = element {
+                image_infos.push(vk::DescriptorImageInfo {
+                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                    image_view: *image_view,
+                    sampler: *sampler,
+                })
+            }
         }
         let missing = 1024 - image_infos.len();
         for _ in 0..missing {
@@ -927,20 +994,22 @@ impl GUI {
     }
 
     pub fn add_text(&mut self, text: String) {
-        let new_text = GUIText {
+        let new_text = Element::Text {
             text_information: Some(TextInformation::new(self.fonts[0].clone())
                 .text(text.as_str())
                 .font_size(17.0)
                 .newline_distance(100.0)),
-            ..Default::default()
+            font_index: 0,
         };
-        self.new_texts.push(self.gui_texts.len());
-        self.gui_texts.push(new_text);
+        self.new_texts.push(self.elements.len());
+        self.elements.push(new_text);
     }
     pub unsafe fn initialize_new_texts(&mut self, base: &VkBase) {
         for new_text in self.new_texts.drain(..) {
-            if let Some(info) = self.gui_texts[new_text].text_information.as_mut() {
-                info.set_buffers(base);
+            if let Element::Text { text_information, ..} = &mut self.elements[new_text] {
+                if let Some(info) = text_information {
+                    info.set_buffers(base);
+                }
             }
         }
     }
@@ -1150,173 +1219,212 @@ impl GUI {
     pub unsafe fn destroy(&mut self) { unsafe {
         self.text_renderer.destroy();
         self.quad_renderpass.destroy();
-        for text in &mut self.gui_texts {
-            text.text_information.as_mut().unwrap().destroy();
-        }
         for font in &self.fonts {
             font.destroy();
         }
-        for image in &self.gui_images {
-            image.destroy(&self.device)
+        for element in self.elements.iter() {
+            element.destroy(&self.device)
         }
     } }
 }
 
 
 #[derive(Clone)]
-enum ContainerType {
-    VerticalStack {
+pub enum Container {
+    Stack {
+        horizontal: bool, // else vertical
         spacing: f32,
         padding: Padding,
-        packing: Packing,
-        alignment: Alignment,
-    },
-    HorizontalStack {
-        spacing: f32,
-        padding: f32,
+        packing: PackingMode,
         alignment: Alignment,
     },
     Dock,
     None,
 }
+impl Default for Container {
+    fn default() -> Self {
+        Container::None
+    }
+}
 #[derive(Clone)]
-enum Packing {
+pub enum PackingMode {
     Start, // top if vertical,
     End, // bottom if vertical
     Center,
     SpaceIncludeEdge,
     SpaceExcludeEdge,
 }
-enum StackDirection {
+impl Default for PackingMode {
+    fn default() -> Self {
+        PackingMode::Start
+    }
+}
+pub enum StackDirection {
     Reverse,
     Normal,
     Alternating
 }
+impl Default for StackDirection {
+    fn default() -> Self {
+        StackDirection::Normal
+    }
+}
 #[derive(Clone)]
-struct Padding {
+pub struct Padding {
     left: f32,
     right: f32,
     top: f32,
     bottom: f32,
 }
+impl Default for Padding {
+    fn default() -> Padding {
+        Padding {
+            left: 0.0,
+            right: 0.0,
+            top: 0.0,
+            bottom: 0.0,
+        }
+    }
+}
 #[derive(Clone)]
-enum Alignment {
+pub enum Alignment {
     Start,
     Center,
     End,
     Stretch,
 }
-enum DockMode {
+impl Default for Alignment {
+    fn default() -> Alignment {
+        Alignment::Start
+    }
+}
+#[derive(Clone)]
+pub enum DockMode {
     Left,
     Right,
     Top,
     Bottom,
 }
-
-#[derive(Clone)]
-#[derive(Debug)]
-pub enum AnchorPoint {
-    TopLeft,
-    TopMiddle,
-    TopRight,
-    BottomLeft,
-    BottomMiddle,
-    BottomRight,
-    Right,
-    Left,
-    Center
+impl Default for DockMode {
+    fn default() -> DockMode {
+        DockMode::Top
+    }
 }
-impl AnchorPoint {
-    pub fn from_string(string: &str) -> AnchorPoint {
-        match string {
-            "top_left" => AnchorPoint::TopLeft,
-            "top_middle" => AnchorPoint::TopMiddle,
-            "top_right" => AnchorPoint::TopRight,
-            "bottom_left" => AnchorPoint::BottomLeft,
-            "bottom_middle" => AnchorPoint::BottomMiddle,
-            "bottom_right" => AnchorPoint::BottomRight,
-            "right" => AnchorPoint::Right,
-            "left" => AnchorPoint::Left,
-            "center" => AnchorPoint::Center,
-            _ => AnchorPoint::default()
+#[derive(Clone)]
+pub enum Size {
+    Absolute(f32), // pixels
+    Factor(f32), // factor of parent size
+    FillFactor(f32), // grows to fill, weighted by value
+    Auto, // fit content
+}
+impl Default for Size {
+    fn default() -> Size {
+        Size::FillFactor(1.0)
+    }
+}
+pub enum Element {
+    Quad {
+        color: Vector,
+        corner_radius: f32,
+    },
+    Image {
+        index: usize,
+        uri: String,
+        alpha_threshold: f32,
+        additive_tint: Vector,
+        multiplicative_tint: Vector,
+
+        image_view: vk::ImageView,
+        sampler: vk::Sampler,
+        image: vk::Image,
+        memory: vk::DeviceMemory,
+    },
+    Text {
+        text_information: Option<TextInformation>,
+        font_index: usize,
+    }
+}
+impl Element {
+    unsafe fn destroy(&self, device: &ash::Device) {
+        match self {
+            Element::Image {
+                image_view,
+                sampler,
+                image,
+                memory,
+                ..
+            } => {
+                unsafe {
+                    device.destroy_sampler(*sampler, None);
+                    device.destroy_image_view(*image_view, None);
+                    device.destroy_image(*image, None);
+                    device.free_memory(*memory, None);
+                }
+            },
+            Element::Text {
+                text_information,
+                ..
+            } => {
+                if let Some(text_information) = text_information {
+                    text_information.destroy();
+                }
+            }
+            _ => ()
         }
     }
-    pub fn offset_factor(&self) -> Vector {
-        let (rx, ry) = match self {
-            AnchorPoint::BottomLeft   => (0.0, 0.0),
-            AnchorPoint::BottomMiddle => (0.5, 0.0),
-            AnchorPoint::BottomRight => (1.0, 0.0),
-            AnchorPoint::TopLeft => (0.0, 1.0),
-            AnchorPoint::TopMiddle => (0.5, 1.0),
-            AnchorPoint::TopRight => (1.0, 1.0),
-            AnchorPoint::Left => (0.0, 0.5),
-            AnchorPoint::Right => (1.0, 0.5),
-            AnchorPoint::Center => (0.5, 0.5),
-        };
-        Vector::new2(rx, ry)
+}
+impl Default for Element {
+    fn default() -> Element {
+        Element::Quad {
+            color: Vector::fill(1.0),
+            corner_radius: 5.0,
+        }
     }
 }
-impl Default for AnchorPoint {
-    fn default() -> Self { AnchorPoint::BottomLeft }
-}
 
-struct GUIImage {
-    image_view: vk::ImageView,
-    sampler: vk::Sampler,
-    image: vk::Image,
-    memory: vk::DeviceMemory,
-
-    alpha_threshold: f32,
-}
-impl GUIImage {
-    unsafe fn destroy(&self, device: &ash::Device) { unsafe {
-        device.destroy_sampler(self.sampler, None);
-        device.destroy_image_view(self.image_view, None);
-        device.destroy_image(self.image, None);
-        device.free_memory(self.memory, None);
-    } }
-}
-
-/**
-* Position and scale are relative and normalized.
-*/
 #[derive(Clone)]
-pub struct GUINode {
+pub struct Node {
     pub index: usize,
     pub name: String,
     pub interactable_information: Option<GUIInteractableInformation>,
     pub hidden: bool,
+    pub clipping: bool, // clips to parent, recursively affects clipping enabled children
+
+    pub container: Container,
+    pub dock_mode: Option<DockMode>,
+    pub width: Size,
+    pub height: Size,
+
+    pub children_indices: Vec<usize>,
+    pub element_indices: Vec<usize>,
+
+    // computed during format pass
     pub position: Vector,
     pub scale: Vector,
     pub clip_min: Vector,
     pub clip_max: Vector,
-    pub children_indices: Vec<usize>,
-    pub absolute_position: (bool, bool),
-    pub absolute_scale: (bool, bool),
-    pub additive_scale: (bool, bool),
-    pub anchor_point: AnchorPoint,
-
-    pub text_indices: Vec<usize>,
-    pub quad_indices: Vec<usize>
 }
-impl GUINode {
+impl Node {
     pub fn new(index: usize) -> Self {
         Self {
             index,
             name: String::from(""),
             interactable_information: None,
             hidden: false,
+            clipping: true,
+
+            container: Container::Dock,
+            dock_mode: None,
+            width: Size::FillFactor(1.0),
+            height: Size::FillFactor(1.0),
+
             position: Vector::empty(),
             scale: Vector::empty(),
             clip_min: Vector::empty(),
-            clip_max: Vector::fill(1.0),
+            clip_max: Vector::empty(),
+
             children_indices: Vec::new(),
-            absolute_position: (false, false),
-            absolute_scale: (false, false),
-            additive_scale: (false, false),
-            anchor_point: AnchorPoint::default(),
-            text_indices: Vec::new(),
-            quad_indices: Vec::new(),
+            element_indices: Vec::new(),
         }
     }
 }
@@ -1343,71 +1451,6 @@ impl Default for GUIInteractableInformation {
             left_tap_actions: Vec::new(),
             right_hold_actions: Vec::new(),
             right_tap_actions: Vec::new(),
-        }
-    }
-}
-
-/**
-* Position and scale are relative and normalized.
-*/
-#[derive(Clone)]
-pub struct GUIQuad {
-    pub position: Vector,
-    pub scale: Vector,
-    pub absolute_position: (bool, bool),
-    pub absolute_scale: (bool, bool),
-    pub additive_scale: (bool, bool),
-    pub anchor_point: AnchorPoint,
-    pub color: Vector,
-    pub corner_radius: f32,
-    image: Option<i32>
-}
-impl Default for GUIQuad {
-    fn default() -> Self {
-        GUIQuad {
-            position: Default::default(),
-            scale: Vector::fill(1.0),
-            absolute_position: (false, false),
-            absolute_scale: (false, false),
-            additive_scale: (false, false),
-            anchor_point: AnchorPoint::default(),
-            color: Vector::fill(0.0),
-            corner_radius: 0.0,
-            image: None
-        }
-    }
-}
-
-pub struct GUIText {
-    pub text_information: Option<TextInformation>,
-
-    pub position: Vector,
-    pub scale: Vector,
-    pub absolute_position: (bool, bool),
-    pub absolute_scale: (bool, bool),
-    pub additive_scale: (bool, bool),
-    pub anchor_point: AnchorPoint,
-    pub color: Vector,
-}
-impl GUIText {
-    pub fn update_text(&mut self, text: &str) {
-        let command_buffer = get_command_buffer();
-
-        self.text_information.as_mut().unwrap().update_text(text);
-        self.text_information.as_mut().unwrap().update_buffers_all_frames(command_buffer);
-    }
-}
-impl Default for GUIText {
-    fn default() -> Self {
-        GUIText {
-            text_information: None,
-            position: Vector::fill(0.0),
-            scale: Vector::fill(1.0),
-            absolute_position: (false, false),
-            absolute_scale: (false, false),
-            additive_scale: (false, false),
-            anchor_point: AnchorPoint::default(),
-            color: Vector::fill(1.0),
         }
     }
 }

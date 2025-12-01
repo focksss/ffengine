@@ -63,7 +63,7 @@ impl Lua {
 
             lua.set_app_data(engine.clone());
 
-            LuaAnchorPoint::register_to_lua(lua)?;
+            // LuaAnchorPoint::register_to_lua(lua)?;
             LuaCursorIcon::register_to_lua(lua)?;
             LuaResizeDirection::register_to_lua(lua)?;
             LuaMouseButton::register_to_lua(lua)?;
