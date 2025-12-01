@@ -43,6 +43,7 @@ MovementMode = {
         ---@field get_image fun(self:GUI, index:integer):GUIImage
         ---@field destroy_node fun(self:GUI, index:integer):nil
         ---@field num_elements integer
+        ---@field num_nodes integer
         ---@field add_node fun(self:GUI):nil
         ---@field add_quad fun(self:GUI):nil
         ---@field add_text fun(self:GUI, initial_text:string):nil
@@ -64,6 +65,7 @@ MovementMode = {
             ---@field add_child_index fun(self:GUINode, index:integer):nil
             ---@field remove_child_index_at fun(self:GUINode, index:integer):nil
             ---@field children_indices integer[]
+            ---@field set_anchor_point fun(self:GUINode, anchor_point:integer):nil
             ---@field add_left_tap_action fun(self:GUINode, method:string, script:integer):nil
             ---@field index integer
             ---@field get_child fun(self:GUINode, child_index:integer):GUINode
@@ -77,6 +79,8 @@ MovementMode = {
             ---@field clip_max Vector
             ---@field set_width fun(self:GUINode, size_type:string, value:number):nil
             ---@field set_height fun(self:GUINode, size_type:string, value:number):nil
+            ---@field set_x fun(self:GUINode, size_type:string, value:number):nil
+            ---@field set_y fun(self:GUINode, size_type:string, value:number):nil
 
                 ---@class GUIQuad
                 ---@field color Vector
@@ -196,26 +200,26 @@ ResizeDirection = {
 
 ---@class AnchorPoint
 ---@field BottomLeft integer
----@field BottomMiddle integer
+---@field BottomCenter integer
 ---@field BottomRight integer
----@field Right integer
+---@field CenterRight integer
 ---@field TopRight integer
----@field TopMiddle integer
+---@field TopCenter integer
 ---@field TopLeft integer
----@field Left integer
+---@field CenterLeft integer
 ---@field Center integer
 AnchorPoint = AnchorPoint
 
 AnchorPoint = {
-    BottomLeft = 0,
-    BottomMiddle = 1,
-    BottomRight = 2,
-    Right = 3,
-    TopRight = 4,
-    TopMiddle = 5,
-    TopLeft = 6,
-    Left = 7,
-    Center = 8,
+    TopLeft = 0,
+    TopCenter = 1,
+    TopRight = 2,
+    CenterLeft = 3,
+    Center = 4,
+    CenterRight = 5,
+    BottomLeft = 6,
+    BottomCenter = 7,
+    BottomRight = 8,
 }
 
 

@@ -11,6 +11,7 @@ use crate::math::Vector;
 use crate::scene::physics::player::MovementMode;
 use crate::scripting::engine_api::client_api::client_api::{LuaCursorIcon, LuaKeyCode, LuaMouseButton, LuaResizeDirection};
 use crate::scripting::engine_api::engine_api;
+use crate::scripting::engine_api::gui_api::gui_api::LuaAnchorPoint;
 
 thread_local! {
     static LUA: RefCell<Option<Lua>> = RefCell::new(None);
@@ -62,7 +63,7 @@ impl Lua {
 
             lua.set_app_data(engine.clone());
 
-            // LuaAnchorPoint::register_to_lua(lua)?;
+            LuaAnchorPoint::register_to_lua(lua)?;
             LuaCursorIcon::register_to_lua(lua)?;
             LuaResizeDirection::register_to_lua(lua)?;
             LuaMouseButton::register_to_lua(lua)?;

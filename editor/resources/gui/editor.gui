@@ -382,22 +382,6 @@
                       "anchor": "TopLeft"
                     }
                   },
-                  "container": {
-                    "type": "Stack",
-                    "info": {
-                      "horizontal": false,
-                      "spacing": 0.0,
-                      "padding": {
-                        "left": 5.0,
-                        "right": 5.0,
-                        "top": 0.0,
-                        "bottom": 0.0
-                      },
-                      "packing": "Start",
-                      "stack_direction": "Normal",
-                      "alignment": "Start"
-                    }
-                  },
                   "width": {
                     "type": "Factor",
                     "info": {
@@ -409,16 +393,7 @@
                     "info": {
                       "factor": 10.0
                     }
-                  },
-                  "elements": [
-                    {
-                      "type": "Quad",
-                      "info": {
-                        "color": [1.0, 0.3, 0.3, 0.8],
-                        "corner_radius": 5.0
-                      }
-                    }
-                  ]
+                  }
                 }
               ]
             },

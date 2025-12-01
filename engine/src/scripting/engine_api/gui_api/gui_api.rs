@@ -4,7 +4,7 @@ use std::sync::Arc;
 use mlua::{FromLua, IntoLua, Lua, UserData, UserDataFields, UserDataMethods, Value};
 use mlua::prelude::LuaError;
 use crate::engine::{get_command_buffer, EngineRef};
-use crate::gui::gui::{Element, GUIInteractableInformation, Node, Size, GUI};
+use crate::gui::gui::{AnchorPoint, Element, GUIInteractableInformation, Node, Offset, ParentRelation, Size, GUI};
 use crate::math::Vector;
 use crate::scripting::lua_engine::RegisterToLua;
 
@@ -429,6 +429,86 @@ impl UserData for GUINodePointer {
             };
             Ok(())
         });
+
+        methods.add_method_mut("set_anchor_point", |lua, this, val: LuaAnchorPoint| {
+            with_gui_mut!(lua, this.gui_index => gui);
+            let node = &mut gui.nodes[this.index];
+
+            let new_relation = ParentRelation::Independent {
+                relative: true,
+                anchor: val.0.clone(),
+                offset_x: Offset::Pixels(0.0),
+                offset_y: Offset::Pixels(0.0),
+            };
+
+            match &mut node.parent_relation {
+                Some(ParentRelation::Independent { anchor, .. }) => {
+                    *anchor = val.0;
+                }
+                Some(_) | None => {
+                    node.parent_relation = Some(new_relation);
+                }
+            }
+
+            Ok(())
+        });
+
+        methods.add_method_mut("set_x", |lua, this, vals: (String, f32)| {
+            with_gui_mut!(lua, this.gui_index => gui);
+            let node = &mut gui.nodes[this.index];
+
+            let offset = match vals.0.as_str() {
+                "Pixels" => Offset::Pixels(vals.1),
+                "Factor" => Offset::Factor(vals.1),
+                _ => panic!("Invalid offset_type: {}", vals.1)
+            };
+
+            let new_relation = ParentRelation::Independent {
+                relative: true,
+                anchor: AnchorPoint::default(),
+                offset_x: offset.clone(),
+                offset_y: Offset::Pixels(0.0),
+            };
+
+            match &mut node.parent_relation {
+                Some(ParentRelation::Independent { offset_x, .. }) => {
+                    *offset_x = offset;
+                }
+                Some(_) | None => {
+                    node.parent_relation = Some(new_relation);
+                }
+            }
+
+            Ok(())
+        });
+        methods.add_method_mut("set_y", |lua, this, vals: (String, f32)| {
+            with_gui_mut!(lua, this.gui_index => gui);
+            let node = &mut gui.nodes[this.index];
+
+            let offset = match vals.0.as_str() {
+                "Pixels" => Offset::Pixels(vals.1),
+                "Factor" => Offset::Factor(vals.1),
+                _ => panic!("Invalid offset_type: {}", vals.1)
+            };
+
+            let new_relation = ParentRelation::Independent {
+                relative: true,
+                anchor: AnchorPoint::default(),
+                offset_x: Offset::Pixels(0.0),
+                offset_y: offset.clone(),
+            };
+
+            match &mut node.parent_relation {
+                Some(ParentRelation::Independent { offset_y, .. }) => {
+                    *offset_y = offset;
+                }
+                Some(_) | None => {
+                    node.parent_relation = Some(new_relation);
+                }
+            }
+
+            Ok(())
+        });
     }
 }
 
@@ -450,6 +530,10 @@ impl UserData for GUIPointer {
         fields.add_field_method_get("num_elements", |lua, this| {
             with_gui!(lua, this.index => gui);
             Ok(gui.elements.len())
+        });
+        fields.add_field_method_get("num_nodes", |lua, this| {
+            with_gui!(lua, this.index => gui);
+            Ok(gui.nodes.len())
         });
 
         fields.add_field_method_get("root_node_indices", |lua, this| {
@@ -544,3 +628,69 @@ impl UserData for GUIPointer {
         });
     }
 }
+
+pub struct LuaAnchorPoint(pub AnchorPoint);
+impl RegisterToLua for LuaAnchorPoint {
+    fn register_to_lua(lua: &mlua::Lua) -> mlua::Result<()> {
+        let globals = lua.globals();
+        let table = lua.create_table()?;
+        for (idx, key) in ALL_ANCHOR_POINTS.iter().enumerate() {
+            table.set(format!("{:?}", key), idx as u32)?;
+        }
+        globals.set("AnchorPoint", table)?;
+        Ok(())
+    }
+}
+impl PartialEq for AnchorPoint {
+    fn eq(&self, other: &Self) -> bool {
+        match other {
+            AnchorPoint::BottomLeft => { self.eq(&AnchorPoint::BottomLeft) }
+            AnchorPoint::BottomCenter => { self.eq(&AnchorPoint::BottomCenter) }
+            AnchorPoint::BottomRight => { self.eq(&AnchorPoint::BottomRight) }
+            AnchorPoint::Center => { self.eq(&AnchorPoint::Center) }
+            AnchorPoint::CenterLeft => { self.eq(&AnchorPoint::CenterLeft) }
+            AnchorPoint::CenterRight => { self.eq(&AnchorPoint::CenterRight) }
+            AnchorPoint::TopLeft => { self.eq(&AnchorPoint::TopLeft) }
+            AnchorPoint::TopCenter => { self.eq(&AnchorPoint::TopCenter) }
+            AnchorPoint::TopRight => { self.eq(&AnchorPoint::TopRight) }
+        }
+    }
+}
+impl<'lua> IntoLua<'lua> for LuaAnchorPoint {
+    fn into_lua(self, lua: &'lua mlua::Lua) -> mlua::Result<Value<'lua>> {
+        let index = ALL_ANCHOR_POINTS
+            .iter()
+            .position(|k| *k == self.0)
+            .ok_or_else(|| mlua::Error::ToLuaConversionError {
+                from: "LuaAnchorPoint",
+                to: "Value",
+                message: Some("AnchorPoint not found in ALL_ANCHOR_POINTS".into()),
+            })?;
+        (index as u32).into_lua(lua)
+    }
+}
+impl<'lua> FromLua<'lua> for LuaAnchorPoint {
+    fn from_lua(value: Value<'lua>, _: &'lua mlua::Lua) -> mlua::Result<Self> {
+        if let Value::Integer(i) = value {
+            if i >= 0 && (i as usize) < ALL_ANCHOR_POINTS.len() {
+                return Ok(LuaAnchorPoint(ALL_ANCHOR_POINTS[i as usize].clone()));
+            }
+        }
+        Err(mlua::Error::FromLuaConversionError {
+            from: value.type_name(),
+            to: "LuaAnchorPoint",
+            message: Some("invalid AnchorPoint value".into()),
+        })
+    }
+}
+const ALL_ANCHOR_POINTS: &[AnchorPoint] = &[
+    AnchorPoint::TopLeft,
+    AnchorPoint::TopCenter,
+    AnchorPoint::TopRight,
+    AnchorPoint::CenterLeft,
+    AnchorPoint::Center,
+    AnchorPoint::CenterRight,
+    AnchorPoint::BottomLeft,
+    AnchorPoint::BottomCenter,
+    AnchorPoint::BottomRight,
+];

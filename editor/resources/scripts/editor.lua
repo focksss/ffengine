@@ -14,6 +14,8 @@ local gui
 			local toggle_maximize_button_node
 			local minimize_window_button_node
 		local right_area_node
+			local scene_graph_area_node
+				local scene_graph_root_node
 		local scene_view_area_node
 
 	local resize_root_node
@@ -39,6 +41,8 @@ function Awake()
 			toggle_maximize_button_node = titlebar_node:get_child(1)
 			minimize_window_button_node = titlebar_node:get_child(1)
 		right_area_node = root_node:get_child(1)
+			scene_graph_area_node = right_area_node:get_child(0)
+				scene_graph_root_node = scene_graph_area_node:get_child(0)
 		scene_view_area_node = root_node:get_child(2)
 
 	resize_root_node = gui:get_root(1)
@@ -53,6 +57,8 @@ function Awake()
 		resize_left_node = resize_root_node:get_child(2)
 		resize_right_node = resize_root_node:get_child(3)
 	
+	build_graph()
+
 end
 
 function Update()
@@ -85,6 +91,111 @@ function Update()
 	resize_called_last_tick = resize_called_this_tick
 	resize_called_this_tick = false
 
+end
+
+local expanded_entities = {}
+local node_to_entity_map = {}
+local graph_height = 0
+local darker = false
+local graph_scroll_pixels = 10
+local graph_entity_height = 20
+local graph_child_indent = 20
+function toggle_graph_node() 
+	
+	local clicked_node = gui.ActiveNode
+	local clicked_node_index = clicked_node.index
+	
+	local entity_index = node_to_entity_map[clicked_node_index]
+	
+	if entity_index then
+		expanded_entities[entity_index] = not expanded_entities[entity_index]
+		
+		build_graph()
+	end
+end
+function build_graph()
+	-- remove existing children + quads
+	local num_children = #scene_graph_root_node.children_indices
+	for i = num_children, 1, -1 do
+		local child_index = scene_graph_root_node:get_child_index(i - 1)
+		gui:destroy_node(child_index)
+		scene_graph_root_node:remove_child_index_at(i - 1)
+	end
+	
+	--- reset mapping for expansion tracking (root expanded)
+	node_to_entity_map = {}
+	if expanded_entities[0] == nil then
+		expanded_entities[0] = true
+	end
+
+	-- reset height
+	graph_height = 0
+
+	-- reset alternating pattern
+	darker = false
+	
+	local root_entity = Engine.scene:get_entity(0)
+	build_graph_recursive(root_entity, 0, 0, scene_graph_root_node)
+
+	--[[
+	scene_graph_scroll_bar_node.scale = Vector.new2(
+		scene_graph_scroll_bar_node.scale.x, 
+		math.min(1.0, (scene_graph_area_node.scale.y * right_area_node.scale.y) / graph_height) --- visible pixels / total pixels
+	)
+	--]]
+end
+function build_graph_recursive(entity, entity_index, depth, parent_gui_node)
+	
+	-- node
+	local node_index = gui.num_nodes
+	gui:add_node(parent_gui_node.index)
+	local node = gui:get_node(node_index)
+	node:add_left_tap_action("toggle_graph_node", 0)
+
+	--- map
+	node_to_entity_map[node_index] = entity_index
+	local is_expanded = expanded_entities[entity_index]
+	local display_name = entity.name
+	local children = entity.children_indices
+	local has_children = #children > 0	
+
+	-- quad
+	local quad_index = 2
+	if darker then quad_index = 3 end
+	node:add_element_index(quad_index)
+	--- add the expanded/collapsed visual image after so its drawn on top
+	--[[
+	if has_children then
+		if is_expanded then
+			node:add_element_index(10)
+		else
+			node:add_element_index(9)
+		end
+	end
+	---]]
+
+	-- format
+	node:set_x("Pixels", depth * graph_child_indent)
+	node:set_y("Pixels", graph_height)
+
+	node:set_width("Factor", 1.0)
+	node:set_height("Absolute", 20.0)
+
+	node:set_anchor_point(AnchorPoint.TopLeft)
+
+	-- add as child of parent
+	parent_gui_node:add_child_index(node_index)
+	
+	graph_height = graph_height + graph_entity_height
+
+	-- recursively process children
+	if is_expanded then
+		for i = 1, #children do
+			local child_entity_index = children[i]
+			local child_entity = Engine.scene:get_entity(child_entity_index)
+			build_graph_recursive(child_entity, child_entity_index, depth + 1, parent_gui_node)
+		end
+	end
 end
 
 local time_since_fps_update = 0
