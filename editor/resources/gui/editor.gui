@@ -246,15 +246,16 @@
             "type": "Stack",
             "info": {
               "horizontal": false,
-              "spacing": 0.0,
+              "spacing": 5.0,
               "padding": {
-                "left": 0.0,
-                "right": 0.0,
-                "top": 0.0,
-                "bottom": 0.0
+                "left": 5.0,
+                "right": 5.0,
+                "top": 5.0,
+                "bottom": 5.0
               },
-              "packing": "End",
-              "stack_direction": "Reverse"
+              "packing": "Start",
+              "stack_direction": "Normal",
+              "alignment": "Start"
             }
           },
           "dock_mode": "Right",
@@ -270,16 +271,31 @@
               "pixels": 1.0
             }
           },
-          "elements": [
-            {
-              "type": "Quad",
-              "info": {
-                "color": [0.3, 0.3, 0.3, 0.8],
-                "corner_radius": 5.0
-              }
-            }
-          ],
           "children": [
+            {
+              "name": "scene_graph_area",
+              "width": {
+                "type": "Factor",
+                "info": {
+                  "factor": 1.0
+                }
+              },
+              "height": {
+                "type": "Factor",
+                "info": {
+                  "factor": 0.5
+                }
+              },
+              "elements": [
+                {
+                  "type": "Quad",
+                  "info": {
+                    "color": [0.3, 0.3, 0.3, 0.8],
+                    "corner_radius": 5.0
+                  }
+                }
+              ]
+            },
             {
               "name": "right_area_resize",
               "interactable_information": {
@@ -327,6 +343,7 @@
         },
         {
           "name": "scene_view_area",
+          "interactable_information": {},
           "dock_mode": "Right",
           "width": {
             "type": "FillFactor",

@@ -1124,6 +1124,7 @@ impl GUI {
                 &mut self.nodes,
                 *root_node_index,
                 (0.0, 0.0),
+                (0.0, 0.0),
                 window_size,
                 window_size,
                 ((0.0, 0.0), window_size),
@@ -1134,6 +1135,7 @@ impl GUI {
         nodes: &mut Vec<Node>,
         node_index: usize,
         parent_position: (f32, f32),
+        parent_origin: (f32, f32),
         parent_size: (f32, f32),
         available_space: (f32, f32),
         parent_clipping: ((f32, f32), (f32, f32)),
@@ -1153,8 +1155,8 @@ impl GUI {
                 Offset::Factor(f) => parent_size.1 * f,
             };
 
-            nodes[node_index].position.x = parent_position.0 + x_offset;
-            nodes[node_index].position.y = parent_position.1 + y_offset;
+            nodes[node_index].position.x = parent_origin.0 + x_offset;
+            nodes[node_index].position.y = parent_origin.1 + y_offset;
         }
 
         // fetch children and container type before borrowing mutably
@@ -1214,6 +1216,7 @@ impl GUI {
                     Self::layout_node(
                         nodes,
                         child_index,
+                        node_pos,
                         node_pos,
                         node_size,
                         node_size,
@@ -1322,6 +1325,7 @@ impl GUI {
                 nodes,
                 child_index,
                 child_pos,
+                node_position,
                 node_size,
                 child_final_size,
                 parent_clipping,
@@ -1516,6 +1520,7 @@ impl GUI {
                 nodes,
                 child_index,
                 child_pos,
+                node_position,
                 node_size,
                 child_final_size,
                 parent_clipping,
@@ -1721,7 +1726,7 @@ enum Offset {
 }
 impl Default for Container {
     fn default() -> Self {
-        Container::None {  offset_x: Offset::Pixels(0.0), offset_y: Offset::Pixels(0.0) }
+        Container::Dock
     }
 }
 impl PartialEq for Container {
@@ -1803,7 +1808,7 @@ impl Default for DockMode {
 pub enum Size {
     Absolute(f32), // pixels
     Factor(f32), // factor of parent size
-    FillFactor(f32), // grows to fill, weighted by value
+    FillFactor(f32), // factor of final remaining space, after allocation of other Size types.
     Auto, // fit content
 }
 impl Default for Size {

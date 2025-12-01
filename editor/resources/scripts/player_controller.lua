@@ -97,8 +97,7 @@ function Update()
 end
 
 function MouseScrolled()
-    ---if Engine.renderer:gui(0):is_node_hovered(11) then
-    if true then
+    if Engine.renderer:gui(0):is_node_hovered(Engine.renderer:gui(0):get_root(0):get_child(2).index) then
         local player = Engine.physics_engine:get_player(0);
         if player.movement_mode == MovementMode.GHOST then
             fly_speed = fly_speed * math.pow(1.1, Engine.client.scroll_delta.y)
