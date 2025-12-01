@@ -12,6 +12,23 @@
       "glyph_msdf_distance_range": 2.0
     }
   ],
+  "elements": [
+    {
+      "type": "Image",
+      "info": {
+        "uri": "editor\\resources\\gui\\images\\minimize.png",
+        "additive_tint": [1.0, 1.0, 1.0, 0.0],
+        "multiplicative_tint": [1.0, 1.0, 1.0, 2.0]
+      }
+    },
+    {
+      "type": "Image",
+      "info": {
+        "uri": "editor\\resources\\gui\\images\\maximize.png",
+        "additive_tint": [1.0, 1.0, 1.0, 0.0]
+      }
+    }
+  ],
   "nodes": [
     {
       "name": "root",
@@ -65,8 +82,7 @@
             {
               "type": "Quad",
               "info": {
-                "color": [0.3, 0.3, 0.3, 0.5],
-                "corner_radius": 5.0
+                "color": [0.3, 0.3, 0.3, 0.8]
               }
             }
           ],
@@ -87,9 +103,10 @@
               },
               "elements": [
                 {
-                  "type": "Quad",
+                  "type": "Image",
                   "info": {
-                    "color": [0.9, 0.3, 0.3, 1.0]
+                    "uri": "editor\\resources\\gui\\images\\close.png",
+                    "additive_tint": [0.3, 0.3, 0.3, 0.0]
                   }
                 }
               ]
@@ -109,12 +126,7 @@
                 }
               },
               "elements": [
-                {
-                  "type": "Quad",
-                  "info": {
-                    "color": [0.1, 0.1, 0.1, 1.0]
-                  }
-                }
+                0
               ]
             },
             {

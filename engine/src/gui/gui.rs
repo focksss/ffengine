@@ -316,7 +316,7 @@ impl GUI {
                     let index = self.image_count;
                     self.image_count += 1;
 
-                    let uri: String = match &element_json["uri"] {
+                    let uri: String = match &element_info["uri"] {
                         JsonValue::String(s) => {
                             (*s).parse().expect("failed to parse URI")
                         }
@@ -344,8 +344,9 @@ impl GUI {
                             );
                         }
                     }
+                    println!("additive_tint: {:?}", additive_tint);
 
-                    let mut multiplicative_tint = Vector::fill(0.0);
+                    let mut multiplicative_tint = Vector::fill(1.0);
                     if let JsonValue::Array(ref multiplicative_tint_json) = element_info["multiplicative_tint"] {
                         if multiplicative_tint_json.len() >= 4 {
                             multiplicative_tint = Vector::new4(
@@ -1515,7 +1516,8 @@ impl GUI {
                 } => {
                     //println!("{}", node.index);
                     let quad_constants = GUIQuadSendable {
-                        color: color.to_array4(),
+                        additive_color: color.to_array4(),
+                        multiplicative_color: [1.0; 4],
                         resolution: [self.quad_renderpass.viewport.width as i32, self.quad_renderpass.viewport.height as i32],
                         clip_min: node.clip_min.to_array2(),
                         clip_max: node.clip_max.to_array2(),
@@ -1556,7 +1558,8 @@ impl GUI {
                     ..
                 } => {
                     let quad_constants = GUIQuadSendable {
-                        color: additive_tint.to_array4(),
+                        additive_color: additive_tint.to_array4(),
+                        multiplicative_color: multiplicative_tint.to_array4(),
                         resolution: [self.quad_renderpass.viewport.width as i32, self.quad_renderpass.viewport.height as i32],
                         clip_min: node.clip_min.to_array2(),
                         clip_max: node.clip_max.to_array2(),
@@ -1870,7 +1873,9 @@ impl Default for GUIInteractableInformation {
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct GUIQuadSendable {
-    pub color: [f32; 4],
+    pub additive_color: [f32; 4],
+
+    pub multiplicative_color: [f32; 4],
 
     pub resolution: [i32; 2],
 
