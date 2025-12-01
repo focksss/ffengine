@@ -322,9 +322,9 @@
                 }
               },
               "height": {
-                "type": "Factor",
+                "type": "FillFactor",
                 "info": {
-                  "factor": 0.5
+                  "factor": 1.0
                 }
               },
               "elements": [

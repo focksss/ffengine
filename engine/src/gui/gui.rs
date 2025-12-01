@@ -1258,7 +1258,6 @@ impl GUI {
         match container {
             Container::Stack { horizontal, spacing, padding, packing, alignment, stack_direction } => {
                 Self::layout_stack(
-                    gui_viewport,
                     nodes,
                     &children_indices,
                     node_pos,
@@ -1269,19 +1268,26 @@ impl GUI {
                     packing,
                     alignment,
                     stack_direction,
-                    node_clip_bounds,
                 );
             },
             Container::Dock => {
                 Self::layout_dock(
-                    gui_viewport,
                     nodes,
                     &children_indices,
                     node_pos,
                     node_size,
-                    node_clip_bounds,
                 );
             },
+        }
+        for child_index in children_indices.iter() {
+            Self::layout_node(
+                gui_viewport,
+                nodes,
+                *child_index,
+                &node_pos,
+                &node_size,
+                &node_clip_bounds,
+            )
         }
     }
     fn calculate_size(
@@ -1306,17 +1312,29 @@ impl GUI {
         (width, height)
     }
     fn layout_dock(
-        gui_viewport: &(f32, f32),
         nodes: &mut Vec<Node>,
         children_indices: &Vec<usize>,
         node_position: (f32, f32),
         node_size: (f32, f32),
-        parent_clipping: ((f32, f32), (f32, f32)),
     ) {
+        let operable_children_indices = children_indices.iter().filter_map(|&child_index| {
+            if let Some(relation) = &nodes[child_index].parent_relation {
+                match relation {
+                    ParentRelation::Independent { .. } => None,
+                    ParentRelation::Docking(_) => Some(child_index),
+                }
+            } else {
+                None
+            }
+        }).collect::<Vec<_>>();
+        if operable_children_indices.is_empty() {
+            return;
+        }
+
         let mut remaining_space = node_size;
         let mut offset = (0.0, 0.0);
 
-        for &child_index in children_indices {
+        for &child_index in operable_children_indices.iter() {
             let child = &nodes[child_index];
             let mut dock_mode = DockMode::default();
             if let Some(relation) = &child.parent_relation {
@@ -1378,19 +1396,9 @@ impl GUI {
             nodes[child_index].position.y = child_pos.1;
             nodes[child_index].size.x = child_final_size.0;
             nodes[child_index].size.y = child_final_size.1;
-
-            Self::layout_node(
-                gui_viewport,
-                nodes,
-                child_index,
-                &node_position,
-                &node_size,
-                &parent_clipping,
-            );
         }
     }
     fn layout_stack(
-        gui_viewport: &(f32, f32),
         nodes: &mut Vec<Node>,
         children_indices: &Vec<usize>,
         node_position: (f32, f32),
@@ -1401,9 +1409,18 @@ impl GUI {
         packing: PackingMode,
         alignment: Alignment,
         stack_direction: StackDirection,
-        parent_clipping: ((f32, f32), (f32, f32)),
     ) {
-        if children_indices.is_empty() {
+        let mut operable_children_indices = children_indices.iter().filter_map(|&child_index| {
+            if let Some(relation) = &nodes[child_index].parent_relation {
+                match relation {
+                    ParentRelation::Independent { .. } => None,
+                    ParentRelation::Docking(_) => None,
+                }
+            } else {
+                Some(child_index)
+            }
+        }).collect::<Vec<_>>();
+        if operable_children_indices.is_empty() {
             return;
         }
 
@@ -1418,17 +1435,15 @@ impl GUI {
         let mut used_space = 0.0;
         let mut child_sizes = Vec::new();
 
-        let mut children_iterable: Vec<usize> = children_indices.clone();
-
         // apply reversals
         if matches!(packing, PackingMode::End) {
-            children_iterable.reverse();
+            operable_children_indices.reverse();
         }
         if matches!(stack_direction, StackDirection::Reverse) {
-            children_iterable.reverse();
+            operable_children_indices.reverse();
         }
 
-        for &child_index in &children_iterable {
+        for &child_index in &operable_children_indices {
             let child = &nodes[child_index];
             let size_mode = if horizontal { &child.width } else { &child.height };
 
@@ -1463,7 +1478,7 @@ impl GUI {
         let primary_axis_space = if horizontal { inner_space.0 } else { inner_space.1 };
         let remaining_space = (primary_axis_space - used_space).max(0.0);
 
-        for (idx, &child_index) in children_iterable.iter().enumerate() {
+        for (idx, &child_index) in operable_children_indices.iter().enumerate() {
             let child = &nodes[child_index];
             let size_mode = if horizontal { &child.width } else { &child.height };
 
@@ -1510,7 +1525,7 @@ impl GUI {
         };
 
         // position children
-        for (idx, &child_index) in children_iterable.iter().enumerate() {
+        for (idx, &child_index) in operable_children_indices.iter().enumerate() {
             let child = &nodes[child_index];
             let primary_size = child_sizes[idx];
 
@@ -1573,15 +1588,6 @@ impl GUI {
             nodes[child_index].position.y = child_pos.1;
             nodes[child_index].size.x = child_final_size.0;
             nodes[child_index].size.y = child_final_size.1;
-
-            Self::layout_node(
-                gui_viewport,
-                nodes,
-                child_index,
-                &node_position,
-                &node_size,
-                &parent_clipping,
-            );
 
             // to next child start pos
             if matches!(packing, PackingMode::End) {
