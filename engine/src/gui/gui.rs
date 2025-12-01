@@ -357,12 +357,20 @@ impl GUI {
                         }
                     }
 
+                    let mut corner_radius = 5.0;
+                    if let JsonValue::Number(ref corner_radius_json) = element_info["corner_radius"] {
+                        if let Ok(v) = corner_radius_json.to_string().parse::<f32>() {
+                            corner_radius = v;
+                        }
+                    }
+
                     element = Element::Image {
                         index,
                         uri,
                         alpha_threshold,
                         additive_tint,
                         multiplicative_tint,
+                        corner_radius,
 
                         image_view: vk::ImageView::null(),
                         sampler: vk::Sampler::null(),
@@ -831,9 +839,12 @@ impl GUI {
                 }
             }
         }
-
         let index = self.nodes.len();
+        for child_index in children_indices.iter() {
+            self.nodes[*child_index].parent_index = Some(index);
+        }
         self.nodes.push(Node {
+            parent_index: None,
             index,
             name,
             interactable_information,
@@ -847,7 +858,7 @@ impl GUI {
             children_indices,
 
             position: Vector::empty(),
-            scale: Vector::empty(),
+            size: Vector::empty(),
             clip_min: Vector::empty(),
             clip_max: Vector::empty(),
         });
@@ -1014,7 +1025,65 @@ impl GUI {
         }
     }
 
+    fn layout(&mut self) {
+        let mut positions: Vec<Option<(f32, f32)>> = vec![None; self.nodes.len()];
+        let mut sizes: Vec<Option<(f32, f32)>> = vec![None; self.nodes.len()];
+        let mut clip_mins: Vec<Option<(f32, f32)>> = vec![None; self.nodes.len()];
+        let mut clip_maxes: Vec<Option<(f32, f32)>> = vec![None; self.nodes.len()];
+
+        let window_size = (self.window.inner_size().width as f32, self.window.inner_size().height as f32);
+
+        for root_node_index in self.root_node_indices.iter() {
+            Self::layout_node(
+                &mut self.nodes,
+                *root_node_index,
+                window_size,
+                ((0.0, 0.0), window_size),
+                // &mut positions,
+                // &mut sizes,
+                // &mut clip_mins,
+                // &mut clip_maxes,
+            )
+        }
+
+        /*
+        for i in 0..self.nodes.len() {
+            if let Some(position) = positions[i] {
+                self.nodes[i].position.x = position.0;
+                self.nodes[i].position.y = position.1;
+            }
+            if let Some(size) = sizes[i] {
+                self.nodes[i].size.x = size.0;
+                self.nodes[i].size.y = size.1;
+            }
+            if let Some(clip_min) = clip_mins[i] {
+                self.nodes[i].clip_min.x = clip_min.0;
+                self.nodes[i].clip_min.y = clip_min.1;
+            }
+            if let Some(clip_max) = clip_maxes[i] {
+                self.nodes[i].clip_max.x = clip_max.0;
+                self.nodes[i].clip_max.y = clip_max.1;
+            }
+        }
+        */
+    }
+    fn layout_node(
+        nodes: &mut Vec<Node>,
+        node_index: usize,
+        remaining_space: (f32, f32),
+        parent_clipping: ((f32, f32), (f32, f32)),
+        // positions: &mut Vec<Option<(f32, f32)>>,
+        // sizes: &mut Vec<Option<(f32, f32)>>,
+        // clip_mins: &mut Vec<Option<(f32, f32)>>,
+        // clip_maxes: &mut Vec<Option<(f32, f32)>>,
+    ) {
+        let node = &mut nodes[node_index];
+
+
+    }
+
     pub unsafe fn draw(&mut self, current_frame: usize, command_buffer: CommandBuffer,) { unsafe {
+        self.layout();
         let mut interactable_action_parameter_sets = Vec::new();
 
         self.device.cmd_begin_render_pass(
@@ -1023,21 +1092,11 @@ impl GUI {
             vk::SubpassContents::INLINE,
         );
 
-        let screen_clip = (
-            Vector::empty(),
-            Vector::new2(self.window.inner_size().width as f32, self.window.inner_size().height as f32),
-        );
-        for node_index in &self.gui_root_node_indices {
+        for node_index in &self.root_node_indices {
             self.draw_node(
                 *node_index,
                 current_frame,
                 command_buffer,
-                Vector::new2(0.0, 0.0),
-                Vector::new2(
-                    self.window.inner_size().width as f32,
-                    self.window.inner_size().height as f32
-                ),
-                screen_clip,
                 &mut interactable_action_parameter_sets,
             );
         }
@@ -1059,161 +1118,120 @@ impl GUI {
         node_index: usize,
         current_frame: usize,
         command_buffer: CommandBuffer,
-        parent_position: Vector,
-        parent_scale: Vector,
-        parent_clipping: (Vector, Vector),
         interactable_parameter_sets: &mut Vec<(usize, Vector, Vector)>
     ) { unsafe {
-        let node = &self.gui_nodes[node_index];
+        let node = &self.nodes[node_index];
         if node.hidden { return };
 
-        /*
-        let position = parent_position + if node.absolute_position { node.position } else { node.position * parent_scale };
-        let scale = if node.absolute_scale { node.scale } else { parent_scale * node.scale };
-         */
-        let offset_factor = node.anchor_point.offset_factor();
-        let mut scale = Vector::new2(
-            if node.absolute_scale.0 { node.scale.x } else { parent_scale.x * node.scale.x } + if node.additive_scale.0 { parent_scale.x } else { 0.0 },
-            if node.absolute_scale.1 { node.scale.y } else { parent_scale.y * node.scale.y } + if node.additive_scale.1 { parent_scale.y } else { 0.0 }
-        );
-        let position = offset_factor * parent_scale - scale * offset_factor
-            + parent_position
-            + Vector::new2(
-                if node.absolute_position.0 { node.position.x } else { parent_scale.x * node.position.x },
-                if node.absolute_position.1 { node.position.y } else { parent_scale.y * node.position.y }
-            );
-
-        if position.x + scale.x < 0.0 || position.y + scale.y < 0.0
-            || position.x > self.quad_renderpass.viewport.width || position.y > self.quad_renderpass.viewport.height {
+        if node.clip_max.x < 0.0 || node.clip_max.y < 0.0
+            || node.clip_min.x > self.quad_renderpass.viewport.width || node.clip_min.y > self.quad_renderpass.viewport.height {
             return;
         }
 
-        let node_clip_min = position + scale * node.clip_min;
-        let node_clip_max = position + scale * node.clip_max;
+        for element_index in node.element_indices.iter() {
+            let element = &self.elements[*element_index];
+            match element {
+                Element::Quad {
+                    color,
+                    corner_radius
+                } => {
+                    let quad_constants = GUIQuadSendable {
+                        color: color.to_array4(),
+                        resolution: [self.quad_renderpass.viewport.width as i32, self.quad_renderpass.viewport.height as i32],
+                        clip_min: node.clip_min.to_array2(),
+                        clip_max: node.clip_max.to_array2(),
+                        position: node.position.to_array2(),
+                        scale: node.size.to_array2(),
+                        corner_radius: *corner_radius,
+                        image: -1,
+                    };
 
-        let node_clipping = (
-            Vector::new2(
-                node_clip_min.x.max(parent_clipping.0.x),
-                node_clip_min.y.max(parent_clipping.0.y)
-            ),
-            Vector::new2(
-                node_clip_max.x.min(parent_clipping.1.x),
-                node_clip_max.y.min(parent_clipping.1.y)
-            )
-        );
+                    let device = &self.device;
+                    device.cmd_bind_pipeline(
+                        command_buffer,
+                        vk::PipelineBindPoint::GRAPHICS,
+                        self.quad_renderpass.pipeline,
+                    );
+                    device.cmd_set_viewport(command_buffer, 0, &[self.quad_renderpass.viewport]);
+                    device.cmd_set_scissor(command_buffer, 0, &[self.quad_renderpass.scissor]);
+                    device.cmd_bind_descriptor_sets(
+                        command_buffer,
+                        vk::PipelineBindPoint::GRAPHICS,
+                        self.quad_renderpass.pipeline_layout,
+                        0,
+                        &[self.quad_renderpass.descriptor_set.descriptor_sets[current_frame]],
+                        &[],
+                    );
+                    device.cmd_push_constants(command_buffer, self.quad_renderpass.pipeline_layout, ShaderStageFlags::ALL_GRAPHICS, 0, slice::from_raw_parts(
+                        &quad_constants as *const GUIQuadSendable as *const u8,
+                        size_of::<GUIQuadSendable>(),
+                    ));
+                    device.cmd_draw(command_buffer, 6, 1, 0, 0);
+                },
+                Element::Image {
+                    index,
+                    alpha_threshold,
+                    additive_tint,
+                    multiplicative_tint,
+                    corner_radius,
+                    ..
+                } => {
+                    let quad_constants = GUIQuadSendable {
+                        color: additive_tint.to_array4(),
+                        resolution: [self.quad_renderpass.viewport.width as i32, self.quad_renderpass.viewport.height as i32],
+                        clip_min: node.clip_min.to_array2(),
+                        clip_max: node.clip_max.to_array2(),
+                        position: node.position.to_array2(),
+                        scale: node.size.to_array2(),
+                        corner_radius: *corner_radius,
+                        image: *index as i32,
+                    };
 
-        for quad in &node.quad_indices {
-            self.draw_quad(*quad, current_frame, command_buffer, position, scale, parent_clipping);
-        }
-        for text in &node.text_indices {
-            self.draw_text(*text, current_frame, position, scale, parent_clipping);
-        }
-
-        if node.interactable_information.is_some() {
-            let bounds_min = Vector::new2(
-                position.x.max(parent_clipping.0.x),
-                position.y.max(parent_clipping.0.y)
-            );
-            let bounds_max = Vector::new2(
-                (position.x + scale.x).min(parent_clipping.1.x),
-                (position.y + scale.y).min(parent_clipping.1.y)
-            );
-
-            if bounds_min.x < bounds_max.x && bounds_min.y < bounds_max.y {
-                interactable_parameter_sets.push((node_index, bounds_min, bounds_max));
+                    let device = &self.device;
+                    device.cmd_bind_pipeline(
+                        command_buffer,
+                        vk::PipelineBindPoint::GRAPHICS,
+                        self.quad_renderpass.pipeline,
+                    );
+                    device.cmd_set_viewport(command_buffer, 0, &[self.quad_renderpass.viewport]);
+                    device.cmd_set_scissor(command_buffer, 0, &[self.quad_renderpass.scissor]);
+                    device.cmd_bind_descriptor_sets(
+                        command_buffer,
+                        vk::PipelineBindPoint::GRAPHICS,
+                        self.quad_renderpass.pipeline_layout,
+                        0,
+                        &[self.quad_renderpass.descriptor_set.descriptor_sets[current_frame]],
+                        &[],
+                    );
+                    device.cmd_push_constants(command_buffer, self.quad_renderpass.pipeline_layout, ShaderStageFlags::ALL_GRAPHICS, 0, slice::from_raw_parts(
+                        &quad_constants as *const GUIQuadSendable as *const u8,
+                        size_of::<GUIQuadSendable>(),
+                    ));
+                    device.cmd_draw(command_buffer, 6, 1, 0, 0);
+                },
+                Element::Text {
+                    text_information,
+                    ..
+                } => {
+                    self.text_renderer.draw_gui_text(
+                        current_frame,
+                        text_information.as_ref().unwrap(),
+                        node.position,
+                        node.size,
+                        node.clip_min,
+                        node.clip_max,
+                    );
+                }
             }
         }
 
-        for child in &node.children_indices {
-            self.draw_node(*child, current_frame, command_buffer, position, scale, node_clipping, interactable_parameter_sets);
+        if node.interactable_information.is_some() {
+            interactable_parameter_sets.push((node_index, node.clip_min, node.clip_max));
         }
-    } }
-    unsafe fn draw_quad(
-        &self,
-        quad: usize,
-        current_frame: usize,
-        command_buffer: CommandBuffer,
-        parent_position: Vector,
-        parent_scale: Vector,
-        parent_clipping: (Vector, Vector),
-    ) { unsafe {
-        let quad = &self.gui_quads[quad];
 
-        let offset_factor = quad.anchor_point.offset_factor();
-        let scale = Vector::new2(
-            if quad.absolute_scale.0 { quad.scale.x } else { parent_scale.x * quad.scale.x } + if quad.additive_scale.0 { parent_scale.x } else { 0.0 },
-            if quad.absolute_scale.1 { quad.scale.y } else { parent_scale.y * quad.scale.y } + if quad.additive_scale.1 { parent_scale.y } else { 0.0 }
-        );
-        let position = offset_factor * parent_scale - scale * offset_factor
-            + parent_position
-            + Vector::new2(
-            if quad.absolute_position.0 { quad.position.x } else { parent_scale.x * quad.position.x },
-            if quad.absolute_position.1 { quad.position.y } else { parent_scale.y * quad.position.y }
-        );
-
-        let quad_constants = GUIQuadSendable {
-            color: quad.color.to_array4(),
-            resolution: [self.quad_renderpass.viewport.width as i32, self.quad_renderpass.viewport.height as i32],
-            clip_min: parent_clipping.0.to_array2(),
-            clip_max: parent_clipping.1.to_array2(),
-            position: position.to_array2(),
-            scale: scale.to_array2(),
-            corner_radius: quad.corner_radius,
-            image: quad.image.unwrap_or(-1)
-        };
-
-        let device = &self.device;
-        device.cmd_bind_pipeline(
-            command_buffer,
-            vk::PipelineBindPoint::GRAPHICS,
-            self.quad_renderpass.pipeline,
-        );
-        device.cmd_set_viewport(command_buffer, 0, &[self.quad_renderpass.viewport]);
-        device.cmd_set_scissor(command_buffer, 0, &[self.quad_renderpass.scissor]);
-        device.cmd_bind_descriptor_sets(
-            command_buffer,
-            vk::PipelineBindPoint::GRAPHICS,
-            self.quad_renderpass.pipeline_layout,
-            0,
-            &[self.quad_renderpass.descriptor_set.descriptor_sets[current_frame]],
-            &[],
-        );
-        device.cmd_push_constants(command_buffer, self.quad_renderpass.pipeline_layout, ShaderStageFlags::ALL_GRAPHICS, 0, slice::from_raw_parts(
-            &quad_constants as *const GUIQuadSendable as *const u8,
-            size_of::<GUIQuadSendable>(),
-        ));
-        device.cmd_draw(command_buffer, 6, 1, 0, 0);
-    } }
-    unsafe fn draw_text(
-        &self,
-        text: usize,
-        current_frame: usize,
-        parent_position: Vector,
-        parent_scale: Vector,
-        parent_clipping: (Vector, Vector),
-    ) { unsafe {
-        let text = &self.gui_texts[text];
-
-        let offset_factor = text.anchor_point.offset_factor();
-        let scale = Vector::new2(
-            if text.absolute_scale.0 { text.scale.x } else { parent_scale.x * text.scale.x } + if text.additive_scale.0 { parent_scale.x } else { 0.0 },
-            if text.absolute_scale.1 { text.scale.y } else { parent_scale.y * text.scale.y } + if text.additive_scale.1 { parent_scale.y } else { 0.0 }
-        );
-        let position = offset_factor * parent_scale - scale * offset_factor
-            + parent_position
-            + Vector::new2(
-            if text.absolute_position.0 { text.position.x } else { parent_scale.x * text.position.x },
-            if text.absolute_position.1 { text.position.y } else { parent_scale.y * text.position.y }
-        );
-
-        self.text_renderer.draw_gui_text(
-            current_frame,
-            &text.text_information.as_ref().unwrap(),
-            position,
-            scale,
-            parent_clipping.0,
-            parent_clipping.1
-        );
+        for child in &node.children_indices {
+            self.draw_node(*child, current_frame, command_buffer, interactable_parameter_sets);
+        }
     } }
 
     pub unsafe fn destroy(&mut self) { unsafe {
@@ -1333,6 +1351,7 @@ pub enum Element {
         alpha_threshold: f32,
         additive_tint: Vector,
         multiplicative_tint: Vector,
+        corner_radius: f32,
 
         image_view: vk::ImageView,
         sampler: vk::Sampler,
@@ -1384,6 +1403,7 @@ impl Default for Element {
 
 #[derive(Clone)]
 pub struct Node {
+    pub parent_index: Option<usize>,
     pub index: usize,
     pub name: String,
     pub interactable_information: Option<GUIInteractableInformation>,
@@ -1400,13 +1420,14 @@ pub struct Node {
 
     // computed during format pass
     pub position: Vector,
-    pub scale: Vector,
+    pub size: Vector,
     pub clip_min: Vector,
     pub clip_max: Vector,
 }
 impl Node {
-    pub fn new(index: usize) -> Self {
+    pub fn new(index: usize, parent_index: Option<usize>) -> Self {
         Self {
+            parent_index,
             index,
             name: String::from(""),
             interactable_information: None,
@@ -1419,7 +1440,7 @@ impl Node {
             height: Size::FillFactor(1.0),
 
             position: Vector::empty(),
-            scale: Vector::empty(),
+            size: Vector::empty(),
             clip_min: Vector::empty(),
             clip_max: Vector::empty(),
 
