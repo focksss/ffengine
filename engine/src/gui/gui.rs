@@ -1207,7 +1207,7 @@ impl GUI {
             }
         }
     }
-
+    
     pub fn add_text(&mut self, text: String) {
         let new_text = Element::Text {
             text_information: Some(TextInformation::new(self.fonts[0].clone())

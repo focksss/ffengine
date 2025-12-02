@@ -41,7 +41,6 @@ MovementMode = {
         ---@field get_quad fun(self:GUI, index:integer):GUIQuad
         ---@field get_text fun(self:GUI, index:integer):GUIText
         ---@field get_image fun(self:GUI, index:integer):GUIImage
-        ---@field destroy_node fun(self:GUI, index:integer):nil
         ---@field num_elements integer
         ---@field num_nodes integer
         ---@field add_node fun(self:GUI):nil
@@ -61,6 +60,7 @@ MovementMode = {
             ---@field get_element fun(self:GUINode, index:integer)
             ---@field add_element_index fun(self:GUINode, index:integer):nil
             ---@field remove_element_index_at fun(self:GUINode, index:integer):nil
+            ---@field clear_children fun(self:GUINode):nil
             ---@field get_child_index fun(self:GUINode, index:integer):integer
             ---@field add_child_index fun(self:GUINode, index:integer):nil
             ---@field remove_child_index_at fun(self:GUINode, index:integer):nil
@@ -81,6 +81,7 @@ MovementMode = {
             ---@field set_height fun(self:GUINode, size_type:string, value:number):nil
             ---@field set_x fun(self:GUINode, size_type:string, value:number):nil
             ---@field set_y fun(self:GUINode, size_type:string, value:number):nil
+            ---@field reset fun(self:GUINode):nil
 
                 ---@class GUIQuad
                 ---@field color Vector

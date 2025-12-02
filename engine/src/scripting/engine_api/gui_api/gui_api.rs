@@ -293,6 +293,13 @@ impl UserData for GUINodePointer {
         });
     }
     fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
+        methods.add_method_mut("reset", |lua, this, ()| {
+            with_gui_mut!(lua, this.gui_index => gui);
+            let original_parent = gui.nodes[this.index].parent_index;
+            let original_index = gui.nodes[this.index].index;
+            Ok(gui.nodes[this.index] = Node::new(original_index, original_parent))
+        });
+
         methods.add_method("get_child_index", |lua, this, val: i32| {
             with_gui!(lua, this.gui_index => gui);
             Ok(gui.nodes[this.index].children_indices[val as usize])
@@ -311,6 +318,10 @@ impl UserData for GUINodePointer {
         methods.add_method_mut("remove_child_index_at", |lua, this, val: i32| {
             with_gui_mut!(lua, this.gui_index => gui);
             Ok(gui.nodes[this.index].children_indices.remove(val as usize))
+        });
+        methods.add_method_mut("clear_children", |lua, this, ()| {
+            with_gui_mut!(lua, this.gui_index => gui);
+            Ok(gui.nodes[this.index].children_indices.clear())
         });
 
         methods.add_method("get_element_index", |lua, this, val: i32| {
@@ -604,17 +615,11 @@ impl UserData for GUIPointer {
             }
         });
 
-        methods.add_method("destroy_node", |lua, this, index: usize| {
-            with_gui_mut!(lua, this.index => gui);
-            gui.nodes.remove(index);
-            Ok(())
-        });
-
         methods.add_method_mut("add_node", |lua, this, parent_index: i32| {
             with_gui_mut!(lua, this.index => gui);
             let num_nodes = gui.nodes.len();
             gui.nodes.push(Node::new(num_nodes, if parent_index < 0 { None } else { Some(parent_index as usize) }));
-            Ok(())
+            Ok(gui.nodes.len() - 1)
         });
         methods.add_method_mut("add_quad", |lua, this, ()| {
             with_gui_mut!(lua, this.index => gui);

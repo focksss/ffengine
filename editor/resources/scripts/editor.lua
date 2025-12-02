@@ -104,6 +104,8 @@ local graph_entity_height = 20
 local graph_child_indent = 20
 local graph_owned_element_indices = {}
 local current_used_text_count = 0
+local graph_owned_node_indices = {}
+local current_used_node_count = 0
 function MouseScrolled()
 	if gui:is_node_hovered(scene_graph_area_node.index) then
 		local total_pixels = scene_graph_area_node.size.y
@@ -137,13 +139,8 @@ function toggle_graph_node()
 	end
 end
 function build_graph()
-	-- remove existing children + quads
-	local num_children = #scene_graph_root_node.children_indices
-	for i = num_children, 1, -1 do
-		local child_index = scene_graph_root_node:get_child_index(i - 1)
-		gui:destroy_node(child_index)
-		scene_graph_root_node:remove_child_index_at(i - 1)
-	end
+	-- reset node tree
+	scene_graph_root_node:clear_children()
 	
 	--- reset mapping for expansion tracking (root expanded)
 	node_to_entity_map = {}
@@ -151,8 +148,9 @@ function build_graph()
 		expanded_entities[0] = true
 	end
 
-	-- reset text usage counter
+	-- reset object counters
 	current_used_text_count = 0
+	current_used_node_count = 0
 
 	-- reset height
 	graph_height = 0
@@ -170,10 +168,21 @@ end
 function build_graph_recursive(entity, entity_index, depth, parent_gui_node)
 	
 	-- node
-	local node_index = gui.num_nodes
-	gui:add_node(parent_gui_node.index)
+	local current_owned_node_count = #graph_owned_node_indices
+	if current_used_node_count >= current_owned_node_count then
+		graph_owned_node_indices[current_owned_node_count + 1] = gui:add_node(parent_gui_node.index)
+	end
+	local node_index = graph_owned_node_indices[current_used_node_count + 1]
 	local node = gui:get_node(node_index)
+	node:reset()
 	node:add_left_tap_action("toggle_graph_node", 0)
+	node:set_x("Pixels", depth * graph_child_indent)
+	node:set_y("Pixels", graph_height)
+	node:set_width("Factor", 1.0)
+	node:set_height("Absolute", 20.0)
+	node:set_anchor_point(AnchorPoint.TopLeft)
+	current_used_node_count = current_used_node_count + 1
+	parent_gui_node:add_child_index(node_index)
 
 	--- map
 	node_to_entity_map[node_index] = entity_index
@@ -196,7 +205,7 @@ function build_graph_recursive(entity, entity_index, depth, parent_gui_node)
 		end
 	end
 
-	-- reuse or create text
+	-- text
 	local current_owned_element_count = #graph_owned_element_indices
 	if current_used_text_count >= current_owned_element_count then
 		graph_owned_element_indices[current_owned_element_count + 1] = gui:add_text(display_name)
@@ -210,18 +219,6 @@ function build_graph_recursive(entity, entity_index, depth, parent_gui_node)
 	text.auto_wrap_distance = 1000.0
 	node:add_element_index(text_index)
 	current_used_text_count = current_used_text_count + 1
-
-	-- format
-	node:set_x("Pixels", depth * graph_child_indent)
-	node:set_y("Pixels", graph_height)
-
-	node:set_width("Factor", 1.0)
-	node:set_height("Absolute", 20.0)
-
-	node:set_anchor_point(AnchorPoint.TopLeft)
-
-	-- add as child of parent
-	parent_gui_node:add_child_index(node_index)
 	
 	graph_height = graph_height + graph_entity_height
 
