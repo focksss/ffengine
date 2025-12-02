@@ -1,8 +1,6 @@
 local target_cursor_icon
 local has_set_target_cursor = false
 
-local stored_window_size = Vector.new2(0, 0)
-
 local resize_called_last_tick = false
 local resize_called_this_tick = false
 
@@ -10,26 +8,12 @@ local gui
 
 	local root_node
 		local titlebar_node
-			local close_button_node
 			local toggle_maximize_button_node
-			local minimize_window_button_node
 		local right_area_node
 			local scene_graph_area_node
 				local scene_graph_root_node
 				local scene_graph_scroll_bar_node
 		local scene_view_area_node
-
-	local resize_root_node
-		local resize_top_root_node
-			local resize_top_node
-			local resize_top_left_node
-			local resize_top_right_node
-		local resize_bottom_root_node
-			local resize_bottom_node
-			local resize_bottom_left_node
-			local resize_bottom_right_node
-		local resize_left_node
-		local resize_right_node
 
 function Awake()
 	target_cursor_icon = CursorIcon.Default
@@ -38,26 +22,12 @@ function Awake()
 
 	root_node = gui:get_root(0)
 		titlebar_node = root_node:get_child(0)
-			close_button_node = titlebar_node:get_child(0)
 			toggle_maximize_button_node = titlebar_node:get_child(1)
-			minimize_window_button_node = titlebar_node:get_child(1)
 		right_area_node = root_node:get_child(1)
 			scene_graph_area_node = right_area_node:get_child(0)
 				scene_graph_root_node = scene_graph_area_node:get_child(0)
 				scene_graph_scroll_bar_node = scene_graph_area_node:get_child(1):get_child(0)
 		scene_view_area_node = root_node:get_child(2)
-
-	resize_root_node = gui:get_root(1)
-		resize_top_root_node = resize_root_node:get_child(0)
-			resize_top_left_node = resize_top_root_node:get_child(0)
-			resize_top_right_node = resize_top_root_node:get_child(1)
-			resize_top_node = resize_top_root_node:get_child(2)
-		resize_bottom_root_node = resize_root_node:get_child(1)
-			resize_bottom_left_node = resize_bottom_root_node:get_child(0)
-			resize_bottom_right_node = resize_bottom_root_node:get_child(1)
-			resize_bottom_node = resize_bottom_root_node:get_child(2)
-		resize_left_node = resize_root_node:get_child(2)
-		resize_right_node = resize_root_node:get_child(3)
 	
 	build_graph()
 
@@ -65,8 +35,6 @@ end
 
 function Update()
 	if gui == nil then return end
-	
-	local window_size = Engine.client.window_size
 
 	local maximized = Engine.client.maximized
 	local toggle_maximize_button_image_index = 0
