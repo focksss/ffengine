@@ -18,6 +18,8 @@ layout(push_constant) uniform constants {
     int glyph_size;
     float distance_range;
     uint font_index;
+    float align_shift;
+    float font_size;
 } ubo;
 
 void main() {
@@ -25,9 +27,9 @@ void main() {
     o_uv = uv;
     o_color = color;
 
-    vec2 pos = ((ubo.position + pos) / vec2(ubo.resolution));
+    vec2 pos = ((ubo.position + pos + vec2(0.0, ubo.font_size * ubo.align_shift)) / vec2(ubo.resolution));
     o_pos = pos;
     vec2 ndc = pos * 2.0 - 1.0;
 
-    gl_Position = vec4(ndc * vec2(1, -1), 0.0, 1.0);
+    gl_Position = vec4(ndc, 0.0, 1.0);
 }

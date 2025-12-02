@@ -1,3 +1,4 @@
+--[[
 ---@meta
 
 ---@type EngineClass
@@ -40,12 +41,14 @@ MovementMode = {
         ---@field get_node fun(self:GUI, index:integer):GUINode
         ---@field get_quad fun(self:GUI, index:integer):GUIQuad
         ---@field get_text fun(self:GUI, index:integer):GUIText
-        ---@field get_image fun(self:GUI, index:integer):GUIImage
-        ---@field num_elements integer
+        ---@field destroy_node fun(self:GUI, index:integer):nil
+        ---@field destroy_quad fun(self:GUI, index:integer):nil
         ---@field num_nodes integer
+        ---@field num_quads integer
+        ---@field num_texts integer
         ---@field add_node fun(self:GUI):nil
         ---@field add_quad fun(self:GUI):nil
-        ---@field add_text fun(self:GUI, initial_text:string):integer
+        ---@field add_text fun(self:GUI, initial_text:string):nil
         ---@field is_node_hovered fun(self:GUI, node_index:integer):boolean
         ---@field root_node_indices integer[]
         ---@field get_root_index fun(self:GUI, index:integer):integer
@@ -54,50 +57,50 @@ MovementMode = {
         ---@field remove_root_index_at fun(self:GUI, index:integer):nil
 
             ---@class GUINode
+            ---@field position Vector
+            ---@field scale Vector
             ---@field hidden boolean
-            ---@field element_indices integer[]
-            ---@field get_element_index fun(self:GUINode, index:integer):integer
-            ---@field get_element fun(self:GUINode, index:integer)
-            ---@field add_element_index fun(self:GUINode, index:integer):nil
-            ---@field remove_element_index_at fun(self:GUINode, index:integer):nil
-            ---@field clear_children fun(self:GUINode):nil
+            ---@field quad_indices integer[]
+            ---@field text_indices integer[]
+            ---@field get_quad_index fun(self:GUINode, index:integer):integer
+            ---@field get_quad fun(self:GUINode, index:integer):GUIQuad
+            ---@field add_quad_index fun(self:GUINode, index:integer):nil
+            ---@field remove_quad_index_at fun(self:GUINode, index:integer):nil
+            ---@field get_text_index fun(self:GUINode, index:integer):integer
+            ---@field get_text fun(self:GUINode, index:integer):GUIText
+            ---@field add_text_index fun(self:GUINode, index:integer):nil
+            ---@field remove_text_index_at fun(self:GUINode, index:integer):nil
             ---@field get_child_index fun(self:GUINode, index:integer):integer
             ---@field add_child_index fun(self:GUINode, index:integer):nil
             ---@field remove_child_index_at fun(self:GUINode, index:integer):nil
             ---@field children_indices integer[]
+            ---@field absolute_position_x boolean
+            ---@field absolute_position_y boolean
+            ---@field absolute_scale_x boolean
+            ---@field absolute_scale_y boolean
+            ---@field anchor_point AnchorPoint
             ---@field set_anchor_point fun(self:GUINode, anchor_point:integer):nil
             ---@field add_left_tap_action fun(self:GUINode, method:string, script:integer):nil
             ---@field index integer
             ---@field get_child fun(self:GUINode, child_index:integer):GUINode
-            ---@field get_quad_at fun(self:GUINode, element_index:integer):GUIQuad
-            ---@field get_text_at fun(self:GUINode, element_index:integer):GUIText
-            ---@field get_image_at fun(self:GUINode, element_index:integer):GUIImage
-            ---@field set_element_index_at_to fun(self:GUINode, node_element_index:integer, target_element_index:integer):nil
-            ---@field position Vector
-            ---@field size Vector
-            ---@field clip_min Vector
-            ---@field clip_max Vector
-            ---@field set_width fun(self:GUINode, size_type:string, value:number):nil
-            ---@field set_height fun(self:GUINode, size_type:string, value:number):nil
-            ---@field set_x fun(self:GUINode, size_type:string, value:number):nil
-            ---@field set_y fun(self:GUINode, size_type:string, value:number):nil
-            ---@field reset fun(self:GUINode):nil
 
                 ---@class GUIQuad
                 ---@field color Vector
+                ---@field position Vector
+                ---@field scale Vector
                 ---@field corner_radius number
+                ---@field absolute_position_x boolean
+                ---@field absolute_position_y boolean
 
                 ---@class GUIText
                 ---@field text_message string
                 ---@field update_text fun(self:GUIText, text:string):nil
                 ---@field font_size number
                 ---@field auto_wrap_distance number
-                
-                ---@class GUIImage
-                ---@field index integer
-                ---@field corner_radius number
-                ---@field additive_tint Vector
-                ---@field multiplicative_tint Vector
+                ---@field position Vector
+                ---@field scale Vector
+                ---@field absolute_position_x boolean
+                ---@field absolute_position_y boolean
                 
         ---@class SceneRenderer
         ---@field viewport Viewport
@@ -201,26 +204,26 @@ ResizeDirection = {
 
 ---@class AnchorPoint
 ---@field BottomLeft integer
----@field BottomCenter integer
+---@field BottomMiddle integer
 ---@field BottomRight integer
----@field CenterRight integer
+---@field Right integer
 ---@field TopRight integer
----@field TopCenter integer
+---@field TopMiddle integer
 ---@field TopLeft integer
----@field CenterLeft integer
+---@field Left integer
 ---@field Center integer
 AnchorPoint = AnchorPoint
 
 AnchorPoint = {
-    TopLeft = 0,
-    TopCenter = 1,
-    TopRight = 2,
-    CenterLeft = 3,
-    Center = 4,
-    CenterRight = 5,
-    BottomLeft = 6,
-    BottomCenter = 7,
-    BottomRight = 8,
+    BottomLeft = 0,
+    BottomMiddle = 1,
+    BottomRight = 2,
+    Right = 3,
+    TopRight = 4,
+    TopMiddle = 5,
+    TopLeft = 6,
+    Left = 7,
+    Center = 8,
 }
 
 
@@ -712,3 +715,5 @@ KeyCode = {
     F34 = 193,
     F35 = 194,
 }
+
+--]]

@@ -11,7 +11,8 @@ layout (location = 1) in vec2 pos;
 layout(set = 0, binding = 0) uniform sampler2D textures[];
 
 layout(push_constant) uniform constants {
-    vec4 color;
+    vec4 additive_color;
+    vec4 multiplicative_color;
     ivec2 resolution;
     vec2 min;
     vec2 max;
@@ -40,9 +41,10 @@ void main() {
     if (dist > radius)
     discard;
 
-    frag_color = ubo.color;
+    frag_color = ubo.additive_color;
     if (ubo.image > -1) {
         vec4 tex_col = vec4(texture(textures[ubo.image], uv).a);
         frag_color += tex_col;
     }
+    frag_color *= ubo.multiplicative_color;
 }

@@ -32,22 +32,22 @@ impl Glyph {
 
         let p = position * scale_factor;
         let bl = GlyphQuadVertex::new( // min
-                                       p + (self.plane_min * scale_factor),
-                                       self.uv_min,
-                                       color.clone()
+           (p + (self.plane_min * scale_factor)) * Vector::new2(1.0, -1.0),
+           self.uv_min,
+           color.clone()
         );
         let tl = GlyphQuadVertex::new(
-            p + (self.plane_min * scale_factor) + Vector::new2(0.0, position_extent.y),
+            (p + (self.plane_min * scale_factor) + Vector::new2(0.0, position_extent.y)) * Vector::new2(1.0, -1.0),
             self.uv_min + Vector::new2(0.0, uv_extent.y),
             color.clone()
         );
         let tr = GlyphQuadVertex::new( // max
-                                       p + (self.plane_max * scale_factor),
-                                       self.uv_max,
-                                       color.clone()
+           (p + (self.plane_max * scale_factor)) * Vector::new2(1.0, -1.0),
+           self.uv_max,
+           color.clone()
         );
         let br = GlyphQuadVertex::new(
-            p + (self.plane_min * scale_factor) + Vector::new2(position_extent.x, 0.0),
+            (p + (self.plane_min * scale_factor) + Vector::new2(position_extent.x, 0.0)) * Vector::new2(1.0, -1.0),
             self.uv_min + Vector::new2(uv_extent.x, 0.0),
             color.clone()
         );
