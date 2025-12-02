@@ -371,6 +371,10 @@
           "children": [
             {
               "name": "scene_graph_area",
+              "interactable_information": {},
+              "container": {
+                "type": "Dock"
+              },
               "width": {
                 "type": "Factor",
                 "info": {
@@ -414,6 +418,56 @@
                       "factor": 10.0
                     }
                   }
+                },
+                {
+                  "name": "scene_graph_scroll_bar_dock",
+                  "parent_relation": {
+                    "type": "Docking",
+                    "info": {
+                      "mode": "Right"
+                    }
+                  },
+                  "width": {
+                    "type": "Absolute",
+                    "info": {
+                      "pixels": 10.0
+                    }
+                  },
+                  "height": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "children": [
+                    {
+                      "name": "scene_graph_scroll_bar",
+                      "parent_relation": {
+                        "type": "Independent"
+                      },
+                      "width": {
+                        "type": "Factor",
+                        "info": {
+                          "factor": 1.0
+                        }
+                      },
+                      "height": {
+                        "type": "Factor",
+                        "info": {
+                          "factor": 1.0
+                        }
+                      },
+                      "elements": [
+                        {
+                          "type": "Quad",
+                          "info": {
+                            "color": [0.4, 0.4, 0.4, 1.0],
+                            "corner_radius": 5.0
+                          }
+                        }
+                      ]
+                    }
+                  ]
                 }
               ]
             },

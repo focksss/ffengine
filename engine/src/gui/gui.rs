@@ -802,13 +802,15 @@ impl GUI {
                     }
                 },
                 "Independent" => {
+                    let mut relative = true;
+                    let mut anchor = AnchorPoint::default();
+                    let mut offset_x = Offset::Pixels(0.0);
+                    let mut offset_y = Offset::Pixels(0.0);
                     if let JsonValue::Object(ref independent_info_json) = parent_relation_json["info"] {
-                        let mut relative = true;
                         if let JsonValue::Boolean(ref relative_json) = independent_info_json["relative"] {
                             relative = *relative_json;
                         }
 
-                        let mut anchor = AnchorPoint::default();
                         let mut anchor_str = "";
                         match &independent_info_json["anchor"] {
                             JsonValue::String(s) => {
@@ -832,7 +834,6 @@ impl GUI {
                             _ => ()
                         }
 
-                        let mut offset_x = Offset::Pixels(0.0);
                         if let JsonValue::Object(ref offset_x_json) = independent_info_json["offset_x"] {
                             let mut value = 0.0;
                             if let JsonValue::Number(ref val_json) = offset_x_json["value"] {
@@ -858,7 +859,6 @@ impl GUI {
                             }
                         }
 
-                        let mut offset_y = Offset::Pixels(0.0);
                         if let JsonValue::Object(ref offset_y_json) = independent_info_json["offset_y"] {
                             let mut value = 0.0;
                             if let JsonValue::Number(ref val_json) = offset_y_json["value"] {
@@ -884,13 +884,13 @@ impl GUI {
                             }
                         }
 
-                        parent_relation = Some(ParentRelation::Independent {
-                            relative,
-                            anchor,
-                            offset_x,
-                            offset_y
-                        })
                     }
+                    parent_relation = Some(ParentRelation::Independent {
+                        relative,
+                        anchor,
+                        offset_x,
+                        offset_y
+                    })
                 },
                 _ => ()
             }

@@ -16,6 +16,7 @@ local gui
 		local right_area_node
 			local scene_graph_area_node
 				local scene_graph_root_node
+				local scene_graph_scroll_bar_node
 		local scene_view_area_node
 
 	local resize_root_node
@@ -43,6 +44,7 @@ function Awake()
 		right_area_node = root_node:get_child(1)
 			scene_graph_area_node = right_area_node:get_child(0)
 				scene_graph_root_node = scene_graph_area_node:get_child(0)
+				scene_graph_scroll_bar_node = scene_graph_area_node:get_child(1):get_child(0)
 		scene_view_area_node = root_node:get_child(2)
 
 	resize_root_node = gui:get_root(1)
@@ -100,6 +102,26 @@ local darker = false
 local graph_scroll_pixels = 10
 local graph_entity_height = 20
 local graph_child_indent = 20
+
+function MouseScrolled()
+	if gui:is_node_hovered(scene_graph_area_node.index) then
+		local total_pixels = scene_graph_area_node.size.y
+		local max_content_scroll = graph_height - total_pixels
+		local max_scrollbar_travel = total_pixels - scene_graph_scroll_bar_node.size.y
+		
+		local current_travel = scene_graph_scroll_bar_node.position.y - scene_graph_area_node.position.y
+
+		scene_graph_scroll_bar_node:set_y("Pixels",
+			math.min(math.max(0.0, current_travel - Engine.client.scroll_delta.y * graph_scroll_pixels), max_scrollbar_travel)
+		)
+		
+		current_travel = scene_graph_scroll_bar_node.position.y - scene_graph_area_node.position.y
+
+		-- Map scrollbar position to content position
+		local scroll_ratio = max_scrollbar_travel > 0 and (-current_travel / max_scrollbar_travel) or 0
+		scene_graph_root_node:set_y("Pixels", scroll_ratio * max_content_scroll)
+	end
+end
 function toggle_graph_node() 
 	
 	local clicked_node = gui.ActiveNode
@@ -137,12 +159,9 @@ function build_graph()
 	local root_entity = Engine.scene:get_entity(0)
 	build_graph_recursive(root_entity, 0, 0, scene_graph_root_node)
 
-	--[[
-	scene_graph_scroll_bar_node.scale = Vector.new2(
-		scene_graph_scroll_bar_node.scale.x, 
-		math.min(1.0, (scene_graph_area_node.scale.y * right_area_node.scale.y) / graph_height) --- visible pixels / total pixels
+	scene_graph_scroll_bar_node:set_height("Factor",
+		math.min(1.0, scene_graph_area_node.size.y / graph_height) --- visible pixels / total pixels
 	)
-	--]]
 end
 function build_graph_recursive(entity, entity_index, depth, parent_gui_node)
 	
