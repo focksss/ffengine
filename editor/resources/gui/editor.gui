@@ -640,6 +640,12 @@
                     "script": 0
                   }
                 ],
+                "left_tap_actions": [
+                  {
+                    "method": "width_to_factor",
+                    "script": 0
+                  }
+                ],
                 "hover_actions": [
                   {
                     "method": "horizontal_resize_cursor",

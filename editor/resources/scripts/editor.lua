@@ -12,6 +12,7 @@ local gui
 		local right_area_node
 			local scene_graph_area_node
 				local scene_graph_root_node
+					local graph_height = 0
 				local scene_graph_scroll_bar_node
 		local scene_view_area_node
 
@@ -37,8 +38,8 @@ function Update()
 	if gui == nil then return end
 
 	local maximized = Engine.client.maximized
-	local toggle_maximize_button_image_index = 0
-	if maximized then toggle_maximize_button_image_index = 1 end
+	local toggle_maximize_button_image_index = 1
+	if maximized then toggle_maximize_button_image_index = 0 end
 	toggle_maximize_button_node:set_element_index_at_to(0, toggle_maximize_button_image_index)
 
 	has_set_target_cursor = false
@@ -58,6 +59,10 @@ function Update()
 		Engine.client.flags.reload_rendering_queued = true
 	end
 
+	scene_graph_scroll_bar_node:set_height("Factor",
+		math.min(1.0, scene_graph_area_node.size.y / graph_height) --- visible pixels / total pixels
+	)
+
 	resize_called_last_tick = resize_called_this_tick
 	resize_called_this_tick = false
 
@@ -65,7 +70,6 @@ end
 
 local expanded_entities = {}
 local node_to_entity_map = {}
-local graph_height = 0
 local darker = false
 local graph_scroll_pixels = 10
 local graph_entity_height = 20
@@ -128,10 +132,6 @@ function build_graph()
 	
 	local root_entity = Engine.scene:get_entity(0)
 	build_graph_recursive(root_entity, 0, 0, scene_graph_root_node)
-
-	scene_graph_scroll_bar_node:set_height("Factor",
-		math.min(1.0, scene_graph_area_node.size.y / graph_height) --- visible pixels / total pixels
-	)
 end
 function build_graph_recursive(entity, entity_index, depth)
 	
@@ -244,6 +244,14 @@ function height_to_factor()
 	local grand_parent = parent:get_parent();
 	
 	parent:set_height("Factor", parent.size.y / grand_parent.size.y)
+end
+
+function width_to_factor()
+	local parent = gui.ActiveNode:get_parent()
+
+	local grand_parent = parent:get_parent();
+	
+	parent:set_width("Factor", parent.size.x / grand_parent.size.x)
 end
 
 function resize_vertical()
