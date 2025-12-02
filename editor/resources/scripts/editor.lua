@@ -102,7 +102,8 @@ local darker = false
 local graph_scroll_pixels = 10
 local graph_entity_height = 20
 local graph_child_indent = 20
-
+local graph_owned_element_indices = {}
+local current_used_text_count = 0
 function MouseScrolled()
 	if gui:is_node_hovered(scene_graph_area_node.index) then
 		local total_pixels = scene_graph_area_node.size.y
@@ -150,6 +151,9 @@ function build_graph()
 		expanded_entities[0] = true
 	end
 
+	-- reset text usage counter
+	current_used_text_count = 0
+
 	-- reset height
 	graph_height = 0
 
@@ -191,6 +195,21 @@ function build_graph_recursive(entity, entity_index, depth, parent_gui_node)
 			node:add_element_index(4)
 		end
 	end
+
+	-- reuse or create text
+	local current_owned_element_count = #graph_owned_element_indices
+	if current_used_text_count >= current_owned_element_count then
+		graph_owned_element_indices[current_owned_element_count + 1] = gui:add_text(display_name)
+	else
+		local text = gui:get_text(graph_owned_element_indices[current_used_text_count + 1])
+		text:update_text(display_name)
+	end
+	local text_index = graph_owned_element_indices[current_used_text_count + 1]
+	local text = gui:get_text(text_index)
+	text.font_size = 15.0
+	text.auto_wrap_distance = 1000.0
+	node:add_element_index(text_index)
+	current_used_text_count = current_used_text_count + 1
 
 	-- format
 	node:set_x("Pixels", depth * graph_child_indent)

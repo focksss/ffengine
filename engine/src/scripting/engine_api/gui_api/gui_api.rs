@@ -624,7 +624,7 @@ impl UserData for GUIPointer {
         methods.add_method_mut("add_text", |lua, this, initial_text: String| {
             with_gui_mut!(lua, this.index => gui);
             gui.add_text(initial_text);
-            Ok(())
+            Ok(gui.elements.len() - 1)
         });
     }
 }

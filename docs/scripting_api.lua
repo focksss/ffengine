@@ -46,7 +46,7 @@ MovementMode = {
         ---@field num_nodes integer
         ---@field add_node fun(self:GUI):nil
         ---@field add_quad fun(self:GUI):nil
-        ---@field add_text fun(self:GUI, initial_text:string):nil
+        ---@field add_text fun(self:GUI, initial_text:string):integer
         ---@field is_node_hovered fun(self:GUI, node_index:integer):boolean
         ---@field root_node_indices integer[]
         ---@field get_root_index fun(self:GUI, index:integer):integer
