@@ -266,6 +266,11 @@ function resize_right_area()
 	right_area_node:set_width("Absolute", window_size.x - Engine.client.cursor_position.x)
 end
 
+function recompile() 
+    Engine.client.flags.reload_rendering_queued = true
+    Engine.client.flags.reload_scripts_queued = true
+end
+
 function drag_window() 
 	Engine.client:drag_window()
 end

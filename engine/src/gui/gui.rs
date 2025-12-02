@@ -357,7 +357,7 @@ impl GUI {
                         }
                     }
 
-                    let mut corner_radius = 5.0;
+                    let mut corner_radius = 0.0;
                     if let JsonValue::Number(ref corner_radius_json) = element_info["corner_radius"] {
                         if let Ok(v) = corner_radius_json.to_string().parse::<f32>() {
                             corner_radius = v;

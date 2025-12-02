@@ -109,19 +109,7 @@
             ]
           },
           "container": {
-            "type": "Stack",
-            "info": {
-              "horizontal": true,
-              "spacing": 0.0,
-              "padding": {
-                "left": 0.0,
-                "right": 0.0,
-                "top": 0.0,
-                "bottom": 0.0
-              },
-              "packing": "End",
-              "stack_direction": "Reverse"
-            }
+            "type": "Dock"
           },
           "parent_relation": {
             "type": "Docking",
@@ -176,6 +164,12 @@
                   }
                 ]
               },
+              "parent_relation": {
+                "type": "Docking",
+                "info": {
+                  "mode": "Right"
+                }
+              },
               "width": {
                 "type": "Absolute",
                 "info": {
@@ -224,6 +218,12 @@
                   }
                 ]
               },
+              "parent_relation": {
+                "type": "Docking",
+                "info": {
+                  "mode": "Right"
+                }
+              },
               "width": {
                 "type": "Absolute",
                 "info": {
@@ -266,6 +266,12 @@
                   }
                 ]
               },
+              "parent_relation": {
+                "type": "Docking",
+                "info": {
+                  "mode": "Right"
+                }
+              },
               "width": {
                 "type": "Absolute",
                 "info": {
@@ -285,6 +291,78 @@
                     "uri": "editor\\resources\\gui\\images\\minimize_window.png",
                     "additive_tint": [1.0, 1.0, 1.0, 0.0]
                   }
+                }
+              ]
+            },
+            {
+              "name": "reload_button_container",
+              "parent_relation": {
+                "type": "Docking",
+                "info": {
+                  "mode": "Top"
+                }
+              },
+              "container": {
+                "type": "Stack",
+                "info": {
+                  "horizontal": false,
+                  "alignment": "End"
+                }
+              },
+              "height": {
+                "type": "Factor",
+                "info": {
+                  "factor": 1.0
+                }
+              },
+              "children": [
+                {
+                  "name": "reload_button",
+                  "interactable_information": {
+                    "hover_actions": [
+                      {
+                        "method": "color_image_hovered",
+                        "script": 0
+                      },
+                      {
+                        "method": "hover_cursor",
+                        "script": 0
+                      }
+                    ],
+                    "unhover_actions": [
+                      {
+                        "method": "color_image_unhovered",
+                        "script": 0
+                      }
+                    ],
+                    "left_tap_actions": [
+                      {
+                        "method": "recompile",
+                        "script": 0
+                      }
+                    ]
+                  },
+                  "width": {
+                    "type": "Absolute",
+                    "info": {
+                      "pixels": 40.0
+                    }
+                  },
+                  "height": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "elements": [
+                    {
+                      "type": "Image",
+                      "info": {
+                        "uri": "editor\\resources\\gui\\images\\reload.png",
+                        "additive_tint": [1.0, 1.0, 1.0, 0.0]
+                      }
+                    }
+                  ]
                 }
               ]
             },
