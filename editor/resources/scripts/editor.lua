@@ -227,11 +227,34 @@ function update_fps()
 	end
 end
 
-function resize_right_area()
+function resize_horizontal_from_right()
 	resize_called_this_tick = true
 
 	local window_size = Engine.client.window_size
-	right_area_node:set_width("Absolute", window_size.x - Engine.client.cursor_position.x)
+	local parent = gui.ActiveNode:get_parent()
+	local original_width = parent.size.x
+	local original_min_world_space = parent.position.x
+	local delta = Engine.client.cursor_position.x - original_min_world_space
+	parent:set_width("Absolute", original_width - delta)
+end
+
+function height_to_factor()
+	local parent = gui.ActiveNode:get_parent()
+
+	local grand_parent = parent:get_parent();
+	
+	parent:set_height("Factor", parent.size.y / grand_parent.size.y)
+end
+
+function resize_vertical()
+	resize_called_this_tick = true
+
+	local window_size = Engine.client.window_size
+	local parent = gui.ActiveNode:get_parent()
+	local original_height = parent.size.y
+	local original_max_world_space = parent.position.y + original_height
+	local delta = Engine.client.cursor_position.y - original_max_world_space
+	parent:set_height("Absolute", original_height + delta)
 end
 
 function recompile() 

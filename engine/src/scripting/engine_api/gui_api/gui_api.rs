@@ -300,6 +300,13 @@ impl UserData for GUINodePointer {
             Ok(gui.nodes[this.index] = Node::new(original_index, original_parent))
         });
 
+        methods.add_method("get_parent", |lua, this, ()| {
+            with_gui!(lua, this.gui_index => gui);
+            lua.create_userdata(GUINodePointer {
+                gui_index: this.gui_index,
+                index: gui.nodes[this.index].parent_index.unwrap_or(0)
+            })
+        });
         methods.add_method("get_child_index", |lua, this, val: i32| {
             with_gui!(lua, this.gui_index => gui);
             Ok(gui.nodes[this.index].children_indices[val as usize])

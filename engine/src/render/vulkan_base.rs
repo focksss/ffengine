@@ -165,7 +165,12 @@ pub struct VkBase {
     pub setup_commands_reuse_fence: vk::Fence,
 }
 impl VkBase {
-    pub fn new(window_title: String, window_width: u32, window_height: u32, max_frames_in_flight: usize) -> Result<Self, Box<dyn Error>> {
+    pub fn new(
+        window_title: String, 
+        window_width: u32, 
+        window_height: u32, 
+        max_frames_in_flight: usize
+    ) -> Result<Self, Box<dyn Error>> {
         unsafe {
             let event_loop = EventLoop::new()?;
             let window = WindowBuilder::new()

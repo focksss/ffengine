@@ -69,6 +69,7 @@ MovementMode = {
             ---@field add_left_tap_action fun(self:GUINode, method:string, script:integer):nil
             ---@field index integer
             ---@field get_child fun(self:GUINode, child_index:integer):GUINode
+            ---@field get_parent fun(self:GUINode):GUINode
             ---@field get_quad_at fun(self:GUINode, element_index:integer):GUIQuad
             ---@field get_text_at fun(self:GUINode, element_index:integer):GUIText
             ---@field get_image_at fun(self:GUINode, element_index:integer):GUIImage
