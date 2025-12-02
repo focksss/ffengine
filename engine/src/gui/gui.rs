@@ -364,6 +364,13 @@ impl GUI {
                         }
                     }
 
+                    let mut aspect_ratio = None;
+                    if let JsonValue::Number(ref aspect_ratio_json) = element_info["aspect_ratio"] {
+                        if let Ok(v) = aspect_ratio_json.to_string().parse::<f32>() {
+                            aspect_ratio = Some(v);
+                        }
+                    }
+
                     element = Element::Image {
                         index,
                         uri,
@@ -371,6 +378,7 @@ impl GUI {
                         additive_tint,
                         multiplicative_tint,
                         corner_radius,
+                        aspect_ratio,
 
                         image_view: vk::ImageView::null(),
                         sampler: vk::Sampler::null(),
@@ -1267,7 +1275,7 @@ impl GUI {
                         let final_parent_size = if *relative { parent_size } else { gui_viewport };
 
                         let node_size = Self::calculate_size(&node.width, &node.height, &final_parent_size);
-                        node.size = Vector::new2(node_size.0, node_size.1);
+                        node.size = Vector::new2(node_size.0.0, node_size.1.0);
 
                         node.position.x = parent_origin.0 + final_parent_size.0*anchor_factor.0 + match offset_x {
                             Offset::Pixels(p) => *p,
@@ -1349,20 +1357,30 @@ impl GUI {
         width: &Size,
         height: &Size,
         parent_size: &(f32, f32),
-    ) -> (f32, f32) {
-        let width = match width {
-            Size::Absolute(w) => *w,
-            Size::Factor(f) => parent_size.0 * *f,
-            Size::FillFactor(_) => parent_size.0, // recalculated in container
-            Size::Auto => 100.0, // TODO: Calculate from content
+    ) -> ((f32, bool), (f32, bool)) {
+        let mut width_is_copy = false;
+        let mut width = match width {
+            Size::Absolute(p) => (*p, false),
+            Size::Factor(f) => (parent_size.0 * *f, false),
+            Size::FillFactor(f) => (*f, true), // recalculated in container
+            Size::Auto => (100.0, false), // TODO: Calculate from content,
+            Size::Copy => { width_is_copy = true;
+                println!("e"); (parent_size.0, false) },
         };
 
         let height = match height {
-            Size::Absolute(h) => *h,
-            Size::Factor(f) => parent_size.1 * *f,
-            Size::FillFactor(_) => parent_size.1, // recalculated in container
-            Size::Auto => 100.0, // TODO: Calculate from content
+            Size::Absolute(p) => (*p, false),
+            Size::Factor(f) => (parent_size.1 * *f, false),
+            Size::FillFactor(f) => (*f, true), // recalculated in container
+            Size::Auto => (100.0, false), // TODO: Calculate from content,
+            Size::Copy => {
+                if width_is_copy {
+                    panic!("Cannot have both width and height copy eachother")
+                } else { width }
+            }
         };
+
+        if width_is_copy { width = height }
 
         (width, height)
     }
@@ -1404,6 +1422,7 @@ impl GUI {
 
             // child size based on remaining space
             let child_size = Self::calculate_size(&child.width, &child.height, &remaining_space);
+            let child_size = (child_size.0.0, child_size.1.0);
 
             // position and update remaining space based on dock mode
             let (child_pos, child_final_size) = match dock_mode {
@@ -1500,7 +1519,23 @@ impl GUI {
 
         for &child_index in &operable_children_indices {
             let child = &nodes[child_index];
-            let size_mode = if horizontal { &child.width } else { &child.height };
+
+            let sizes = Self::calculate_size(&child.width, &child.height, &inner_space);
+            let size = if horizontal { sizes.0 } else { sizes.1 };
+
+            if size.1 {
+                total_fill_weight += size.0;
+                child_sizes.push(0.0); // replaced later
+            } else {
+                used_space += size.0;
+                child_sizes.push(size.0);
+            }
+            /*
+            let size_mode = if horizontal {
+                &child.width
+            } else {
+                &child.height
+            };
 
             match size_mode {
                 Size::Absolute(s) => {
@@ -1521,7 +1556,11 @@ impl GUI {
                     used_space += size;
                     child_sizes.push(size);
                 },
+                Size::Copy => {
+                    panic!("Cannot have both width and height copy eachother")
+                }
             }
+            */
         }
 
         // implement spacing
@@ -1598,6 +1637,7 @@ impl GUI {
                     Size::Factor(f) => inner_space.1 * f,
                     Size::FillFactor(_) => inner_space.1,
                     Size::Auto => 100.0,
+                    Size::Copy => primary_size
                 }
             } else {
                 match child.width {
@@ -1605,6 +1645,7 @@ impl GUI {
                     Size::Factor(f) => inner_space.0 * f,
                     Size::FillFactor(_) => inner_space.0,
                     Size::Auto => 100.0,
+                    Size::Copy => primary_size
                 }
             };
 
@@ -1747,8 +1788,17 @@ impl GUI {
                     additive_tint,
                     multiplicative_tint,
                     corner_radius,
+                    aspect_ratio,
                     ..
                 } => {
+                    let mut scale = node.size.to_array2();
+                    if let Some(ratio) = aspect_ratio {
+                        let min = scale[0].min(scale[1]);
+                        let min_axis = if scale[0] < scale[1] { 0 } else { 1 };
+                        scale[min_axis] = min;
+                        scale[1 - min_axis] = ratio * min;
+                    }
+
                     let quad_constants = GUIQuadSendable {
                         additive_color: additive_tint.to_array4(),
                         multiplicative_color: multiplicative_tint.to_array4(),
@@ -1756,7 +1806,7 @@ impl GUI {
                         clip_min: node.clip_min.to_array2(),
                         clip_max: node.clip_max.to_array2(),
                         position: node.position.to_array2(),
-                        scale: node.size.to_array2(),
+                        scale,
                         corner_radius: *corner_radius,
                         image: *index as i32,
                     };
@@ -1950,7 +2000,8 @@ pub enum Size {
     Absolute(f32), // pixels
     Factor(f32), // factor of parent size
     FillFactor(f32), // factor of final remaining space, after allocation of other Size types.
-    Auto, // fit content
+    Auto, // fit content,
+    Copy,
 }
 impl Default for Size {
     fn default() -> Size {
@@ -1969,6 +2020,7 @@ pub enum Element {
         additive_tint: Vector,
         multiplicative_tint: Vector,
         corner_radius: f32,
+        aspect_ratio: Option<f32>,
 
         image_view: vk::ImageView,
         sampler: vk::Sampler,

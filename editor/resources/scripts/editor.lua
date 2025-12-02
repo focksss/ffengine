@@ -162,17 +162,16 @@ function build_graph_recursive(entity, entity_index, depth, parent_gui_node)
 	-- quad
 	local quad_index = 2
 	if darker then quad_index = 3 end
+	darker = not darker
 	node:add_element_index(quad_index)
 	--- add the expanded/collapsed visual image after so its drawn on top
-	--[[
 	if has_children then
 		if is_expanded then
-			node:add_element_index(10)
+			node:add_element_index(5)
 		else
-			node:add_element_index(9)
+			node:add_element_index(4)
 		end
 	end
-	---]]
 
 	-- format
 	node:set_x("Pixels", depth * graph_child_indent)

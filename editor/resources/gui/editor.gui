@@ -50,6 +50,26 @@
         "color": [0.3, 0.3, 0.3, 1.0],
         "corner_radius": 5.0
       }
+    },
+    {
+      "name": "collapsed",
+      "type": "Image",
+      "info": {
+        "uri": "editor\\resources\\gui\\images\\collapsed.png",
+        "additive_tint": [1.0, 1.0, 1.0, 0.0],
+        "multiplicative_tint": [1.0, 1.0, 1.0, 2.0],
+        "aspect_ratio": 1.0
+      }
+    },
+    {
+      "name": "expanded",
+      "type": "Image",
+      "info": {
+        "uri": "editor\\resources\\gui\\images\\expanded.png",
+        "additive_tint": [1.0, 1.0, 1.0, 0.0],
+        "multiplicative_tint": [1.0, 1.0, 1.0, 2.0],
+        "aspect_ratio": 1.0
+      }
     }
   ],
   "nodes": [
@@ -474,7 +494,7 @@
             }
           },
           "width": {
-            "type": "FillFactor",
+            "type": "Factor",
             "info": {
               "factor": 1.0
             }
@@ -877,7 +897,12 @@
               }
             ]
           },
-          "dock_mode": "Left",
+          "parent_relation": {
+            "type": "Docking",
+            "info": {
+              "mode": "Left"
+            }
+          },
           "width": {
             "type": "Absolute",
             "info": {
@@ -907,7 +932,12 @@
               }
             ]
           },
-          "dock_mode": "Right",
+          "parent_relation": {
+            "type": "Docking",
+            "info": {
+              "mode": "Right"
+            }
+          },
           "width": {
             "type": "Absolute",
             "info": {
