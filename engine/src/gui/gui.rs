@@ -1207,7 +1207,7 @@ impl GUI {
             }
         }
     }
-    
+
     pub fn add_text(&mut self, text: String) {
         let new_text = Element::Text {
             text_information: Some(TextInformation::new(self.fonts[0].clone())
@@ -2109,8 +2109,8 @@ impl Node {
 
             container: Container::Dock,
             parent_relation: None,
-            width: Size::FillFactor(1.0),
-            height: Size::FillFactor(1.0),
+            width: Size::Factor(1.0),
+            height: Size::Factor(1.0),
 
             position: Vector::empty(),
             size: Vector::empty(),

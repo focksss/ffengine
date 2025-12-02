@@ -165,12 +165,12 @@ function build_graph()
 		math.min(1.0, scene_graph_area_node.size.y / graph_height) --- visible pixels / total pixels
 	)
 end
-function build_graph_recursive(entity, entity_index, depth, parent_gui_node)
+function build_graph_recursive(entity, entity_index, depth)
 	
-	-- node
+	-- entity root node
 	local current_owned_node_count = #graph_owned_node_indices
 	if current_used_node_count >= current_owned_node_count then
-		graph_owned_node_indices[current_owned_node_count + 1] = gui:add_node(parent_gui_node.index)
+		graph_owned_node_indices[current_owned_node_count + 1] = gui:add_node(scene_graph_root_node.index)
 	end
 	local node_index = graph_owned_node_indices[current_used_node_count + 1]
 	local node = gui:get_node(node_index)
@@ -182,8 +182,21 @@ function build_graph_recursive(entity, entity_index, depth, parent_gui_node)
 	node:set_height("Absolute", 20.0)
 	node:set_anchor_point(AnchorPoint.TopLeft)
 	current_used_node_count = current_used_node_count + 1
-	parent_gui_node:add_child_index(node_index)
-
+	scene_graph_root_node:add_child_index(node_index)
+	-- text node
+	local current_owned_node_count = #graph_owned_node_indices
+	if current_used_node_count >= current_owned_node_count then
+		graph_owned_node_indices[current_owned_node_count + 1] = gui:add_node(node.index)
+	end
+	local text_node_index = graph_owned_node_indices[current_used_node_count + 1]
+	local text_node = gui:get_node(text_node_index)
+	text_node:reset()
+	text_node:set_x("Pixels", 20)
+	text_node:set_width("Factor", 1.0)
+	text_node:set_height("Factor", 1.0)
+	current_used_node_count = current_used_node_count + 1
+	node:add_child_index(text_node_index)
+	
 	--- map
 	node_to_entity_map[node_index] = entity_index
 	local is_expanded = expanded_entities[entity_index]
@@ -217,7 +230,7 @@ function build_graph_recursive(entity, entity_index, depth, parent_gui_node)
 	local text = gui:get_text(text_index)
 	text.font_size = 15.0
 	text.auto_wrap_distance = 1000.0
-	node:add_element_index(text_index)
+	text_node:add_element_index(text_index)
 	current_used_text_count = current_used_text_count + 1
 	
 	graph_height = graph_height + graph_entity_height
@@ -227,7 +240,7 @@ function build_graph_recursive(entity, entity_index, depth, parent_gui_node)
 		for i = 1, #children do
 			local child_entity_index = children[i]
 			local child_entity = Engine.scene:get_entity(child_entity_index)
-			build_graph_recursive(child_entity, child_entity_index, depth + 1, parent_gui_node)
+			build_graph_recursive(child_entity, child_entity_index, depth + 1)
 		end
 	end
 end
