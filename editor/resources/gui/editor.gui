@@ -435,9 +435,9 @@
             }
           },
           "width": {
-            "type": "Absolute",
+            "type": "Factor",
             "info": {
-              "pixels": 500.0
+              "factor": 0.2
             }
           },
           "height": {

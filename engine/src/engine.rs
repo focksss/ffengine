@@ -51,7 +51,7 @@ pub struct EngineRef {
 }
 impl Engine {
     pub unsafe fn new() -> Engine {
-        let base = VkBase::new("ffengine".to_string(), 600, 400, MAX_FRAMES_IN_FLIGHT).unwrap();
+        let base = VkBase::new("ffengine".to_string(), 1920, 1080, MAX_FRAMES_IN_FLIGHT).unwrap();
         let mut world = World::new(&base);
         unsafe { world.initialize(&base) }
         let world = Arc::new(RefCell::new(world));
