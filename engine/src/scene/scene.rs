@@ -13,6 +13,7 @@ use crate::scene::world::camera::Frustum;
 use crate::scene::world::world::{Instance, World, MAX_INSTANCES};
 
 //TODO handle ALL updates + rendering from here (call to World + PhysicsEngine)
+//TODO change World structure to have a single flat list of Primitives. Store Meshes here, Meshes have child primitives, and are RenderComponents. 
 pub struct Scene {
     pub entities: Vec<Entity>, // will always have a root node with sun
 

@@ -77,7 +77,7 @@ fn main() { unsafe {
 
         app.scene.borrow_mut().new_entity_from_model(base, 0, "editor/resources/models/demoBall/scene.gltf");
         app.scene.borrow_mut().new_entity_from_model(base, 0, "editor/resources/models/demoBall/scene.gltf");
-        app.scene.borrow_mut().new_entity_from_model(base, 0, "editor/resources/models/grassblockGLTF/grassblock.gltf");
+        app.scene.borrow_mut().new_entity_from_model(base, 0, "editor/resources/models/props/crate/crate.gltf");
 
         physics_engine.add_all_nodes_from_model(&app.world.borrow(), 1, 3);
         physics_engine.add_all_nodes_from_model(&app.world.borrow(), 2, 3);
