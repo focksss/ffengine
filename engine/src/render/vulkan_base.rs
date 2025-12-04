@@ -1493,7 +1493,14 @@ impl Drop for VkBase {
         }
     }
 }
-pub unsafe fn copy_buffer_synchronous(device: &Device, command_buffer: CommandBuffer, src_buffer: &Buffer, dst_buffer: &Buffer, regions: Option<Vec<vk::BufferCopy>>, size: &vk::DeviceSize) { unsafe {
+pub unsafe fn copy_buffer_synchronous(
+    device: &Device, 
+    command_buffer: CommandBuffer, 
+    src_buffer: &Buffer, 
+    dst_buffer: &Buffer, 
+    regions: Option<Vec<vk::BufferCopy>>, 
+    size: &vk::DeviceSize
+) { unsafe {
     let copy_region = regions.unwrap_or(vec![vk::BufferCopy {
         src_offset: 0,
         dst_offset: 0,

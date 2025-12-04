@@ -222,7 +222,6 @@ impl Engine {
                                 {
                                     self.scene.borrow_mut().update_scene(base, current_frame);
                                     let world_ref = &mut self.world.borrow_mut();
-                                    world_ref.update_joints(frame_command_buffer, current_frame);
                                     world_ref.update_lights(frame_command_buffer, current_frame);
                                     world_ref.update_cameras()
                                 }

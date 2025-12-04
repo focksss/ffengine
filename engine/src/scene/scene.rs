@@ -167,63 +167,65 @@ impl Scene {
             //     world.animations[i].update(nodes);
             // }
         }
-
-        let mut dirty_primitive_instance_data: Vec<Instance> = Vec::new();
-        for entity_index in self.unupdated_entities.clone().iter() {
-            self.update_entity(
-                base,
-                frame,
-                &self.transforms[0].matrix.clone(),
-                *entity_index,
-                &mut dirty_primitive_instance_data
-            )
-        }
-        self.unupdated_entities.clear();
-
-        let mut joints = Vec::new();
-        let mut total = 0f32;
-        for skin in self.skin_components.iter() {
-            joints.push(Matrix::new_manual([self.skin_components.len() as f32 + total; 16]));
-            total += skin.joints.len() as f32;
-        }
-        for skin in self.skin_components.iter() {
-            skin.update(&self, &mut joints);
-        }
-
-        let world = &self.world.borrow();
-        unsafe {
-            std::ptr::copy_nonoverlapping(
-                dirty_primitive_instance_data.as_ptr() as *const u8,
-                world.instance_staging_buffer.2 as *mut u8,
-                size_of::<Instance>() * dirty_primitive_instance_data.len(),
-            );
-
-            let mut copy_regions = Vec::new();
-            for (i, &primitive_id) in self.dirty_primitives.iter().enumerate() {
-                copy_regions.push(vk::BufferCopy {
-                    src_offset: (i * size_of::<Instance>()) as u64,
-                    dst_offset: (primitive_id * size_of::<Instance>()) as u64,
-                    size: size_of::<Instance>() as u64,
-                });
+        if frame == 0 {
+            let mut dirty_primitive_instance_data: Vec<Instance> = Vec::new();
+            for entity_index in self.unupdated_entities.clone().iter() {
+                self.update_entity(
+                    base,
+                    frame,
+                    &self.transforms[0].matrix.clone(),
+                    *entity_index,
+                    &mut dirty_primitive_instance_data
+                )
             }
-            self.dirty_primitives.clear();
+            self.unupdated_entities.clear();
 
-            let command_buffer = get_command_buffer();
-            if !copy_regions.is_empty() {
-                for frame in 0..MAX_FRAMES_IN_FLIGHT {
-                    copy_buffer_synchronous(
-                        &base.device,
-                        command_buffer,
-                        &world.instance_staging_buffer.0,
-                        &world.instance_buffers[frame].0,
-                        Some(copy_regions.clone()),
-                        &0u64
-                    )
+            let mut joints = Vec::new();
+            let mut total = 0f32;
+            for skin in self.skin_components.iter() {
+                joints.push(Matrix::new_manual([self.skin_components.len() as f32 + total; 16]));
+                total += skin.joints.len() as f32;
+            }
+            for skin in self.skin_components.iter() {
+                skin.update(&self, &mut joints);
+            }
+
+            let world = &self.world.borrow();
+            unsafe {
+                std::ptr::copy_nonoverlapping(
+                    dirty_primitive_instance_data.as_ptr() as *const u8,
+                    world.instance_staging_buffer.2 as *mut u8,
+                    size_of::<Instance>() * dirty_primitive_instance_data.len(),
+                );
+
+                let mut copy_regions = Vec::new();
+                for (i, &primitive_id) in self.dirty_primitives.iter().enumerate() {
+                    copy_regions.push(vk::BufferCopy {
+                        src_offset: (i * size_of::<Instance>()) as u64,
+                        dst_offset: (primitive_id * size_of::<Instance>()) as u64,
+                        size: size_of::<Instance>() as u64,
+                    });
+                }
+                self.dirty_primitives.clear();
+
+                copy_data_to_memory(world.joints_staging_buffer.2, &joints);
+
+                let command_buffer = get_command_buffer();
+                if !copy_regions.is_empty() {
+                    for frame in 0..MAX_FRAMES_IN_FLIGHT {
+                        copy_buffer_synchronous(
+                            &base.device,
+                            command_buffer,
+                            &world.instance_staging_buffer.0,
+                            &world.instance_buffers[frame].0,
+                            Some(copy_regions.clone()),
+                            &0u64
+                        );
+
+                        copy_buffer_synchronous(&world.device, command_buffer, &world.joints_staging_buffer.0, &world.joints_buffers[frame].0, None, &world.joints_buffers_size);
+                    }
                 }
             }
-            
-            copy_data_to_memory(world.joints_staging_buffer.2, &joints);
-            copy_buffer_synchronous(&world.device, command_buffer, &world.joints_staging_buffer.0, &world.joints_buffers[frame].0, None, &world.joints_buffers_size);
         }
     }
     pub fn update_entity(
