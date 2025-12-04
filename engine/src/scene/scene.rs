@@ -15,7 +15,7 @@ use crate::scene::world::world::{Instance, Node, World, MAX_INSTANCES};
 
 //TODO handle ALL updates + rendering from here (call to World + PhysicsEngine)
 //TODO change World structure to have a single flat list of Primitives. Store Meshes here, Meshes have child primitives, and are RenderComponents.
-//TODO refactor scene structure
+//TODO refactor scene structure to allow multiple components of each type
 pub struct Scene {
     pub entities: Vec<Entity>, // will always have a root node with sun
 
@@ -86,6 +86,7 @@ impl Scene {
                 name: String::from(uri),
                 transform: entity_transform_index,
                 parent: parent_index,
+                animation_objects: new_model.animations.iter().map(|&i| i + self.animation_components.len()).collect(),
                 ..Default::default()
             });
 
@@ -108,6 +109,7 @@ impl Scene {
         for animation_index in new_animations {
             let animation = &world.animations[animation_index];
             self.animation_components.push(AnimationComponent {
+                owner_entity: model_entity_index,
                 channels: animation.channels.iter().map(|c| (c.0, world.nodes[c.1].mapped_entity_index, c.2.clone())).collect(),
                 samplers: animation.samplers.clone(),
                 start_time: SystemTime::now(),
@@ -117,6 +119,7 @@ impl Scene {
                 snap_back: animation.snap_back,
             });
         }
+
     }
     fn implement_world_node(&mut self, node_index: usize, parent_index: usize) {
         let node_entity_index = self.entities.len();
@@ -153,11 +156,9 @@ impl Scene {
             });
 
             if let Some(mesh_index) = node.mesh {
+                let entity = &mut self.entities[node_entity_index];
                 for (i, primitive) in world.meshes[mesh_index].primitives.iter().enumerate() {
-                    let primitive_entity_index = self.entities.len();
-                    self.entities[node_entity_index].children_indices.push(primitive_entity_index);
-
-                    let primitive_entity_transform_index = self.transforms.len();
+                    let render_component_transform_index = self.transforms.len();
                     self.transforms.push(Transform::default());
 
                     let render_component_index = self.render_components.len();
@@ -165,16 +166,10 @@ impl Scene {
                         mesh_primitive_index: (mesh_index, i),
                         skin_index: node.skin,
                         material_index: primitive.material_index as usize,
-                        transform: primitive_entity_transform_index,
+                        transform: render_component_transform_index,
                     });
 
-                    self.entities.push(Entity {
-                        name: node.name.clone().add(format!(".primitive{}", primitive.id).as_str()),
-                        transform: primitive_entity_transform_index,
-                        parent: node_entity_index,
-                        render_object: Some(render_component_index),
-                        ..Default::default()
-                    });
+                    entity.render_objects.push(render_component_index);
                 }
             }
             node.children_indices.clone()
@@ -198,8 +193,8 @@ impl Scene {
             }
 
             let mut dirty_primitive_instance_data: Vec<Instance> = Vec::new();
-            // for entity_index in self.unupdated_entities.clone().iter() {
-            for entity_index in &vec![1usize] {
+            for entity_index in self.unupdated_entities.clone().iter() {
+            //for entity_index in &vec![1usize] {
                 let parent_index = self.entities[*entity_index].parent;
                 self.update_entity(
                     base,
@@ -285,13 +280,17 @@ impl Scene {
 
         {
             let world = &mut self.world.borrow_mut();
-            if let Some(render_object) = entity.render_object {
-                let render_component = &self.render_components[render_object];
+            for render_object_index in entity.render_objects.iter() {
+                let render_component = &self.render_components[*render_object_index];
+
+                let render_component_transform = &self.transforms[render_component.transform].matrix;
+                let render_component_world_transform = entity_world_transform * render_component_transform;
+
                 let primitive = &world.meshes[render_component.mesh_primitive_index.0].primitives[render_component.mesh_primitive_index.1];
                 self.dirty_primitives.push(primitive.id);
                 dirty_primitive_instance_data.push(
                     Instance {
-                        matrix: entity_world_transform.data,
+                        matrix: render_component_world_transform.data,
                         indices: [
                             render_component.material_index as i32,
                             render_component.skin_index.map_or(-1, |i| i)
@@ -345,7 +344,9 @@ pub struct Entity {
     pub parent: usize,
 
     pub sun: Option<SunComponent>,
-    pub render_object: Option<usize>,
+    pub render_objects: Vec<usize>,
+    pub joint_object: Option<usize>,
+    pub animation_objects: Vec<usize>,
     pub rigid_body: Option<usize>,
     pub camera: Option<usize>,
     pub light: Option<usize>,
@@ -359,7 +360,9 @@ impl Default for Entity {
             children_indices: Vec::new(),
             parent: 0,
             sun: None,
-            render_object: None,
+            render_objects: Vec::new(),
+            joint_object: None,
+            animation_objects: Vec::new(),
             rigid_body: None,
             camera: None,
             light: None,
@@ -403,6 +406,7 @@ impl Default for Transform {
 }
 
 pub struct AnimationComponent {
+    owner_entity: usize,
     pub channels: Vec<(usize, usize, String)>, // sampler index, impacted node, target transform component
     pub samplers: Vec<(Vec<f32>, String, Vec<Vector>)>, // input times, interpolation method, output vectors
     pub start_time: SystemTime,
@@ -441,6 +445,7 @@ impl AnimationComponent {
                 return
             }
         }
+        unnupdated_entities.push(self.owner_entity);
         for channel in self.channels.iter() {
             let sampler = &self.samplers[channel.0];
             let mut current_time_index = 0;
@@ -465,7 +470,6 @@ impl AnimationComponent {
                 new_vector = Vector::spherical_lerp(vector1, vector2, interpolation_factor)
             }
 
-            unnupdated_entities.push(channel.1);
             let entity = &entities[channel.1];
             let animated_transform = &mut transforms[*entity.animated_transform.as_ref().unwrap()];
 
@@ -501,7 +505,7 @@ pub struct RigidBodyComponent {
 }
 pub struct RenderComponent {
     mesh_primitive_index: (usize, usize), // world mesh, mesh-primitive index
-    transform: usize, // shared with owner Entity, also here to allow for avoiding graph traversal during rendering
+    transform: usize, // independent from parent
     skin_index: Option<i32>,
     material_index: usize,
 }
