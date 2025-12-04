@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::ops::Add;
 use std::sync::Arc;
+use std::time::SystemTime;
 use ash::{vk, Device};
 use ash::vk::CommandBuffer;
 use crate::engine::get_command_buffer;
@@ -10,7 +11,7 @@ use crate::render::render::{Renderer, MAX_FRAMES_IN_FLIGHT};
 use crate::render::vulkan_base::{copy_buffer_synchronous, copy_data_to_memory, VkBase};
 use crate::scene::physics::physics_engine::PhysicsEngine;
 use crate::scene::world::camera::Frustum;
-use crate::scene::world::world::{Instance, World, MAX_INSTANCES};
+use crate::scene::world::world::{Instance, Node, World, MAX_INSTANCES};
 
 //TODO handle ALL updates + rendering from here (call to World + PhysicsEngine)
 //TODO change World structure to have a single flat list of Primitives. Store Meshes here, Meshes have child primitives, and are RenderComponents.
@@ -23,6 +24,7 @@ pub struct Scene {
     pub transforms: Vec<Transform>,
     pub render_components: Vec<RenderComponent>,
     pub skin_components: Vec<SkinComponent>,
+    pub animation_components: Vec<AnimationComponent>,
     pub rigid_body_components: Vec<RigidBodyComponent>,
     pub camera_components: Vec<CameraComponent>,
     pub light_components: Vec<LightComponent>,
@@ -41,6 +43,7 @@ impl Scene {
             transforms: Vec::new(),
             render_components: Vec::new(),
             skin_components: Vec::new(),
+            animation_components: Vec::new(),
             rigid_body_components: Vec::new(),
             camera_components: Vec::new(),
             light_components: Vec::new(),
@@ -69,7 +72,7 @@ impl Scene {
     pub fn new_entity_from_model(&mut self, base: &VkBase, parent_index: usize, uri: &str) {
         let model_entity_index = self.entities.len();
         self.unupdated_entities.push(model_entity_index);
-        let (new_nodes, new_skins) = {
+        let (new_nodes, new_skins, new_animations) = {
             let world = &mut self.world.borrow_mut();
 
             unsafe { world.add_model(base, uri) }
@@ -86,7 +89,7 @@ impl Scene {
                 ..Default::default()
             });
 
-            (world.scenes[new_model.scene].nodes.clone(), new_model.skins.clone())
+            (world.scenes[new_model.scene].nodes.clone(), new_model.skins.clone(), new_model.animations.clone())
         };
 
 
@@ -100,6 +103,18 @@ impl Scene {
             self.skin_components.push(SkinComponent {
                 joints: mapped_joint_indices,
                 inverse_bind_matrices: skin.inverse_bind_matrices.clone(),
+            });
+        }
+        for animation_index in new_animations {
+            let animation = &world.animations[animation_index];
+            self.animation_components.push(AnimationComponent {
+                channels: animation.channels.iter().map(|c| (c.0, world.nodes[c.1].mapped_entity_index, c.2.clone())).collect(),
+                samplers: animation.samplers.clone(),
+                start_time: SystemTime::now(),
+                duration: animation.duration,
+                running: animation.running,
+                repeat: animation.snap_back,
+                snap_back: animation.snap_back,
             });
         }
     }
@@ -120,9 +135,19 @@ impl Scene {
                 scale: node.scale,
                 ..Default::default()
             });
+
+            let node_anim_transform_index = self.transforms.len();
+            self.transforms.push(Transform {
+                translation: node.translation,
+                rotation: node.rotation,
+                scale: node.scale,
+                ..Default::default()
+            });
+
             self.entities.push(Entity {
                 name: node.name.clone(),
                 transform: node_transform_index,
+                animated_transform: Some(node_anim_transform_index),
                 parent: parent_index,
                 ..Default::default()
             });
@@ -168,12 +193,18 @@ impl Scene {
             // }
         }
         if frame == 0 {
+            for animation in self.animation_components.iter_mut() {
+                animation.update(&mut self.entities, &mut self.transforms, &mut self.unupdated_entities)
+            }
+
             let mut dirty_primitive_instance_data: Vec<Instance> = Vec::new();
-            for entity_index in self.unupdated_entities.clone().iter() {
+            // for entity_index in self.unupdated_entities.clone().iter() {
+            for entity_index in &vec![1usize] {
+                let parent_index = self.entities[*entity_index].parent;
                 self.update_entity(
                     base,
                     frame,
-                    &self.transforms[0].matrix.clone(),
+                    &self.transforms[self.entities[parent_index].transform].world.clone(),
                     *entity_index,
                     &mut dirty_primitive_instance_data
                 )
@@ -237,12 +268,20 @@ impl Scene {
         dirty_primitive_instance_data: &mut Vec<Instance>
     ) {
         let entity = &self.entities[entity];
-        let entity_transform_component = &mut self.transforms[entity.transform];
-        entity_transform_component.update_matrix();
-        let entity_local_transform = &entity_transform_component.matrix;
+        let entity_local_transform = {
+            let entity_transform_component = &mut self.transforms[entity.transform];
+            entity_transform_component.update_matrix();
+            entity_transform_component.matrix.clone()
+        };
 
-        let entity_world_transform = parent_world_transform * entity_local_transform;
-        entity_transform_component.world = entity_world_transform;
+        let entity_world_transform = if let Some(anim_index) = entity.animated_transform {
+            let animated_transform = &mut self.transforms[anim_index];
+            animated_transform.update_matrix();
+            parent_world_transform * animated_transform.matrix
+        } else {
+            parent_world_transform * entity_local_transform
+        };
+        self.transforms[entity.transform].world = entity_world_transform;
 
         {
             let world = &mut self.world.borrow_mut();
@@ -301,6 +340,7 @@ impl Scene {
 pub struct Entity {
     pub name: String,
     pub transform: usize,
+    pub animated_transform: Option<usize>,
     pub children_indices: Vec<usize>,
     pub parent: usize,
 
@@ -315,6 +355,7 @@ impl Default for Entity {
         Self {
             name: String::from("entity"),
             transform: 0,
+            animated_transform: None,
             children_indices: Vec::new(),
             parent: 0,
             sun: None,
@@ -361,6 +402,88 @@ impl Default for Transform {
     }
 }
 
+pub struct AnimationComponent {
+    pub channels: Vec<(usize, usize, String)>, // sampler index, impacted node, target transform component
+    pub samplers: Vec<(Vec<f32>, String, Vec<Vector>)>, // input times, interpolation method, output vectors
+    pub start_time: SystemTime,
+    pub duration: f32,
+    pub running: bool,
+    pub repeat: bool,
+    pub snap_back: bool,
+}
+impl AnimationComponent {
+    pub fn start(&mut self) {
+        self.start_time = SystemTime::now();
+        self.running = true;
+    }
+
+    pub fn stop(&mut self, entities: &mut Vec<Entity>) {
+        self.running = false;
+        if self.snap_back {
+            for channel in self.channels.iter() {
+                entities[channel.1].animated_transform = None;
+            }
+        }
+    }
+
+    pub fn update(&mut self, entities: &mut Vec<Entity>, transforms: &mut Vec<Transform>, unnupdated_entities: &mut Vec<usize>) {
+        if !self.running {
+            return
+        }
+        let current_time = SystemTime::now();
+        let elapsed_time = current_time.duration_since(self.start_time).unwrap().as_secs_f32();
+        let mut repeat = false;
+        if elapsed_time > self.duration {
+            if self.repeat {
+                repeat = true
+            } else {
+                self.stop(entities);
+                return
+            }
+        }
+        for channel in self.channels.iter() {
+            let sampler = &self.samplers[channel.0];
+            let mut current_time_index = 0;
+            for i in 0..sampler.0.len() - 1 {
+                if elapsed_time >= sampler.0[i] && elapsed_time < sampler.0[i + 1] {
+                    current_time_index = i;
+                    break
+                }
+            }
+            let current_time_index = current_time_index.min(sampler.0.len() - 1);
+            let interpolation_factor = ((elapsed_time - sampler.0[current_time_index]) / (sampler.0[current_time_index + 1] - sampler.0[current_time_index])).min(1.0).max(0.0);
+            let vector1 = &sampler.2[current_time_index];
+            let vector2 = &sampler.2[current_time_index + 1];
+            let new_vector;
+            if channel.2.eq("translation") || channel.2.eq("scale") {
+                new_vector = Vector::new3(
+                    vector1.x + interpolation_factor * (vector2.x - vector1.x),
+                    vector1.y + interpolation_factor * (vector2.y - vector1.y),
+                    vector1.z + interpolation_factor * (vector2.z - vector1.z),
+                )
+            } else {
+                new_vector = Vector::spherical_lerp(vector1, vector2, interpolation_factor)
+            }
+
+            unnupdated_entities.push(channel.1);
+            let entity = &entities[channel.1];
+            let animated_transform = &mut transforms[*entity.animated_transform.as_ref().unwrap()];
+
+            if channel.2.eq("translation") {
+                animated_transform.translation = new_vector
+            } else if channel.2.eq("rotation") {
+                animated_transform.rotation = new_vector
+            } else if channel.2.eq("scale") {
+                animated_transform.scale = new_vector
+            } else {
+                panic!("Illogical animation channel target! Should be translation, rotation or scale");
+            }
+        }
+        if repeat {
+            self.start()
+        }
+    }
+}
 pub struct SkinComponent {
     joints: Vec<usize>, // entity indices
     inverse_bind_matrices: Vec<Matrix>

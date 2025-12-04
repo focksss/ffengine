@@ -29,13 +29,12 @@ fn main() { unsafe {
             outer_cutoff: 0.0,
         });
 
-
-
-        app.scene.borrow_mut().new_entity_from_model(base, 0, "editor/resources/models/ffocks/untitled.gltf");
-        // let anim_index = app.world.borrow().models[0].animations[0];
-        // app.world.borrow_mut().animations[anim_index].repeat = true;
-        // app.world.borrow_mut().animations[anim_index].start();
-
+        {
+            app.scene.borrow_mut().new_entity_from_model(base, 0, "editor/resources/models/ffocks/untitled.gltf");
+            let anim = &mut app.scene.borrow_mut().animation_components[0];
+            anim.repeat = true;
+            anim.start();
+        }
 
         //app.scene.borrow_mut().new_entity_from_model(base, 0, "editor/resources/models/grassblockGLTF/grassblock.gltf");
         // app.scene.borrow_mut().new_entity_from_model(base, 0, "C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf");
