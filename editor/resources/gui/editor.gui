@@ -57,8 +57,7 @@
       "info": {
         "uri": "editor\\resources\\gui\\images\\collapsed.png",
         "additive_tint": [1.0, 1.0, 1.0, 0.0],
-        "multiplicative_tint": [1.0, 1.0, 1.0, 2.0],
-        "aspect_ratio": 1.0
+        "multiplicative_tint": [1.0, 1.0, 1.0, 2.0]
       }
     },
     {
@@ -67,8 +66,7 @@
       "info": {
         "uri": "editor\\resources\\gui\\images\\expanded.png",
         "additive_tint": [1.0, 1.0, 1.0, 0.0],
-        "multiplicative_tint": [1.0, 1.0, 1.0, 2.0],
-        "aspect_ratio": 1.0
+        "multiplicative_tint": [1.0, 1.0, 1.0, 2.0]
       }
     }
   ],

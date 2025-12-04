@@ -2127,7 +2127,7 @@ pub struct GUIInteractableInformation {
     was_initially_pressed: bool,
 
     passive_actions: Vec<(String, usize)>,
-    hover_actions: Vec<(String, usize)>,
+    pub(crate) hover_actions: Vec<(String, usize)>,
     unhover_actions: Vec<(String, usize)>,
     pub left_tap_actions: Vec<(String, usize)>,
     left_hold_actions: Vec<(String, usize)>,

@@ -424,6 +424,19 @@ impl UserData for GUINodePointer {
             }
             Ok(())
         });
+        methods.add_method_mut("add_hover_action", |lua, this, val: (String, usize)| {
+            with_gui_mut!(lua, this.gui_index => gui);
+            let script_index = gui.script_indices[val.1];
+            let node = &mut gui.nodes[this.index];
+            if let Some(interactable_information) = &mut node.interactable_information {
+                interactable_information.hover_actions.push((val.0, script_index));
+            } else {
+                let mut new_interactable_information = GUIInteractableInformation::default();
+                new_interactable_information.hover_actions.push((val.0, script_index));
+                node.interactable_information = Some(new_interactable_information);
+            }
+            Ok(())
+        });
 
         methods.add_method_mut("set_width", |lua, this, val: (String, f32)| {
             with_gui_mut!(lua, this.gui_index => gui);

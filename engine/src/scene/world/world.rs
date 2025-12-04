@@ -1138,6 +1138,7 @@ impl ModelContainer {
 
             nodes.push(
                 Node {
+                    mapped_entity_index: 0,
                     name,
                     mesh,
                     skin,
@@ -1915,6 +1916,8 @@ impl Mesh {
 }
 
 pub struct Node {
+    pub mapped_entity_index: usize,
+
     pub mesh: Option<usize>,
     pub skin: Option<i32>,
     pub name: String,
@@ -1968,8 +1971,8 @@ impl Node {
 pub struct Skin {
     name: String,
     inverse_bind_matrices_accessor: usize,
-    inverse_bind_matrices: Vec<Matrix>,
-    joint_indices: Vec<usize>,
+    pub inverse_bind_matrices: Vec<Matrix>,
+    pub joint_indices: Vec<usize>,
     joint_matrices: Vec<Matrix>,
     skeleton: Option<usize>,
 }

@@ -30,12 +30,12 @@ fn main() { unsafe {
         });
 
 
-        /*
+
         app.scene.borrow_mut().new_entity_from_model(base, 0, "editor/resources/models/ffocks/untitled.gltf");
-        let anim_index = app.world.borrow().models[0].animations[0];
-        app.world.borrow_mut().animations[anim_index].repeat = true;
-        app.world.borrow_mut().animations[anim_index].start();
-        */
+        // let anim_index = app.world.borrow().models[0].animations[0];
+        // app.world.borrow_mut().animations[anim_index].repeat = true;
+        // app.world.borrow_mut().animations[anim_index].start();
+
 
         //app.scene.borrow_mut().new_entity_from_model(base, 0, "editor/resources/models/grassblockGLTF/grassblock.gltf");
         // app.scene.borrow_mut().new_entity_from_model(base, 0, "C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf");
@@ -72,12 +72,12 @@ fn main() { unsafe {
         physics_engine.rigid_bodies[0].restitution_coefficient = 1.0;
         */
 
-        // /*
+        /*
         app.scene.borrow_mut().new_entity_from_model(base, 0, "editor/resources/models/collisionTest/collisionTestNoWalls.gltf");
 
         app.scene.borrow_mut().new_entity_from_model(base, 0, "editor/resources/models/demoBall/scene.gltf");
         app.scene.borrow_mut().new_entity_from_model(base, 0, "editor/resources/models/demoBall/scene.gltf");
-        app.scene.borrow_mut().new_entity_from_model(base, 0, "editor/resources/models/props/crate/crate.gltf");
+        app.scene.borrow_mut().new_entity_from_model(base, 0, "editor/resources/models/grassblockGLTF/grassblock.gltf");
 
         physics_engine.add_all_nodes_from_model(&app.world.borrow(), 1, 3);
         physics_engine.add_all_nodes_from_model(&app.world.borrow(), 2, 3);
@@ -97,7 +97,7 @@ fn main() { unsafe {
         physics_engine.rigid_bodies[2].set_mass(1.0);
         physics_engine.rigid_bodies[2].position = Vector::new3(0.5, 15.0, 0.5);
         physics_engine.rigid_bodies[2].restitution_coefficient = 1.0;
-        // */
+        */
 
         /*
         world.add_model(base, Model::new(&PathBuf::from("editor/resources/models/sphereScene/scene.gltf").to_str().unwrap()));

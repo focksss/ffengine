@@ -133,40 +133,47 @@ function build_graph()
 	local root_entity = Engine.scene:get_entity(0)
 	build_graph_recursive(root_entity, 0, 0, scene_graph_root_node)
 end
-function build_graph_recursive(entity, entity_index, depth)
-	
-	-- entity root node
+local function get_next_graph_node_index()
 	local current_owned_node_count = #graph_owned_node_indices
 	if current_used_node_count >= current_owned_node_count then
 		graph_owned_node_indices[current_owned_node_count + 1] = gui:add_node(scene_graph_root_node.index)
 	end
-	local node_index = graph_owned_node_indices[current_used_node_count + 1]
+	current_used_node_count = current_used_node_count + 1
+	return graph_owned_node_indices[current_used_node_count]
+end
+function build_graph_recursive(entity, entity_index, depth)
+	
+	-- entity root node
+	local node_index = get_next_graph_node_index()
 	local node = gui:get_node(node_index)
 	node:reset()
-	node:add_left_tap_action("toggle_graph_node", 0)
 	node:set_x("Pixels", depth * graph_child_indent)
 	node:set_y("Pixels", graph_height)
 	node:set_width("Factor", 1.0)
 	node:set_height("Absolute", 20.0)
 	node:set_anchor_point(AnchorPoint.TopLeft)
-	current_used_node_count = current_used_node_count + 1
 	scene_graph_root_node:add_child_index(node_index)
 	-- text node
-	local current_owned_node_count = #graph_owned_node_indices
-	if current_used_node_count >= current_owned_node_count then
-		graph_owned_node_indices[current_owned_node_count + 1] = gui:add_node(node.index)
-	end
-	local text_node_index = graph_owned_node_indices[current_used_node_count + 1]
+	local text_node_index = get_next_graph_node_index()
 	local text_node = gui:get_node(text_node_index)
 	text_node:reset()
 	text_node:set_x("Pixels", 20)
 	text_node:set_width("Factor", 1.0)
 	text_node:set_height("Factor", 1.0)
-	current_used_node_count = current_used_node_count + 1
 	node:add_child_index(text_node_index)
+	-- toggle expand button node
+	local button_node_index = get_next_graph_node_index()
+	local button_node = gui:get_node(button_node_index)
+	button_node:reset()
+	button_node:add_left_tap_action("toggle_graph_node", 0)
+	button_node:add_hover_action("hover_cursor", 0)
+	button_node:set_x("Pixels", 0)
+	button_node:set_width("Absolute", 20.0)
+	button_node:set_height("Absolute", 20.0)
+	node:add_child_index(button_node_index)
 	
 	--- map
-	node_to_entity_map[node_index] = entity_index
+	node_to_entity_map[button_node_index] = entity_index
 	local is_expanded = expanded_entities[entity_index]
 	local display_name = entity.name
 	local children = entity.children_indices
@@ -177,12 +184,12 @@ function build_graph_recursive(entity, entity_index, depth)
 	if darker then quad_index = 3 end
 	darker = not darker
 	node:add_element_index(quad_index)
-	--- add the expanded/collapsed visual image after so its drawn on top
+	--- expanded/collapsed visual image
 	if has_children then
 		if is_expanded then
-			node:add_element_index(5)
+			button_node:add_element_index(5)
 		else
-			node:add_element_index(4)
+			button_node:add_element_index(4)
 		end
 	end
 

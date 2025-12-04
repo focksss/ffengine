@@ -7,13 +7,14 @@ use crate::engine::get_command_buffer;
 use crate::math::matrix::Matrix;
 use crate::math::Vector;
 use crate::render::render::{Renderer, MAX_FRAMES_IN_FLIGHT};
-use crate::render::vulkan_base::{copy_buffer_synchronous, VkBase};
+use crate::render::vulkan_base::{copy_buffer_synchronous, copy_data_to_memory, VkBase};
 use crate::scene::physics::physics_engine::PhysicsEngine;
 use crate::scene::world::camera::Frustum;
 use crate::scene::world::world::{Instance, World, MAX_INSTANCES};
 
 //TODO handle ALL updates + rendering from here (call to World + PhysicsEngine)
-//TODO change World structure to have a single flat list of Primitives. Store Meshes here, Meshes have child primitives, and are RenderComponents. 
+//TODO change World structure to have a single flat list of Primitives. Store Meshes here, Meshes have child primitives, and are RenderComponents.
+//TODO refactor scene structure
 pub struct Scene {
     pub entities: Vec<Entity>, // will always have a root node with sun
 
@@ -21,6 +22,7 @@ pub struct Scene {
 
     pub transforms: Vec<Transform>,
     pub render_components: Vec<RenderComponent>,
+    pub skin_components: Vec<SkinComponent>,
     pub rigid_body_components: Vec<RigidBodyComponent>,
     pub camera_components: Vec<CameraComponent>,
     pub light_components: Vec<LightComponent>,
@@ -38,6 +40,7 @@ impl Scene {
             unupdated_entities: Vec::new(),
             transforms: Vec::new(),
             render_components: Vec::new(),
+            skin_components: Vec::new(),
             rigid_body_components: Vec::new(),
             camera_components: Vec::new(),
             light_components: Vec::new(),
@@ -66,7 +69,7 @@ impl Scene {
     pub fn new_entity_from_model(&mut self, base: &VkBase, parent_index: usize, uri: &str) {
         let model_entity_index = self.entities.len();
         self.unupdated_entities.push(model_entity_index);
-        let new_nodes = {
+        let (new_nodes, new_skins) = {
             let world = &mut self.world.borrow_mut();
 
             unsafe { world.add_model(base, uri) }
@@ -83,11 +86,21 @@ impl Scene {
                 ..Default::default()
             });
 
-            world.scenes[new_model.scene].nodes.clone()
+            (world.scenes[new_model.scene].nodes.clone(), new_model.skins.clone())
         };
+
 
         for node_index in new_nodes {
             self.implement_world_node(node_index, model_entity_index);
+        }
+        let world = &self.world.borrow();
+        for skin_index in new_skins {
+            let skin = &world.skins[skin_index];
+            let mapped_joint_indices = skin.joint_indices.iter().map(|&i| world.nodes[i].mapped_entity_index).collect::<Vec<usize>>();
+            self.skin_components.push(SkinComponent {
+                joints: mapped_joint_indices,
+                inverse_bind_matrices: skin.inverse_bind_matrices.clone(),
+            });
         }
     }
     fn implement_world_node(&mut self, node_index: usize, parent_index: usize) {
@@ -97,6 +110,7 @@ impl Scene {
         let child_nodes = {
 
             let world = &mut self.world.borrow_mut();
+            world.nodes[node_index].mapped_entity_index = self.entities.len();
             let node = &world.nodes[node_index];
 
             let node_transform_index = self.transforms.len();
@@ -153,51 +167,63 @@ impl Scene {
             //     world.animations[i].update(nodes);
             // }
         }
-        if frame == 0 {
-            let mut dirty_primitive_instance_data: Vec<Instance> = Vec::new();
-            for entity_index in self.unupdated_entities.clone().iter() {
-                self.update_entity(
-                    base,
-                    frame,
-                    &self.transforms[0].matrix.clone(),
-                    *entity_index,
-                    &mut dirty_primitive_instance_data
-                )
+
+        let mut dirty_primitive_instance_data: Vec<Instance> = Vec::new();
+        for entity_index in self.unupdated_entities.clone().iter() {
+            self.update_entity(
+                base,
+                frame,
+                &self.transforms[0].matrix.clone(),
+                *entity_index,
+                &mut dirty_primitive_instance_data
+            )
+        }
+        self.unupdated_entities.clear();
+
+        let mut joints = Vec::new();
+        let mut total = 0f32;
+        for skin in self.skin_components.iter() {
+            joints.push(Matrix::new_manual([self.skin_components.len() as f32 + total; 16]));
+            total += skin.joints.len() as f32;
+        }
+        for skin in self.skin_components.iter() {
+            skin.update(&self, &mut joints);
+        }
+
+        let world = &self.world.borrow();
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                dirty_primitive_instance_data.as_ptr() as *const u8,
+                world.instance_staging_buffer.2 as *mut u8,
+                size_of::<Instance>() * dirty_primitive_instance_data.len(),
+            );
+
+            let mut copy_regions = Vec::new();
+            for (i, &primitive_id) in self.dirty_primitives.iter().enumerate() {
+                copy_regions.push(vk::BufferCopy {
+                    src_offset: (i * size_of::<Instance>()) as u64,
+                    dst_offset: (primitive_id * size_of::<Instance>()) as u64,
+                    size: size_of::<Instance>() as u64,
+                });
             }
-            self.unupdated_entities.clear();
+            self.dirty_primitives.clear();
 
-            let world = &self.world.borrow();
-            unsafe {
-                std::ptr::copy_nonoverlapping(
-                    dirty_primitive_instance_data.as_ptr() as *const u8,
-                    world.instance_staging_buffer.2 as *mut u8,
-                    size_of::<Instance>() * dirty_primitive_instance_data.len(),
-                );
-
-                let mut copy_regions = Vec::new();
-                for (i, &primitive_id) in self.dirty_primitives.iter().enumerate() {
-                    copy_regions.push(vk::BufferCopy {
-                        src_offset: (i * size_of::<Instance>()) as u64,
-                        dst_offset: (primitive_id * size_of::<Instance>()) as u64,
-                        size: size_of::<Instance>() as u64,
-                    });
-                }
-                self.dirty_primitives.clear();
-
-                let command_buffer = get_command_buffer();
-                if !copy_regions.is_empty() {
-                    for frame in 0..MAX_FRAMES_IN_FLIGHT {
-                        copy_buffer_synchronous(
-                            &base.device,
-                            command_buffer,
-                            &world.instance_staging_buffer.0,
-                            &world.instance_buffers[frame].0,
-                            Some(copy_regions.clone()),
-                            &0u64
-                        )
-                    }
+            let command_buffer = get_command_buffer();
+            if !copy_regions.is_empty() {
+                for frame in 0..MAX_FRAMES_IN_FLIGHT {
+                    copy_buffer_synchronous(
+                        &base.device,
+                        command_buffer,
+                        &world.instance_staging_buffer.0,
+                        &world.instance_buffers[frame].0,
+                        Some(copy_regions.clone()),
+                        &0u64
+                    )
                 }
             }
+            
+            copy_data_to_memory(world.joints_staging_buffer.2, &joints);
+            copy_buffer_synchronous(&world.device, command_buffer, &world.joints_staging_buffer.0, &world.joints_buffers[frame].0, None, &world.joints_buffers_size);
         }
     }
     pub fn update_entity(
@@ -298,6 +324,8 @@ impl Default for Entity {
     }
 }
 pub struct Transform {
+    is_identity: bool,
+
     translation: Vector,
     rotation: Vector,
     scale: Vector,
@@ -318,6 +346,8 @@ impl Transform {
 impl Default for Transform {
     fn default() -> Self {
         Transform {
+            is_identity: true,
+
             translation: Vector::new(),
             rotation: Vector::new(),
             scale: Vector::fill(1.0),
@@ -325,6 +355,19 @@ impl Default for Transform {
             matrix: Matrix::new(),
 
             world: Matrix::new(),
+        }
+    }
+}
+
+pub struct SkinComponent {
+    joints: Vec<usize>, // entity indices
+    inverse_bind_matrices: Vec<Matrix>
+}
+impl SkinComponent {
+    pub fn update(&self, scene: &Scene, joints: &mut Vec<Matrix>) {
+        for (i, joint_entity_index) in self.joints.iter().enumerate() {
+            let world_transform = scene.transforms[scene.entities[*joint_entity_index].transform].world;
+            joints.push(world_transform * self.inverse_bind_matrices[i]);
         }
     }
 }

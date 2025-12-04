@@ -67,6 +67,7 @@ MovementMode = {
             ---@field children_indices integer[]
             ---@field set_anchor_point fun(self:GUINode, anchor_point:integer):nil
             ---@field add_left_tap_action fun(self:GUINode, method:string, script:integer):nil
+            ---@field add_hover_action fun(self:GUINode, method:string, script:integer):nil
             ---@field index integer
             ---@field get_child fun(self:GUINode, child_index:integer):GUINode
             ---@field get_parent fun(self:GUINode):GUINode
