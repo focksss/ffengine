@@ -150,7 +150,7 @@ impl Scene {
             self.entities.push(Entity {
                 name: node.name.clone(),
                 transform: node_transform_index,
-                animated_transform: Some(node_anim_transform_index),
+                animated_transform: (node_anim_transform_index, true),
                 parent: parent_index,
                 ..Default::default()
             });
@@ -266,11 +266,11 @@ impl Scene {
         let entity_local_transform = {
             let entity_transform_component = &mut self.transforms[entity.transform];
             entity_transform_component.update_matrix();
-            entity_transform_component.matrix.clone()
+            &entity_transform_component.matrix
         };
 
-        let entity_world_transform = if let Some(anim_index) = entity.animated_transform {
-            let animated_transform = &mut self.transforms[anim_index];
+        let entity_world_transform = if entity.animated_transform.1 {
+            let animated_transform = &mut self.transforms[entity.animated_transform.0];
             animated_transform.update_matrix();
             parent_world_transform * animated_transform.matrix
         } else {
@@ -339,7 +339,7 @@ impl Scene {
 pub struct Entity {
     pub name: String,
     pub transform: usize,
-    pub animated_transform: Option<usize>,
+    pub animated_transform: (usize, bool),
     pub children_indices: Vec<usize>,
     pub parent: usize,
 
@@ -356,7 +356,7 @@ impl Default for Entity {
         Self {
             name: String::from("entity"),
             transform: 0,
-            animated_transform: None,
+            animated_transform: (0, false),
             children_indices: Vec::new(),
             parent: 0,
             sun: None,
@@ -425,7 +425,7 @@ impl AnimationComponent {
         self.running = false;
         if self.snap_back {
             for channel in self.channels.iter() {
-                entities[channel.1].animated_transform = None;
+                entities[channel.1].animated_transform.1 = false;
             }
         }
     }
@@ -434,6 +434,7 @@ impl AnimationComponent {
         if !self.running {
             return
         }
+        unnupdated_entities.push(self.owner_entity);
         let current_time = SystemTime::now();
         let elapsed_time = current_time.duration_since(self.start_time).unwrap().as_secs_f32();
         let mut repeat = false;
@@ -445,7 +446,6 @@ impl AnimationComponent {
                 return
             }
         }
-        unnupdated_entities.push(self.owner_entity);
         for channel in self.channels.iter() {
             let sampler = &self.samplers[channel.0];
             let mut current_time_index = 0;
@@ -471,7 +471,7 @@ impl AnimationComponent {
             }
 
             let entity = &entities[channel.1];
-            let animated_transform = &mut transforms[*entity.animated_transform.as_ref().unwrap()];
+            let animated_transform = &mut transforms[entity.animated_transform.0];
 
             if channel.2.eq("translation") {
                 animated_transform.translation = new_vector

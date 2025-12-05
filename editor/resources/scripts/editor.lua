@@ -112,6 +112,10 @@ function toggle_graph_node()
 		build_graph()
 	end
 end
+function open_transform_editor() 
+	local clicked_transform = node_to_transform_map[gui.ActiveNode.index]
+	
+end
 function build_graph()
 	-- reset node tree
 	scene_graph_root_node:clear_children()
@@ -144,6 +148,16 @@ local function get_next_graph_node_index()
 	end
 	current_used_node_count = current_used_node_count + 1
 	return graph_owned_node_indices[current_used_node_count]
+end
+local function get_next_graph_text_index(text_string)
+	local current_owned_element_count = #graph_owned_element_indices
+	if current_used_text_count >= current_owned_element_count then
+		graph_owned_element_indices[current_owned_element_count + 1] = gui:add_text(text_string)
+	else
+		local text = gui:get_text(graph_owned_element_indices[current_used_text_count + 1])
+		text:update_text(text_string)
+	end
+	return graph_owned_element_indices[current_used_text_count + 1]
 end
 local function add_render_components()
 
@@ -204,14 +218,7 @@ function build_graph_recursive(entity, entity_index, depth)
 	end
 
 	-- text
-	local current_owned_element_count = #graph_owned_element_indices
-	if current_used_text_count >= current_owned_element_count then
-		graph_owned_element_indices[current_owned_element_count + 1] = gui:add_text(display_name)
-	else
-		local text = gui:get_text(graph_owned_element_indices[current_used_text_count + 1])
-		text:update_text(display_name)
-	end
-	local text_index = graph_owned_element_indices[current_used_text_count + 1]
+	local text_index = get_next_graph_text_index(display_name)
 	local text = gui:get_text(text_index)
 	text.font_size = 15.0
 	text.auto_wrap_distance = 1000.0
@@ -234,6 +241,8 @@ function build_graph_recursive(entity, entity_index, depth)
 		transform_node:set_height("Absolute", 20.0)
 		transform_node:set_anchor_point(AnchorPoint.TopLeft)
 		transform_node:add_element_index(quad_index)
+		transform_node:add_hover_action("hover_cursor", 0)
+		scene_graph_root_node:add_child_index(transform_node_index)
 		--- transform icon
 		local transform_icon_node_index = get_next_graph_node_index()
 		local transform_icon_node = gui:get_node(transform_icon_node_index)
@@ -243,8 +252,21 @@ function build_graph_recursive(entity, entity_index, depth)
 		transform_icon_node:set_height("Absolute", 20.0)
 		transform_icon_node:add_element_index(6)
 		transform_node:add_child_index(transform_icon_node_index)
-
-		scene_graph_root_node:add_child_index(transform_node_index)
+		--- transform text node
+		local transform_text_node_index = get_next_graph_node_index()
+		local transform_text_node = gui:get_node(transform_text_node_index)
+		transform_text_node:reset()
+		transform_text_node:set_x("Pixels", 20)
+		transform_text_node:set_width("Factor", 1.0)
+		transform_text_node:set_height("Factor", 1.0)
+		transform_node:add_child_index(transform_text_node_index)
+		--- transform text
+		local transform_text_index = get_next_graph_text_index("Transform")
+		local transform_text = gui:get_text(transform_text_index)
+		transform_text.font_size = 15.0
+		transform_text.auto_wrap_distance = 1000.0
+		transform_text_node:add_element_index(transform_text_index)
+		current_used_text_count = current_used_text_count + 1
 
 		graph_height = graph_height + graph_entity_height
 		local render_components = entity.render_component_indices
@@ -263,7 +285,32 @@ function build_graph_recursive(entity, entity_index, depth)
 			render_component_node:set_height("Absolute", 20.0)
 			render_component_node:set_anchor_point(AnchorPoint.TopLeft)
 			render_component_node:add_element_index(quad_index)
+			render_component_node:add_hover_action("hover_cursor", 0)
 			scene_graph_root_node:add_child_index(render_component_node_index)
+			--- render component icon
+			local render_component_icon_node_index = get_next_graph_node_index()
+			local render_component_icon_node = gui:get_node(render_component_icon_node_index)
+			render_component_icon_node:reset()
+			render_component_icon_node:set_x("Pixels", 0)
+			render_component_icon_node:set_width("Absolute", 20.0)
+			render_component_icon_node:set_height("Absolute", 20.0)
+			render_component_icon_node:add_element_index(7)
+			render_component_node:add_child_index(render_component_icon_node_index)
+			--- render component text node
+			local render_component_text_node_index = get_next_graph_node_index()
+			local render_component_text_node = gui:get_node(render_component_text_node_index)
+			render_component_text_node:reset()
+			render_component_text_node:set_x("Pixels", 20)
+			render_component_text_node:set_width("Factor", 1.0)
+			render_component_text_node:set_height("Factor", 1.0)
+			render_component_node:add_child_index(render_component_text_node_index)
+			--- render component text
+			local render_component_text_index = get_next_graph_text_index("Render Component")
+			local render_component_text = gui:get_text(render_component_text_index)
+			render_component_text.font_size = 15.0
+			render_component_text.auto_wrap_distance = 1000.0
+			render_component_text_node:add_element_index(render_component_text_index)
+			current_used_text_count = current_used_text_count + 1
 
 			graph_height = graph_height + graph_entity_height
 		end	

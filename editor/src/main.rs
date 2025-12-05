@@ -32,7 +32,8 @@ fn main() { unsafe {
         {
             app.scene.borrow_mut().new_entity_from_model(base, 0, "editor/resources/models/ffocks/untitled.gltf");
             let anim = &mut app.scene.borrow_mut().animation_components[0];
-            anim.repeat = true;
+            // anim.repeat = true;
+            anim.snap_back = true;
             anim.start();
         }
 

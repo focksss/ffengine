@@ -77,6 +77,15 @@
         "additive_tint": [0.0, 0.0, 0.0, 0.0],
         "multiplicative_tint": [1.0, 1.0, 1.0, 1.0]
       }
+    },
+    {
+      "name": "primitive icon",
+      "type": "Image",
+      "info": {
+        "uri": "editor\\resources\\gui\\images\\primitive.png",
+        "additive_tint": [0.0, 0.0, 0.0, 0.0],
+        "multiplicative_tint": [1.0, 1.0, 1.0, 1.0]
+      }
     }
   ],
   "nodes": [
