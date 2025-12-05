@@ -22,7 +22,7 @@ impl UserData for EngineRef {
             lua.create_userdata(object)
         });
         fields.add_field_method_get("scene", |lua, this| {
-             let object = SceneRef(this.scene.clone());
+             let object = SceneRef;
              lua.create_userdata(object)
         });
     }

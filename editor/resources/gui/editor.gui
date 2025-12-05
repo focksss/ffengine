@@ -68,6 +68,15 @@
         "additive_tint": [1.0, 1.0, 1.0, 0.0],
         "multiplicative_tint": [1.0, 1.0, 1.0, 2.0]
       }
+    },
+    {
+      "name": "transform icon",
+      "type": "Image",
+      "info": {
+        "uri": "editor\\resources\\gui\\images\\transform.png",
+        "additive_tint": [0.0, 0.0, 0.0, 0.0],
+        "multiplicative_tint": [1.0, 1.0, 1.0, 1.0]
+      }
     }
   ],
   "nodes": [

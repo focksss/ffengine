@@ -26,10 +26,15 @@ MovementMode = {
 
     ---@class Scene
     ---@field get_entity fun(self:Scene, index:integer):Entity
+    ---@field get_render_component fun(self:Scene, index:integer):RenderComponent
     
         ---@class Entity
+        ---@field transform_index integer
         ---@field children_indices integer[]
         ---@field name string
+        ---@field render_component_indices integer[]
+    
+    ---@class RenderComponent
 
     ---@class Renderer
     ---@field gui fun(self:Renderer, index:integer):GUI

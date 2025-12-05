@@ -70,6 +70,8 @@ end
 
 local expanded_entities = {}
 local node_to_entity_map = {}
+local node_to_render_components_map = {}
+local node_to_transform_map = {}
 local darker = false
 local graph_scroll_pixels = 10
 local graph_entity_height = 20
@@ -114,8 +116,10 @@ function build_graph()
 	-- reset node tree
 	scene_graph_root_node:clear_children()
 	
-	--- reset mapping for expansion tracking (root expanded)
+	--- reset mappings (start root expanded)
 	node_to_entity_map = {}
+	node_to_render_components_map = {}
+	node_to_transform_map = {}
 	if expanded_entities[0] == nil then
 		expanded_entities[0] = true
 	end
@@ -140,6 +144,9 @@ local function get_next_graph_node_index()
 	end
 	current_used_node_count = current_used_node_count + 1
 	return graph_owned_node_indices[current_used_node_count]
+end
+local function add_render_components()
+
 end
 function build_graph_recursive(entity, entity_index, depth)
 	
@@ -172,12 +179,15 @@ function build_graph_recursive(entity, entity_index, depth)
 	button_node:set_height("Absolute", 20.0)
 	node:add_child_index(button_node_index)
 	
-	--- map
+	--- map 
 	node_to_entity_map[button_node_index] = entity_index
 	local is_expanded = expanded_entities[entity_index]
 	local display_name = entity.name
 	local children = entity.children_indices
 	local has_children = #children > 0	
+
+	local render_components = entity.render_component_indices
+	local has_render_components = #render_components > 0
 
 	-- quad
 	local quad_index = 2
@@ -185,7 +195,7 @@ function build_graph_recursive(entity, entity_index, depth)
 	darker = not darker
 	node:add_element_index(quad_index)
 	--- expanded/collapsed visual image
-	if has_children then
+	if has_children or has_render_components then
 		if is_expanded then
 			button_node:add_element_index(5)
 		else
@@ -210,8 +220,54 @@ function build_graph_recursive(entity, entity_index, depth)
 	
 	graph_height = graph_height + graph_entity_height
 
-	-- recursively process children
 	if is_expanded then
+
+		--- transform
+		local transform_index = entity.transform_index
+		local transform_node_index = get_next_graph_node_index()
+		node_to_transform_map[transform_node_index] = transform_index
+		local transform_node = gui:get_node(transform_node_index)
+		transform_node:reset()
+		transform_node:set_x("Pixels", (depth + 1) * graph_child_indent)
+		transform_node:set_y("Pixels", graph_height)
+		transform_node:set_width("Factor", 1.0)
+		transform_node:set_height("Absolute", 20.0)
+		transform_node:set_anchor_point(AnchorPoint.TopLeft)
+		transform_node:add_element_index(quad_index)
+		--- transform icon
+		local transform_icon_node_index = get_next_graph_node_index()
+		local transform_icon_node = gui:get_node(transform_icon_node_index)
+		transform_icon_node:reset()
+		transform_icon_node:set_x("Pixels", 0)
+		transform_icon_node:set_width("Absolute", 20.0)
+		transform_icon_node:set_height("Absolute", 20.0)
+		transform_icon_node:add_element_index(6)
+		transform_node:add_child_index(transform_icon_node_index)
+
+		scene_graph_root_node:add_child_index(transform_node_index)
+
+		graph_height = graph_height + graph_entity_height
+		local render_components = entity.render_component_indices
+
+		--- render components
+		for i = 1, #render_components do
+			local render_component_index = render_components[i]
+
+			local render_component_node_index = get_next_graph_node_index()
+			node_to_render_components_map[render_component_node_index] = render_component_index
+			local render_component_node = gui:get_node(render_component_node_index)
+			render_component_node:reset()
+			render_component_node:set_x("Pixels", (depth + 1) * graph_child_indent)
+			render_component_node:set_y("Pixels", graph_height)
+			render_component_node:set_width("Factor", 1.0)
+			render_component_node:set_height("Absolute", 20.0)
+			render_component_node:set_anchor_point(AnchorPoint.TopLeft)
+			render_component_node:add_element_index(quad_index)
+			scene_graph_root_node:add_child_index(render_component_node_index)
+
+			graph_height = graph_height + graph_entity_height
+		end	
+		-- recursively process children
 		for i = 1, #children do
 			local child_entity_index = children[i]
 			local child_entity = Engine.scene:get_entity(child_entity_index)

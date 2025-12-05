@@ -43,7 +43,7 @@ void main() {
 
     frag_color = ubo.additive_color;
     if (ubo.image > -1) {
-        vec4 tex_col = vec4(texture(textures[ubo.image], uv).a);
+        vec4 tex_col = texture(textures[ubo.image], uv);
         frag_color += tex_col;
     }
     frag_color *= ubo.multiplicative_color;
