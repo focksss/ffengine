@@ -1,5 +1,3 @@
-_G.selected_transform = 0
-
 local target_cursor_icon
 local has_set_target_cursor = false
 
@@ -16,12 +14,7 @@ local gui
 				local scene_graph_root_node
 					local graph_height = 0
 				local scene_graph_scroll_bar_node
-			local entity_editor_area_node
-				local entity_editor_root_node
-					local editor_height = 0
-				local entity_editor_scroll_bar_node
 		local scene_view_area_node
-	local transform_editor_ui_node
 
 function Awake()
 	target_cursor_icon = CursorIcon.Default
@@ -35,12 +28,7 @@ function Awake()
 			scene_graph_area_node = right_area_node:get_child(0)
 				scene_graph_root_node = scene_graph_area_node:get_child(0)
 				scene_graph_scroll_bar_node = scene_graph_area_node:get_child(1):get_child(0)
-			entity_editor_area_node = right_area_node:get_child(1)
-				entity_editor_root_node = entity_editor_area_node:get_child(0)
-					---transform_editor_ui_node = entity_editor_root_node:get_child(0)
-				entity_editor_scroll_bar_node = entity_editor_area_node:get_child(1)
 		scene_view_area_node = root_node:get_child(2)
-	transform_editor_ui_node = gui:get_unparented(2)
 	
 	build_graph()
 
@@ -74,9 +62,6 @@ function Update()
 	scene_graph_scroll_bar_node:set_height("Factor",
 		math.min(1.0, scene_graph_area_node.size.y / graph_height) --- visible pixels / total pixels
 	)
-	entity_editor_scroll_bar_node:set_height("Factor",
-		math.min(1.0, entity_editor_area_node.size.y / editor_height) --- visible pixels / total pixels
-	)
 
 	resize_called_last_tick = resize_called_this_tick
 	resize_called_this_tick = false
@@ -84,9 +69,9 @@ function Update()
 end
 
 local expanded_entities = {}
-local node_to_entity_map = {}
-local node_to_render_components_map = {}
-local node_to_transform_map = {}
+_G.node_to_entity_map = {}
+_G.node_to_render_components_map = {}
+_G.node_to_transform_map = {}
 local darker = false
 local graph_scroll_pixels = 10
 local graph_entity_height = 20
@@ -114,12 +99,13 @@ function MouseScrolled()
 		scene_graph_root_node:set_y("Pixels", scroll_ratio * max_content_scroll)
 	end
 end
+
 function toggle_graph_node() 
 	
 	local clicked_node = gui.ActiveNode
 	local clicked_node_index = clicked_node.index
 	
-	local entity_index = node_to_entity_map[clicked_node_index]
+	local entity_index = _G.node_to_entity_map[clicked_node_index]
 	
 	if entity_index then
 		expanded_entities[entity_index] = not expanded_entities[entity_index]
@@ -127,20 +113,14 @@ function toggle_graph_node()
 		build_graph()
 	end
 end
-function open_transform_editor() 
-	_G.selected_transform = node_to_transform_map[gui.ActiveNode.index]
-
-	entity_editor_root_node:clear_children()
-	entity_editor_root_node:add_child_index(transform_editor_ui_node.index)
-end
 function build_graph()
 	-- reset node tree
 	scene_graph_root_node:clear_children()
 	
-	--- reset mappings (start root expanded)
-	node_to_entity_map = {}
-	node_to_render_components_map = {}
-	node_to_transform_map = {}
+	--- reset mappings (and start root expanded)
+	_G.node_to_entity_map = {}
+	_G.node_to_render_components_map = {}
+	_G.node_to_transform_map = {}
 	if expanded_entities[0] == nil then
 		expanded_entities[0] = true
 	end
@@ -182,6 +162,8 @@ function build_graph_recursive(entity, entity_index, depth)
 	local node_index = get_next_graph_node_index()
 	local node = gui:get_node(node_index)
 	node:reset()
+	node:add_left_up_action("open_entity_editor", 3)
+	node:add_hover_action("hover_cursor", 0)
 	node:set_x("Pixels", depth * graph_child_indent)
 	node:set_y("Pixels", graph_height)
 	node:set_width("Factor", 1.0)
@@ -208,7 +190,8 @@ function build_graph_recursive(entity, entity_index, depth)
 	node:add_child_index(button_node_index)
 	
 	--- map 
-	node_to_entity_map[button_node_index] = entity_index
+	_G.node_to_entity_map[button_node_index] = entity_index
+	_G.node_to_entity_map[node_index] = entity_index
 	local is_expanded = expanded_entities[entity_index]
 	local display_name = entity.name
 	local children = entity.children_indices
@@ -246,7 +229,7 @@ function build_graph_recursive(entity, entity_index, depth)
 		--- transform
 		local transform_index = entity.transform_index
 		local transform_node_index = get_next_graph_node_index()
-		node_to_transform_map[transform_node_index] = transform_index
+		_G.node_to_transform_map[transform_node_index] = transform_index
 		local transform_node = gui:get_node(transform_node_index)
 		transform_node:reset()
 		transform_node:set_x("Pixels", (depth + 1) * graph_child_indent)
@@ -256,7 +239,7 @@ function build_graph_recursive(entity, entity_index, depth)
 		transform_node:set_anchor_point(AnchorPoint.TopLeft)
 		transform_node:add_element_index(quad_index)
 		transform_node:add_hover_action("hover_cursor", 0)
-		transform_node:add_left_up_action("open_transform_editor", 0)
+		transform_node:add_left_up_action("open_transform_editor", 3)
 		scene_graph_root_node:add_child_index(transform_node_index)
 		--- transform icon
 		local transform_icon_node_index = get_next_graph_node_index()
@@ -291,7 +274,7 @@ function build_graph_recursive(entity, entity_index, depth)
 			local render_component_index = render_components[i]
 
 			local render_component_node_index = get_next_graph_node_index()
-			node_to_render_components_map[render_component_node_index] = render_component_index
+			_G.node_to_render_components_map[render_component_node_index] = render_component_index
 			local render_component_node = gui:get_node(render_component_node_index)
 			render_component_node:reset()
 			render_component_node:set_x("Pixels", (depth + 1) * graph_child_indent)
@@ -301,6 +284,7 @@ function build_graph_recursive(entity, entity_index, depth)
 			render_component_node:set_anchor_point(AnchorPoint.TopLeft)
 			render_component_node:add_element_index(quad_index)
 			render_component_node:add_hover_action("hover_cursor", 0)
+			render_component_node:add_left_up_action("open_render_component_editor", 3)
 			scene_graph_root_node:add_child_index(render_component_node_index)
 			--- render component icon
 			local render_component_icon_node_index = get_next_graph_node_index()

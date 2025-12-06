@@ -7,6 +7,7 @@ use ash::vk;
 use ash::vk::{CommandBuffer, DescriptorType, Format, Handle, ShaderStageFlags};
 use json::JsonValue;
 use winit::event::MouseButton;
+use winit::keyboard::{Key, PhysicalKey, SmolStr};
 use crate::client::client::*;
 use crate::math::*;
 use crate::render::render_helper::{Descriptor, DescriptorCreateInfo, DescriptorSetCreateInfo, Pass, PassCreateInfo, Renderpass, RenderpassCreateInfo, Texture, TextureCreateInfo};
@@ -24,6 +25,8 @@ enum GUIInteractionResult {
 
 pub struct GUI {
     index: usize,
+
+    pub text_field_focused: bool,
 
     device: ash::Device,
     window: Arc<winit::window::Window>,
@@ -164,6 +167,10 @@ impl GUI {
 
         result
     }
+    pub fn handle_typing_input(&mut self, logical_key: Key, text: Option<SmolStr>, physical_key: Option<PhysicalKey>) {
+        // println!("handle_typing_input: {:?}", text);
+
+    }
 
     pub unsafe fn new(
         index: usize,
@@ -181,6 +188,8 @@ impl GUI {
 
         let gui = GUI {
             index,
+
+            text_field_focused: false,
 
             device: base.device.clone(),
             window: base.window.clone(),
@@ -1263,6 +1272,83 @@ impl GUI {
         }
     }
 
+    /// returns new node index
+    pub fn clone_node(&mut self, index: usize, parent_index: usize) -> usize {
+        let node_index = self.nodes.len();
+        self.nodes.push(self.nodes[index].clone());
+
+        let mut new_children_indices = Vec::new();
+        for child in self.nodes[node_index].children_indices.clone() {
+            new_children_indices.push(self.clone_node(child, node_index));
+        }
+        let mut new_element_indices = Vec::new();
+        for element_index in self.nodes[node_index].element_indices.clone() {
+            let element = &self.elements[element_index];
+            match element {
+                Element::Text {
+                    text_information,
+                    font_index,
+                    color,
+                } => {
+                    let new_text = Element::Text {
+                        text_information: Some(TextInformation::new(self.fonts[0].clone())
+                            .text(text_information.as_ref().unwrap().text.as_str())
+                            .font_size(text_information.as_ref().unwrap().font_size)
+                            .newline_distance(text_information.as_ref().unwrap().auto_wrap_distance)),
+                        font_index: *font_index,
+                        color: color.clone(),
+                    };
+                    new_element_indices.push(self.elements.len());
+                    self.new_texts.push(self.elements.len());
+                    self.elements.push(new_text)
+                },
+                Element::Quad {
+                    corner_radius,
+                    color,
+                } => {
+                    new_element_indices.push(self.elements.len());
+                    self.elements.push(Element::Quad {
+                        corner_radius: *corner_radius,
+                        color: color.clone(),
+                    })
+                },
+                Element::Image {
+                    index,
+                    uri,
+                    alpha_threshold,
+                    additive_tint,
+                    multiplicative_tint,
+                    corner_radius,
+                    aspect_ratio,
+                    image_view,
+                    image,
+                    memory,
+                    sampler
+                } => {
+                    new_element_indices.push(element_index);
+                    // Element::Image {
+                    //     index: *index,
+                    //     uri: uri.clone(),
+                    //     alpha_threshold: *alpha_threshold,
+                    //     additive_tint: additive_tint.clone(),
+                    //     multiplicative_tint: multiplicative_tint.clone(),
+                    //     corner_radius: *corner_radius,
+                    //     aspect_ratio: *aspect_ratio,
+                    //     image_view: image_view.clone(),
+                    //     image: image.clone(),
+                    //     memory: memory.clone(),
+                    //     sampler: sampler.clone(),
+                    // }
+                }
+            }
+        }
+        self.nodes[node_index].children_indices = new_children_indices;
+        self.nodes[node_index].element_indices = new_element_indices;
+        self.nodes[node_index].parent_index = Some(parent_index);
+
+        node_index
+    }
+
     fn layout(&mut self) {
         let window_size = (
             self.window.inner_size().width as f32,
@@ -1902,7 +1988,6 @@ impl GUI {
         }
     } }
 }
-
 
 #[derive(Clone)]
 pub enum Container {

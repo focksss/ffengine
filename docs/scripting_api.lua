@@ -54,7 +54,8 @@ MovementMode = {
         ---@field get_image fun(self:GUI, index:integer):GUIImage
         ---@field num_elements integer
         ---@field num_nodes integer
-        ---@field add_node fun(self:GUI):nil
+        ---@field add_node fun(self:GUI):integer
+        ---@field clone_node fun(self:GUI, clone_index:integer, parent_index:integer):integer
         ---@field add_quad fun(self:GUI):nil
         ---@field add_text fun(self:GUI, initial_text:string):integer
         ---@field is_node_hovered fun(self:GUI, node_index:integer):boolean

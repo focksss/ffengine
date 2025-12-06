@@ -9,7 +9,7 @@ function update_translation_x_display()
 	time_since_text_update = time_since_text_update + dt
 
 	if time_since_text_update > 0.1 then
-        gui.ActiveNode:get_text_at(0):update_text(string.format("%.3f", Engine.scene:get_transform(selected_transform).translation.x))
+        gui.ActiveNode:get_text_at(0):update_text(string.format("%.3f", Engine.scene:get_transform(_G.selected_transform).translation.x))
         time_since_text_update = 0
         frame_count = 0
 	end
@@ -18,7 +18,7 @@ function update_translation_y_display()
 	time_since_text_update = time_since_text_update + dt
 
 	if time_since_text_update > 0.1 then
-        gui.ActiveNode:get_text_at(0):update_text(string.format("%.3f", Engine.scene:get_transform(selected_transform).translation.y))
+        gui.ActiveNode:get_text_at(0):update_text(string.format("%.3f", Engine.scene:get_transform(_G.selected_transform).translation.y))
         time_since_text_update = 0
         frame_count = 0
 	end
@@ -27,7 +27,7 @@ function update_translation_z_display()
 	time_since_text_update = time_since_text_update + dt
 
 	if time_since_text_update > 0.1 then
-        gui.ActiveNode:get_text_at(0):update_text(string.format("%.3f", Engine.scene:get_transform(selected_transform).translation.z))
+        gui.ActiveNode:get_text_at(0):update_text(string.format("%.3f", Engine.scene:get_transform(_G.selected_transform).translation.z))
         time_since_text_update = 0
         frame_count = 0
 	end
@@ -36,7 +36,7 @@ function update_rotation_x_display()
 	time_since_text_update = time_since_text_update + dt
 
 	if time_since_text_update > 0.1 then
-        gui.ActiveNode:get_text_at(0):update_text(string.format("%.3f", Engine.scene:get_transform(selected_transform).rotation.x))
+        gui.ActiveNode:get_text_at(0):update_text(string.format("%.3f", Engine.scene:get_transform(_G.selected_transform).rotation.x))
         time_since_text_update = 0
         frame_count = 0
 	end
@@ -45,7 +45,7 @@ function update_rotation_y_display()
 	time_since_text_update = time_since_text_update + dt
 
 	if time_since_text_update > 0.1 then
-        gui.ActiveNode:get_text_at(0):update_text(string.format("%.3f", Engine.scene:get_transform(selected_transform).rotation.y))
+        gui.ActiveNode:get_text_at(0):update_text(string.format("%.3f", Engine.scene:get_transform(_G.selected_transform).rotation.y))
         time_since_text_update = 0
         frame_count = 0
 	end
@@ -54,7 +54,7 @@ function update_rotation_z_display()
 	time_since_text_update = time_since_text_update + dt
 
 	if time_since_text_update > 0.1 then
-        gui.ActiveNode:get_text_at(0):update_text(string.format("%.3f", Engine.scene:get_transform(selected_transform).rotation.z))
+        gui.ActiveNode:get_text_at(0):update_text(string.format("%.3f", Engine.scene:get_transform(_G.selected_transform).rotation.z))
         time_since_text_update = 0
         frame_count = 0
 	end
@@ -63,7 +63,7 @@ function update_scale_x_display()
 	time_since_text_update = time_since_text_update + dt
 
 	if time_since_text_update > 0.1 then
-        gui.ActiveNode:get_text_at(0):update_text(string.format("%.3f", Engine.scene:get_transform(selected_transform).scale.x))
+        gui.ActiveNode:get_text_at(0):update_text(string.format("%.3f", Engine.scene:get_transform(_G.selected_transform).scale.x))
         time_since_text_update = 0
         frame_count = 0
 	end
@@ -72,7 +72,7 @@ function update_scale_y_display()
 	time_since_text_update = time_since_text_update + dt
 
 	if time_since_text_update > 0.1 then
-        gui.ActiveNode:get_text_at(0):update_text(string.format("%.3f", Engine.scene:get_transform(selected_transform).scale.y))
+        gui.ActiveNode:get_text_at(0):update_text(string.format("%.3f", Engine.scene:get_transform(_G.selected_transform).scale.y))
         time_since_text_update = 0
         frame_count = 0
 	end
@@ -81,7 +81,7 @@ function update_scale_z_display()
 	time_since_text_update = time_since_text_update + dt
 
 	if time_since_text_update > 0.1 then
-        gui.ActiveNode:get_text_at(0):update_text(string.format("%.3f", Engine.scene:get_transform(selected_transform).scale.z))
+        gui.ActiveNode:get_text_at(0):update_text(string.format("%.3f", Engine.scene:get_transform(_G.selected_transform).scale.z))
         time_since_text_update = 0
         frame_count = 0
 	end
@@ -129,12 +129,12 @@ local original_rotation
 local original_scale
 function begin_drag()
     original_cursor_x = Engine.client.cursor_position.x
-    original_translation = Engine.scene:get_transform(selected_transform).translation
-    original_rotation = Engine.scene:get_transform(selected_transform).rotation
-    original_scale = Engine.scene:get_transform(selected_transform).scale
+    original_translation = Engine.scene:get_transform(_G.selected_transform).translation
+    original_rotation = Engine.scene:get_transform(_G.selected_transform).rotation
+    original_scale = Engine.scene:get_transform(_G.selected_transform).scale
 end
 function update_drag()
-    local transform = Engine.scene:get_transform(selected_transform)
+    local transform = Engine.scene:get_transform(_G.selected_transform)
     local delta = Engine.client.cursor_position.x - original_cursor_x
 
     if drag_mode == "tx" then

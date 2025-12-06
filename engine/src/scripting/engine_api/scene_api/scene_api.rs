@@ -74,7 +74,7 @@ impl UserData for EntityPointer {
         });
     }
     fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
-
+        
     }
 }
 

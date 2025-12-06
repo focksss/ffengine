@@ -259,7 +259,7 @@ impl Engine {
                         // frametime_manager.reset();
                         current_frame = (current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
                     },
-                    _ => { Client::handle_event(self.client.clone(), event) },
+                    _ => { Client::handle_event(self.client.clone(), self.renderer.clone(), event) },
                 }
             }).expect("Failed to initiate render loop");
 

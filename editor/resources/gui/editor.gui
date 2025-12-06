@@ -11,6 +11,12 @@
     },
     {
       "uri": "editor\\resources\\scripts\\transform_editor.lua"
+    },
+    {
+      "uri": "editor\\resources\\scripts\\render_component_editor.lua"
+    },
+    {
+      "uri": "editor\\resources\\scripts\\entity_editor.lua"
     }
   ],
   "fonts": [
@@ -3101,6 +3107,142 @@
                       }
                     }
                   ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "render component editor ui",
+      "container": {
+        "type": "Stack",
+        "info": {
+          "horizontal": false,
+          "spacing": 5.0,
+          "padding": {
+            "left": 0.0,
+            "right": 0.0,
+            "top": 0.0,
+            "bottom": 0.0
+          },
+          "packing": "Start",
+          "stack_direction": "Normal",
+          "alignment": "Start"
+        }
+      },
+      "width": {
+        "type": "Factor",
+        "info": {
+          "factor": 1.0
+        }
+      },
+      "height": {
+        "type": "Absolute",
+        "info": {
+          "pixels": 20.0
+        }
+      },
+      "elements": [
+        3
+      ],
+      "children": [
+        {
+          "name": "component type display",
+          "interactable_information": {
+            "hover_actions": [
+              {
+                "script": 0,
+                "method": "hover_cursor"
+              }
+            ],
+            "left_up_actions": [
+              {
+                "script": 2,
+                "method": "collapse"
+              }
+            ]
+          },
+          "container": {
+            "type": "Dock"
+          },
+          "width": {
+            "type": "Factor",
+            "info": {
+              "factor": 1.0
+            }
+          },
+          "height": {
+            "type": "Absolute",
+            "info": {
+              "pixels": 20.0
+            }
+          },
+          "elements": [
+            {
+              "type": "Quad",
+              "info": {
+                "color": [0.25, 0.25, 0.25, 0.8],
+                "corner_radius": 5.0
+              }
+            }
+          ],
+          "children": [
+            {
+              "name": "icon",
+              "parent_relation": {
+                "type": "Docking",
+                "info": {
+                  "mode": "Left"
+                }
+              },
+              "width": {
+                "type": "Absolute",
+                "info": {
+                  "pixels": 20.0
+                }
+              },
+              "height": {
+                "type": "Factor",
+                "info": {
+                  "factor": 1.0
+                }
+              },
+              "elements": [
+                7
+              ]
+            },
+            {
+              "name": "text",
+              "parent_relation": {
+                "type": "Docking",
+                "info": {
+                  "mode": "Left"
+                }
+              },
+              "width": {
+                "type": "Factor",
+                "info": {
+                  "factor": 1.0
+                }
+              },
+              "height": {
+                "type": "Factor",
+                "info": {
+                  "factor": 1.0
+                }
+              },
+              "elements": [
+                {
+                  "type": "Text",
+                  "info": {
+                    "text": "Render Component Editor",
+                    "color": [1.0, 1.0, 1.0, 1.0],
+                    "font": 0,
+                    "font_size": 15.0,
+                    "newline_distance": 300.0
+                  }
                 }
               ]
             }

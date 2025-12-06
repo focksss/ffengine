@@ -5,6 +5,8 @@ use winit::dpi::PhysicalPosition;
 use winit::event::{DeviceEvent, ElementState, Event, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::keyboard::{PhysicalKey};
 use winit::window::CursorGrabMode;
+use crate::gui::gui::GUI;
+use crate::render::render::Renderer;
 use crate::scripting::lua_engine::Lua;
 
 pub struct Client {
@@ -66,7 +68,7 @@ impl Client {
         self.new_pressed_mouse_buttons.clear();
     }
 
-    pub fn handle_event<T>(controller_ref: Arc<RefCell<Client>>, event: Event<T>) {
+    pub fn handle_event<T>(controller_ref: Arc<RefCell<Client>>, renderer_ref: Arc<RefCell<Renderer>>, event: Event<T>) {
         let mut should_scroll_event = false;
         let mut should_mouse_move_event = false;
         let mut should_mouse_button_pressed_event = false;
@@ -79,12 +81,14 @@ impl Client {
                     ..
                 } => {
                     controller.flags.borrow_mut().close_requested = true;
-                }
+                },
                 Event::WindowEvent {
                     event: WindowEvent::KeyboardInput {
                         event: KeyEvent {
                             state,
                             physical_key,
+                            logical_key,
+                            text,
                             ..
                         },
                         ..
@@ -100,6 +104,13 @@ impl Client {
                             controller.pressed_keys.remove(&physical_key);
                             controller.new_pressed_keys.remove(&physical_key);
                         }
+                    }
+                    for gui in renderer_ref.borrow().guis.iter() {
+                        gui.borrow_mut().handle_typing_input(logical_key.clone(), text.clone(), if state == ElementState::Pressed {
+                            Some(physical_key.clone())
+                        } else {
+                            None
+                        });
                     }
                 }
                 Event::WindowEvent {

@@ -650,7 +650,11 @@ impl UserData for GUIPointer {
             with_gui_mut!(lua, this.index => gui);
             let num_nodes = gui.nodes.len();
             gui.nodes.push(Node::new(num_nodes, if parent_index < 0 { None } else { Some(parent_index as usize) }));
-            Ok(gui.nodes.len() - 1)
+            Ok(num_nodes)
+        });
+        methods.add_method_mut("clone_node", |lua, this, copy_index_parent_index: (i32, i32)| {
+            with_gui_mut!(lua, this.index => gui);
+            Ok(gui.clone_node(copy_index_parent_index.0 as usize, copy_index_parent_index.1 as usize))
         });
         methods.add_method_mut("add_quad", |lua, this, ()| {
             with_gui_mut!(lua, this.index => gui);
