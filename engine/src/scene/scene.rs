@@ -193,14 +193,18 @@ impl Scene {
             }
 
             let mut dirty_primitive_instance_data: Vec<Instance> = Vec::new();
-            self.unupdated_entities.push(0);
             for entity_index in self.unupdated_entities.clone().iter() {
             //for entity_index in &vec![1usize] {
                 let parent_index = self.entities[*entity_index].parent;
+                let parent_transform = if *entity_index == 0 {
+                    Matrix::new()
+                } else {
+                    self.transforms[self.entities[parent_index].transform].world.clone()
+                };
                 self.update_entity(
                     base,
                     frame,
-                    &self.transforms[self.entities[parent_index].transform].world.clone(),
+                    &parent_transform,
                     *entity_index,
                     &mut dirty_primitive_instance_data
                 )
@@ -288,7 +292,6 @@ impl Scene {
 
                 let render_component_transform = &mut self.transforms[render_component.transform];
                 render_component_transform.world = entity_world_transform * render_component_transform.matrix;
-
 
                 let primitive = &world.meshes[render_component.mesh_primitive_index.0].primitives[render_component.mesh_primitive_index.1];
                 self.dirty_primitives.push(primitive.id);

@@ -1250,7 +1250,20 @@
     {
       "name": "transform editor ui",
       "container": {
-        "type": "Dock"
+        "type": "Stack",
+        "info": {
+          "horizontal": false,
+          "spacing": 5.0,
+          "padding": {
+            "left": 0.0,
+            "right": 0.0,
+            "top": 0.0,
+            "bottom": 0.0
+          },
+          "packing": "Start",
+          "stack_direction": "Normal",
+          "alignment": "Start"
+        }
       },
       "width": {
         "type": "Factor",
@@ -1261,7 +1274,7 @@
       "height": {
         "type": "Absolute",
         "info": {
-          "pixels": 100.0
+          "pixels": 20.0
         }
       },
       "elements": [
@@ -1270,14 +1283,22 @@
       "children": [
         {
           "name": "component type display",
+          "interactable_information": {
+            "hover_actions": [
+              {
+                "script": 0,
+                "method": "hover_cursor"
+              }
+            ],
+            "left_up_actions": [
+              {
+                "script": 1,
+                "method": "collapse"
+              }
+            ]
+          },
           "container": {
             "type": "Dock"
-          },
-          "parent_relation": {
-            "type": "Docking",
-            "info": {
-              "mode": "Top"
-            }
           },
           "width": {
             "type": "Factor",
@@ -1361,15 +1382,9 @@
           ]
         },
         {
-          "name": "translation x editor",
+          "name": "translation sliders",
           "container": {
             "type": "Dock"
-          },
-          "parent_relation": {
-            "type": "Docking",
-            "info": {
-              "mode": "Top"
-            }
           },
           "width": {
             "type": "Factor",
@@ -1380,109 +1395,172 @@
           "height": {
             "type": "Absolute",
             "info": {
-              "pixels": 20.0
+              "pixels": 60.0
             }
           },
-          "elements": [
-            {
-              "type": "Quad",
-              "info": {
-                "color": [0.275, 0.275, 0.275, 0.8],
-                "corner_radius": 5.0
-              }
-            }
-          ],
           "children": [
             {
-              "name": "slider",
-              "interactable_information": {
-                "hover_actions": [
-                  {
-                    "script": 0,
-                    "method": "hover_cursor"
-                  },
-                  {
-                    "script": 1,
-                    "method": "color_slider_hovered"
-                  }
-                ],
-                "unhover_actions": [
-                  {
-                    "script": 1,
-                    "method": "color_slider_unhovered"
-                  }
-                ],
-                "left_down_actions": [
-                  {
-                    "script": 1,
-                    "method": "begin_drag"
-                  }
-                ],
-                "left_hold_actions": [
-                  {
-                    "script": 1,
-                    "method": "update_drag"
-                  }
-                ]
-              },
+              "name": "translation x editor",
               "container": {
-                "type": "Stack",
-                "info": {
-                  "horizontal": false,
-                  "spacing": 0.0,
-                  "padding": {
-                    "left": 0.0,
-                    "right": 0.0,
-                    "top": 0.0,
-                    "bottom": 0.0
-                  },
-                  "packing": "Start",
-                  "stack_direction": "Normal",
-                  "alignment": "Center"
-                }
+                "type": "Dock"
               },
               "parent_relation": {
                 "type": "Docking",
                 "info": {
-                  "mode": "Right"
+                  "mode": "Top"
                 }
               },
               "width": {
                 "type": "Factor",
                 "info": {
-                  "factor": 0.6
+                  "factor": 1.0
                 }
               },
               "height": {
-                "type": "Factor",
+                "type": "Absolute",
                 "info": {
-                  "factor": 1.0
+                  "pixels": 20.0
                 }
               },
               "elements": [
                 {
                   "type": "Quad",
                   "info": {
-                    "color": [0.35, 0.35, 0.35, 0.8],
+                    "color": [0.275, 0.275, 0.275, 0.8],
                     "corner_radius": 5.0
                   }
                 }
               ],
               "children": [
                 {
-                  "name": "text",
+                  "name": "slider",
                   "interactable_information": {
-                    "passive_actions": [
+                    "hover_actions": [
+                      {
+                        "script": 0,
+                        "method": "horizontal_resize_cursor"
+                      },
                       {
                         "script": 1,
-                        "method": "update_translation_x_display"
+                        "method": "color_slider_hovered"
+                      }
+                    ],
+                    "unhover_actions": [
+                      {
+                        "script": 1,
+                        "method": "color_slider_unhovered"
+                      }
+                    ],
+                    "left_down_actions": [
+                      {
+                        "script": 1,
+                        "method": "begin_drag"
+                      },
+                      {
+                        "script": 1,
+                        "method": "set_drag_mode_translation_x"
+                      }
+                    ],
+                    "left_hold_actions": [
+                      {
+                        "script": 1,
+                        "method": "update_drag"
                       }
                     ]
                   },
-                  "width": {
-                    "type": "Absolute",
+                  "container": {
+                    "type": "Stack",
                     "info": {
-                      "pixels": 60
+                      "horizontal": false,
+                      "spacing": 0.0,
+                      "padding": {
+                        "left": 0.0,
+                        "right": 0.0,
+                        "top": 0.0,
+                        "bottom": 0.0
+                      },
+                      "packing": "Start",
+                      "stack_direction": "Normal",
+                      "alignment": "Center"
+                    }
+                  },
+                  "parent_relation": {
+                    "type": "Docking",
+                    "info": {
+                      "mode": "Right"
+                    }
+                  },
+                  "width": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 0.6
+                    }
+                  },
+                  "height": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "elements": [
+                    {
+                      "type": "Quad",
+                      "info": {
+                        "color": [0.35, 0.35, 0.35, 0.8],
+                        "corner_radius": 5.0
+                      }
+                    }
+                  ],
+                  "children": [
+                    {
+                      "name": "text",
+                      "interactable_information": {
+                        "passive_actions": [
+                          {
+                            "script": 1,
+                            "method": "update_translation_x_display"
+                          }
+                        ]
+                      },
+                      "width": {
+                        "type": "Absolute",
+                        "info": {
+                          "pixels": 60
+                        }
+                      },
+                      "height": {
+                        "type": "Factor",
+                        "info": {
+                          "factor": 1.0
+                        }
+                      },
+                      "elements": [
+                        {
+                          "type": "Text",
+                          "info": {
+                            "text": "XXXX.XXX",
+                            "color": [1.0, 1.0, 1.0, 1.0],
+                            "font": 0,
+                            "font_size": 15.0,
+                            "newline_distance": 300.0
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "name": "text",
+                  "parent_relation": {
+                    "type": "Docking",
+                    "info": {
+                      "mode": "Right"
+                    }
+                  },
+                  "width": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
                     }
                   },
                   "height": {
@@ -1495,7 +1573,7 @@
                     {
                       "type": "Text",
                       "info": {
-                        "text": "XXXX.XXX",
+                        "text": "Translation X:",
                         "color": [1.0, 1.0, 1.0, 1.0],
                         "font": 0,
                         "font_size": 15.0,
@@ -1507,11 +1585,14 @@
               ]
             },
             {
-              "name": "text",
+              "name": "translation y editor",
+              "container": {
+                "type": "Dock"
+              },
               "parent_relation": {
                 "type": "Docking",
                 "info": {
-                  "mode": "Right"
+                  "mode": "Top"
                 }
               },
               "width": {
@@ -1521,21 +1602,1505 @@
                 }
               },
               "height": {
+                "type": "Absolute",
+                "info": {
+                  "pixels": 20.0
+                }
+              },
+              "elements": [
+                {
+                  "type": "Quad",
+                  "info": {
+                    "color": [0.275, 0.275, 0.275, 0.8],
+                    "corner_radius": 5.0
+                  }
+                }
+              ],
+              "children": [
+                {
+                  "name": "slider",
+                  "interactable_information": {
+                    "hover_actions": [
+                      {
+                        "script": 0,
+                        "method": "horizontal_resize_cursor"
+                      },
+                      {
+                        "script": 1,
+                        "method": "color_slider_hovered"
+                      }
+                    ],
+                    "unhover_actions": [
+                      {
+                        "script": 1,
+                        "method": "color_slider_unhovered"
+                      }
+                    ],
+                    "left_down_actions": [
+                      {
+                        "script": 1,
+                        "method": "begin_drag"
+                      },
+                      {
+                        "script": 1,
+                        "method": "set_drag_mode_translation_y"
+                      }
+                    ],
+                    "left_hold_actions": [
+                      {
+                        "script": 1,
+                        "method": "update_drag"
+                      }
+                    ]
+                  },
+                  "container": {
+                    "type": "Stack",
+                    "info": {
+                      "horizontal": false,
+                      "spacing": 0.0,
+                      "padding": {
+                        "left": 0.0,
+                        "right": 0.0,
+                        "top": 0.0,
+                        "bottom": 0.0
+                      },
+                      "packing": "Start",
+                      "stack_direction": "Normal",
+                      "alignment": "Center"
+                    }
+                  },
+                  "parent_relation": {
+                    "type": "Docking",
+                    "info": {
+                      "mode": "Right"
+                    }
+                  },
+                  "width": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 0.6
+                    }
+                  },
+                  "height": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "elements": [
+                    {
+                      "type": "Quad",
+                      "info": {
+                        "color": [0.35, 0.35, 0.35, 0.8],
+                        "corner_radius": 5.0
+                      }
+                    }
+                  ],
+                  "children": [
+                    {
+                      "name": "text",
+                      "interactable_information": {
+                        "passive_actions": [
+                          {
+                            "script": 1,
+                            "method": "update_translation_y_display"
+                          }
+                        ]
+                      },
+                      "width": {
+                        "type": "Absolute",
+                        "info": {
+                          "pixels": 60
+                        }
+                      },
+                      "height": {
+                        "type": "Factor",
+                        "info": {
+                          "factor": 1.0
+                        }
+                      },
+                      "elements": [
+                        {
+                          "type": "Text",
+                          "info": {
+                            "text": "XXXX.XXX",
+                            "color": [1.0, 1.0, 1.0, 1.0],
+                            "font": 0,
+                            "font_size": 15.0,
+                            "newline_distance": 300.0
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "name": "text",
+                  "parent_relation": {
+                    "type": "Docking",
+                    "info": {
+                      "mode": "Right"
+                    }
+                  },
+                  "width": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "height": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "elements": [
+                    {
+                      "type": "Text",
+                      "info": {
+                        "text": "Translation Y:",
+                        "color": [1.0, 1.0, 1.0, 1.0],
+                        "font": 0,
+                        "font_size": 15.0,
+                        "newline_distance": 300.0
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "translation z editor",
+              "container": {
+                "type": "Dock"
+              },
+              "parent_relation": {
+                "type": "Docking",
+                "info": {
+                  "mode": "Top"
+                }
+              },
+              "width": {
                 "type": "Factor",
                 "info": {
                   "factor": 1.0
                 }
               },
+              "height": {
+                "type": "Absolute",
+                "info": {
+                  "pixels": 20.0
+                }
+              },
               "elements": [
                 {
-                  "type": "Text",
+                  "type": "Quad",
                   "info": {
-                    "text": "Translation X:",
-                    "color": [1.0, 1.0, 1.0, 1.0],
-                    "font": 0,
-                    "font_size": 15.0,
-                    "newline_distance": 300.0
+                    "color": [0.275, 0.275, 0.275, 0.8],
+                    "corner_radius": 5.0
                   }
+                }
+              ],
+              "children": [
+                {
+                  "name": "slider",
+                  "interactable_information": {
+                    "hover_actions": [
+                      {
+                        "script": 0,
+                        "method": "horizontal_resize_cursor"
+                      },
+                      {
+                        "script": 1,
+                        "method": "color_slider_hovered"
+                      }
+                    ],
+                    "unhover_actions": [
+                      {
+                        "script": 1,
+                        "method": "color_slider_unhovered"
+                      }
+                    ],
+                    "left_down_actions": [
+                      {
+                        "script": 1,
+                        "method": "begin_drag"
+                      },
+                      {
+                        "script": 1,
+                        "method": "set_drag_mode_translation_z"
+                      }
+                    ],
+                    "left_hold_actions": [
+                      {
+                        "script": 1,
+                        "method": "update_drag"
+                      }
+                    ]
+                  },
+                  "container": {
+                    "type": "Stack",
+                    "info": {
+                      "horizontal": false,
+                      "spacing": 0.0,
+                      "padding": {
+                        "left": 0.0,
+                        "right": 0.0,
+                        "top": 0.0,
+                        "bottom": 0.0
+                      },
+                      "packing": "Start",
+                      "stack_direction": "Normal",
+                      "alignment": "Center"
+                    }
+                  },
+                  "parent_relation": {
+                    "type": "Docking",
+                    "info": {
+                      "mode": "Right"
+                    }
+                  },
+                  "width": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 0.6
+                    }
+                  },
+                  "height": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "elements": [
+                    {
+                      "type": "Quad",
+                      "info": {
+                        "color": [0.35, 0.35, 0.35, 0.8],
+                        "corner_radius": 5.0
+                      }
+                    }
+                  ],
+                  "children": [
+                    {
+                      "name": "text",
+                      "interactable_information": {
+                        "passive_actions": [
+                          {
+                            "script": 1,
+                            "method": "update_translation_z_display"
+                          }
+                        ]
+                      },
+                      "width": {
+                        "type": "Absolute",
+                        "info": {
+                          "pixels": 60
+                        }
+                      },
+                      "height": {
+                        "type": "Factor",
+                        "info": {
+                          "factor": 1.0
+                        }
+                      },
+                      "elements": [
+                        {
+                          "type": "Text",
+                          "info": {
+                            "text": "XXXX.XXX",
+                            "color": [1.0, 1.0, 1.0, 1.0],
+                            "font": 0,
+                            "font_size": 15.0,
+                            "newline_distance": 300.0
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "name": "text",
+                  "parent_relation": {
+                    "type": "Docking",
+                    "info": {
+                      "mode": "Right"
+                    }
+                  },
+                  "width": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "height": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "elements": [
+                    {
+                      "type": "Text",
+                      "info": {
+                        "text": "Translation Z:",
+                        "color": [1.0, 1.0, 1.0, 1.0],
+                        "font": 0,
+                        "font_size": 15.0,
+                        "newline_distance": 300.0
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "rotation sliders",
+          "container": {
+            "type": "Dock"
+          },
+          "width": {
+            "type": "Factor",
+            "info": {
+              "factor": 1.0
+            }
+          },
+          "height": {
+            "type": "Absolute",
+            "info": {
+              "pixels": 60.0
+            }
+          },
+          "children": [
+            {
+              "name": "rotation x editor",
+              "container": {
+                "type": "Dock"
+              },
+              "parent_relation": {
+                "type": "Docking",
+                "info": {
+                  "mode": "Top"
+                }
+              },
+              "width": {
+                "type": "Factor",
+                "info": {
+                  "factor": 1.0
+                }
+              },
+              "height": {
+                "type": "Absolute",
+                "info": {
+                  "pixels": 20.0
+                }
+              },
+              "elements": [
+                {
+                  "type": "Quad",
+                  "info": {
+                    "color": [0.275, 0.275, 0.275, 0.8],
+                    "corner_radius": 5.0
+                  }
+                }
+              ],
+              "children": [
+                {
+                  "name": "slider",
+                  "interactable_information": {
+                    "hover_actions": [
+                      {
+                        "script": 0,
+                        "method": "horizontal_resize_cursor"
+                      },
+                      {
+                        "script": 1,
+                        "method": "color_slider_hovered"
+                      }
+                    ],
+                    "unhover_actions": [
+                      {
+                        "script": 1,
+                        "method": "color_slider_unhovered"
+                      }
+                    ],
+                    "left_down_actions": [
+                      {
+                        "script": 1,
+                        "method": "begin_drag"
+                      },
+                      {
+                        "script": 1,
+                        "method": "set_drag_mode_rotation_x"
+                      }
+                    ],
+                    "left_hold_actions": [
+                      {
+                        "script": 1,
+                        "method": "update_drag"
+                      }
+                    ]
+                  },
+                  "container": {
+                    "type": "Stack",
+                    "info": {
+                      "horizontal": false,
+                      "spacing": 0.0,
+                      "padding": {
+                        "left": 0.0,
+                        "right": 0.0,
+                        "top": 0.0,
+                        "bottom": 0.0
+                      },
+                      "packing": "Start",
+                      "stack_direction": "Normal",
+                      "alignment": "Center"
+                    }
+                  },
+                  "parent_relation": {
+                    "type": "Docking",
+                    "info": {
+                      "mode": "Right"
+                    }
+                  },
+                  "width": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 0.6
+                    }
+                  },
+                  "height": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "elements": [
+                    {
+                      "type": "Quad",
+                      "info": {
+                        "color": [0.35, 0.35, 0.35, 0.8],
+                        "corner_radius": 5.0
+                      }
+                    }
+                  ],
+                  "children": [
+                    {
+                      "name": "text",
+                      "interactable_information": {
+                        "passive_actions": [
+                          {
+                            "script": 1,
+                            "method": "update_rotation_x_display"
+                          }
+                        ]
+                      },
+                      "width": {
+                        "type": "Absolute",
+                        "info": {
+                          "pixels": 60
+                        }
+                      },
+                      "height": {
+                        "type": "Factor",
+                        "info": {
+                          "factor": 1.0
+                        }
+                      },
+                      "elements": [
+                        {
+                          "type": "Text",
+                          "info": {
+                            "text": "XXXX.XXX",
+                            "color": [1.0, 1.0, 1.0, 1.0],
+                            "font": 0,
+                            "font_size": 15.0,
+                            "newline_distance": 300.0
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "name": "text",
+                  "parent_relation": {
+                    "type": "Docking",
+                    "info": {
+                      "mode": "Right"
+                    }
+                  },
+                  "width": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "height": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "elements": [
+                    {
+                      "type": "Text",
+                      "info": {
+                        "text": "Rotation X:",
+                        "color": [1.0, 1.0, 1.0, 1.0],
+                        "font": 0,
+                        "font_size": 15.0,
+                        "newline_distance": 300.0
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "rotation y editor",
+              "container": {
+                "type": "Dock"
+              },
+              "parent_relation": {
+                "type": "Docking",
+                "info": {
+                  "mode": "Top"
+                }
+              },
+              "width": {
+                "type": "Factor",
+                "info": {
+                  "factor": 1.0
+                }
+              },
+              "height": {
+                "type": "Absolute",
+                "info": {
+                  "pixels": 20.0
+                }
+              },
+              "elements": [
+                {
+                  "type": "Quad",
+                  "info": {
+                    "color": [0.275, 0.275, 0.275, 0.8],
+                    "corner_radius": 5.0
+                  }
+                }
+              ],
+              "children": [
+                {
+                  "name": "slider",
+                  "interactable_information": {
+                    "hover_actions": [
+                      {
+                        "script": 0,
+                        "method": "horizontal_resize_cursor"
+                      },
+                      {
+                        "script": 1,
+                        "method": "color_slider_hovered"
+                      }
+                    ],
+                    "unhover_actions": [
+                      {
+                        "script": 1,
+                        "method": "color_slider_unhovered"
+                      }
+                    ],
+                    "left_down_actions": [
+                      {
+                        "script": 1,
+                        "method": "begin_drag"
+                      },
+                      {
+                        "script": 1,
+                        "method": "set_drag_mode_rotation_y"
+                      }
+                    ],
+                    "left_hold_actions": [
+                      {
+                        "script": 1,
+                        "method": "update_drag"
+                      }
+                    ]
+                  },
+                  "container": {
+                    "type": "Stack",
+                    "info": {
+                      "horizontal": false,
+                      "spacing": 0.0,
+                      "padding": {
+                        "left": 0.0,
+                        "right": 0.0,
+                        "top": 0.0,
+                        "bottom": 0.0
+                      },
+                      "packing": "Start",
+                      "stack_direction": "Normal",
+                      "alignment": "Center"
+                    }
+                  },
+                  "parent_relation": {
+                    "type": "Docking",
+                    "info": {
+                      "mode": "Right"
+                    }
+                  },
+                  "width": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 0.6
+                    }
+                  },
+                  "height": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "elements": [
+                    {
+                      "type": "Quad",
+                      "info": {
+                        "color": [0.35, 0.35, 0.35, 0.8],
+                        "corner_radius": 5.0
+                      }
+                    }
+                  ],
+                  "children": [
+                    {
+                      "name": "text",
+                      "interactable_information": {
+                        "passive_actions": [
+                          {
+                            "script": 1,
+                            "method": "update_rotation_y_display"
+                          }
+                        ]
+                      },
+                      "width": {
+                        "type": "Absolute",
+                        "info": {
+                          "pixels": 60
+                        }
+                      },
+                      "height": {
+                        "type": "Factor",
+                        "info": {
+                          "factor": 1.0
+                        }
+                      },
+                      "elements": [
+                        {
+                          "type": "Text",
+                          "info": {
+                            "text": "XXXX.XXX",
+                            "color": [1.0, 1.0, 1.0, 1.0],
+                            "font": 0,
+                            "font_size": 15.0,
+                            "newline_distance": 300.0
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "name": "text",
+                  "parent_relation": {
+                    "type": "Docking",
+                    "info": {
+                      "mode": "Right"
+                    }
+                  },
+                  "width": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "height": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "elements": [
+                    {
+                      "type": "Text",
+                      "info": {
+                        "text": "Rotation Y:",
+                        "color": [1.0, 1.0, 1.0, 1.0],
+                        "font": 0,
+                        "font_size": 15.0,
+                        "newline_distance": 300.0
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "rotation z editor",
+              "container": {
+                "type": "Dock"
+              },
+              "parent_relation": {
+                "type": "Docking",
+                "info": {
+                  "mode": "Top"
+                }
+              },
+              "width": {
+                "type": "Factor",
+                "info": {
+                  "factor": 1.0
+                }
+              },
+              "height": {
+                "type": "Absolute",
+                "info": {
+                  "pixels": 20.0
+                }
+              },
+              "elements": [
+                {
+                  "type": "Quad",
+                  "info": {
+                    "color": [0.275, 0.275, 0.275, 0.8],
+                    "corner_radius": 5.0
+                  }
+                }
+              ],
+              "children": [
+                {
+                  "name": "slider",
+                  "interactable_information": {
+                    "hover_actions": [
+                      {
+                        "script": 0,
+                        "method": "horizontal_resize_cursor"
+                      },
+                      {
+                        "script": 1,
+                        "method": "color_slider_hovered"
+                      }
+                    ],
+                    "unhover_actions": [
+                      {
+                        "script": 1,
+                        "method": "color_slider_unhovered"
+                      }
+                    ],
+                    "left_down_actions": [
+                      {
+                        "script": 1,
+                        "method": "begin_drag"
+                      },
+                      {
+                        "script": 1,
+                        "method": "set_drag_mode_rotation_z"
+                      }
+                    ],
+                    "left_hold_actions": [
+                      {
+                        "script": 1,
+                        "method": "update_drag"
+                      }
+                    ]
+                  },
+                  "container": {
+                    "type": "Stack",
+                    "info": {
+                      "horizontal": false,
+                      "spacing": 0.0,
+                      "padding": {
+                        "left": 0.0,
+                        "right": 0.0,
+                        "top": 0.0,
+                        "bottom": 0.0
+                      },
+                      "packing": "Start",
+                      "stack_direction": "Normal",
+                      "alignment": "Center"
+                    }
+                  },
+                  "parent_relation": {
+                    "type": "Docking",
+                    "info": {
+                      "mode": "Right"
+                    }
+                  },
+                  "width": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 0.6
+                    }
+                  },
+                  "height": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "elements": [
+                    {
+                      "type": "Quad",
+                      "info": {
+                        "color": [0.35, 0.35, 0.35, 0.8],
+                        "corner_radius": 5.0
+                      }
+                    }
+                  ],
+                  "children": [
+                    {
+                      "name": "text",
+                      "interactable_information": {
+                        "passive_actions": [
+                          {
+                            "script": 1,
+                            "method": "update_rotation_z_display"
+                          }
+                        ]
+                      },
+                      "width": {
+                        "type": "Absolute",
+                        "info": {
+                          "pixels": 60
+                        }
+                      },
+                      "height": {
+                        "type": "Factor",
+                        "info": {
+                          "factor": 1.0
+                        }
+                      },
+                      "elements": [
+                        {
+                          "type": "Text",
+                          "info": {
+                            "text": "XXXX.XXX",
+                            "color": [1.0, 1.0, 1.0, 1.0],
+                            "font": 0,
+                            "font_size": 15.0,
+                            "newline_distance": 300.0
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "name": "text",
+                  "parent_relation": {
+                    "type": "Docking",
+                    "info": {
+                      "mode": "Right"
+                    }
+                  },
+                  "width": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "height": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "elements": [
+                    {
+                      "type": "Text",
+                      "info": {
+                        "text": "Rotation Z:",
+                        "color": [1.0, 1.0, 1.0, 1.0],
+                        "font": 0,
+                        "font_size": 15.0,
+                        "newline_distance": 300.0
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "scale sliders",
+          "container": {
+            "type": "Dock"
+          },
+          "width": {
+            "type": "Factor",
+            "info": {
+              "factor": 1.0
+            }
+          },
+          "height": {
+            "type": "Absolute",
+            "info": {
+              "pixels": 60.0
+            }
+          },
+          "children": [
+            {
+              "name": "scale x editor",
+              "container": {
+                "type": "Dock"
+              },
+              "parent_relation": {
+                "type": "Docking",
+                "info": {
+                  "mode": "Top"
+                }
+              },
+              "width": {
+                "type": "Factor",
+                "info": {
+                  "factor": 1.0
+                }
+              },
+              "height": {
+                "type": "Absolute",
+                "info": {
+                  "pixels": 20.0
+                }
+              },
+              "elements": [
+                {
+                  "type": "Quad",
+                  "info": {
+                    "color": [0.275, 0.275, 0.275, 0.8],
+                    "corner_radius": 5.0
+                  }
+                }
+              ],
+              "children": [
+                {
+                  "name": "slider",
+                  "interactable_information": {
+                    "hover_actions": [
+                      {
+                        "script": 0,
+                        "method": "horizontal_resize_cursor"
+                      },
+                      {
+                        "script": 1,
+                        "method": "color_slider_hovered"
+                      }
+                    ],
+                    "unhover_actions": [
+                      {
+                        "script": 1,
+                        "method": "color_slider_unhovered"
+                      }
+                    ],
+                    "left_down_actions": [
+                      {
+                        "script": 1,
+                        "method": "begin_drag"
+                      },
+                      {
+                        "script": 1,
+                        "method": "set_drag_mode_scale_x"
+                      }
+                    ],
+                    "left_hold_actions": [
+                      {
+                        "script": 1,
+                        "method": "update_drag"
+                      }
+                    ]
+                  },
+                  "container": {
+                    "type": "Stack",
+                    "info": {
+                      "horizontal": false,
+                      "spacing": 0.0,
+                      "padding": {
+                        "left": 0.0,
+                        "right": 0.0,
+                        "top": 0.0,
+                        "bottom": 0.0
+                      },
+                      "packing": "Start",
+                      "stack_direction": "Normal",
+                      "alignment": "Center"
+                    }
+                  },
+                  "parent_relation": {
+                    "type": "Docking",
+                    "info": {
+                      "mode": "Right"
+                    }
+                  },
+                  "width": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 0.6
+                    }
+                  },
+                  "height": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "elements": [
+                    {
+                      "type": "Quad",
+                      "info": {
+                        "color": [0.35, 0.35, 0.35, 0.8],
+                        "corner_radius": 5.0
+                      }
+                    }
+                  ],
+                  "children": [
+                    {
+                      "name": "text",
+                      "interactable_information": {
+                        "passive_actions": [
+                          {
+                            "script": 1,
+                            "method": "update_scale_x_display"
+                          }
+                        ]
+                      },
+                      "width": {
+                        "type": "Absolute",
+                        "info": {
+                          "pixels": 60
+                        }
+                      },
+                      "height": {
+                        "type": "Factor",
+                        "info": {
+                          "factor": 1.0
+                        }
+                      },
+                      "elements": [
+                        {
+                          "type": "Text",
+                          "info": {
+                            "text": "XXXX.XXX",
+                            "color": [1.0, 1.0, 1.0, 1.0],
+                            "font": 0,
+                            "font_size": 15.0,
+                            "newline_distance": 300.0
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "name": "text",
+                  "parent_relation": {
+                    "type": "Docking",
+                    "info": {
+                      "mode": "Right"
+                    }
+                  },
+                  "width": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "height": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "elements": [
+                    {
+                      "type": "Text",
+                      "info": {
+                        "text": "Scale X:",
+                        "color": [1.0, 1.0, 1.0, 1.0],
+                        "font": 0,
+                        "font_size": 15.0,
+                        "newline_distance": 300.0
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "scale y editor",
+              "container": {
+                "type": "Dock"
+              },
+              "parent_relation": {
+                "type": "Docking",
+                "info": {
+                  "mode": "Top"
+                }
+              },
+              "width": {
+                "type": "Factor",
+                "info": {
+                  "factor": 1.0
+                }
+              },
+              "height": {
+                "type": "Absolute",
+                "info": {
+                  "pixels": 20.0
+                }
+              },
+              "elements": [
+                {
+                  "type": "Quad",
+                  "info": {
+                    "color": [0.275, 0.275, 0.275, 0.8],
+                    "corner_radius": 5.0
+                  }
+                }
+              ],
+              "children": [
+                {
+                  "name": "slider",
+                  "interactable_information": {
+                    "hover_actions": [
+                      {
+                        "script": 0,
+                        "method": "horizontal_resize_cursor"
+                      },
+                      {
+                        "script": 1,
+                        "method": "color_slider_hovered"
+                      }
+                    ],
+                    "unhover_actions": [
+                      {
+                        "script": 1,
+                        "method": "color_slider_unhovered"
+                      }
+                    ],
+                    "left_down_actions": [
+                      {
+                        "script": 1,
+                        "method": "begin_drag"
+                      },
+                      {
+                        "script": 1,
+                        "method": "set_drag_mode_scale_y"
+                      }
+                    ],
+                    "left_hold_actions": [
+                      {
+                        "script": 1,
+                        "method": "update_drag"
+                      }
+                    ]
+                  },
+                  "container": {
+                    "type": "Stack",
+                    "info": {
+                      "horizontal": false,
+                      "spacing": 0.0,
+                      "padding": {
+                        "left": 0.0,
+                        "right": 0.0,
+                        "top": 0.0,
+                        "bottom": 0.0
+                      },
+                      "packing": "Start",
+                      "stack_direction": "Normal",
+                      "alignment": "Center"
+                    }
+                  },
+                  "parent_relation": {
+                    "type": "Docking",
+                    "info": {
+                      "mode": "Right"
+                    }
+                  },
+                  "width": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 0.6
+                    }
+                  },
+                  "height": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "elements": [
+                    {
+                      "type": "Quad",
+                      "info": {
+                        "color": [0.35, 0.35, 0.35, 0.8],
+                        "corner_radius": 5.0
+                      }
+                    }
+                  ],
+                  "children": [
+                    {
+                      "name": "text",
+                      "interactable_information": {
+                        "passive_actions": [
+                          {
+                            "script": 1,
+                            "method": "update_scale_y_display"
+                          }
+                        ]
+                      },
+                      "width": {
+                        "type": "Absolute",
+                        "info": {
+                          "pixels": 60
+                        }
+                      },
+                      "height": {
+                        "type": "Factor",
+                        "info": {
+                          "factor": 1.0
+                        }
+                      },
+                      "elements": [
+                        {
+                          "type": "Text",
+                          "info": {
+                            "text": "XXXX.XXX",
+                            "color": [1.0, 1.0, 1.0, 1.0],
+                            "font": 0,
+                            "font_size": 15.0,
+                            "newline_distance": 300.0
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "name": "text",
+                  "parent_relation": {
+                    "type": "Docking",
+                    "info": {
+                      "mode": "Right"
+                    }
+                  },
+                  "width": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "height": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "elements": [
+                    {
+                      "type": "Text",
+                      "info": {
+                        "text": "Scale Y:",
+                        "color": [1.0, 1.0, 1.0, 1.0],
+                        "font": 0,
+                        "font_size": 15.0,
+                        "newline_distance": 300.0
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "scale z editor",
+              "container": {
+                "type": "Dock"
+              },
+              "parent_relation": {
+                "type": "Docking",
+                "info": {
+                  "mode": "Top"
+                }
+              },
+              "width": {
+                "type": "Factor",
+                "info": {
+                  "factor": 1.0
+                }
+              },
+              "height": {
+                "type": "Absolute",
+                "info": {
+                  "pixels": 20.0
+                }
+              },
+              "elements": [
+                {
+                  "type": "Quad",
+                  "info": {
+                    "color": [0.275, 0.275, 0.275, 0.8],
+                    "corner_radius": 5.0
+                  }
+                }
+              ],
+              "children": [
+                {
+                  "name": "slider",
+                  "interactable_information": {
+                    "hover_actions": [
+                      {
+                        "script": 0,
+                        "method": "horizontal_resize_cursor"
+                      },
+                      {
+                        "script": 1,
+                        "method": "color_slider_hovered"
+                      }
+                    ],
+                    "unhover_actions": [
+                      {
+                        "script": 1,
+                        "method": "color_slider_unhovered"
+                      }
+                    ],
+                    "left_down_actions": [
+                      {
+                        "script": 1,
+                        "method": "begin_drag"
+                      },
+                      {
+                        "script": 1,
+                        "method": "set_drag_mode_scale_z"
+                      }
+                    ],
+                    "left_hold_actions": [
+                      {
+                        "script": 1,
+                        "method": "update_drag"
+                      }
+                    ]
+                  },
+                  "container": {
+                    "type": "Stack",
+                    "info": {
+                      "horizontal": false,
+                      "spacing": 0.0,
+                      "padding": {
+                        "left": 0.0,
+                        "right": 0.0,
+                        "top": 0.0,
+                        "bottom": 0.0
+                      },
+                      "packing": "Start",
+                      "stack_direction": "Normal",
+                      "alignment": "Center"
+                    }
+                  },
+                  "parent_relation": {
+                    "type": "Docking",
+                    "info": {
+                      "mode": "Right"
+                    }
+                  },
+                  "width": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 0.6
+                    }
+                  },
+                  "height": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "elements": [
+                    {
+                      "type": "Quad",
+                      "info": {
+                        "color": [0.35, 0.35, 0.35, 0.8],
+                        "corner_radius": 5.0
+                      }
+                    }
+                  ],
+                  "children": [
+                    {
+                      "name": "text",
+                      "interactable_information": {
+                        "passive_actions": [
+                          {
+                            "script": 1,
+                            "method": "update_scale_z_display"
+                          }
+                        ]
+                      },
+                      "width": {
+                        "type": "Absolute",
+                        "info": {
+                          "pixels": 60
+                        }
+                      },
+                      "height": {
+                        "type": "Factor",
+                        "info": {
+                          "factor": 1.0
+                        }
+                      },
+                      "elements": [
+                        {
+                          "type": "Text",
+                          "info": {
+                            "text": "XXXX.XXX",
+                            "color": [1.0, 1.0, 1.0, 1.0],
+                            "font": 0,
+                            "font_size": 15.0,
+                            "newline_distance": 300.0
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "name": "text",
+                  "parent_relation": {
+                    "type": "Docking",
+                    "info": {
+                      "mode": "Right"
+                    }
+                  },
+                  "width": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "height": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "elements": [
+                    {
+                      "type": "Text",
+                      "info": {
+                        "text": "Scale Z:",
+                        "color": [1.0, 1.0, 1.0, 1.0],
+                        "font": 0,
+                        "font_size": 15.0,
+                        "newline_distance": 300.0
+                      }
+                    }
+                  ]
                 }
               ]
             }

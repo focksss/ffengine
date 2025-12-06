@@ -109,10 +109,16 @@ impl UserData for TransformPointer {
         });
         fields.add_field_method_set("rotation", |lua, this, vector: Vector|{
             with_scene_mut!(lua => scene);
+            // one level of the hierarchy up, for safety and to make this work properly for editing transforms of render components (non-entity components)
+            let owner = scene.entities[scene.transforms[this.index].owner].parent;
+            scene.unupdated_entities.push(owner);
             Ok(scene.transforms[this.index].rotation = vector)
         });
         fields.add_field_method_set("scale", |lua, this, vector: Vector|{
             with_scene_mut!(lua => scene);
+            // one level of the hierarchy up, for safety and to make this work properly for editing transforms of render components (non-entity components)
+            let owner = scene.entities[scene.transforms[this.index].owner].parent;
+            scene.unupdated_entities.push(owner);
             Ok(scene.transforms[this.index].scale = vector)
         });
     }
