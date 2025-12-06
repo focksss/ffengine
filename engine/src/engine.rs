@@ -51,7 +51,7 @@ pub struct EngineRef {
 }
 impl Engine {
     pub unsafe fn new() -> Engine {
-        let base = VkBase::new("ffengine".to_string(), 1920, 1080, MAX_FRAMES_IN_FLIGHT).unwrap();
+        let base = VkBase::new("ffengine".to_string(), 1200, 700, MAX_FRAMES_IN_FLIGHT).unwrap();
         let mut world = World::new(&base);
         unsafe { world.initialize(&base) }
         let world = Arc::new(RefCell::new(world));
@@ -223,7 +223,8 @@ impl Engine {
                                     self.scene.borrow_mut().update_scene(base, current_frame);
                                     let world_ref = &mut self.world.borrow_mut();
                                     world_ref.update_lights(frame_command_buffer, current_frame);
-                                    world_ref.update_cameras()
+                                    world_ref.update_cameras();
+                                    world_ref.update_sun(0);
                                 }
 
                                 let flags = self.client.borrow().flags.clone();

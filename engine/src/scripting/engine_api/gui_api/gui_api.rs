@@ -411,15 +411,15 @@ impl UserData for GUINodePointer {
             Ok(gui.nodes[this.index].element_indices.remove(val as usize))
         });
 
-        methods.add_method_mut("add_left_tap_action", |lua, this, val: (String, usize)| {
+        methods.add_method_mut("add_left_up_action", |lua, this, val: (String, usize)| {
             with_gui_mut!(lua, this.gui_index => gui);
             let script_index = gui.script_indices[val.1];
             let node = &mut gui.nodes[this.index];
             if let Some(interactable_information) = &mut node.interactable_information {
-                interactable_information.left_tap_actions.push((val.0, script_index));
+                interactable_information.left_up_actions.push((val.0, script_index));
             } else {
                 let mut new_interactable_information = GUIInteractableInformation::default();
-                new_interactable_information.left_tap_actions.push((val.0, script_index));
+                new_interactable_information.left_up_actions.push((val.0, script_index));
                 node.interactable_information = Some(new_interactable_information);
             }
             Ok(())
@@ -544,7 +544,7 @@ impl UserData for GUINodePointer {
 }
 
 pub struct GUIPointer {
-    pub(crate) index: usize
+    pub index: usize
 }
 impl UserData for GUIPointer {
     fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
@@ -593,6 +593,17 @@ impl UserData for GUIPointer {
                 gui_index: this.index,
                 index: gui.root_node_indices[val as usize]
             })
+        });
+        methods.add_method("get_unparented", |lua, this, val: i32| {
+            with_gui!(lua, this.index => gui);
+            lua.create_userdata(GUINodePointer {
+                gui_index: this.index,
+                index: gui.unparented_node_indices[val as usize]
+            })
+        });
+        methods.add_method("get_unparented_index", |lua, this, val: i32| {
+            with_gui!(lua, this.index => gui);
+            Ok(gui.unparented_node_indices[val as usize])
         });
         methods.add_method_mut("add_root_index", |lua, this, val: i32| {
             with_gui_mut!(lua, this.index => gui);

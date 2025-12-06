@@ -80,7 +80,9 @@ impl Scene {
             let new_model = &world.models[world.models.len() - 1];
 
             let entity_transform_index = self.transforms.len();
-            self.transforms.push(Transform::default());
+            let mut model_transform = Transform::default();
+            model_transform.owner = model_entity_index;
+            self.transforms.push(model_transform);
             self.entities[parent_index].children_indices.push(model_entity_index);
             self.entities.push(Entity {
                 name: String::from(uri),
@@ -133,6 +135,7 @@ impl Scene {
 
             let node_transform_index = self.transforms.len();
             self.transforms.push(Transform {
+                owner: node_entity_index,
                 translation: node.translation,
                 rotation: node.rotation,
                 scale: node.scale,
@@ -141,6 +144,7 @@ impl Scene {
 
             let node_anim_transform_index = self.transforms.len();
             self.transforms.push(Transform {
+                owner: node_entity_index,
                 translation: node.translation,
                 rotation: node.rotation,
                 scale: node.scale,
@@ -150,7 +154,7 @@ impl Scene {
             self.entities.push(Entity {
                 name: node.name.clone(),
                 transform: node_transform_index,
-                animated_transform: (node_anim_transform_index, true),
+                animated_transform: (node_anim_transform_index, false),
                 parent: parent_index,
                 ..Default::default()
             });
@@ -159,7 +163,10 @@ impl Scene {
                 let entity = &mut self.entities[node_entity_index];
                 for (i, primitive) in world.meshes[mesh_index].primitives.iter().enumerate() {
                     let render_component_transform_index = self.transforms.len();
-                    self.transforms.push(Transform::default());
+                    self.transforms.push(Transform {
+                        owner: node_entity_index,
+                        ..Default::default()
+                    });
 
                     let render_component_index = self.render_components.len();
                     self.render_components.push(RenderComponent {
@@ -180,19 +187,13 @@ impl Scene {
     }
 
     pub unsafe fn update_scene(&mut self, base: &VkBase, frame: usize) {
-        {
-            // let mut world = self.world.borrow_mut();
-            // for i in 0..world.animations.len() {
-            //     let nodes = &mut world.nodes;
-            //     world.animations[i].update(nodes);
-            // }
-        }
         if frame == 0 {
             for animation in self.animation_components.iter_mut() {
                 animation.update(&mut self.entities, &mut self.transforms, &mut self.unupdated_entities)
             }
 
             let mut dirty_primitive_instance_data: Vec<Instance> = Vec::new();
+            self.unupdated_entities.push(0);
             for entity_index in self.unupdated_entities.clone().iter() {
             //for entity_index in &vec![1usize] {
                 let parent_index = self.entities[*entity_index].parent;
@@ -283,14 +284,17 @@ impl Scene {
             for render_object_index in entity.render_objects.iter() {
                 let render_component = &self.render_components[*render_object_index];
 
-                let render_component_transform = &self.transforms[render_component.transform].matrix;
-                let render_component_world_transform = entity_world_transform * render_component_transform;
+                self.transforms[render_component.transform].update_matrix();
+
+                let render_component_transform = &mut self.transforms[render_component.transform];
+                render_component_transform.world = entity_world_transform * render_component_transform.matrix;
+
 
                 let primitive = &world.meshes[render_component.mesh_primitive_index.0].primitives[render_component.mesh_primitive_index.1];
                 self.dirty_primitives.push(primitive.id);
                 dirty_primitive_instance_data.push(
                     Instance {
-                        matrix: render_component_world_transform.data,
+                        matrix: render_component_transform.world.data,
                         indices: [
                             render_component.material_index as i32,
                             render_component.skin_index.map_or(-1, |i| i)
@@ -371,10 +375,11 @@ impl Default for Entity {
 }
 pub struct Transform {
     is_identity: bool,
+    pub owner: usize,
 
-    translation: Vector,
-    rotation: Vector,
-    scale: Vector,
+    pub translation: Vector,
+    pub rotation: Vector,
+    pub scale: Vector,
 
     matrix: Matrix,
 
@@ -392,6 +397,7 @@ impl Transform {
 impl Default for Transform {
     fn default() -> Self {
         Transform {
+            owner: 0,
             is_identity: true,
 
             translation: Vector::new(),
@@ -470,7 +476,8 @@ impl AnimationComponent {
                 new_vector = Vector::spherical_lerp(vector1, vector2, interpolation_factor)
             }
 
-            let entity = &entities[channel.1];
+            let entity = &mut entities[channel.1];
+            entity.animated_transform.1 = true;
             let animated_transform = &mut transforms[entity.animated_transform.0];
 
             if channel.2.eq("translation") {

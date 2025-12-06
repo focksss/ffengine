@@ -300,6 +300,7 @@ impl Lua {
     ) {
         for call in self.cached_calls.clone() {
             engine.renderer.borrow_mut().guis[call.3].borrow_mut().active_node = call.2;
+
             self.call_method_impl(
                 call.0,
                 call.1.as_str(),

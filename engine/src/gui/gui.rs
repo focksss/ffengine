@@ -36,6 +36,7 @@ pub struct GUI {
 
     pub nodes: Vec<Node>,
     pub root_node_indices: Vec<usize>,
+    pub unparented_node_indices: Vec<usize>,
 
     pub elements: Vec<Element>,
     image_count: usize,
@@ -109,7 +110,15 @@ impl GUI {
         }
 
         if left_just_pressed && hovered {
-            if !interactable_information.left_tap_actions.is_empty() || !interactable_information.left_hold_actions.is_empty() {
+            for left_down_action in interactable_information.left_down_actions.iter() {
+                Lua::cache_call(
+                    left_down_action.1,
+                    left_down_action.0.as_str(),
+                    Some(self.active_node),
+                    Some(self.index)
+                );
+            }
+            if !interactable_information.left_up_actions.is_empty() || !interactable_information.left_hold_actions.is_empty() {
                 interactable_information.was_initially_pressed = true;
                 *can_trigger_click_events = false;
             }
@@ -141,7 +150,7 @@ impl GUI {
         } else {
             if hovered {
                 result = GUIInteractionResult::LeftTap;
-                for left_tap_action in interactable_information.left_tap_actions.iter() {
+                for left_tap_action in interactable_information.left_up_actions.iter() {
                     Lua::cache_call(
                         left_tap_action.1,
                         left_tap_action.0.as_str(),
@@ -170,7 +179,7 @@ impl GUI {
         };
         let (pass_ref, quad_renderpass, text_renderer) = GUI::create_rendering_objects(&base, null_info);
 
-        let mut gui = GUI {
+        let gui = GUI {
             index,
 
             device: base.device.clone(),
@@ -183,6 +192,7 @@ impl GUI {
 
             nodes: Vec::new(),
             root_node_indices: Vec::new(),
+            unparented_node_indices: Vec::new(),
 
             elements: Vec::new(),
             image_count: 0,
@@ -467,7 +477,8 @@ impl GUI {
             let mut interactable_passive_actions = Vec::new();
             let mut interactable_hover_actions = Vec::new();
             let mut interactable_unhover_actions = Vec::new();
-            let mut interactable_left_tap_actions = Vec::new();
+            let mut interactable_left_up_actions = Vec::new();
+            let mut interactable_left_down_actions = Vec::new();
             let mut interactable_right_tap_actions = Vec::new();
             let mut interactable_left_hold_actions = Vec::new();
             let mut interactable_right_hold_actions = Vec::new();
@@ -532,7 +543,7 @@ impl GUI {
                 }
                 _ => {}
             }
-            match &interactable_information_json["left_tap_actions"] {
+            match &interactable_information_json["left_up_actions"] {
                 JsonValue::Array(arr) => {
                     for method in arr {
                         let name = match &method["method"] {
@@ -544,9 +555,29 @@ impl GUI {
                             }
                             _ => ""
                         };
-                        interactable_left_tap_actions.push((
+                        interactable_left_up_actions.push((
                             String::from(name),
-                            self.script_indices[method["script"].as_usize().expect("interactable left_tap_action index parse error")]
+                            self.script_indices[method["script"].as_usize().expect("interactable left_up_action index parse error")]
+                        ));
+                    }
+                }
+                _ => {}
+            }
+            match &interactable_information_json["left_down_actions"] {
+                JsonValue::Array(arr) => {
+                    for method in arr {
+                        let name = match &method["method"] {
+                            JsonValue::String(s) => {
+                                s.as_str()
+                            }
+                            JsonValue::Short(s) => {
+                                s.as_str()
+                            }
+                            _ => ""
+                        };
+                        interactable_left_down_actions.push((
+                            String::from(name),
+                            self.script_indices[method["script"].as_usize().expect("interactable left_down_action index parse error")]
                         ));
                     }
                 }
@@ -619,7 +650,8 @@ impl GUI {
                 passive_actions: interactable_passive_actions,
                 hover_actions: interactable_hover_actions,
                 unhover_actions: interactable_unhover_actions,
-                left_tap_actions: interactable_left_tap_actions,
+                left_up_actions: interactable_left_up_actions,
+                left_down_actions: interactable_left_down_actions,
                 left_hold_actions: interactable_left_hold_actions,
                 right_tap_actions: interactable_right_tap_actions,
                 right_hold_actions: interactable_right_hold_actions,
@@ -1158,6 +1190,7 @@ impl GUI {
             }
             guis.push(nodes);
         }
+        self.unparented_node_indices = unparented_true_indices;
         self.root_node_indices = guis[0].clone();
 
         println!("\nGUI Hierarchy:");
@@ -2127,10 +2160,11 @@ pub struct GUIInteractableInformation {
     was_initially_pressed: bool,
 
     passive_actions: Vec<(String, usize)>,
-    pub(crate) hover_actions: Vec<(String, usize)>,
+    pub hover_actions: Vec<(String, usize)>,
     unhover_actions: Vec<(String, usize)>,
-    pub left_tap_actions: Vec<(String, usize)>,
-    left_hold_actions: Vec<(String, usize)>,
+    pub left_up_actions: Vec<(String, usize)>,
+    pub left_down_actions: Vec<(String, usize)>,
+    pub left_hold_actions: Vec<(String, usize)>,
     right_tap_actions: Vec<(String, usize)>,
     right_hold_actions: Vec<(String, usize)>,
 }
@@ -2142,7 +2176,8 @@ impl Default for GUIInteractableInformation {
             hover_actions: Vec::new(),
             unhover_actions: Vec::new(),
             left_hold_actions: Vec::new(),
-            left_tap_actions: Vec::new(),
+            left_up_actions: Vec::new(),
+            left_down_actions: Vec::new(),
             right_hold_actions: Vec::new(),
             right_tap_actions: Vec::new(),
         }

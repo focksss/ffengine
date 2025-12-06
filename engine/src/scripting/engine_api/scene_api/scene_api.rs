@@ -2,6 +2,7 @@ use crate::engine::EngineRef;
 use std::cell::RefCell;
 use std::sync::Arc;
 use mlua::{UserData, UserDataFields, UserDataMethods};
+use crate::math::Vector;
 use crate::scene::scene::Scene;
 
 macro_rules! with_scene {
@@ -30,7 +31,10 @@ impl UserData for SceneRef {
         });
         methods.add_method("get_render_component", |lua, this, index: usize| {
             Ok(lua.create_userdata(RenderComponentPointer { index }))
-        })
+        });
+        methods.add_method("get_transform", |lua, this, index: usize| {
+            Ok(lua.create_userdata(TransformPointer { index }))
+        });
     }
 }
 
@@ -79,7 +83,38 @@ pub struct TransformPointer {
 }
 impl UserData for TransformPointer {
     fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
+        fields.add_field_method_get("index", |lua, this|{
+            Ok(this.index)
+        });
 
+        fields.add_field_method_get("translation", |lua, this|{
+            with_scene!(lua => scene);
+            Ok(scene.transforms[this.index].translation)
+        });
+        fields.add_field_method_get("rotation", |lua, this|{
+            with_scene!(lua => scene);
+            Ok(scene.transforms[this.index].rotation)
+        });
+        fields.add_field_method_get("scale", |lua, this|{
+            with_scene!(lua => scene);
+            Ok(scene.transforms[this.index].scale)
+        });
+
+        fields.add_field_method_set("translation", |lua, this, vector: Vector|{
+            with_scene_mut!(lua => scene);
+            // one level of the hierarchy up, for safety and to make this work properly for editing transforms of render components (non-entity components)
+            let owner = scene.entities[scene.transforms[this.index].owner].parent;
+            scene.unupdated_entities.push(owner);
+            Ok(scene.transforms[this.index].translation = vector)
+        });
+        fields.add_field_method_set("rotation", |lua, this, vector: Vector|{
+            with_scene_mut!(lua => scene);
+            Ok(scene.transforms[this.index].rotation = vector)
+        });
+        fields.add_field_method_set("scale", |lua, this, vector: Vector|{
+            with_scene_mut!(lua => scene);
+            Ok(scene.transforms[this.index].scale = vector)
+        });
     }
 }
 

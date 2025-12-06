@@ -27,6 +27,12 @@ MovementMode = {
     ---@class Scene
     ---@field get_entity fun(self:Scene, index:integer):Entity
     ---@field get_render_component fun(self:Scene, index:integer):RenderComponent
+    ---@field get_transform fun(self:Scene, index:integer):Transform
+    
+        ---@class Transform
+        ---@field translation Vector
+        ---@field rotation Vector
+        ---@field scale Vector
     
         ---@class Entity
         ---@field transform_index integer
@@ -57,6 +63,8 @@ MovementMode = {
         ---@field get_root fun(self:GUI, index:integer):GUINode
         ---@field add_root_index fun(self:GUI, index:integer):nil
         ---@field remove_root_index_at fun(self:GUI, index:integer):nil
+        ---@field get_unparented fun(self:GUI, index:integer):GUINode
+        ---@field get_unparented_index fun(self:GUI, index:integer):integer
 
             ---@class GUINode
             ---@field hidden boolean
@@ -71,7 +79,8 @@ MovementMode = {
             ---@field remove_child_index_at fun(self:GUINode, index:integer):nil
             ---@field children_indices integer[]
             ---@field set_anchor_point fun(self:GUINode, anchor_point:integer):nil
-            ---@field add_left_tap_action fun(self:GUINode, method:string, script:integer):nil
+            ---@field add_left_up_action fun(self:GUINode, method:string, script:integer):nil
+            ---@field add_left_down_action fun(self:GUINode, method:string, script:integer):nil
             ---@field add_hover_action fun(self:GUINode, method:string, script:integer):nil
             ---@field index integer
             ---@field get_child fun(self:GUINode, child_index:integer):GUINode
