@@ -5,6 +5,7 @@ use std::sync::Arc;
 use ash::{vk, Device, Instance};
 use ash::util::read_spv;
 use ash::vk::{Buffer, ClearColorValue, ClearDepthStencilValue, ClearValue, DescriptorBindingFlags, DescriptorImageInfo, DescriptorPool, DescriptorPoolCreateFlags, DescriptorPoolSize, DescriptorSetLayout, DescriptorSetLayoutCreateFlags, DescriptorType, DeviceMemory, DeviceSize, DynamicState, Extent3D, Format, GraphicsPipelineCreateInfo, ImageAspectFlags, ImageSubresourceRange, ImageUsageFlags, MemoryPropertyFlags, PhysicalDevice, PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo, PipelineDepthStencilStateCreateInfo, PipelineInputAssemblyStateCreateInfo, PipelineMultisampleStateCreateInfo, PipelineRasterizationStateCreateInfo, PipelineShaderStageCreateInfo, PipelineTessellationStateCreateInfo, PipelineVertexInputStateCreateInfo, PushConstantRange, SampleCountFlags, ShaderModule, ShaderModuleCreateInfo, ShaderStageFlags, StencilOpState};
+use crate::engine::get_command_buffer;
 use crate::render::render::MAX_FRAMES_IN_FLIGHT;
 use crate::render::vulkan_base::{find_memorytype_index, load_file, VkBase};
 
@@ -784,6 +785,218 @@ impl Texture {
             has_stencil: create_info.has_stencil,
         }
     } }
+    pub unsafe fn sample(&self, base: &VkBase, x: i32, y: i32, z: i32) -> Box<[f32]> { unsafe {
+        let pixel_size = match self.format {
+            Format::R8G8B8A8_UNORM => 4,
+            Format::R32_SFLOAT => 4,
+            Format::R32G32B32A32_SFLOAT => 16,
+            Format::R16G16B16A16_SFLOAT => 8,
+            Format::R16_UINT => 2,
+            Format::R32_UINT => 4,
+            Format::D32_SFLOAT => 4,
+            _ => panic!("Unsupported format {:?}", self.format),
+        };
+
+        let buffer_info = vk::BufferCreateInfo {
+            s_type: vk::StructureType::BUFFER_CREATE_INFO,
+            size: pixel_size as u64,
+            usage: vk::BufferUsageFlags::TRANSFER_DST,
+            sharing_mode: vk::SharingMode::EXCLUSIVE,
+            ..Default::default()
+        };
+        let staging_buffer = self.device.create_buffer(&buffer_info, None).unwrap();
+
+        let req = self.device.get_buffer_memory_requirements(staging_buffer);
+
+        let mem_index = base
+            .instance
+            .get_physical_device_memory_properties(base.pdevice)
+            .memory_types
+            .iter()
+            .enumerate()
+            .find(|(i, mt)| {
+                (req.memory_type_bits & (1u32 << i)) != 0 &&
+                    mt.property_flags.contains(
+                        MemoryPropertyFlags::HOST_VISIBLE |
+                            MemoryPropertyFlags::HOST_COHERENT
+                    )
+            })
+            .map(|(i, _)| i)
+            .unwrap() as u32;
+
+        let alloc_info = vk::MemoryAllocateInfo {
+            s_type: vk::StructureType::MEMORY_ALLOCATE_INFO,
+            allocation_size: req.size,
+            memory_type_index: mem_index,
+            ..Default::default()
+        };
+        let staging_memory = self.device.allocate_memory(&alloc_info, None).unwrap();
+        self.device.bind_buffer_memory(staging_buffer, staging_memory, 0).unwrap();
+
+        let region = vk::BufferImageCopy {
+            buffer_offset: 0,
+            buffer_row_length: 0,
+            buffer_image_height: 0,
+
+            image_subresource: vk::ImageSubresourceLayers {
+                aspect_mask: if self.is_depth {
+                    ImageAspectFlags::DEPTH
+                } else {
+                    ImageAspectFlags::COLOR
+                },
+                mip_level: 0,
+                base_array_layer: 0,
+                layer_count: 1,
+            },
+
+            image_offset: vk::Offset3D { x, y, z },
+            image_extent: Extent3D { width: 1, height: 1, depth: 1 },
+        };
+
+        let subresource_range = ImageSubresourceRange {
+            aspect_mask: if self.is_depth {
+                ImageAspectFlags::DEPTH
+            } else {
+                ImageAspectFlags::COLOR
+            },
+            base_mip_level: 0,
+            level_count: 1,
+            base_array_layer: 0,
+            layer_count: 1,
+        };
+
+        base.transition_image_layout(
+            self.image,
+            subresource_range,
+            vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+        );
+
+        {
+            let cmd = base.begin_single_time_commands(1)[0];
+
+            self.device.cmd_copy_image_to_buffer(
+                cmd,
+                self.image,
+                vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+                staging_buffer,
+                &[region],
+            );
+
+            base.end_single_time_commands(vec![cmd]);
+        }
+
+        let ptr = self.device.map_memory(
+            staging_memory,
+            0,
+            pixel_size as u64,
+            vk::MemoryMapFlags::empty(),
+        ).unwrap();
+
+        let slice = std::slice::from_raw_parts(ptr as *const u8, pixel_size);
+
+        let result: Box<[f32]> = match self.format {
+            Format::R8G8B8A8_UNORM => {
+                Box::new([
+                    slice[0] as f32 / 255.0,
+                    slice[1] as f32 / 255.0,
+                    slice[2] as f32 / 255.0,
+                    slice[3] as f32 / 255.0,
+                ])
+            }
+
+            Format::R32_SFLOAT => {
+                Box::new([f32::from_ne_bytes(slice.try_into().unwrap())])
+            }
+
+            Format::R32G32B32A32_SFLOAT => {
+                let mut f = [0.0; 4];
+                for i in 0..4 {
+                    f[i] = f32::from_ne_bytes(slice[i*4..i*4+4].try_into().unwrap());
+                }
+                Box::new(f)
+            }
+
+            Format::R16G16B16A16_SFLOAT => {
+                use half::f16;
+                let mut f = [0.0f32; 4];
+                for i in 0..4 {
+                    let bits: u16 = u16::from_ne_bytes(slice[i * 2..i * 2 + 2].try_into().unwrap());
+                    f[i] = f16::from_bits(bits).to_f32();
+                }
+                Box::new(f)
+            }
+
+            Format::R16_UINT => {
+                Box::new([u16::from_ne_bytes(slice.try_into().unwrap()) as f32])
+            }
+
+            Format::R32_UINT => {
+                Box::new([u32::from_ne_bytes(slice.try_into().unwrap()) as f32])
+            }
+
+            Format::D32_SFLOAT => {
+                Box::new([f32::from_ne_bytes(slice.try_into().unwrap())])
+            }
+
+            _ => panic!("ehlp"),
+        };
+        self.device.unmap_memory(staging_memory);
+
+        self.device.destroy_buffer(staging_buffer, None);
+        self.device.free_memory(staging_memory, None);
+
+        base.transition_image_layout(
+            self.image,
+            subresource_range,
+            vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+            vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+        );
+
+        result
+    } }
+    fn sizeof_texel(format: Format) -> usize {
+        match format {
+            Format::R8_UNORM => 1,
+            Format::R8G8B8A8_UNORM => 4,
+            Format::R16_UINT | Format::R16_SFLOAT => 2,
+            Format::R32_SFLOAT => 4,
+            Format::R32G32B32A32_SFLOAT => 16,
+            _ => unimplemented!("format {:?} not supported", format),
+        }
+    }
+    fn decode_texel(format: Format, bytes: &[u8]) -> Box<[f32]> {
+        match format {
+            Format::R8_UNORM =>
+                Box::new([bytes[0] as f32 / 255.0]),
+
+            Format::R8G8B8A8_UNORM =>
+                Box::new([
+                    bytes[0] as f32 / 255.0,
+                    bytes[1] as f32 / 255.0,
+                    bytes[2] as f32 / 255.0,
+                    bytes[3] as f32 / 255.0,
+                ]),
+
+            Format::R16_SFLOAT => {
+                let v = u16::from_ne_bytes([bytes[0], bytes[1]]);
+                Box::new([half::f16::from_bits(v).to_f32()])
+            }
+
+            Format::R32_SFLOAT =>
+                Box::new([f32::from_ne_bytes(bytes.try_into().unwrap())]),
+
+            Format::R32G32B32A32_SFLOAT => {
+                let r = f32::from_ne_bytes(bytes[0..4].try_into().unwrap());
+                let g = f32::from_ne_bytes(bytes[4..8].try_into().unwrap());
+                let b = f32::from_ne_bytes(bytes[8..12].try_into().unwrap());
+                let a = f32::from_ne_bytes(bytes[12..16].try_into().unwrap());
+                Box::new([r, g, b, a])
+            }
+
+            _ => unimplemented!("decode for {:?}", format),
+        }
+    }
     pub unsafe fn destroy(&self) { unsafe {
         self.device.destroy_image(self.image, None);
         self.device.destroy_image_view(self.image_view, None);

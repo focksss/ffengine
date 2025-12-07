@@ -1419,13 +1419,24 @@ impl VkBase {
 
             source_stage = vk::PipelineStageFlags::TOP_OF_PIPE;
             destination_stage = vk::PipelineStageFlags::TRANSFER;
-        }
-        else if old_layout == vk::ImageLayout::TRANSFER_DST_OPTIMAL && new_layout == vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL {
+        } else if old_layout == vk::ImageLayout::TRANSFER_DST_OPTIMAL && new_layout == vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL {
             barrier.src_access_mask = vk::AccessFlags::TRANSFER_WRITE;
             barrier.dst_access_mask = vk::AccessFlags::SHADER_READ;
 
             source_stage = vk::PipelineStageFlags::TRANSFER;
             destination_stage = vk::PipelineStageFlags::FRAGMENT_SHADER;
+        } else if old_layout == vk::ImageLayout::TRANSFER_SRC_OPTIMAL && new_layout == vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL {
+            barrier.src_access_mask = vk::AccessFlags::TRANSFER_READ;
+            barrier.dst_access_mask = vk::AccessFlags::SHADER_READ;
+
+            source_stage = vk::PipelineStageFlags::TRANSFER;
+            destination_stage = vk::PipelineStageFlags::FRAGMENT_SHADER;
+        } else if old_layout == vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL && new_layout == vk::ImageLayout::TRANSFER_SRC_OPTIMAL {
+            barrier.src_access_mask = vk::AccessFlags::SHADER_READ;
+            barrier.dst_access_mask = vk::AccessFlags::TRANSFER_READ;
+
+            source_stage = vk::PipelineStageFlags::FRAGMENT_SHADER;
+            destination_stage = vk::PipelineStageFlags::TRANSFER;
         } else {
             eprintln!("unsupported layout transition");
         }

@@ -235,6 +235,7 @@ impl Engine {
                                 Lua::run_cache(&engine_ref);
                             },
                         );
+                        println!("{:?}", self.renderer.borrow().scene_renderer.borrow().lighting_renderpass.pass.borrow().textures[current_frame][0].sample(base, 100, 100, 0));
                         {
                             let mut controller_mut = self.client.borrow_mut();
                             controller_mut.reset_deltas()
