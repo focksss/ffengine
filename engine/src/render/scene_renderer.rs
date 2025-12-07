@@ -27,6 +27,9 @@ pub struct SceneRenderer {
 
     pub viewport: Arc<RefCell<vk::Viewport>>,
 
+    pub hovered_component_id: usize, // TODO entirely refactor the vulkan abstractions to be ID base (like Scene), be able to sample textures from lua.
+    pub queued_id_buffer_sample: bool,
+
     pub null_texture: Texture,
     pub null_tex_sampler: vk::Sampler,
 
@@ -356,6 +359,9 @@ impl SceneRenderer {
         SceneRenderer {
             device: base.device.clone(),
             draw_command_buffers: base.draw_command_buffers.clone(),
+
+            hovered_component_id: 0,
+            queued_id_buffer_sample: false,
 
             viewport: Arc::new(RefCell::new(viewport)),
 

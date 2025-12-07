@@ -44,5 +44,9 @@ impl UserData for SceneRendererRef {
             let object = ViewportRef(this.0.borrow().viewport.clone());
             lua.create_userdata(object)
         });
+        
+        fields.add_field_method_get("hovered_id", |lua, this| {
+            Ok(this.0.borrow().hovered_component_id)
+        });
     }
 }

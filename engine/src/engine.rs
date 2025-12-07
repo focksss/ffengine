@@ -237,12 +237,17 @@ impl Engine {
                         );
                         {
                             let mut controller_mut = self.client.borrow_mut();
-                            println!("{:?}", self.renderer.borrow().scene_renderer.borrow().geometry_renderpass.pass.borrow().textures[current_frame][4].sample(
+
+                            let renderer_ref = &mut self.renderer.borrow();
+                            let mut scene_renderer_ref = renderer_ref.scene_renderer.borrow_mut();
+                            let hovered = scene_renderer_ref.geometry_renderpass.pass.borrow().textures[current_frame][4].sample(
                                 base,
                                 controller_mut.cursor_position.x as i32,
                                 controller_mut.cursor_position.y as i32,
                                 0
-                            ));
+                            )[0] as usize;
+                            scene_renderer_ref.hovered_component_id = hovered;
+                            
                             controller_mut.reset_deltas()
                         };
                         // let start = std::time::Instant::now();
