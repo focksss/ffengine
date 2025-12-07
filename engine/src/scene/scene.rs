@@ -346,10 +346,20 @@ impl Scene {
                         render_component.draw(&self, scene_renderer, &command_buffer, world, frustum);
                     }
                 }
+                
                 scene_renderer.device.cmd_bind_pipeline(
                     command_buffer,
                     vk::PipelineBindPoint::GRAPHICS,
                     scene_renderer.geometry_renderpass.pipelines[1],
+                );
+                for index in self.outlined_components.iter() {
+                    self.render_components[*index].draw(&self, scene_renderer, &command_buffer, world, frustum);
+                }
+                
+                scene_renderer.device.cmd_bind_pipeline(
+                    command_buffer,
+                    vk::PipelineBindPoint::GRAPHICS,
+                    scene_renderer.geometry_renderpass.pipelines[2],
                 );
                 for index in self.outlined_components.iter() {
                     self.render_components[*index].draw(&self, scene_renderer, &command_buffer, world, frustum);

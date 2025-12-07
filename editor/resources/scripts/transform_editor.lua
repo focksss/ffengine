@@ -137,30 +137,37 @@ function begin_drag()
 end
 function update_drag()
     local transform = Engine.scene:get_transform(_G.selected_transform)
-    accum_delta = accum_delta + Engine.client.cursor_position - last_cursor_position
+    local raw_cursor = Engine.client.cursor_position
+    local delta = raw_cursor - last_cursor_position
 
     local window_size = Engine.client.window_size
-    local cursor_position = Engine.client.cursor_position
-    local new_position = cursor_position
-    local should_move = false
-    if cursor_position.x >= window_size.x then
-        should_move = true
-        new_position.x = 1.0
+    local new_cursor = raw_cursor
+    local warped = false
+
+    if raw_cursor.x >= window_size.x then
+        new_cursor.x = 1
+        warped = true
+    elseif raw_cursor.x <= 0 then
+        new_cursor.x = window_size.x - 1
+        warped = true
     end
-    if cursor_position.x <= 0.0 then
-        should_move = true
-        new_position.x = window_size.x
+    if raw_cursor.y >= window_size.y then
+        new_cursor.y = 1
+        warped = true
+    elseif raw_cursor.y <= 0 then
+        new_cursor.y = window_size.y - 1
+        warped = true
     end
-    if cursor_position.y >= window_size.y then
-        should_move = true
-        new_position.y = 1.0
+
+    if warped then
+        Engine.client.cursor_position = new_cursor
+        delta = Vector.new()
+        last_cursor_position = new_cursor
+    else
+        last_cursor_position = raw_cursor
     end
-    if cursor_position.y <= 0.0 then
-        should_move = true
-        new_position.y = window_size.y
-    end
-    if should_move then Engine.client.cursor_position = new_position end
-    last_cursor_position = new_position
+
+    accum_delta = accum_delta + delta
 
     if drag_mode == "tx" then
         transform.translation = Vector.new3(

@@ -54,6 +54,10 @@ pub struct EntityPointer {
 }
 impl UserData for EntityPointer {
     fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
+        fields.add_field_method_get("index", |_, this| {
+           Ok(this.index)
+        });
+
         fields.add_field_method_get("transform_index", |lua, this| {
             with_scene!(lua => scene);
             Ok(scene.entities[this.index].transform)

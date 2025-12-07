@@ -29,6 +29,7 @@ fn main() { unsafe {
             outer_cutoff: 0.0,
         });
 
+        /*
         {
             app.scene.borrow_mut().new_entity_from_model(base, 0, "editor/resources/models/ffocks/untitled.gltf");
             let anim = &mut app.scene.borrow_mut().animation_components[0];
@@ -36,6 +37,7 @@ fn main() { unsafe {
             anim.snap_back = true;
             anim.start();
         }
+         */
 
         //app.scene.borrow_mut().new_entity_from_model(base, 0, "editor/resources/models/grassblockGLTF/grassblock.gltf");
         // app.scene.borrow_mut().new_entity_from_model(base, 0, "C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf");
@@ -50,7 +52,7 @@ fn main() { unsafe {
         //world.preload_model(Model::new(&PathBuf::from("resources/models/discardTest/scene.gltf").to_str().unwrap()));
         //world.preload_model(Model::new(&PathBuf::from("resources/models/shadowTest/shadowTest.gltf").to_str().unwrap()));
         //world.models[1].transform_roots(&Vector::new_vec3(0.0, 0.0, -5.0), &Vector::new_vec(0.0), &Vector::new_vec(1.0));
-        //world.add_model(base, "C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf");
+        app.scene.borrow_mut().new_entity_from_model(base, 0, "C:\\Graphics\\assets\\sponzaGLTF\\sponza.gltf");
         //world.preload_model(Model::new("C:\\Graphics\\assets\\neeko\\scene.gltf"));
         //world.preload_model(Model::new("C:\\Graphics\\assets\\bistroGLTF\\untitled.gltf"));
         //world.preload_model(Model::new("C:\\Graphics\\assets\\asgard\\asgard.gltf"));
@@ -72,7 +74,7 @@ fn main() { unsafe {
         physics_engine.rigid_bodies[0].restitution_coefficient = 1.0;
         */
 
-        // /*
+        /*
         app.scene.borrow_mut().new_entity_from_model(base, 0, "editor/resources/models/collisionTest/collisionTestNoWalls.gltf");
 
         app.scene.borrow_mut().new_entity_from_model(base, 0, "editor/resources/models/demoBall/scene.gltf");
@@ -97,7 +99,7 @@ fn main() { unsafe {
         physics_engine.rigid_bodies[2].set_mass(1.0);
         physics_engine.rigid_bodies[2].position = Vector::new3(0.5, 15.0, 0.5);
         physics_engine.rigid_bodies[2].restitution_coefficient = 1.0;
-        // */
+        */
 
         /*
         world.add_model(base, Model::new(&PathBuf::from("editor/resources/models/sphereScene/scene.gltf").to_str().unwrap()));

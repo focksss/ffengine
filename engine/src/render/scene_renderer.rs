@@ -701,8 +701,7 @@ impl SceneRenderer {
             line_width: 1.0,
             polygon_mode: vk::PolygonMode::FILL,
             depth_bias_enable: vk::TRUE,
-            depth_clamp_enable: 0,
-            depth_bias_constant_factor: 10000000000.0, // absurd value on purpose
+            depth_clamp_enable: 1,
             ..Default::default()
         };
         let shadow_rasterization_info = vk::PipelineRasterizationStateCreateInfo {
@@ -721,12 +720,12 @@ impl SceneRenderer {
         };
         let outline_stencil_state = vk::StencilOpState {
             fail_op: vk::StencilOp::KEEP,
-            pass_op: vk::StencilOp::REPLACE,
+            pass_op: vk::StencilOp::INCREMENT_AND_CLAMP,
             depth_fail_op: vk::StencilOp::KEEP,
-            compare_op: vk::CompareOp::ALWAYS,
+            compare_op: vk::CompareOp::EQUAL,
             compare_mask: 0xFF,
             write_mask: 0xFF,
-            reference: 1,
+            reference: 0,
             ..Default::default()
         };
         let infinite_reverse_depth_state_info = vk::PipelineDepthStencilStateCreateInfo {
@@ -739,14 +738,30 @@ impl SceneRenderer {
             ..Default::default()
         };
         let outline_depth_state_info = vk::PipelineDepthStencilStateCreateInfo {
-            depth_test_enable: 1,
+            depth_test_enable: 0,
             depth_write_enable: 1,
-            depth_compare_op: vk::CompareOp::GREATER,
+            depth_compare_op: vk::CompareOp::ALWAYS,
+            stencil_test_enable: 1,
             front: outline_stencil_state,
             back: outline_stencil_state,
-            max_depth_bounds: 1.0,
-            min_depth_bounds: 0.0,
+            ..Default::default()
+        };
+        let outline_pass_2_stencil_op = vk::StencilOpState {
+            fail_op: vk::StencilOp::KEEP,
+            pass_op: vk::StencilOp::KEEP,
+            depth_fail_op: vk::StencilOp::KEEP,
+            compare_op: vk::CompareOp::EQUAL,
+            compare_mask: 0xFF,
+            write_mask: 0x00,
+            reference: 1,
+        };
+        let outline_depth_state_2_info = vk::PipelineDepthStencilStateCreateInfo {
+            depth_test_enable: 1,  // Normal depth test
+            depth_write_enable: 1,
+            depth_compare_op: vk::CompareOp::GREATER,  // Reverse-Z
             stencil_test_enable: 1,
+            front: outline_pass_2_stencil_op,
+            back: outline_pass_2_stencil_op,
             ..Default::default()
         };
         let shadow_depth_state_info = vk::PipelineDepthStencilStateCreateInfo {
@@ -803,7 +818,12 @@ impl SceneRenderer {
                 .pipeline_vertex_input_state(geometry_vertex_input_state_info)
                 .pipeline_rasterization_state(outline_rasterization_info)
                 .pipeline_depth_stencil_state(outline_depth_state_info)
-                .pipeline_color_blend_state_create_info(null_blend_state)) };
+                .pipeline_color_blend_state_create_info(null_blend_state))
+            .add_pipeline_create_info(PipelineCreateInfo::new()
+                .pipeline_vertex_input_state(geometry_vertex_input_state_info)
+                .pipeline_rasterization_state(outline_rasterization_info)
+                .pipeline_depth_stencil_state(outline_depth_state_2_info)
+                .pipeline_color_blend_state_create_info(null_blend_state))};
         let geometry_renderpass = Renderpass::new(geometry_renderpass_create_info);
 
         let shadow_renderpass_create_info = { RenderpassCreateInfo::new(base)

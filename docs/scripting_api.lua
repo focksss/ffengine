@@ -43,6 +43,7 @@ MovementMode = {
         ---@field children_indices integer[]
         ---@field name string
         ---@field render_component_indices integer[]
+        ---@field index integer
     
     ---@class RenderComponent
 

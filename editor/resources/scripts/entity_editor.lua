@@ -58,11 +58,12 @@ function open_entity_editor()
     _G.selected_transform = entity.transform_index
 	entity_editor_root_node:add_child_index(transform_editor_ui_node.index)
 
+    outline_entity(entity.index)
+
     --- add render component editors
     local render_component_indices = entity.render_component_indices
     for i = 1, #render_component_indices do
         local render_component_index = render_component_indices[i]
-        Engine.scene:add_outlined(render_component_index);
 
         local render_component_editor_node_index = get_next_render_component_editor_node_index()
         local render_component_editor_node = gui:get_node(render_component_editor_node_index)
@@ -71,6 +72,20 @@ function open_entity_editor()
         entity_editor_root_node:add_child_index(render_component_editor_node_index)
     end
 
+end
+function outline_entity(index)
+    local entity = Engine.scene:get_entity(index)
+
+    local render_component_indices = entity.render_component_indices
+    for i = 1, #render_component_indices do
+        local render_component_index = render_component_indices[i]
+        Engine.scene:add_outlined(render_component_index);
+    end
+
+    local children_indices = entity.children_indices
+    for i = 1, #children_indices do
+        outline_entity(children_indices[i])
+    end
 end
 
 function open_transform_editor() 

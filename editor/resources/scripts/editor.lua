@@ -148,6 +148,8 @@ function build_graph()
 	
 	local root_entity = Engine.scene:get_entity(0)
 	build_graph_recursive(root_entity, 0, 0, scene_graph_root_node)
+
+	scene_graph_root_node:set_height("Absolute", graph_height)
 end
 local function get_next_graph_node_index()
 	local current_owned_node_count = #graph_owned_node_indices
