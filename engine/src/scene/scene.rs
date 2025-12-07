@@ -8,10 +8,11 @@ use crate::engine::get_command_buffer;
 use crate::math::matrix::Matrix;
 use crate::math::Vector;
 use crate::render::render::{Renderer, MAX_FRAMES_IN_FLIGHT};
+use crate::render::scene_renderer::SceneRenderer;
 use crate::render::vulkan_base::{copy_buffer_synchronous, copy_data_to_memory, VkBase};
 use crate::scene::physics::physics_engine::PhysicsEngine;
 use crate::scene::world::camera::Frustum;
-use crate::scene::world::world::{Instance, Node, World, MAX_INSTANCES};
+use crate::scene::world::world::{World};
 
 //TODO handle ALL updates + rendering from here (call to World + PhysicsEngine)
 //TODO change World structure to have a single flat list of Primitives. Store Meshes here, Meshes have child primitives, and are RenderComponents.
@@ -28,6 +29,8 @@ pub struct Scene {
     pub rigid_body_components: Vec<RigidBodyComponent>,
     pub camera_components: Vec<CameraComponent>,
     pub light_components: Vec<LightComponent>,
+
+    pub outlined_components: Vec<usize>,
 
     pub renderer: Arc<RefCell<Renderer>>,
     pub world: Arc<RefCell<World>>,
@@ -47,6 +50,7 @@ impl Scene {
             rigid_body_components: Vec::new(),
             camera_components: Vec::new(),
             light_components: Vec::new(),
+            outlined_components: Vec::new(),
             renderer,
             world,
             physics_engine,
@@ -300,7 +304,8 @@ impl Scene {
                         matrix: render_component_transform.world.data,
                         indices: [
                             render_component.material_index as i32,
-                            render_component.skin_index.map_or(-1, |i| i)
+                            render_component.skin_index.map_or(-1, |i| i),
+                            *render_object_index as i32
                         ]
                     }
                 );
@@ -312,32 +317,47 @@ impl Scene {
         }
     }
 
-    pub unsafe fn draw(&self, device: &Device, frame: usize, frustum: Option<&Frustum>) {
+    pub unsafe fn draw(&self, scene_renderer: &SceneRenderer, frame: usize, frustum: Option<&Frustum>, do_outline: bool) {
         let command_buffer = get_command_buffer();
         let world = &self.world.borrow();
         unsafe {
-            device.cmd_bind_vertex_buffers(
+            scene_renderer.device.cmd_bind_vertex_buffers(
                 command_buffer,
                 1,
                 &[world.instance_buffers[frame].0],
                 &[0],
             );
-            device.cmd_bind_vertex_buffers(
+            scene_renderer.device.cmd_bind_vertex_buffers(
                 command_buffer,
                 0,
                 &[world.vertex_buffer.0],
                 &[0],
             );
-            device.cmd_bind_index_buffer(
+            scene_renderer.device.cmd_bind_index_buffer(
                 command_buffer,
                 world.index_buffer.0,
                 0,
                 vk::IndexType::UINT32,
             );
 
-
-            for render_component in self.render_components.iter() {
-                render_component.draw(&self, device, &command_buffer, world, frustum);
+            if do_outline {
+                for (i, render_component) in self.render_components.iter().enumerate() {
+                    if !self.outlined_components.contains(&i) {
+                        render_component.draw(&self, scene_renderer, &command_buffer, world, frustum, false);
+                    }
+                }
+                scene_renderer.device.cmd_bind_pipeline(
+                    command_buffer,
+                    vk::PipelineBindPoint::GRAPHICS,
+                    scene_renderer.geometry_renderpass.pipelines[1],
+                );
+                for index in self.outlined_components.iter() {
+                    self.render_components[*index].draw(&self, scene_renderer, &command_buffer, world, frustum, true);
+                }
+            } else {
+                for render_component in self.render_components.iter() {
+                    render_component.draw(&self, scene_renderer, &command_buffer, world, frustum, false);
+                }
             }
         }
     }
@@ -520,7 +540,7 @@ pub struct RenderComponent {
     material_index: usize,
 }
 impl RenderComponent {
-    unsafe fn draw(&self, scene: &Scene, device: &Device, command_buffer: &CommandBuffer, world: &World, frustum: Option<&Frustum>) {
+    unsafe fn draw(&self, scene: &Scene, scene_renderer: &SceneRenderer, command_buffer: &CommandBuffer, world: &World, frustum: Option<&Frustum>, do_outline: bool) {
         let mut all_points_outside_of_same_plane = false;
 
         let primitive = &world.meshes[self.mesh_primitive_index.0].primitives[self.mesh_primitive_index.1];
@@ -545,7 +565,7 @@ impl RenderComponent {
         }
         if !all_points_outside_of_same_plane || frustum.is_none() {
             unsafe {
-                device.cmd_draw_indexed(
+                scene_renderer.device.cmd_draw_indexed(
                     *command_buffer,
                     world.accessors[primitive.indices].count as u32,
                     1,
@@ -566,4 +586,19 @@ pub struct LightComponent {
 pub struct SunComponent {
     pub direction: Vector,
     pub color: Vector,
+}
+
+#[derive(Clone, Debug, Copy)]
+#[repr(C)]
+pub struct Instance {
+    pub matrix: [f32; 16],
+    pub indices: [i32; 3],
+}
+impl Instance {
+    pub fn new(matrix: Matrix, material: u32, skin: i32, component_id: u32) -> Self {
+        Self {
+            matrix: matrix.data,
+            indices: [material as i32, skin, component_id as i32],
+        }
+    }
 }

@@ -58,6 +58,7 @@ impl Font {
             device: base.device.clone(),
             image: atlas.1.0,
             image_view: atlas.0.0,
+            stencil_image_view: None,
             device_memory: atlas.1.1,
             clear_value: vk::ClearValue::default(),
             format: Format::R8G8B8A8_UNORM,
@@ -65,6 +66,7 @@ impl Font {
             array_layers: 1,
             samples: SampleCountFlags::TYPE_1,
             is_depth: false,
+            has_stencil: false,
         };
 
         let file = fs::File::open(json_path_str).unwrap();

@@ -11,7 +11,7 @@ use crate::gui::text::{font::Font, glyph::{Glyph, GlyphQuadVertex}};
 use crate::math::Vector;
 use crate::offset_of;
 use crate::render::render::MAX_FRAMES_IN_FLIGHT;
-use crate::render::render_helper::{Descriptor, DescriptorCreateInfo, DescriptorSetCreateInfo, Pass, PassCreateInfo, Renderpass, RenderpassCreateInfo, Texture, TextureCreateInfo};
+use crate::render::render_helper::{Descriptor, DescriptorCreateInfo, DescriptorSetCreateInfo, Pass, PassCreateInfo, PipelineCreateInfo, Renderpass, RenderpassCreateInfo, Texture, TextureCreateInfo};
 use crate::render::vulkan_base::{copy_buffer_synchronous, copy_data_to_memory, VkBase};
 
 const OUTPUT_DIR: &str = "resources\\fonts\\generated";
@@ -134,9 +134,10 @@ impl TextRenderer {
             .vertex_shader_uri(String::from("gui\\text\\text.vert.spv"))
             .fragment_shader_uri(String::from("gui\\text\\text.frag.spv"))
             .push_constant_range(push_constant_range)
-            .pipeline_input_assembly_state(vertex_input_assembly_state_info)
-            .pipeline_vertex_input_state(vertex_input_state_info)
-            .pipeline_color_blend_state_create_info(color_blend_state);
+            .add_pipeline_create_info(PipelineCreateInfo::new()
+                .pipeline_input_assembly_state(vertex_input_assembly_state_info)
+                .pipeline_vertex_input_state(vertex_input_state_info)
+                .pipeline_color_blend_state_create_info(color_blend_state));
         if pass_ref.is_some() {
             renderpass_create_info = renderpass_create_info.pass_ref(pass_ref.unwrap());
         }
@@ -171,7 +172,7 @@ impl TextRenderer {
 
         let descriptor_write = vk::WriteDescriptorSet {
             s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
-            dst_set: self.renderpass.descriptor_set.descriptor_sets[frame],
+            dst_set: self.renderpass.descriptor_set.borrow().descriptor_sets[frame],
             dst_binding: 0,
             dst_array_element: 0,
             descriptor_type: DescriptorType::COMBINED_IMAGE_SAMPLER,
@@ -202,7 +203,7 @@ impl TextRenderer {
         device.cmd_bind_pipeline(
             frame_command_buffer,
             vk::PipelineBindPoint::GRAPHICS,
-            self.renderpass.pipeline,
+            self.renderpass.pipelines[0],
         );
         device.cmd_set_viewport(frame_command_buffer, 0, &[self.renderpass.viewport]);
         device.cmd_set_scissor(frame_command_buffer, 0, &[self.renderpass.scissor]);
@@ -211,7 +212,7 @@ impl TextRenderer {
             vk::PipelineBindPoint::GRAPHICS,
             self.renderpass.pipeline_layout,
             0,
-            &[self.renderpass.descriptor_set.descriptor_sets[frame]],
+            &[self.renderpass.descriptor_set.borrow().descriptor_sets[frame]],
             &[],
         );
         device.cmd_push_constants(frame_command_buffer, self.renderpass.pipeline_layout, ShaderStageFlags::ALL_GRAPHICS, 0, slice::from_raw_parts(

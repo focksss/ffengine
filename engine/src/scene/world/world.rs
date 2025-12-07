@@ -14,7 +14,7 @@ use crate::math::Vector;
 use crate::render::render::MAX_FRAMES_IN_FLIGHT;
 use crate::render::scene_renderer::SHADOW_RES;
 use crate::render::vulkan_base::{copy_buffer_synchronous, copy_data_to_memory, VkBase};
-use crate::scene::scene::Scene;
+use crate::scene::scene::{Instance, Scene};
 use crate::scene::world::camera::{Camera, Frustum};
 
 // SHOULD DETECT MATH VS COLOR DATA TEXTURES, LOAD COLOR AS SRGB, MATH AS UNORM
@@ -1880,20 +1880,6 @@ pub struct Vertex {
     pub joint_indices: [u32; 4],
     pub joint_weights: [f32; 4],
 }
-#[derive(Clone, Debug, Copy)]
-#[repr(C)]
-pub struct Instance {
-    pub matrix: [f32; 16],
-    pub indices: [i32; 2],
-}
-impl Instance {
-    pub fn new(matrix: Matrix, material: u32, skin: i32) -> Self {
-        Self {
-            matrix: matrix.data,
-            indices: [material as i32, skin],
-        }
-    }
-}
 
 pub struct Mesh {
     pub name: String,
@@ -1938,34 +1924,6 @@ pub struct Node {
     pub local_transform: Matrix,
     pub world_transform: Matrix,
     pub children_indices: Vec<usize>,
-}
-impl Node {
-    pub fn update_local_transform(&mut self) {
-        let rotate = Matrix::new_rotate_quaternion_vec4(&self.rotation.combine(&self.user_rotation));
-        let scale = Matrix::new_scale_vec3(&(self.scale * self.user_scale));
-        let translate = Matrix::new_translation_vec3(&(self.translation + self.user_translation));
-
-        self.local_transform = Matrix::new();
-        self.local_transform.set_and_mul_mat4(&translate);
-        self.local_transform.set_and_mul_mat4(&rotate);
-        self.local_transform.set_and_mul_mat4(&scale);
-    }
-
-    pub fn update_world_transform(&mut self, parent_transform: &Matrix) {
-        self.world_transform = parent_transform * self.local_transform;
-    }
-
-    pub fn update_instances(&self, mesh: Option<&Mesh>, instances: &mut Vec<Instance>, dirty_instances: &mut Vec<usize>, add_dirty: bool) {
-        if let Some(mesh) = mesh {
-            for primitive in mesh.primitives.iter() {
-                instances[primitive.id].matrix = self.world_transform.data;
-                instances[primitive.id].indices[1] = self.skin.unwrap_or(-1);
-                if add_dirty {
-                    dirty_instances.push(primitive.id);
-                }
-            }
-        }
-    }
 }
 
 pub struct Skin {
@@ -2082,84 +2040,6 @@ impl Animation {
             running: false,
             repeat: false,
             snap_back: false,
-        }
-    }
-
-    pub fn start(&mut self) {
-        self.start_time = SystemTime::now();
-        self.running = true;
-    }
-
-    pub fn stop(&mut self, nodes: &mut Vec<Node>) {
-        self.running = false;
-        if self.snap_back {
-            for channel in self.channels.iter() {
-                if channel.2 == "translation" {
-                    let value = nodes[channel.1].original_translation.clone();
-                    nodes[channel.1].translation = value;
-                } else if channel.2 == "rotation" {
-                    let value = nodes[channel.1].original_rotation.clone();
-                    nodes[channel.1].rotation = value;
-                } else if channel.2 == "scale" {
-                    let value = nodes[channel.1].original_scale.clone();
-                    nodes[channel.1].scale = value;
-                }
-            }
-        }
-    }
-
-    pub fn update(&mut self, nodes: &mut Vec<Node>) {
-        if !self.running {
-             return
-        }
-        let current_time = SystemTime::now();
-        let elapsed_time = current_time.duration_since(self.start_time).unwrap().as_secs_f32();
-        let mut repeat = false;
-        if elapsed_time > self.duration {
-            if self.repeat {
-                repeat = true
-            } else {
-                self.stop(nodes);
-                return
-            }
-        }
-        for channel in self.channels.iter() {
-            let sampler = &self.samplers[channel.0];
-            let mut current_time_index = 0;
-            for i in 0..sampler.0.len() - 1 {
-                if elapsed_time >= sampler.0[i] && elapsed_time < sampler.0[i + 1] {
-                    current_time_index = i;
-                    break
-                }
-            }
-            let current_time_index = current_time_index.min(sampler.0.len() - 1);
-            let interpolation_factor = ((elapsed_time - sampler.0[current_time_index]) / (sampler.0[current_time_index + 1] - sampler.0[current_time_index])).min(1.0).max(0.0);
-            let vector1 = &sampler.2[current_time_index];
-            let vector2 = &sampler.2[current_time_index + 1];
-            let new_vector;
-            if channel.2.eq("translation") || channel.2.eq("scale") {
-                new_vector = Vector::new3(
-                    vector1.x + interpolation_factor * (vector2.x - vector1.x),
-                    vector1.y + interpolation_factor * (vector2.y - vector1.y),
-                    vector1.z + interpolation_factor * (vector2.z - vector1.z),
-                )
-            } else {
-                new_vector = Vector::spherical_lerp(vector1, vector2, interpolation_factor)
-            }
-
-            if channel.2.eq("translation") {
-                nodes[channel.1].translation = new_vector
-            } else if channel.2.eq("rotation") {
-                nodes[channel.1].rotation = new_vector
-            } else if channel.2.eq("scale") {
-                nodes[channel.1].scale = new_vector
-            } else {
-                panic!("Illogical animation channel target! Should be translation, rotation or scale");
-            }
-            nodes[channel.1].needs_update = true;
-        }
-        if repeat {
-            self.start()
         }
     }
 }

@@ -28,12 +28,16 @@ MovementMode = {
     ---@field get_entity fun(self:Scene, index:integer):Entity
     ---@field get_render_component fun(self:Scene, index:integer):RenderComponent
     ---@field get_transform fun(self:Scene, index:integer):Transform
+    ---@field reset_outlines fun(self:Scene):nil
+    ---@field add_outlined fun(self:Scene, index:integer):nil
     
         ---@class Transform
         ---@field translation Vector
         ---@field rotation Vector
         ---@field scale Vector
     
+        ---@class RenderComponent
+
         ---@class Entity
         ---@field transform_index integer
         ---@field children_indices integer[]
@@ -99,6 +103,7 @@ MovementMode = {
             ---@field set_x fun(self:GUINode, size_type:string, value:number):nil
             ---@field set_y fun(self:GUINode, size_type:string, value:number):nil
             ---@field reset fun(self:GUINode):nil
+            ---@field num_elements integer
 
                 ---@class GUIQuad
                 ---@field color Vector

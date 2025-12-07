@@ -9,11 +9,11 @@ use std::slice;
 use std::sync::Arc;
 use crate::math::Vector;
 use crate::render::render::MAX_FRAMES_IN_FLIGHT;
-use crate::render::render_helper::{Descriptor, DescriptorCreateInfo, DescriptorSetCreateInfo, PassCreateInfo, Renderpass, RenderpassCreateInfo, Texture, TextureCreateInfo};
+use crate::render::render_helper::{Descriptor, DescriptorCreateInfo, DescriptorSetCreateInfo, PassCreateInfo, PipelineCreateInfo, Renderpass, RenderpassCreateInfo, Texture, TextureCreateInfo};
 use crate::render::vulkan_base::{copy_data_to_memory, VkBase};
-use crate::scene::scene::Scene;
+use crate::scene::scene::{Instance, Scene};
 use crate::scene::world::camera::Camera;
-use crate::scene::world::world::{Instance, World, SunSendable, Vertex};
+use crate::scene::world::world::{World, SunSendable, Vertex};
 
 const SSAO_KERNAL_SIZE: usize = 16;
 const SSAO_RESOLUTION_MULTIPLIER: f32 = 0.5;
@@ -71,6 +71,7 @@ impl SceneRenderer {
             device: base.device.clone(),
             image: null_tex_info.1.0,
             image_view: null_tex_info.0.0,
+            stencil_image_view: None,
             device_memory: null_tex_info.1.1,
             clear_value: vk::ClearValue::default(),
             format: Format::R8G8B8A8_UNORM,
@@ -78,6 +79,7 @@ impl SceneRenderer {
             array_layers: 1,
             samples: vk::SampleCountFlags::TYPE_1,
             is_depth: false,
+            has_stencil: false,
         };
         let null_tex_sampler = base.device.create_sampler(&sampler_info, None).expect("failed to create sampler");
 
@@ -202,7 +204,7 @@ impl SceneRenderer {
                 }, // extra properties
                 vk::DescriptorImageInfo {
                     sampler,
-                    image_view: geometry_renderpass.pass.borrow().textures[current_frame][4].image_view,
+                    image_view: geometry_renderpass.pass.borrow().textures[current_frame][5].image_view,
                     image_layout: vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
                 }, // depth
                 vk::DescriptorImageInfo {
@@ -223,7 +225,7 @@ impl SceneRenderer {
             ];
             let lighting_descriptor_writes: Vec<vk::WriteDescriptorSet> = image_infos.iter().enumerate().map(|(i, info)| {
                 vk::WriteDescriptorSet::default()
-                    .dst_set(lighting_renderpass.descriptor_set.descriptor_sets[current_frame])
+                    .dst_set(lighting_renderpass.descriptor_set.borrow().descriptor_sets[current_frame])
                     .dst_binding(i as u32)
                     .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
                     .image_info(slice::from_ref(info))
@@ -234,7 +236,7 @@ impl SceneRenderer {
             let image_infos = [
                 vk::DescriptorImageInfo {
                     sampler,
-                    image_view: geometry_renderpass.pass.borrow().textures[current_frame][4].image_view,
+                    image_view: geometry_renderpass.pass.borrow().textures[current_frame][5].image_view,
                     image_layout: vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
                 }, // geometry depth
                 vk::DescriptorImageInfo {
@@ -245,7 +247,7 @@ impl SceneRenderer {
             ];
             let ssao_pre_downsample_descriptor_writes: Vec<vk::WriteDescriptorSet> = image_infos.iter().enumerate().map(|(i, info)| {
                 vk::WriteDescriptorSet::default()
-                    .dst_set(ssao_pre_downsample_renderpass.descriptor_set.descriptor_sets[current_frame])
+                    .dst_set(ssao_pre_downsample_renderpass.descriptor_set.borrow().descriptor_sets[current_frame])
                     .dst_binding(i as u32)
                     .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
                     .image_info(slice::from_ref(info))
@@ -267,7 +269,7 @@ impl SceneRenderer {
             ];
             let ssao_descriptor_writes: Vec<vk::WriteDescriptorSet> = image_infos.iter().enumerate().map(|(i, info)| {
                 vk::WriteDescriptorSet::default()
-                    .dst_set(ssao_renderpass.descriptor_set.descriptor_sets[current_frame])
+                    .dst_set(ssao_renderpass.descriptor_set.borrow().descriptor_sets[current_frame])
                     .dst_binding(i as u32)
                     .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
                     .image_info(slice::from_ref(info))
@@ -289,7 +291,7 @@ impl SceneRenderer {
             ];
             let descriptor_writes: Vec<vk::WriteDescriptorSet> = image_infos.iter().enumerate().map(|(i, info)| {
                 vk::WriteDescriptorSet::default()
-                    .dst_set(ssao_blur_horizontal_renderpass.descriptor_set.descriptor_sets[current_frame])
+                    .dst_set(ssao_blur_horizontal_renderpass.descriptor_set.borrow().descriptor_sets[current_frame])
                     .dst_binding(i as u32)
                     .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
                     .image_info(slice::from_ref(info))
@@ -310,7 +312,7 @@ impl SceneRenderer {
             ];
             let descriptor_writes: Vec<vk::WriteDescriptorSet> = image_infos.iter().enumerate().map(|(i, info)| {
                 vk::WriteDescriptorSet::default()
-                    .dst_set(ssao_blur_vertical_renderpass.descriptor_set.descriptor_sets[current_frame])
+                    .dst_set(ssao_blur_vertical_renderpass.descriptor_set.borrow().descriptor_sets[current_frame])
                     .dst_binding(i as u32)
                     .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
                     .image_info(slice::from_ref(info))
@@ -335,13 +337,13 @@ impl SceneRenderer {
                 }, // g_normal
                 vk::DescriptorImageInfo {
                     sampler,
-                    image_view: geometry_renderpass.pass.borrow().textures[current_frame][4].image_view,
+                    image_view: geometry_renderpass.pass.borrow().textures[current_frame][5].image_view,
                     image_layout: vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
                 }, // geometry depth
             ];
             let descriptor_writes: Vec<vk::WriteDescriptorSet> = image_infos.iter().enumerate().map(|(i, info)| {
                 vk::WriteDescriptorSet::default()
-                    .dst_set(ssao_upsample_renderpass.descriptor_set.descriptor_sets[current_frame])
+                    .dst_set(ssao_upsample_renderpass.descriptor_set.borrow().descriptor_sets[current_frame])
                     .dst_binding(i as u32)
                     .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
                     .image_info(slice::from_ref(info))
@@ -407,9 +409,12 @@ impl SceneRenderer {
                 .width(resolution.width).height(resolution.height)) // extra properties
             .add_color_attachment_info(TextureCreateInfo::new(base).format(Format::R16G16B16A16_SFLOAT)
                 .width(resolution.width).height(resolution.height)) // view normal
-            .depth_attachment_info(TextureCreateInfo::new(base).format(Format::D32_SFLOAT)
+            .add_color_attachment_info(TextureCreateInfo::new(base).format(Format::R16_UINT)
+                .width(resolution.width).height(resolution.height)) // id buffer
+            .depth_attachment_info(TextureCreateInfo::new(base).format(Format::D32_SFLOAT_S8_UINT)
                 .width(resolution.width).height(resolution.height)
-                .is_depth(true).clear_value([0.0, 0.0, 0.0, 0.0])); // depth
+                .is_depth(true).clear_value([0.0, 0.0, 0.0, 0.0])
+                .has_stencil(true)); // depth
 
         let shadow_pass_create_info = PassCreateInfo::new(base)
             .depth_attachment_info(TextureCreateInfo::new(base).format(Format::D16_UNORM).is_depth(true).clear_value([0.0, 0.0, 0.0, 0.0]).width(SHADOW_RES).height(SHADOW_RES).array_layers(5)); // depth;
@@ -584,7 +589,7 @@ impl SceneRenderer {
                 binding: 0,
                 format: Format::R32G32B32A32_SFLOAT,
                 offset: offset_of!(Vertex, joint_weights) as u32,
-            }, // join weights
+            }, // joint weights
 
             // instance
             vk::VertexInputAttributeDescription {
@@ -614,7 +619,7 @@ impl SceneRenderer {
             vk::VertexInputAttributeDescription {
                 location: 11,
                 binding: 1,
-                format: Format::R32G32_SINT,
+                format: Format::R32G32B32_SINT,
                 offset: offset_of!(Instance, indices) as u32,
             }, // indices (material + skin)
         ];
@@ -673,7 +678,7 @@ impl SceneRenderer {
             vk::VertexInputAttributeDescription {
                 location: 11,
                 binding: 1,
-                format: Format::R32G32_SINT,
+                format: Format::R32G32B32_SINT,
                 offset: offset_of!(Instance, indices) as u32,
             }, // indices (material + skin)
         ];
@@ -704,12 +709,32 @@ impl SceneRenderer {
             compare_op: vk::CompareOp::ALWAYS,
             ..Default::default()
         };
+        let outline_stencil_state = vk::StencilOpState {
+            fail_op: vk::StencilOp::KEEP,
+            pass_op: vk::StencilOp::REPLACE,
+            depth_fail_op: vk::StencilOp::KEEP,
+            compare_op: vk::CompareOp::ALWAYS,
+            compare_mask: 0xFF,
+            write_mask: 0xFF,
+            reference: 1,
+            ..Default::default()
+        };
         let infinite_reverse_depth_state_info = vk::PipelineDepthStencilStateCreateInfo {
             depth_test_enable: 1,
             depth_write_enable: 1,
             depth_compare_op: vk::CompareOp::GREATER,
             front: noop_stencil_state,
             back: noop_stencil_state,
+            max_depth_bounds: 1.0,
+            ..Default::default()
+        };
+        let outline_depth_state_info = vk::PipelineDepthStencilStateCreateInfo {
+            depth_write_enable: 1,
+            depth_test_enable: 1,
+            depth_compare_op: vk::CompareOp::ALWAYS,
+            stencil_test_enable: 1,
+            front: outline_stencil_state,
+            back: outline_stencil_state,
             max_depth_bounds: 1.0,
             ..Default::default()
         };
@@ -732,7 +757,7 @@ impl SceneRenderer {
             alpha_blend_op: vk::BlendOp::ADD,
             color_write_mask: vk::ColorComponentFlags::RGBA,
         };
-        let null_blend_states = [null_blend_attachment; 4];
+        let null_blend_states = vec![null_blend_attachment; 5];
         let null_blend_state = vk::PipelineColorBlendStateCreateInfo::default()
             .attachments(&null_blend_states);
 
@@ -758,10 +783,16 @@ impl SceneRenderer {
             .vertex_shader_uri(String::from("geometry\\geometry.vert.spv"))
             .fragment_shader_uri(String::from("geometry\\geometry.frag.spv"))
             .push_constant_range(camera_push_constant_range_vertex)
-            .pipeline_vertex_input_state(geometry_vertex_input_state_info)
-            .pipeline_rasterization_state(rasterization_info)
-            .pipeline_depth_stencil_state(infinite_reverse_depth_state_info)
-            .pipeline_color_blend_state_create_info(null_blend_state) };
+            .add_pipeline_create_info(PipelineCreateInfo::new()
+                .pipeline_vertex_input_state(geometry_vertex_input_state_info)
+                .pipeline_rasterization_state(rasterization_info)
+                .pipeline_depth_stencil_state(infinite_reverse_depth_state_info)
+                .pipeline_color_blend_state_create_info(null_blend_state))
+            .add_pipeline_create_info(PipelineCreateInfo::new()
+                .pipeline_vertex_input_state(geometry_vertex_input_state_info)
+                .pipeline_rasterization_state(rasterization_info)
+                .pipeline_depth_stencil_state(outline_depth_state_info)
+                .pipeline_color_blend_state_create_info(null_blend_state)) };
         let geometry_renderpass = Renderpass::new(geometry_renderpass_create_info);
 
         let shadow_renderpass_create_info = { RenderpassCreateInfo::new(base)
@@ -770,9 +801,10 @@ impl SceneRenderer {
             .vertex_shader_uri(String::from("shadow\\shadow.vert.spv"))
             .fragment_shader_uri(String::from("shadow\\shadow.frag.spv"))
             .geometry_shader_uri(String::from("shadow\\cascade.geom.spv"))
-            .pipeline_vertex_input_state(shadow_vertex_input_state_info)
-            .pipeline_rasterization_state(shadow_rasterization_info)
-            .pipeline_depth_stencil_state(shadow_depth_state_info)
+            .add_pipeline_create_info(PipelineCreateInfo::new()
+                .pipeline_vertex_input_state(shadow_vertex_input_state_info)
+                .pipeline_rasterization_state(shadow_rasterization_info)
+                .pipeline_depth_stencil_state(shadow_depth_state_info))
             .viewport(vk::Viewport {
                 x: 0.0,
                 y: 0.0,
@@ -911,7 +943,7 @@ impl SceneRenderer {
 
         let descriptor_write = vk::WriteDescriptorSet {
             s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
-            dst_set: self.geometry_renderpass.descriptor_set.descriptor_sets[frame],
+            dst_set: self.geometry_renderpass.descriptor_set.borrow().descriptor_sets[frame],
             dst_binding: 2,
             dst_array_element: 0,
             descriptor_type: DescriptorType::COMBINED_IMAGE_SAMPLER,
@@ -935,8 +967,8 @@ impl SceneRenderer {
         
         let player_camera = &scene.world.borrow().cameras[player_camera_index];
         
-        copy_data_to_memory(self.lighting_renderpass.descriptor_set.descriptors[10].owned_buffers.2[current_frame], &[ubo]);
-        copy_data_to_memory(self.shadow_renderpass.descriptor_set.descriptors[2].owned_buffers.2[current_frame], &[ubo]);
+        copy_data_to_memory(self.lighting_renderpass.descriptor_set.borrow().descriptors[10].owned_buffers.2[current_frame], &[ubo]);
+        copy_data_to_memory(self.shadow_renderpass.descriptor_set.borrow().descriptors[2].owned_buffers.2[current_frame], &[ubo]);
         let ubo = SSAOPassUniformData {
             samples: self.ssao_kernal,
             projection: player_camera.projection_matrix.data,
@@ -946,12 +978,12 @@ impl SceneRenderer {
             height: (self.ssao_renderpass.viewport.height * SSAO_RESOLUTION_MULTIPLIER) as i32,
             _pad0: 0.0,
         };
-        copy_data_to_memory(self.ssao_renderpass.descriptor_set.descriptors[2].owned_buffers.2[current_frame], &[ubo]);
+        copy_data_to_memory(self.ssao_renderpass.descriptor_set.borrow().descriptors[2].owned_buffers.2[current_frame], &[ubo]);
         let ubo = LightingUniformData {
             shadow_cascade_distances: [player_camera.far * 0.005, player_camera.far * 0.015, player_camera.far * 0.045, player_camera.far * 0.15],
             num_lights: scene.world.borrow().lights.len() as u32,
         };
-        copy_data_to_memory(self.lighting_renderpass.descriptor_set.descriptors[9].owned_buffers.2[current_frame], &[ubo]);
+        copy_data_to_memory(self.lighting_renderpass.descriptor_set.borrow().descriptors[9].owned_buffers.2[current_frame], &[ubo]);
         let camera_constants = CameraMatrixUniformData {
             view: player_camera.view_matrix.data,
             projection: player_camera.projection_matrix.data,
@@ -998,7 +1030,7 @@ impl SceneRenderer {
                 ));
             }),
             Some(|| {
-                scene.draw(device, current_frame, Some(&player_camera.frustum));
+                scene.draw(self, current_frame, Some(&player_camera.frustum), true);
             }),
             None
         );
@@ -1008,7 +1040,7 @@ impl SceneRenderer {
             frame_command_buffer,
             None::<fn()>,
             Some(|| {
-                scene.draw(device, current_frame, Some(&player_camera.frustum));
+                scene.draw(self, current_frame, Some(&player_camera.frustum), false);
             }),
             None
         );

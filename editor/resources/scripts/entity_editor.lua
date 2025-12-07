@@ -46,6 +46,7 @@ local function get_next_render_component_editor_node_index()
 end
 
 function open_entity_editor()
+    Engine.scene:reset_outlines()
     entity_editor_root_node:clear_children()
     
     --- reset mappings and counters
@@ -61,6 +62,7 @@ function open_entity_editor()
     local render_component_indices = entity.render_component_indices
     for i = 1, #render_component_indices do
         local render_component_index = render_component_indices[i]
+        Engine.scene:add_outlined(render_component_index);
 
         local render_component_editor_node_index = get_next_render_component_editor_node_index()
         local render_component_editor_node = gui:get_node(render_component_editor_node_index)
@@ -78,7 +80,9 @@ function open_transform_editor()
 	entity_editor_root_node:add_child_index(transform_editor_ui_node.index)
 end
 function open_render_component_editor() 
+    Engine.scene:reset_outlines()
 	local selected_render_component = _G.node_to_render_components_map[gui.ActiveNode.index]
+    Engine.scene:add_outlined(selected_render_component);
 
     entity_editor_root_node:clear_children()
     

@@ -20,6 +20,12 @@ impl UserData for ClientRef {
         fields.add_field_method_get("cursor_position", |lua, this| {
             lua.create_userdata(Vector::new2(this.0.borrow().cursor_position.x as f32, this.0.borrow().cursor_position.y as f32))
         });
+        fields.add_field_method_set("cursor_position", |_, this, val: Vector| {
+            let borrowed = &mut this.0.borrow_mut();
+            Ok(borrowed.window.set_cursor_position(PhysicalPosition::new(val.x, val.y))
+                .expect("failed to reset mouse position")
+            )
+        });
 
         fields.add_field_method_get("scroll_delta", |lua, this| {
             let borrowed = this.0.borrow();

@@ -8,7 +8,7 @@ layout (location = 5) in uvec4 joint_indices;
 layout (location = 6) in vec4 weights;
 
 layout (location = 7) in mat4 model;
-layout (location = 11) in ivec2 indices;
+layout (location = 11) in ivec3 indices;
 
 layout (location = 0) out vec2 o_uv;
 layout (location = 1) out uint o_material;

@@ -95,6 +95,14 @@
         "additive_tint": [0.0, 0.0, 0.0, 0.0],
         "multiplicative_tint": [1.0, 1.0, 1.0, 1.0]
       }
+    },
+    {
+      "name": "scene graph selected quad",
+      "type": "Quad",
+      "info": {
+        "color": [0.3, 0.3, 1.0, 0.2],
+        "corner_radius": 5.0
+      }
     }
   ],
   "nodes": [
@@ -1469,6 +1477,10 @@
                     ],
                     "left_hold_actions": [
                       {
+                        "script": 0,
+                        "method": "horizontal_resize_cursor"
+                      },
+                      {
                         "script": 1,
                         "method": "update_drag"
                       }
@@ -1654,6 +1666,10 @@
                     ],
                     "left_hold_actions": [
                       {
+                        "script": 0,
+                        "method": "horizontal_resize_cursor"
+                      },
+                      {
                         "script": 1,
                         "method": "update_drag"
                       }
@@ -1838,6 +1854,10 @@
                       }
                     ],
                     "left_hold_actions": [
+                      {
+                        "script": 0,
+                        "method": "horizontal_resize_cursor"
+                      },
                       {
                         "script": 1,
                         "method": "update_drag"
@@ -2044,6 +2064,10 @@
                     ],
                     "left_hold_actions": [
                       {
+                        "script": 0,
+                        "method": "horizontal_resize_cursor"
+                      },
+                      {
                         "script": 1,
                         "method": "update_drag"
                       }
@@ -2229,6 +2253,10 @@
                     ],
                     "left_hold_actions": [
                       {
+                        "script": 0,
+                        "method": "horizontal_resize_cursor"
+                      },
+                      {
                         "script": 1,
                         "method": "update_drag"
                       }
@@ -2413,6 +2441,10 @@
                       }
                     ],
                     "left_hold_actions": [
+                      {
+                        "script": 0,
+                        "method": "horizontal_resize_cursor"
+                      },
                       {
                         "script": 1,
                         "method": "update_drag"
@@ -2619,6 +2651,10 @@
                     ],
                     "left_hold_actions": [
                       {
+                        "script": 0,
+                        "method": "horizontal_resize_cursor"
+                      },
+                      {
                         "script": 1,
                         "method": "update_drag"
                       }
@@ -2804,6 +2840,10 @@
                     ],
                     "left_hold_actions": [
                       {
+                        "script": 0,
+                        "method": "horizontal_resize_cursor"
+                      },
+                      {
                         "script": 1,
                         "method": "update_drag"
                       }
@@ -2988,6 +3028,10 @@
                       }
                     ],
                     "left_hold_actions": [
+                      {
+                        "script": 0,
+                        "method": "horizontal_resize_cursor"
+                      },
                       {
                         "script": 1,
                         "method": "update_drag"

@@ -10,7 +10,7 @@ use winit::event::MouseButton;
 use winit::keyboard::{Key, PhysicalKey, SmolStr};
 use crate::client::client::*;
 use crate::math::*;
-use crate::render::render_helper::{Descriptor, DescriptorCreateInfo, DescriptorSetCreateInfo, Pass, PassCreateInfo, Renderpass, RenderpassCreateInfo, Texture, TextureCreateInfo};
+use crate::render::render_helper::{Descriptor, DescriptorCreateInfo, DescriptorSetCreateInfo, Pass, PassCreateInfo, PipelineCreateInfo, Renderpass, RenderpassCreateInfo, Texture, TextureCreateInfo};
 use crate::gui::text::font::Font;
 use crate::gui::text::text_render::{TextInformation, TextRenderer};
 use crate::render::render::MAX_FRAMES_IN_FLIGHT;
@@ -254,7 +254,8 @@ impl GUI {
             .descriptor_set_create_info(quad_descriptor_set_create_info)
             .vertex_shader_uri(String::from("gui\\quad\\quad.vert.spv"))
             .fragment_shader_uri(String::from("gui\\quad\\quad.frag.spv"))
-            .pipeline_color_blend_state_create_info(color_blend_state)
+            .add_pipeline_create_info(PipelineCreateInfo::new()
+                .pipeline_color_blend_state_create_info(color_blend_state))
             .push_constant_range(vk::PushConstantRange {
                 stage_flags: ShaderStageFlags::ALL_GRAPHICS,
                 offset: 0,
@@ -1202,10 +1203,12 @@ impl GUI {
         self.unparented_node_indices = unparented_true_indices;
         self.root_node_indices = guis[0].clone();
 
+        /*
         println!("\nGUI Hierarchy:");
         for &root_index in &self.root_node_indices {
             self.print_hierarchy(root_index, 0);
         }
+        */
     }
     fn print_hierarchy(&self, index: usize, depth: usize) {
         let indent = "  ".repeat(depth);
@@ -1237,7 +1240,7 @@ impl GUI {
             for frame in 0..MAX_FRAMES_IN_FLIGHT {
                 let descriptor_write = vk::WriteDescriptorSet {
                     s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
-                    dst_set: self.quad_renderpass.descriptor_set.descriptor_sets[frame],
+                    dst_set: self.quad_renderpass.descriptor_set.borrow().descriptor_sets[frame],
                     dst_binding: 0,
                     dst_array_element: 0,
                     descriptor_type: DescriptorType::COMBINED_IMAGE_SAMPLER,
@@ -1883,7 +1886,7 @@ impl GUI {
                     device.cmd_bind_pipeline(
                         command_buffer,
                         vk::PipelineBindPoint::GRAPHICS,
-                        self.quad_renderpass.pipeline,
+                        self.quad_renderpass.pipelines[0],
                     );
                     device.cmd_set_viewport(command_buffer, 0, &[self.quad_renderpass.viewport]);
                     device.cmd_set_scissor(command_buffer, 0, &[self.quad_renderpass.scissor]);
@@ -1892,7 +1895,7 @@ impl GUI {
                         vk::PipelineBindPoint::GRAPHICS,
                         self.quad_renderpass.pipeline_layout,
                         0,
-                        &[self.quad_renderpass.descriptor_set.descriptor_sets[current_frame]],
+                        &[self.quad_renderpass.descriptor_set.borrow().descriptor_sets[current_frame]],
                         &[],
                     );
                     device.cmd_push_constants(command_buffer, self.quad_renderpass.pipeline_layout, ShaderStageFlags::ALL_GRAPHICS, 0, slice::from_raw_parts(
@@ -1934,7 +1937,7 @@ impl GUI {
                     device.cmd_bind_pipeline(
                         command_buffer,
                         vk::PipelineBindPoint::GRAPHICS,
-                        self.quad_renderpass.pipeline,
+                        self.quad_renderpass.pipelines[0],
                     );
                     device.cmd_set_viewport(command_buffer, 0, &[self.quad_renderpass.viewport]);
                     device.cmd_set_scissor(command_buffer, 0, &[self.quad_renderpass.scissor]);
@@ -1943,7 +1946,7 @@ impl GUI {
                         vk::PipelineBindPoint::GRAPHICS,
                         self.quad_renderpass.pipeline_layout,
                         0,
-                        &[self.quad_renderpass.descriptor_set.descriptor_sets[current_frame]],
+                        &[self.quad_renderpass.descriptor_set.borrow().descriptor_sets[current_frame]],
                         &[],
                     );
                     device.cmd_push_constants(command_buffer, self.quad_renderpass.pipeline_layout, ShaderStageFlags::ALL_GRAPHICS, 0, slice::from_raw_parts(

@@ -14,9 +14,9 @@ use crate::scene::physics::hitboxes::hitbox::Hitbox::Sphere;
 use crate::scene::physics::hitboxes::mesh::Bvh;
 use crate::scene::physics::physics_engine::PhysicsEngine;
 use crate::scene::physics::player::Player;
-use crate::render::render_helper::{Descriptor, DescriptorCreateInfo, DescriptorSetCreateInfo, PassCreateInfo, Renderpass, RenderpassCreateInfo, Texture, TextureCreateInfo};
+use crate::render::render_helper::{Descriptor, DescriptorCreateInfo, DescriptorSetCreateInfo, PassCreateInfo, PipelineCreateInfo, Renderpass, RenderpassCreateInfo, Texture, TextureCreateInfo};
 use crate::render::scene_renderer::SceneRenderer;
-use crate::render::vulkan_base::{compile_shaders, find_memorytype_index, VkBase};
+use crate::render::vulkan_base::{compile_shaders, copy_data_to_memory, find_memorytype_index, VkBase};
 use crate::scene::scene::Scene;
 use crate::scene::world::camera::{Camera, CameraPointer};
 use crate::scene::world::world::World;
@@ -39,6 +39,7 @@ pub struct Renderer {
     pub guis: Vec<Arc<RefCell<GUI>>>,
 
     pub hitbox_renderpass: Renderpass,
+    pub outline_renderpass: Renderpass,
 
     pub present_sampler: Sampler,
 }
@@ -48,16 +49,20 @@ impl Renderer {
         let world_ref = primary_camera.world.clone();
         let world = world_ref.borrow();
 
-        let (scene_renderer, compositing_renderpass, present_renderpass, hitbox_renderpass) = Renderer::create_rendering_objects(base, &world,
-                                                                                                                                 vk::Viewport {
-                                                                                                                                     width: base.surface_resolution.width as f32,
-                                                                                                                                     height: base.surface_resolution.height as f32,
-                                                                                                                                     x: 0.0,
-                                                                                                                                     y: 0.0,
-                                                                                                                                     min_depth: 0.0,
-                                                                                                                                     max_depth: 1.0
-                                                                                                                                 }
-        );
+        let (
+            scene_renderer,
+            compositing_renderpass,
+            present_renderpass,
+            hitbox_renderpass,
+            outline_renderpass
+        ) = Renderer::create_rendering_objects(base, &world, vk::Viewport {
+             width: base.surface_resolution.width as f32,
+             height: base.surface_resolution.height as f32,
+             x: 0.0,
+             y: 0.0,
+             min_depth: 0.0,
+             max_depth: 1.0
+         });
 
         let null_tex_info = vk::DescriptorImageInfo {
             sampler: scene_renderer.borrow().sampler.clone(),
@@ -91,6 +96,7 @@ impl Renderer {
             scene_renderer,
 
             hitbox_renderpass,
+            outline_renderpass,
 
             present_sampler: base.device.create_sampler(&vk::SamplerCreateInfo {
                 mag_filter: vk::Filter::LINEAR,
@@ -120,6 +126,12 @@ impl Renderer {
                 .map(|f| f[0].clone())
                 .collect::<Vec<Texture>>();
 
+            let outline_pass = renderer.outline_renderpass.pass.borrow();
+            let outline_textures = outline_pass.textures
+                .iter()
+                .map(|f| f[0].clone())
+                .collect::<Vec<Texture>>();
+
             let gui_textures = renderer.guis.iter()
                 .map(|gui| {
                     let gui_ref = gui.borrow();
@@ -131,12 +143,12 @@ impl Renderer {
                 })
                 .collect::<Vec<Vec<Texture>>>();
 
-            let mut compositing_textures = vec![scene_textures, hitbox_textures];
+            let mut compositing_textures = vec![scene_textures, hitbox_textures, outline_textures];
             compositing_textures.extend(gui_textures);
 
             renderer.set_compositing_textures(compositing_textures);
         }
-        renderer.set_compositing_layers(3);
+        renderer.set_compositing_layers(4);
         renderer.scene_renderer.borrow_mut().update_world_textures_all_frames(&base, &world);
 
         renderer
@@ -145,6 +157,7 @@ impl Renderer {
         base: &VkBase, world: &World, scene_viewport: vk::Viewport
     ) -> (
         Arc<RefCell<SceneRenderer>>,
+        Renderpass,
         Renderpass,
         Renderpass,
         Renderpass
@@ -174,28 +187,46 @@ impl Renderer {
         let hitbox_descriptor_set_create_info = DescriptorSetCreateInfo::new(base);
         let hitbox_renderpass_create_info = RenderpassCreateInfo::new(base)
             .pass_create_info(hitbox_pass_create_info)
-            .pipeline_input_assembly_state(PipelineInputAssemblyStateCreateInfo {
-                topology: vk::PrimitiveTopology::LINE_LIST,
-                primitive_restart_enable: vk::FALSE,
-                ..Default::default()
-            })
-            .pipeline_rasterization_state(PipelineRasterizationStateCreateInfo {
-                front_face: vk::FrontFace::COUNTER_CLOCKWISE,
-                cull_mode: vk::CullModeFlags::NONE,
-                line_width: 5.0,
-                polygon_mode: vk::PolygonMode::FILL,
-                ..Default::default()
-            })
+            .add_pipeline_create_info(PipelineCreateInfo::new()
+                .pipeline_input_assembly_state(PipelineInputAssemblyStateCreateInfo {
+                    topology: vk::PrimitiveTopology::LINE_LIST,
+                    primitive_restart_enable: vk::FALSE,
+                    ..Default::default()
+                })
+                .pipeline_rasterization_state(PipelineRasterizationStateCreateInfo {
+                    front_face: vk::FrontFace::COUNTER_CLOCKWISE,
+                    cull_mode: vk::CullModeFlags::NONE,
+                    line_width: 5.0,
+                    polygon_mode: vk::PolygonMode::FILL,
+                    ..Default::default()
+                })
+                .pipeline_color_blend_state_create_info(color_blend_state))
             .descriptor_set_create_info(hitbox_descriptor_set_create_info)
             .vertex_shader_uri(String::from("hitbox_display\\hitbox.vert.spv"))
             .fragment_shader_uri(String::from("hitbox_display\\hitbox.frag.spv"))
-            .pipeline_color_blend_state_create_info(color_blend_state)
             .push_constant_range(vk::PushConstantRange {
                 stage_flags: ShaderStageFlags::ALL_GRAPHICS,
                 offset: 0,
                 size: size_of::<LinePushConstantSendable>() as u32,
             });
         let hitbox_renderpass = Renderpass::new(hitbox_renderpass_create_info);
+
+        let outline_pass_create_info = PassCreateInfo::new(base)
+            .add_color_attachment_info(TextureCreateInfo::new(base).format(Format::R8G8B8A8_UNORM).add_usage_flag(vk::ImageUsageFlags::TRANSFER_SRC));
+        let outline_descriptor_set_create_info = DescriptorSetCreateInfo::new(base)
+            .add_descriptor(Descriptor::new(&texture_sampler_create_info));
+        let outline_renderpass_create_info = RenderpassCreateInfo::new(base)
+            .pass_create_info(outline_pass_create_info)
+            .descriptor_set_create_info(outline_descriptor_set_create_info)
+            .vertex_shader_uri(String::from("quad\\quad.vert.spv"))
+            .fragment_shader_uri(String::from("outline\\outline.frag.spv"))
+            .viewport(scene_viewport)
+            .push_constant_range(vk::PushConstantRange {
+                stage_flags: ShaderStageFlags::FRAGMENT,
+                offset: 0,
+                size: size_of::<OutlineConstantSendable>() as u32,
+            });
+        let outline_renderpass = Renderpass::new(outline_renderpass_create_info);
 
         let present_pass_create_info = PassCreateInfo::new(base)
             .set_is_present_pass(true);
@@ -232,25 +263,44 @@ impl Renderer {
                 size: size_of::<usize>() as _,
             })
         };
+
+        for frame in 0..MAX_FRAMES_IN_FLIGHT {
+            let image_infos = [
+                vk::DescriptorImageInfo {
+                    sampler: scene_renderer.nearest_sampler,
+                    image_view: scene_renderer.geometry_renderpass.pass.borrow().textures[frame][5].stencil_image_view.unwrap(),
+                    image_layout: vk::ImageLayout::STENCIL_READ_ONLY_OPTIMAL,
+                } // id buffer
+            ];
+            let outline_descriptor_writes: Vec<vk::WriteDescriptorSet> = image_infos.iter().enumerate().map(|(i, info)| {
+                vk::WriteDescriptorSet::default()
+                    .dst_set(outline_renderpass.descriptor_set.borrow().descriptor_sets[frame])
+                    .dst_binding(i as u32)
+                    .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
+                    .image_info(slice::from_ref(info))
+            }).collect();
+            base.device.update_descriptor_sets(&outline_descriptor_writes, &[]);
+        }
+
         (
             Arc::new(RefCell::new(scene_renderer)),
             Renderpass::new(compositing_renderpass_create_info),
             Renderpass::new(present_renderpass_create_info),
-            hitbox_renderpass
+            hitbox_renderpass,
+            outline_renderpass,
         )
     } }
     pub unsafe fn reload(&mut self, base: &VkBase, world: &World) { unsafe {
         self.device.device_wait_idle().unwrap();
-
-
         {
             let scene_renderer = &mut self.scene_renderer.borrow_mut();
             scene_renderer.destroy();
             self.compositing_renderpass.destroy();
             self.present_renderpass.destroy();
             self.hitbox_renderpass.destroy();
+            self.outline_renderpass.destroy()
         }
-        (self.scene_renderer, self.compositing_renderpass, self.present_renderpass, self.hitbox_renderpass) = Renderer::create_rendering_objects(
+        (self.scene_renderer, self.compositing_renderpass, self.present_renderpass, self.hitbox_renderpass, self.outline_renderpass) = Renderer::create_rendering_objects(
             base,
             world,
             self.scene_renderer.borrow().viewport.borrow().clone()
@@ -286,6 +336,12 @@ impl Renderer {
                 .map(|f| f[0].clone())
                 .collect::<Vec<Texture>>();
 
+            let outline_pass = self.outline_renderpass.pass.borrow();
+            let outline_textures = outline_pass.textures
+                .iter()
+                .map(|f| f[0].clone())
+                .collect::<Vec<Texture>>();
+
             let gui_textures = self.guis.iter()
                 .map(|gui| {
                     let gui_ref = gui.borrow();
@@ -297,7 +353,7 @@ impl Renderer {
                 })
                 .collect::<Vec<Vec<Texture>>>();
 
-            let mut compositing_textures = vec![scene_textures, hitbox_textures];
+            let mut compositing_textures = vec![scene_textures, hitbox_textures, outline_textures];
             compositing_textures.extend(gui_textures);
 
             self.set_compositing_textures(compositing_textures);
@@ -320,7 +376,7 @@ impl Renderer {
             }];
             let present_descriptor_writes: Vec<vk::WriteDescriptorSet> = vec![
                 vk::WriteDescriptorSet::default()
-                    .dst_set(self.present_renderpass.descriptor_set.descriptor_sets[current_frame])
+                    .dst_set(self.present_renderpass.descriptor_set.borrow().descriptor_sets[current_frame])
                     .dst_binding(0)
                     .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
                     .image_info(&present_info)];
@@ -345,7 +401,7 @@ impl Renderer {
             for frame in 0..MAX_FRAMES_IN_FLIGHT {
                 let descriptor_write = vk::WriteDescriptorSet {
                     s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
-                    dst_set: self.compositing_renderpass.descriptor_set.descriptor_sets[frame],
+                    dst_set: self.compositing_renderpass.descriptor_set.borrow().descriptor_sets[frame],
                     dst_binding: 0,
                     dst_array_element: 0,
                     descriptor_type: DescriptorType::COMBINED_IMAGE_SAMPLER,
@@ -437,6 +493,28 @@ impl Renderer {
         self.device.cmd_end_render_pass(frame_command_buffer);
         { self.hitbox_renderpass.pass.borrow().transition_to_readable(frame_command_buffer, current_frame); }
 
+        self.outline_renderpass.do_renderpass(
+            current_frame,
+            frame_command_buffer,
+            Some(|| {
+                self.device.cmd_push_constants(
+                    frame_command_buffer,
+                    self.outline_renderpass.pipeline_layout,
+                    ShaderStageFlags::FRAGMENT, 0,
+                    slice::from_raw_parts(
+                        &OutlineConstantSendable {
+                            color: [0.93, 0.72, 0.0, 1.0],
+                            thickness: 5.0,
+                            _pad: [0.0, 0.0, 0.0],
+                        } as *const OutlineConstantSendable as *const u8,
+                        size_of::<OutlineConstantSendable>(),
+                    )
+                )
+            }),
+            None::<fn()>,
+            None,
+        );
+
         self.compositing_renderpass.do_renderpass(
             current_frame,
             frame_command_buffer,
@@ -462,6 +540,7 @@ impl Renderer {
         self.compositing_renderpass.destroy();
         self.present_renderpass.destroy();
         self.hitbox_renderpass.destroy();
+        self.outline_renderpass.destroy();
         self.device.destroy_sampler(self.present_sampler, None);
     } }
 }
@@ -661,6 +740,12 @@ pub struct LinePushConstantSendable {
     a: [f32; 4],
     b: [f32; 4],
     color: [f32; 4],
+}
+pub struct OutlineConstantSendable {
+    color: [f32; 4],
+
+    thickness: f32,
+    _pad: [f32; 3],
 }
 //TODO REMOVE THIS GRAPHICS CRIME AND REPLACE WITH VERTEX BUFFERS FOR HITBOXES
 // LOOKING AT THIS MAKES ME WANT TO DIE AND I WROTE IT

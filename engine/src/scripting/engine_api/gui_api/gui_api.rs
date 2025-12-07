@@ -275,6 +275,11 @@ impl UserData for GUINodePointer {
             Ok(table)
         });
 
+        fields.add_field_method_get("num_elements", |lua, this| {
+            with_gui!(lua, this.gui_index => gui);
+            Ok(gui.nodes[this.index].children_indices.len())
+        });
+
         fields.add_field_method_get("position", |lua, this| {
             with_gui!(lua, this.gui_index => gui);
             Ok(gui.nodes[this.index].position)

@@ -1,4 +1,4 @@
-local target_cursor_icon
+_G.target_cursor_icon = CursorIcon.Default
 local has_set_target_cursor = false
 
 local resize_called_last_tick = false
@@ -17,8 +17,6 @@ local gui
 		local scene_view_area_node
 
 function Awake()
-	target_cursor_icon = CursorIcon.Default
-	
 	gui = Engine.renderer:gui(0)
 
 	root_node = gui:get_root(0)
@@ -33,6 +31,7 @@ function Awake()
 	build_graph()
 
 end
+
 
 function Update()
 	if gui == nil then return end
@@ -68,6 +67,17 @@ function Update()
 
 end
 
+local selected_node = -1
+local selected_entity = 0
+function select_entity()
+	if selected_node > -1 then
+		gui:get_node(selected_node):remove_element_index_at(1)
+	end
+
+	gui.ActiveNode:add_element_index(8)
+	selected_node = gui.ActiveNode.index
+	selected_entity = _G.node_to_entity_map[selected_node]
+end
 local expanded_entities = {}
 _G.node_to_entity_map = {}
 _G.node_to_render_components_map = {}
@@ -118,6 +128,7 @@ function build_graph()
 	scene_graph_root_node:clear_children()
 	
 	--- reset mappings (and start root expanded)
+	selected_node = -1
 	_G.node_to_entity_map = {}
 	_G.node_to_render_components_map = {}
 	_G.node_to_transform_map = {}
@@ -163,6 +174,7 @@ function build_graph_recursive(entity, entity_index, depth)
 	local node = gui:get_node(node_index)
 	node:reset()
 	node:add_left_up_action("open_entity_editor", 3)
+	node:add_left_up_action("select_entity", 0)
 	node:add_hover_action("hover_cursor", 0)
 	node:set_x("Pixels", depth * graph_child_indent)
 	node:set_y("Pixels", graph_height)
@@ -205,6 +217,10 @@ function build_graph_recursive(entity, entity_index, depth)
 	if darker then quad_index = 3 end
 	darker = not darker
 	node:add_element_index(quad_index)
+	if entity_index == selected_entity then
+		selected_node = node_index
+		node:add_element_index(8)
+	end
 	--- expanded/collapsed visual image
 	if has_children or has_render_components then
 		if is_expanded then

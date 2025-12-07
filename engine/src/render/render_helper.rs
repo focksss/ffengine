@@ -14,9 +14,9 @@ pub struct Renderpass {
     pub device: Device,
 
     pub pass: Arc<RefCell<Pass>>,
-    pub descriptor_set: DescriptorSet,
+    pub descriptor_set: Arc<RefCell<DescriptorSet>>,
     pub shader: Shader,
-    pub pipeline: vk::Pipeline,
+    pub pipelines: Vec<vk::Pipeline>,
     pub pipeline_layout: vk::PipelineLayout,
     pub viewport: vk::Viewport,
     pub scissor: vk::Rect2D,
@@ -29,7 +29,11 @@ impl Renderpass {
         } else {
             create_info.pass_ref.expect("Renderpass builder did not contain a pass_ref or a pass_create_info")
         };
-        let descriptor_set = DescriptorSet::new(create_info.descriptor_set_create_info);
+        let descriptor_set = if let Some(descriptor_set_create_info) = create_info.descriptor_set_create_info {
+            Arc::new(RefCell::new(DescriptorSet::new(descriptor_set_create_info)))
+        } else {
+            create_info.descriptor_set_ref.expect("Renderpass builder did not contain a pass_ref or a pass_create_info")
+        };
         let shader = Shader::new(
             base,
             &*create_info.vertex_shader_uri.expect("Must have a vertex shader per pipeline"),
@@ -43,7 +47,7 @@ impl Renderpass {
                 &vk::PipelineLayoutCreateInfo {
                     s_type: vk::StructureType::PIPELINE_LAYOUT_CREATE_INFO,
                     set_layout_count: 1,
-                    p_set_layouts: &descriptor_set.descriptor_set_layout,
+                    p_set_layouts: &descriptor_set.borrow().descriptor_set_layout,
                     p_push_constant_ranges: &create_info.push_constant_info.unwrap_or_default(),
                     push_constant_range_count: if create_info.push_constant_info.is_some() { 1 } else { 0 },
                     ..Default::default()
@@ -56,31 +60,33 @@ impl Renderpass {
             .scissors(&scissors);
         let dynamic_state_info =
             vk::PipelineDynamicStateCreateInfo::default().dynamic_states(&create_info.dynamic_state);
-        let pipeline_create_info = GraphicsPipelineCreateInfo::default()
-            .stages(&shader_stages_create_infos)
-            .vertex_input_state(&create_info.pipeline_vertex_input_state_create_info)
-            .input_assembly_state(&create_info.pipeline_input_assembly_state_create_info)
-            .tessellation_state(&create_info.pipeline_tess_state_create_info)
-            .viewport_state(&viewport_state)
-            .rasterization_state(&create_info.pipeline_rasterization_state_create_info)
-            .multisample_state(&create_info.pipeline_multisample_state_create_info)
-            .depth_stencil_state(&create_info.pipeline_depth_stencil_state_create_info)
-            .color_blend_state(&create_info.pipeline_color_blend_state_create_info)
-            .dynamic_state(&dynamic_state_info)
-            .layout(pipeline_layout)
-            .render_pass(pass.borrow().renderpass);
-        let pipeline = base.device.create_graphics_pipelines(
+        let pipeline_create_infos = create_info.pipeline_create_infos.iter().map(|info| {
+            GraphicsPipelineCreateInfo::default()
+                .stages(&shader_stages_create_infos)
+                .vertex_input_state(&info.pipeline_vertex_input_state_create_info)
+                .input_assembly_state(&info.pipeline_input_assembly_state_create_info)
+                .tessellation_state(&info.pipeline_tess_state_create_info)
+                .viewport_state(&viewport_state)
+                .rasterization_state(&info.pipeline_rasterization_state_create_info)
+                .multisample_state(&info.pipeline_multisample_state_create_info)
+                .depth_stencil_state(&info.pipeline_depth_stencil_state_create_info)
+                .color_blend_state(&info.pipeline_color_blend_state_create_info)
+                .dynamic_state(&dynamic_state_info)
+                .layout(pipeline_layout)
+                .render_pass(pass.borrow().renderpass)
+        }).collect::<Vec<_>>();
+        let pipelines = base.device.create_graphics_pipelines(
             vk::PipelineCache::null(),
-            &[pipeline_create_info],
+            &pipeline_create_infos,
             None
-        ).expect("Failed to create pipeline")[0];
+        ).expect("Failed to create pipeline");
         Renderpass {
             device: base.device.clone(),
 
             pass,
             descriptor_set,
             shader,
-            pipeline,
+            pipelines,
             pipeline_layout,
             viewport: create_info.viewport,
             scissor: create_info.scissor,
@@ -117,7 +123,7 @@ impl Renderpass {
         device.cmd_bind_pipeline(
             command_buffer,
             vk::PipelineBindPoint::GRAPHICS,
-            self.pipeline,
+            self.pipelines[0],
         );
         device.cmd_set_viewport(command_buffer, 0, &[self.viewport]);
         device.cmd_set_scissor(command_buffer, 0, &[self.scissor]);
@@ -126,7 +132,7 @@ impl Renderpass {
             vk::PipelineBindPoint::GRAPHICS,
             self.pipeline_layout,
             0,
-            &[self.descriptor_set.descriptor_sets[current_frame]],
+            &[self.descriptor_set.borrow().descriptor_sets[current_frame]],
             &[],
         );
     }}
@@ -136,15 +142,18 @@ impl Renderpass {
         let mut pass = self.pass.borrow_mut();
         if !pass.destroyed { pass.destroy() };
         self.device.destroy_pipeline_layout(self.pipeline_layout, None);
-        self.device.destroy_pipeline(self.pipeline, None);
-        self.descriptor_set.destroy();
+        for pipeline in self.pipelines.iter() {
+            self.device.destroy_pipeline(*pipeline, None);
+        }
+        self.descriptor_set.borrow_mut().destroy();
     } }
 }
 pub struct RenderpassCreateInfo<'a> {
     pub base: &'a VkBase,
     pub pass_create_info: Option<PassCreateInfo<'a>>,
     pub pass_ref: Option<Arc<RefCell<Pass>>>,
-    pub descriptor_set_create_info: DescriptorSetCreateInfo<'a>,
+    pub descriptor_set_create_info: Option<DescriptorSetCreateInfo<'a>>,
+    pub descriptor_set_ref: Option<Arc<RefCell<DescriptorSet>>>,
     pub vertex_shader_uri: Option<String>,
     pub geometry_shader_uri: Option<String>,
     pub fragment_shader_uri: Option<String>,
@@ -153,6 +162,116 @@ pub struct RenderpassCreateInfo<'a> {
 
     pub push_constant_info: Option<PushConstantRange>,
 
+    pub pipeline_create_infos: Vec<PipelineCreateInfo<'a>>,
+
+    pub dynamic_state: Vec<DynamicState>,
+
+    has_manual_pipelines: bool,
+}
+impl<'a> RenderpassCreateInfo<'a> {
+    /**
+    * Defaults to pipeline create info intended for a fullscreen quad pass without blending or depth testing.
+    */
+    pub fn new(base: &'a VkBase) -> Self {
+        RenderpassCreateInfo {
+            base,
+            pass_create_info: Some(PassCreateInfo::new(base)),
+            pass_ref: None,
+            descriptor_set_create_info: Some(DescriptorSetCreateInfo::new(base)),
+            descriptor_set_ref: None,
+            vertex_shader_uri: None,
+            geometry_shader_uri: None,
+            fragment_shader_uri: None,
+            viewport: vk::Viewport {
+                x: 0.0,
+                y: 0.0,
+                width: base.surface_resolution.width as f32,
+                height: base.surface_resolution.height as f32,
+                min_depth: 0.0,
+                max_depth: 1.0,
+            },
+            scissor: base.surface_resolution.into(),
+
+            push_constant_info: None,
+
+            pipeline_create_infos: vec![PipelineCreateInfo::new()],
+
+            dynamic_state: vec![DynamicState::VIEWPORT, DynamicState::SCISSOR],
+
+            has_manual_pipelines: false,
+        }
+    }
+
+    pub fn resolution(mut self, resolution: vk::Extent2D) -> Self {
+        self.viewport.width = resolution.width as f32;
+        self.viewport.height = resolution.height as f32;
+        self.scissor = vk::Rect2D {
+            offset: vk::Offset2D { x: 0, y: 0 },
+            extent: resolution,
+        };
+        self
+    }
+    pub fn pass_create_info(mut self, pass_create_info: PassCreateInfo<'a>) -> Self {
+        self.pass_create_info = Some(pass_create_info);
+        self.pass_ref = None;
+        self
+    }
+    pub fn pass_ref(mut self, pass_ref: Arc<RefCell<Pass>>) -> Self {
+        self.pass_ref = Some(pass_ref.clone());
+        self.pass_create_info = None;
+        self
+    }
+    pub fn add_pipeline_create_info(mut self, pipeline: PipelineCreateInfo<'a>) -> Self {
+        if !self.has_manual_pipelines {
+            self.pipeline_create_infos.clear();
+            self.has_manual_pipelines = true
+        }
+        self.pipeline_create_infos.push(pipeline);
+        self
+    }
+    /**
+    * All descriptor set layouts must be identical per Renderpass
+    */
+    pub fn descriptor_set_create_info(mut self, descriptor_set_create_info: DescriptorSetCreateInfo<'a>) -> Self {
+        self.descriptor_set_create_info = Some(descriptor_set_create_info);
+        self
+    }
+    pub fn descriptor_set_ref(mut self, descriptor_set_ref: Arc<RefCell<DescriptorSet>>) -> Self {
+        self.descriptor_set_ref = Some(descriptor_set_ref.clone());
+        self.descriptor_set_create_info = None;
+        self
+    }
+    pub fn vertex_shader_uri(mut self, vertex_shader_uri: String) -> Self {
+        self.vertex_shader_uri = Some(vertex_shader_uri);
+        self
+    }
+    pub fn geometry_shader_uri(mut self, geometry_shader_uri: String) -> Self {
+        self.geometry_shader_uri = Some(geometry_shader_uri);
+        self
+    }
+    pub fn fragment_shader_uri(mut self, fragment_shader_uri: String) -> Self {
+        self.fragment_shader_uri = Some(fragment_shader_uri);
+        self
+    }
+    pub fn viewport(mut self, viewport: vk::Viewport) -> Self {
+        self.viewport = viewport;
+        self
+    }
+    pub fn scissor(mut self, scissor: vk::Rect2D) -> Self {
+        self.scissor = scissor;
+        self
+    }
+    pub fn push_constant_range(mut self, push_constant_range: PushConstantRange) -> Self {
+        self.push_constant_info = Some(push_constant_range);
+        self
+    }
+    pub fn dynamic_state(mut self, dynamic_state: Vec<DynamicState>) -> Self {
+        self.dynamic_state = dynamic_state;
+        self
+    }
+}
+
+pub struct PipelineCreateInfo<'a> {
     pub pipeline_vertex_input_state_create_info: PipelineVertexInputStateCreateInfo<'a>,
     pub pipeline_input_assembly_state_create_info: PipelineInputAssemblyStateCreateInfo<'a>,
     pub pipeline_tess_state_create_info: PipelineTessellationStateCreateInfo<'a>,
@@ -160,14 +279,9 @@ pub struct RenderpassCreateInfo<'a> {
     pub pipeline_multisample_state_create_info: PipelineMultisampleStateCreateInfo<'a>,
     pub pipeline_depth_stencil_state_create_info: PipelineDepthStencilStateCreateInfo<'a>,
     pub pipeline_color_blend_state_create_info: PipelineColorBlendStateCreateInfo<'a>,
-    pub dynamic_state: Vec<DynamicState>,
-
 }
-impl<'a> RenderpassCreateInfo<'a> {
-    /**
-    * Defaults to pipeline create info intended for a fullscreen quad pass without blending or depth testing.
-    */
-    pub fn new(base: &'a VkBase) -> Self {
+impl<'a> PipelineCreateInfo<'a> {
+    pub fn new() -> Self {
         let noop_stencil_state = StencilOpState {
             fail_op: vk::StencilOp::KEEP,
             pass_op: vk::StencilOp::KEEP,
@@ -185,26 +299,7 @@ impl<'a> RenderpassCreateInfo<'a> {
             alpha_blend_op: vk::BlendOp::ADD,
             color_write_mask: vk::ColorComponentFlags::RGBA,
         } as *const _ as *const _;
-        RenderpassCreateInfo {
-            base,
-            pass_create_info: Some(PassCreateInfo::new(base)),
-            pass_ref: None,
-            descriptor_set_create_info: DescriptorSetCreateInfo::new(base),
-            vertex_shader_uri: None,
-            geometry_shader_uri: None,
-            fragment_shader_uri: None,
-            viewport: vk::Viewport {
-                x: 0.0,
-                y: 0.0,
-                width: base.surface_resolution.width as f32,
-                height: base.surface_resolution.height as f32,
-                min_depth: 0.0,
-                max_depth: 1.0,
-            },
-            scissor: base.surface_resolution.into(),
-
-            push_constant_info: None,
-
+        PipelineCreateInfo {
             pipeline_vertex_input_state_create_info: PipelineVertexInputStateCreateInfo::default(),
             pipeline_input_assembly_state_create_info: PipelineInputAssemblyStateCreateInfo {
                 topology: vk::PrimitiveTopology::TRIANGLE_LIST,
@@ -233,64 +328,13 @@ impl<'a> RenderpassCreateInfo<'a> {
                 ..Default::default()
             },
             pipeline_color_blend_state_create_info: PipelineColorBlendStateCreateInfo {
-                    p_attachments: null_blend_state,
-                    attachment_count: 1,
-                    ..Default::default()
-                },
-            dynamic_state: vec![DynamicState::VIEWPORT, DynamicState::SCISSOR],
+                p_attachments: null_blend_state,
+                attachment_count: 1,
+                ..Default::default()
+            },
         }
     }
 
-    pub fn resolution(mut self, resolution: vk::Extent2D) -> Self {
-        self.viewport.width = resolution.width as f32;
-        self.viewport.height = resolution.height as f32;
-        self.scissor = vk::Rect2D {
-            offset: vk::Offset2D { x: 0, y: 0 },
-            extent: resolution,
-        };
-        self
-    }
-    pub fn pass_create_info(mut self, pass_create_info: PassCreateInfo<'a>) -> Self {
-        self.pass_create_info = Some(pass_create_info);
-        self.pass_ref = None;
-        self
-    }
-    pub fn pass_ref(mut self, pass_ref: Arc<RefCell<Pass>>) -> Self {
-        self.pass_ref = Some(pass_ref.clone());
-        self.pass_create_info = None;
-        self
-    }
-    /**
-    * All descriptor set layouts must be identical per Renderpass
-    */
-    pub fn descriptor_set_create_info(mut self, descriptor_set_create_info: DescriptorSetCreateInfo<'a>) -> Self {
-        self.descriptor_set_create_info = descriptor_set_create_info;
-        self
-    }
-    pub fn vertex_shader_uri(mut self, vertex_shader_uri: String) -> Self {
-        self.vertex_shader_uri = Some(vertex_shader_uri);
-        self
-    }
-    pub fn geometry_shader_uri(mut self, geometry_shader_uri: String) -> Self {
-        self.geometry_shader_uri = Some(geometry_shader_uri);
-        self
-    }
-    pub fn fragment_shader_uri(mut self, fragment_shader_uri: String) -> Self {
-        self.fragment_shader_uri = Some(fragment_shader_uri);
-        self
-    }
-    pub fn viewport(mut self, viewport: vk::Viewport) -> Self {
-        self.viewport = viewport;
-        self
-    }
-    pub fn scissor(mut self, scissor: vk::Rect2D) -> Self {
-        self.scissor = scissor;
-        self
-    }
-    pub fn push_constant_range(mut self, push_constant_range: PushConstantRange) -> Self {
-        self.push_constant_info = Some(push_constant_range);
-        self
-    }
     pub fn pipeline_vertex_input_state(mut self, pipeline_vertex_input_state: PipelineVertexInputStateCreateInfo<'a>) -> Self {
         self.pipeline_vertex_input_state_create_info = pipeline_vertex_input_state;
         self
@@ -317,10 +361,6 @@ impl<'a> RenderpassCreateInfo<'a> {
     }
     pub fn pipeline_color_blend_state_create_info(mut self, pipeline_color_blend_state_create_info: PipelineColorBlendStateCreateInfo<'a>) -> Self {
         self.pipeline_color_blend_state_create_info = pipeline_color_blend_state_create_info;
-        self
-    }
-    pub fn dynamic_state(mut self, dynamic_state: Vec<DynamicState>) -> Self {
-        self.dynamic_state = dynamic_state;
         self
     }
 }
@@ -362,6 +402,8 @@ impl Pass {
                         samples: texture.samples,
                         load_op: vk::AttachmentLoadOp::CLEAR,
                         store_op: vk::AttachmentStoreOp::STORE,
+                        stencil_load_op: vk::AttachmentLoadOp::CLEAR,
+                        stencil_store_op: vk::AttachmentStoreOp::STORE,
                         initial_layout: vk::ImageLayout::UNDEFINED,
                         final_layout: if texture.is_depth { vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL } else { vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL },
                         ..Default::default()
@@ -521,7 +563,7 @@ impl Pass {
                     vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
                     vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
                     vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE,
-                    ImageAspectFlags::DEPTH,
+                    if tex.has_stencil { ImageAspectFlags::DEPTH | ImageAspectFlags::STENCIL } else { ImageAspectFlags::DEPTH },
                     vk::PipelineStageFlags::LATE_FRAGMENT_TESTS,
                 )
             } else {
@@ -621,6 +663,7 @@ pub struct Texture {
 
     pub image: vk::Image,
     pub image_view: vk::ImageView,
+    pub stencil_image_view: Option<vk::ImageView>,
     pub device_memory: DeviceMemory,
 
     pub clear_value: ClearValue,
@@ -629,6 +672,7 @@ pub struct Texture {
     pub array_layers: u32,
     pub samples: SampleCountFlags,
     pub is_depth: bool,
+    pub has_stencil: bool,
 }
 impl Texture {
     pub unsafe fn new(create_info: &TextureCreateInfo) -> Self { unsafe {
@@ -642,7 +686,7 @@ impl Texture {
             format: create_info.format,
             tiling: vk::ImageTiling::OPTIMAL,
             initial_layout: vk::ImageLayout::UNDEFINED,
-            usage: if create_info.is_depth { ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT } else { ImageUsageFlags::COLOR_ATTACHMENT } | create_info.usage_flags,
+            usage: if create_info.is_depth || create_info.has_stencil { ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT } else { ImageUsageFlags::COLOR_ATTACHMENT } | create_info.usage_flags,
             sharing_mode: vk::SharingMode::EXCLUSIVE,
             samples: create_info.samples,
             ..Default::default()
@@ -680,7 +724,11 @@ impl Texture {
                 },
             format: create_info.format,
             subresource_range: ImageSubresourceRange {
-                aspect_mask: if create_info.is_depth { ImageAspectFlags::DEPTH } else { ImageAspectFlags::COLOR },
+                aspect_mask: if create_info.is_depth {
+                    ImageAspectFlags::DEPTH
+                } else {
+                    ImageAspectFlags::COLOR
+                },
                 base_mip_level: 0,
                 level_count: 1,
                 base_array_layer: 0,
@@ -689,12 +737,42 @@ impl Texture {
             },
             ..Default::default()
         };
+        let stencil_image_view = if create_info.has_stencil {
+            Some(create_info.device.create_image_view(&vk::ImageViewCreateInfo {
+                s_type: vk::StructureType::IMAGE_VIEW_CREATE_INFO,
+                image,
+                view_type: if create_info.array_layers > 1 {
+                    if create_info.height > 1 {
+                        vk::ImageViewType::TYPE_2D_ARRAY
+                    } else {
+                        vk::ImageViewType::TYPE_1D_ARRAY
+                    }
+                } else if create_info.depth > 1 {
+                    vk::ImageViewType::TYPE_3D
+                } else if create_info.height > 1 {
+                    vk::ImageViewType::TYPE_2D
+                } else {
+                    vk::ImageViewType::TYPE_1D
+                },
+                format: create_info.format,
+                subresource_range: ImageSubresourceRange {
+                    aspect_mask: ImageAspectFlags::STENCIL,
+                    base_mip_level: 0,
+                    level_count: 1,
+                    base_array_layer: 0,
+                    layer_count: create_info.array_layers,
+                    ..Default::default()
+                },
+                ..Default::default()
+            }, None).expect("failed to create stencil image view"))
+        } else { None };
 
         Self {
             device: create_info.device.clone(),
 
             image,
             image_view: create_info.device.create_image_view(&image_view_info, None).expect("failed to create image view"),
+            stencil_image_view,
             device_memory: image_memory,
 
             clear_value: Self::clear_value_for_format(create_info.format, create_info.clear_value),
@@ -703,12 +781,16 @@ impl Texture {
             array_layers: create_info.array_layers,
             samples: create_info.samples,
             is_depth: create_info.is_depth,
+            has_stencil: create_info.has_stencil,
         }
     } }
     pub unsafe fn destroy(&self) { unsafe {
         self.device.destroy_image(self.image, None);
         self.device.destroy_image_view(self.image_view, None);
         self.device.free_memory(self.device_memory, None);
+        if let Some(stencil_view) = self.stencil_image_view {
+            self.device.destroy_image_view(stencil_view, None);
+        }
     } }
 
     fn clear_value_for_format(format: Format, clear: [f32; 4]) -> ClearValue {
@@ -795,6 +877,7 @@ pub struct TextureCreateInfo<'a> {
     pub samples: SampleCountFlags,
     pub format: Format,
     pub is_depth: bool,
+    pub has_stencil: bool,
     pub usage_flags: ImageUsageFlags,
     pub array_layers: u32,
     pub clear_value: [f32; 4],
@@ -811,6 +894,7 @@ impl TextureCreateInfo<'_> {
             samples: SampleCountFlags::TYPE_1,
             format: Format::R16G16B16A16_SFLOAT,
             is_depth: false,
+            has_stencil: false,
             usage_flags: ImageUsageFlags::SAMPLED,
             array_layers: 1,
             clear_value: [0.0; 4],
@@ -827,6 +911,7 @@ impl TextureCreateInfo<'_> {
             samples: SampleCountFlags::TYPE_1,
             format: Format::R16G16B16A16_SFLOAT,
             is_depth: false,
+            has_stencil: false,
             usage_flags: ImageUsageFlags::SAMPLED,
             array_layers: 1,
             clear_value: [0.0; 4],
@@ -878,6 +963,10 @@ impl TextureCreateInfo<'_> {
         self.depth = (self.depth / denominator).max(1);
         self
     }
+    pub fn has_stencil(mut self, has_stencil: bool) -> Self {
+        self.has_stencil = has_stencil;
+        self
+    }
 }
 
 pub struct DescriptorSet {
@@ -886,6 +975,8 @@ pub struct DescriptorSet {
     pub descriptor_set_layout: DescriptorSetLayout,
     pub descriptor_pool: DescriptorPool,
     pub descriptors: Vec<Descriptor>,
+
+    pub destroyed: bool,
 }
 impl DescriptorSet {
     pub unsafe fn new(create_info: DescriptorSetCreateInfo) -> DescriptorSet { unsafe {
@@ -1036,13 +1127,18 @@ impl DescriptorSet {
             descriptor_set_layout,
             descriptor_pool,
             descriptors: create_info.descriptors,
+
+            destroyed: false,
         }
     } }
-    pub unsafe fn destroy(&self) { unsafe {
-        self.device.destroy_descriptor_set_layout(self.descriptor_set_layout, None);
-        self.device.destroy_descriptor_pool(self.descriptor_pool, None);
-        for descriptor in &self.descriptors {
-            descriptor.destroy();
+    pub unsafe fn destroy(&mut self) { unsafe {
+        if !self.destroyed {
+            self.device.destroy_descriptor_set_layout(self.descriptor_set_layout, None);
+            self.device.destroy_descriptor_pool(self.descriptor_pool, None);
+            for descriptor in &self.descriptors {
+                descriptor.destroy();
+            }
+            self.destroyed = true;
         }
     } }
 }

@@ -35,6 +35,17 @@ impl UserData for SceneRef {
         methods.add_method("get_transform", |lua, this, index: usize| {
             Ok(lua.create_userdata(TransformPointer { index }))
         });
+
+        methods.add_method("reset_outlines", |lua, this, ()| {
+            with_scene_mut!(lua => scene);
+            scene.outlined_components.clear();
+            Ok(())
+        });
+        methods.add_method("add_outlined", |lua, this, index: usize| {
+            with_scene_mut!(lua => scene);
+            scene.outlined_components.push(index);
+            Ok(())
+        });
     }
 }
 
@@ -129,6 +140,8 @@ pub struct RenderComponentPointer {
 }
 impl UserData for RenderComponentPointer {
     fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
-
+        fields.add_field_method_get("index", |lua, this|{
+            Ok(this.index)
+        });
     }
 }

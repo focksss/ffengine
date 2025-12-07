@@ -123,73 +123,98 @@ function color_slider_unhovered()
     gui.ActiveNode:get_quad_at(0).color = Vector.new4(0.35, 0.35, 0.35, 1.0)
 end
 
-local original_cursor_x
+local accum_delta
+local last_cursor_position
 local original_translation
 local original_rotation
 local original_scale
 function begin_drag()
-    original_cursor_x = Engine.client.cursor_position.x
+    accum_delta = Vector.new()
+    last_cursor_position = Engine.client.cursor_position
     original_translation = Engine.scene:get_transform(_G.selected_transform).translation
     original_rotation = Engine.scene:get_transform(_G.selected_transform).rotation
     original_scale = Engine.scene:get_transform(_G.selected_transform).scale
 end
 function update_drag()
     local transform = Engine.scene:get_transform(_G.selected_transform)
-    local delta = Engine.client.cursor_position.x - original_cursor_x
+    accum_delta = accum_delta + Engine.client.cursor_position - last_cursor_position
+
+    local window_size = Engine.client.window_size
+    local cursor_position = Engine.client.cursor_position
+    local new_position = cursor_position
+    local should_move = false
+    if cursor_position.x >= window_size.x then
+        should_move = true
+        new_position.x = 1.0
+    end
+    if cursor_position.x <= 0.0 then
+        should_move = true
+        new_position.x = window_size.x
+    end
+    if cursor_position.y >= window_size.y then
+        should_move = true
+        new_position.y = 1.0
+    end
+    if cursor_position.y <= 0.0 then
+        should_move = true
+        new_position.y = window_size.y
+    end
+    if should_move then Engine.client.cursor_position = new_position end
+    last_cursor_position = new_position
 
     if drag_mode == "tx" then
         transform.translation = Vector.new3(
-            original_translation.x + delta * 0.005,
+            original_translation.x + accum_delta.x * 0.005,
             transform.translation.y,
             transform.translation.z
         )
     elseif drag_mode == "ty" then
         transform.translation = Vector.new3(
             transform.translation.x,
-            original_translation.y + delta * 0.005,
+            original_translation.y + accum_delta.x * 0.005,
             transform.translation.z
         )
     elseif drag_mode == "tz" then
         transform.translation = Vector.new3(
             transform.translation.x,
             transform.translation.y,
-            original_translation.z + delta * 0.005
+            original_translation.z + accum_delta.x * 0.005
         )
     elseif drag_mode == "rx" then
         transform.rotation = Vector.new3(
-            original_rotation.x + delta * 0.005,
+            original_rotation.x + accum_delta.x * 0.005,
             transform.rotation.y,
             transform.rotation.z
         )
     elseif drag_mode == "ry" then
         transform.rotation = Vector.new3(
             transform.rotation.x,
-            original_rotation.y + delta * 0.005,
+            original_rotation.y + accum_delta.x * 0.005,
             transform.rotation.z
         )
     elseif drag_mode == "rz" then
         transform.rotation = Vector.new3(
             transform.rotation.x,
             transform.rotation.y,
-            original_rotation.z + delta * 0.005
+            original_rotation.z + accum_delta.x * 0.005
         )
     elseif drag_mode == "sx" then
         transform.scale = Vector.new3(
-            original_scale.x + delta * 0.005,
+            original_scale.x + accum_delta.x * 0.005,
             transform.scale.y,
             transform.scale.z
         )
     elseif drag_mode == "sy" then
         transform.scale = Vector.new3(
             transform.scale.x,
-            original_scale.y + delta * 0.005,
+            original_scale.y + accum_delta.x * 0.005,
             transform.scale.z
         )
     elseif drag_mode == "sz" then
         transform.scale = Vector.new3(
             transform.scale.x,
             transform.scale.y,
-            original_scale.z + delta * 0.005
+            original_scale.z + accum_delta.x * 0.005
         )
     end
 end
