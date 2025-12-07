@@ -333,6 +333,9 @@ impl VkBase {
                 geometry_shader: vk::TRUE,
                 independent_blend: vk::TRUE,
                 wide_lines: vk::TRUE,
+                depth_clamp: vk::TRUE,
+                depth_bias_clamp: vk::TRUE,
+                depth_bounds: vk::TRUE,
                 ..Default::default()
             };
             let priorities = [1.0];

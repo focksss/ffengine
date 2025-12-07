@@ -343,7 +343,7 @@ impl Scene {
             if do_outline {
                 for (i, render_component) in self.render_components.iter().enumerate() {
                     if !self.outlined_components.contains(&i) {
-                        render_component.draw(&self, scene_renderer, &command_buffer, world, frustum, false);
+                        render_component.draw(&self, scene_renderer, &command_buffer, world, frustum);
                     }
                 }
                 scene_renderer.device.cmd_bind_pipeline(
@@ -352,11 +352,11 @@ impl Scene {
                     scene_renderer.geometry_renderpass.pipelines[1],
                 );
                 for index in self.outlined_components.iter() {
-                    self.render_components[*index].draw(&self, scene_renderer, &command_buffer, world, frustum, true);
+                    self.render_components[*index].draw(&self, scene_renderer, &command_buffer, world, frustum);
                 }
             } else {
                 for render_component in self.render_components.iter() {
-                    render_component.draw(&self, scene_renderer, &command_buffer, world, frustum, false);
+                    render_component.draw(&self, scene_renderer, &command_buffer, world, frustum);
                 }
             }
         }
@@ -540,7 +540,7 @@ pub struct RenderComponent {
     material_index: usize,
 }
 impl RenderComponent {
-    unsafe fn draw(&self, scene: &Scene, scene_renderer: &SceneRenderer, command_buffer: &CommandBuffer, world: &World, frustum: Option<&Frustum>, do_outline: bool) {
+    unsafe fn draw(&self, scene: &Scene, scene_renderer: &SceneRenderer, command_buffer: &CommandBuffer, world: &World, frustum: Option<&Frustum>) {
         let mut all_points_outside_of_same_plane = false;
 
         let primitive = &world.meshes[self.mesh_primitive_index.0].primitives[self.mesh_primitive_index.1];

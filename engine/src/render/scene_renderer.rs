@@ -695,6 +695,16 @@ impl SceneRenderer {
             polygon_mode: vk::PolygonMode::FILL,
             ..Default::default()
         };
+        let outline_rasterization_info = vk::PipelineRasterizationStateCreateInfo {
+            front_face: vk::FrontFace::COUNTER_CLOCKWISE,
+            cull_mode: vk::CullModeFlags::BACK,
+            line_width: 1.0,
+            polygon_mode: vk::PolygonMode::FILL,
+            depth_bias_enable: vk::TRUE,
+            depth_clamp_enable: 0,
+            depth_bias_constant_factor: 10000000000.0, // absurd value on purpose
+            ..Default::default()
+        };
         let shadow_rasterization_info = vk::PipelineRasterizationStateCreateInfo {
             front_face: vk::FrontFace::COUNTER_CLOCKWISE,
             cull_mode: vk::CullModeFlags::NONE,
@@ -729,13 +739,14 @@ impl SceneRenderer {
             ..Default::default()
         };
         let outline_depth_state_info = vk::PipelineDepthStencilStateCreateInfo {
-            depth_write_enable: 1,
             depth_test_enable: 1,
-            depth_compare_op: vk::CompareOp::ALWAYS,
-            stencil_test_enable: 1,
+            depth_write_enable: 1,
+            depth_compare_op: vk::CompareOp::GREATER,
             front: outline_stencil_state,
             back: outline_stencil_state,
             max_depth_bounds: 1.0,
+            min_depth_bounds: 0.0,
+            stencil_test_enable: 1,
             ..Default::default()
         };
         let shadow_depth_state_info = vk::PipelineDepthStencilStateCreateInfo {
@@ -790,7 +801,7 @@ impl SceneRenderer {
                 .pipeline_color_blend_state_create_info(null_blend_state))
             .add_pipeline_create_info(PipelineCreateInfo::new()
                 .pipeline_vertex_input_state(geometry_vertex_input_state_info)
-                .pipeline_rasterization_state(rasterization_info)
+                .pipeline_rasterization_state(outline_rasterization_info)
                 .pipeline_depth_stencil_state(outline_depth_state_info)
                 .pipeline_color_blend_state_create_info(null_blend_state)) };
         let geometry_renderpass = Renderpass::new(geometry_renderpass_create_info);
