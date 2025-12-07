@@ -235,9 +235,14 @@ impl Engine {
                                 Lua::run_cache(&engine_ref);
                             },
                         );
-                        println!("{:?}", self.renderer.borrow().scene_renderer.borrow().lighting_renderpass.pass.borrow().textures[current_frame][0].sample(base, 100, 100, 0));
                         {
                             let mut controller_mut = self.client.borrow_mut();
+                            println!("{:?}", self.renderer.borrow().scene_renderer.borrow().geometry_renderpass.pass.borrow().textures[current_frame][4].sample(
+                                base,
+                                controller_mut.cursor_position.x as i32,
+                                controller_mut.cursor_position.y as i32,
+                                0
+                            ));
                             controller_mut.reset_deltas()
                         };
                         // let start = std::time::Instant::now();
