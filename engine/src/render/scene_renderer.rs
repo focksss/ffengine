@@ -11,7 +11,7 @@ use crate::math::Vector;
 use crate::render::render::MAX_FRAMES_IN_FLIGHT;
 use crate::render::render_helper::{Descriptor, DescriptorCreateInfo, DescriptorSetCreateInfo, DeviceTexture, PassCreateInfo, PipelineCreateInfo, Renderpass, RenderpassCreateInfo, Texture, TextureCreateInfo};
 use crate::render::vulkan_base::{copy_data_to_memory, VkBase};
-use crate::scene::scene::{Instance, Scene};
+use crate::scene::scene::{DrawMode, Instance, Scene};
 use crate::scene::world::camera::Camera;
 use crate::scene::world::world::{World, SunSendable, Vertex};
 
@@ -732,16 +732,6 @@ impl SceneRenderer {
             compare_op: vk::CompareOp::ALWAYS,
             ..Default::default()
         };
-        let outline_stencil_state = vk::StencilOpState {
-            fail_op: vk::StencilOp::KEEP,
-            pass_op: vk::StencilOp::INCREMENT_AND_CLAMP,
-            depth_fail_op: vk::StencilOp::KEEP,
-            compare_op: vk::CompareOp::EQUAL,
-            compare_mask: 0xFF,
-            write_mask: 0xFF,
-            reference: 0,
-            ..Default::default()
-        };
         let infinite_reverse_depth_state_info = vk::PipelineDepthStencilStateCreateInfo {
             depth_test_enable: 1,
             depth_write_enable: 1,
@@ -751,31 +741,22 @@ impl SceneRenderer {
             max_depth_bounds: 1.0,
             ..Default::default()
         };
+        let outline_stencil_state = vk::StencilOpState {
+            pass_op: vk::StencilOp::INCREMENT_AND_CLAMP,
+            depth_fail_op: vk::StencilOp::KEEP,
+            compare_op: vk::CompareOp::ALWAYS,
+            compare_mask: 0xFF,
+            write_mask: 0xFF,
+            reference: 0,
+            ..Default::default()
+        };
         let outline_depth_state_info = vk::PipelineDepthStencilStateCreateInfo {
             depth_test_enable: 0,
-            depth_write_enable: 1,
+            depth_write_enable: 0,
             depth_compare_op: vk::CompareOp::ALWAYS,
             stencil_test_enable: 1,
             front: outline_stencil_state,
             back: outline_stencil_state,
-            ..Default::default()
-        };
-        let outline_pass_2_stencil_op = vk::StencilOpState {
-            fail_op: vk::StencilOp::KEEP,
-            pass_op: vk::StencilOp::KEEP,
-            depth_fail_op: vk::StencilOp::KEEP,
-            compare_op: vk::CompareOp::EQUAL,
-            compare_mask: 0xFF,
-            write_mask: 0x00,
-            reference: 1,
-        };
-        let outline_depth_state_2_info = vk::PipelineDepthStencilStateCreateInfo {
-            depth_test_enable: 1,  // Normal depth test
-            depth_write_enable: 1,
-            depth_compare_op: vk::CompareOp::GREATER,  // Reverse-Z
-            stencil_test_enable: 1,
-            front: outline_pass_2_stencil_op,
-            back: outline_pass_2_stencil_op,
             ..Default::default()
         };
         let shadow_depth_state_info = vk::PipelineDepthStencilStateCreateInfo {
@@ -800,20 +781,6 @@ impl SceneRenderer {
         let null_blend_states = vec![null_blend_attachment; 5];
         let null_blend_state = vk::PipelineColorBlendStateCreateInfo::default()
             .attachments(&null_blend_states);
-
-        let color_blend_attachment_states = [vk::PipelineColorBlendAttachmentState {
-            blend_enable: vk::TRUE,
-            src_color_blend_factor: vk::BlendFactor::SRC_ALPHA,
-            dst_color_blend_factor: vk::BlendFactor::ONE_MINUS_SRC_ALPHA,
-            color_blend_op: vk::BlendOp::ADD,
-            src_alpha_blend_factor: vk::BlendFactor::ONE,
-            dst_alpha_blend_factor: vk::BlendFactor::ONE_MINUS_SRC_ALPHA,
-            alpha_blend_op: vk::BlendOp::ADD,
-            color_write_mask: vk::ColorComponentFlags::RGBA,
-        }; 4];
-        let color_blend_state = vk::PipelineColorBlendStateCreateInfo::default()
-            .logic_op(vk::LogicOp::CLEAR)
-            .attachments(&color_blend_attachment_states);
         //</editor-fold>
 
         let geometry_renderpass_create_info = { RenderpassCreateInfo::new(base)
@@ -827,21 +794,7 @@ impl SceneRenderer {
                 .pipeline_depth_stencil_state(infinite_reverse_depth_state_info)
                 .pipeline_color_blend_state_create_info(null_blend_state)
                 .vertex_shader_uri(String::from("geometry\\geometry.vert.spv"))
-                .fragment_shader_uri(String::from("geometry\\geometry.frag.spv")))
-            .add_pipeline_create_info(PipelineCreateInfo::new()
-                .pipeline_vertex_input_state(geometry_vertex_input_state_info)
-                .pipeline_rasterization_state(outline_rasterization_info)
-                .pipeline_depth_stencil_state(outline_depth_state_info)
-                .pipeline_color_blend_state_create_info(null_blend_state)
-                .vertex_shader_uri(String::from("geometry\\geometry.vert.spv"))
-                .fragment_shader_uri(String::from("geometry\\geometry.frag.spv")))
-            .add_pipeline_create_info(PipelineCreateInfo::new()
-                .pipeline_vertex_input_state(geometry_vertex_input_state_info)
-                .pipeline_rasterization_state(outline_rasterization_info)
-                .pipeline_depth_stencil_state(outline_depth_state_2_info)
-                .pipeline_color_blend_state_create_info(null_blend_state)
-                .vertex_shader_uri(String::from("geometry\\geometry.vert.spv"))
-                .fragment_shader_uri(String::from("geometry\\geometry.frag.spv")))};
+                .fragment_shader_uri(String::from("geometry\\geometry.frag.spv"))) };
         let geometry_renderpass = Renderpass::new(geometry_renderpass_create_info);
 
         let shadow_renderpass_create_info = { RenderpassCreateInfo::new(base)
@@ -977,10 +930,10 @@ impl SceneRenderer {
                 .add_pipeline_create_info(PipelineCreateInfo::new()
                     .pipeline_vertex_input_state(geometry_vertex_input_state_info)
                     .pipeline_rasterization_state(rasterization_info)
-                    .pipeline_depth_stencil_state(infinite_reverse_depth_state_info)
+                    .pipeline_depth_stencil_state(outline_depth_state_info)
                     .pipeline_color_blend_state_create_info(color_blend_state)
-                    .vertex_shader_uri(String::from("geometry\\geometry.vert.spv"))
-                    .fragment_shader_uri(String::from("forward\\forward.frag.spv"))) };
+                    .vertex_shader_uri(String::from("geometry\\position_only.vert.spv"))
+                    .fragment_shader_uri(String::from("outline\\outline_geometry.frag.spv"))) };
 
             Renderpass::new(forward_renderpass_create_info)
         };
@@ -1125,7 +1078,7 @@ impl SceneRenderer {
                 ));
             }),
             Some(|| {
-                scene.draw(self, current_frame, Some(&player_camera.frustum), true);
+                scene.draw(self, current_frame, Some(&player_camera.frustum), DrawMode::Deferred);
             }),
             None,
             true
@@ -1136,7 +1089,7 @@ impl SceneRenderer {
             frame_command_buffer,
             None::<fn()>,
             Some(|| {
-                scene.draw(self, current_frame, Some(&player_camera.frustum), false);
+                scene.draw(self, current_frame, Some(&player_camera.frustum), DrawMode::All);
             }),
             None,
             true
@@ -1194,7 +1147,8 @@ impl SceneRenderer {
                 ));
             }),
             Some(|| {
-                scene.draw(self, current_frame, Some(&player_camera.frustum), false);
+                scene.draw(self, current_frame, Some(&player_camera.frustum), DrawMode::Forward);
+                scene.draw(self, current_frame, Some(&player_camera.frustum), DrawMode::Outlined);
             }),
             None,
             true

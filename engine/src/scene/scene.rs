@@ -318,7 +318,7 @@ impl Scene {
         }
     }
 
-    pub unsafe fn draw(&self, scene_renderer: &SceneRenderer, frame: usize, frustum: Option<&Frustum>, is_deferred: bool) {
+    pub unsafe fn draw(&self, scene_renderer: &SceneRenderer, frame: usize, frustum: Option<&Frustum>, draw_mode: DrawMode) {
         let command_buffer = get_command_buffer();
         let world = &self.world.borrow();
         unsafe {
@@ -341,41 +341,40 @@ impl Scene {
                 vk::IndexType::UINT32,
             );
 
-            if !is_deferred {
-                self.render_components[0].draw(self, scene_renderer, &command_buffer, world, frustum);
-                /*
-                for (i, render_component) in self.render_components.iter().enumerate() {
-                    if !self.outlined_components.contains(&i) {
+            let (do_deferred, do_forward, do_outline) = match draw_mode {
+                DrawMode::Deferred => (true, false, false),
+                DrawMode::Forward => (false, true, false),
+                DrawMode::All => (true, true, false),
+                DrawMode::Outlined => (false, false, true),
+            };
+
+            if do_outline {
+                scene_renderer.device.cmd_bind_pipeline(
+                    command_buffer,
+                    vk::PipelineBindPoint::GRAPHICS,
+                    scene_renderer.forward_renderpass.pipelines[0].vulkan_pipeline,
+                );
+                for index in self.outlined_components.iter() {
+                    self.render_components[*index].draw(&self, scene_renderer, &command_buffer, world, frustum);
+                }
+            } else {
+                if do_deferred {
+                    for render_component in self.render_components.iter() {
                         render_component.draw(&self, scene_renderer, &command_buffer, world, frustum);
                     }
                 }
-                
-                scene_renderer.device.cmd_bind_pipeline(
-                    command_buffer,
-                    vk::PipelineBindPoint::GRAPHICS,
-                    scene_renderer.geometry_renderpass.pipelines[1].vulkan_pipeline,
-                );
-                for index in self.outlined_components.iter() {
-                    self.render_components[*index].draw(&self, scene_renderer, &command_buffer, world, frustum);
-                }
-                
-                scene_renderer.device.cmd_bind_pipeline(
-                    command_buffer,
-                    vk::PipelineBindPoint::GRAPHICS,
-                    scene_renderer.geometry_renderpass.pipelines[2].vulkan_pipeline,
-                );
-                for index in self.outlined_components.iter() {
-                    self.render_components[*index].draw(&self, scene_renderer, &command_buffer, world, frustum);
-                }
-                 */
-            } else {
-                for (i, render_component) in self.render_components.iter().enumerate() {
-                    if i == 0 { continue }
-                    render_component.draw(&self, scene_renderer, &command_buffer, world, frustum);
+                if do_forward {
+
                 }
             }
         }
     }
+}
+pub enum DrawMode {
+    Deferred,
+    Forward,
+    All,
+    Outlined
 }
 
 pub struct Entity {
