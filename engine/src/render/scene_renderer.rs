@@ -447,7 +447,7 @@ impl SceneRenderer {
             .add_color_attachment_info(TextureCreateInfo::new(base).format(Format::R8_UNORM)
                 .width(resolution.width).height(resolution.height));
 
-        // set to window size, not the scene viewport size
+        // set to window size, not the scene viewport size // TODO: DON'T DO THIS
         let lighting_pass_create_info = PassCreateInfo::new(base)
             .add_color_attachment_info(TextureCreateInfo::new(base).format(Format::R16G16B16A16_SFLOAT).add_usage_flag(vk::ImageUsageFlags::TRANSFER_SRC));
         //</editor-fold>
