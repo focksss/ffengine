@@ -4,7 +4,7 @@ use std::io::{BufWriter, Cursor};
 use std::sync::Arc;
 use ash::{vk, Device, Instance};
 use ash::util::read_spv;
-use ash::vk::{Buffer, ClearColorValue, ClearDepthStencilValue, ClearValue, DescriptorBindingFlags, DescriptorImageInfo, DescriptorPool, DescriptorPoolCreateFlags, DescriptorPoolSize, DescriptorSetLayout, DescriptorSetLayoutCreateFlags, DescriptorType, DeviceMemory, DeviceSize, DynamicState, Extent3D, Format, GraphicsPipelineCreateInfo, ImageAspectFlags, ImageSubresourceRange, ImageUsageFlags, MemoryPropertyFlags, PhysicalDevice, PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo, PipelineDepthStencilStateCreateInfo, PipelineInputAssemblyStateCreateInfo, PipelineMultisampleStateCreateInfo, PipelineRasterizationStateCreateInfo, PipelineShaderStageCreateInfo, PipelineTessellationStateCreateInfo, PipelineVertexInputStateCreateInfo, PushConstantRange, SampleCountFlags, ShaderModule, ShaderModuleCreateInfo, ShaderStageFlags, StencilOpState};
+use ash::vk::{Buffer, ClearColorValue, ClearDepthStencilValue, ClearValue, DescriptorBindingFlags, DescriptorImageInfo, DescriptorPool, DescriptorPoolCreateFlags, DescriptorPoolSize, DescriptorSetLayout, DescriptorSetLayoutCreateFlags, DescriptorType, DeviceMemory, DeviceSize, DynamicState, Extent3D, Format, GraphicsPipelineCreateInfo, ImageAspectFlags, ImageSubresourceRange, ImageUsageFlags, ImageView, MemoryPropertyFlags, PhysicalDevice, PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo, PipelineDepthStencilStateCreateInfo, PipelineInputAssemblyStateCreateInfo, PipelineMultisampleStateCreateInfo, PipelineRasterizationStateCreateInfo, PipelineShaderStageCreateInfo, PipelineTessellationStateCreateInfo, PipelineVertexInputStateCreateInfo, PushConstantRange, SampleCountFlags, ShaderModule, ShaderModuleCreateInfo, ShaderStageFlags, StencilOpState};
 use crate::engine::get_command_buffer;
 use crate::render::render::MAX_FRAMES_IN_FLIGHT;
 use crate::render::vulkan_base::{find_memorytype_index, load_file, VkBase};
@@ -16,8 +16,7 @@ pub struct Renderpass {
 
     pub pass: Arc<RefCell<Pass>>,
     pub descriptor_set: Arc<RefCell<DescriptorSet>>,
-    pub shader: Shader,
-    pub pipelines: Vec<vk::Pipeline>,
+    pub pipelines: Vec<Pipeline>,
     pub pipeline_layout: vk::PipelineLayout,
     pub viewport: vk::Viewport,
     pub scissor: vk::Rect2D,
@@ -35,13 +34,6 @@ impl Renderpass {
         } else {
             create_info.descriptor_set_ref.expect("Renderpass builder did not contain a pass_ref or a pass_create_info")
         };
-        let shader = Shader::new(
-            base,
-            &*create_info.vertex_shader_uri.expect("Must have a vertex shader per pipeline"),
-            &*create_info.fragment_shader_uri.expect("Must have a fragment shader per pipeline"),
-            create_info.geometry_shader_uri.as_ref().map(|s| s.as_str()),
-        );
-        let shader_stages_create_infos = shader.generate_shader_stage_create_infos();
         let pipeline_layout = base
             .device
             .create_pipeline_layout(
@@ -61,32 +53,55 @@ impl Renderpass {
             .scissors(&scissors);
         let dynamic_state_info =
             vk::PipelineDynamicStateCreateInfo::default().dynamic_states(&create_info.dynamic_state);
-        let pipeline_create_infos = create_info.pipeline_create_infos.iter().map(|info| {
-            GraphicsPipelineCreateInfo::default()
-                .stages(&shader_stages_create_infos)
-                .vertex_input_state(&info.pipeline_vertex_input_state_create_info)
-                .input_assembly_state(&info.pipeline_input_assembly_state_create_info)
-                .tessellation_state(&info.pipeline_tess_state_create_info)
-                .viewport_state(&viewport_state)
-                .rasterization_state(&info.pipeline_rasterization_state_create_info)
-                .multisample_state(&info.pipeline_multisample_state_create_info)
-                .depth_stencil_state(&info.pipeline_depth_stencil_state_create_info)
-                .color_blend_state(&info.pipeline_color_blend_state_create_info)
-                .dynamic_state(&dynamic_state_info)
-                .layout(pipeline_layout)
-                .render_pass(pass.borrow().renderpass)
-        }).collect::<Vec<_>>();
-        let pipelines = base.device.create_graphics_pipelines(
+
+        let shaders = create_info.pipeline_create_infos.iter().map(|info| {
+            Shader::new(
+                base,
+                info.vertex_shader_uri.as_ref().expect("Must have a vertex shader per pipeline"),
+                info.fragment_shader_uri.as_ref().expect("Must have a fragment shader per pipeline"),
+                info.geometry_shader_uri.as_ref().map(|s| s.as_str()),
+            )
+        }).collect::<Vec<Shader>>();
+        let shader_stage_create_infos = shaders.iter().map(|shader| {
+            shader.generate_shader_stage_create_infos()
+        }).collect::<Vec<Vec<PipelineShaderStageCreateInfo>>>();
+
+        let pipeline_create_infos = create_info
+            .pipeline_create_infos
+            .iter().enumerate()
+            .map(|(i, info)| {
+                GraphicsPipelineCreateInfo::default()
+                    .stages(&shader_stage_create_infos[i])
+                    .vertex_input_state(&info.pipeline_vertex_input_state_create_info)
+                    .input_assembly_state(&info.pipeline_input_assembly_state_create_info)
+                    .tessellation_state(&info.pipeline_tess_state_create_info)
+                    .viewport_state(&viewport_state)
+                    .rasterization_state(&info.pipeline_rasterization_state_create_info)
+                    .multisample_state(&info.pipeline_multisample_state_create_info)
+                    .depth_stencil_state(&info.pipeline_depth_stencil_state_create_info)
+                    .color_blend_state(&info.pipeline_color_blend_state_create_info)
+                    .dynamic_state(&dynamic_state_info)
+                    .layout(pipeline_layout)
+                    .render_pass(pass.borrow().renderpass)
+            }).collect::<Vec<GraphicsPipelineCreateInfo>>();
+        let vulkan_pipelines = base.device.create_graphics_pipelines(
             vk::PipelineCache::null(),
             &pipeline_create_infos,
             None
         ).expect("Failed to create pipeline");
+        let pipelines: Vec<Pipeline> = shaders
+            .into_iter()
+            .zip(vulkan_pipelines.into_iter())
+            .map(|(shader, vk_pipeline)| Pipeline {
+                shader,
+                vulkan_pipeline: vk_pipeline,
+            })
+            .collect();
         Renderpass {
             device: base.device.clone(),
 
             pass,
             descriptor_set,
-            shader,
             pipelines,
             pipeline_layout,
             viewport: create_info.viewport,
@@ -103,8 +118,9 @@ impl Renderpass {
         command_buffer: vk::CommandBuffer,
         push_constant_action: Option<F1>,
         draw_action: Option<F2>,
-        framebuffer_index: Option<usize>,)
-    { unsafe {
+        framebuffer_index: Option<usize>,
+        do_transition: bool,
+    ) { unsafe {
         let device = &self.device;
         self.begin_renderpass(current_frame, command_buffer, framebuffer_index);
         if let Some(push_constant_action) = push_constant_action { push_constant_action() };
@@ -112,7 +128,9 @@ impl Renderpass {
             device.cmd_draw(command_buffer, 6, 1, 0, 0);
         };
         device.cmd_end_render_pass(command_buffer);
-        self.pass.borrow().transition_to_readable(command_buffer, current_frame);
+        if do_transition {
+            self.pass.borrow().transition_to_readable(command_buffer, current_frame);
+        }
     } }
     pub unsafe fn begin_renderpass(&self, current_frame: usize, command_buffer: vk::CommandBuffer, framebuffer_index: Option<usize>) { unsafe {
         let device = &self.device;
@@ -124,7 +142,7 @@ impl Renderpass {
         device.cmd_bind_pipeline(
             command_buffer,
             vk::PipelineBindPoint::GRAPHICS,
-            self.pipelines[0],
+            self.pipelines[0].vulkan_pipeline,
         );
         device.cmd_set_viewport(command_buffer, 0, &[self.viewport]);
         device.cmd_set_scissor(command_buffer, 0, &[self.scissor]);
@@ -139,15 +157,19 @@ impl Renderpass {
     }}
 
     pub unsafe fn destroy(&mut self) { unsafe {
-        self.shader.destroy();
+        for pipeline in self.pipelines.iter() {
+            pipeline.shader.destroy();
+            self.device.destroy_pipeline(pipeline.vulkan_pipeline, None);
+        }
         let mut pass = self.pass.borrow_mut();
         if !pass.destroyed { pass.destroy() };
         self.device.destroy_pipeline_layout(self.pipeline_layout, None);
-        for pipeline in self.pipelines.iter() {
-            self.device.destroy_pipeline(*pipeline, None);
-        }
         self.descriptor_set.borrow_mut().destroy();
     } }
+}
+pub struct Pipeline {
+    shader: Shader,
+    pub vulkan_pipeline: vk::Pipeline,
 }
 pub struct RenderpassCreateInfo<'a> {
     pub base: &'a VkBase,
@@ -155,9 +177,6 @@ pub struct RenderpassCreateInfo<'a> {
     pub pass_ref: Option<Arc<RefCell<Pass>>>,
     pub descriptor_set_create_info: Option<DescriptorSetCreateInfo<'a>>,
     pub descriptor_set_ref: Option<Arc<RefCell<DescriptorSet>>>,
-    pub vertex_shader_uri: Option<String>,
-    pub geometry_shader_uri: Option<String>,
-    pub fragment_shader_uri: Option<String>,
     pub viewport: vk::Viewport,
     pub scissor: vk::Rect2D,
 
@@ -180,9 +199,6 @@ impl<'a> RenderpassCreateInfo<'a> {
             pass_ref: None,
             descriptor_set_create_info: Some(DescriptorSetCreateInfo::new(base)),
             descriptor_set_ref: None,
-            vertex_shader_uri: None,
-            geometry_shader_uri: None,
-            fragment_shader_uri: None,
             viewport: vk::Viewport {
                 x: 0.0,
                 y: 0.0,
@@ -242,18 +258,6 @@ impl<'a> RenderpassCreateInfo<'a> {
         self.descriptor_set_create_info = None;
         self
     }
-    pub fn vertex_shader_uri(mut self, vertex_shader_uri: String) -> Self {
-        self.vertex_shader_uri = Some(vertex_shader_uri);
-        self
-    }
-    pub fn geometry_shader_uri(mut self, geometry_shader_uri: String) -> Self {
-        self.geometry_shader_uri = Some(geometry_shader_uri);
-        self
-    }
-    pub fn fragment_shader_uri(mut self, fragment_shader_uri: String) -> Self {
-        self.fragment_shader_uri = Some(fragment_shader_uri);
-        self
-    }
     pub fn viewport(mut self, viewport: vk::Viewport) -> Self {
         self.viewport = viewport;
         self
@@ -273,6 +277,10 @@ impl<'a> RenderpassCreateInfo<'a> {
 }
 
 pub struct PipelineCreateInfo<'a> {
+    pub vertex_shader_uri: Option<String>,
+    pub geometry_shader_uri: Option<String>,
+    pub fragment_shader_uri: Option<String>,
+
     pub pipeline_vertex_input_state_create_info: PipelineVertexInputStateCreateInfo<'a>,
     pub pipeline_input_assembly_state_create_info: PipelineInputAssemblyStateCreateInfo<'a>,
     pub pipeline_tess_state_create_info: PipelineTessellationStateCreateInfo<'a>,
@@ -301,6 +309,10 @@ impl<'a> PipelineCreateInfo<'a> {
             color_write_mask: vk::ColorComponentFlags::RGBA,
         } as *const _ as *const _;
         PipelineCreateInfo {
+            vertex_shader_uri: None,
+            geometry_shader_uri: None,
+            fragment_shader_uri: None,
+
             pipeline_vertex_input_state_create_info: PipelineVertexInputStateCreateInfo::default(),
             pipeline_input_assembly_state_create_info: PipelineInputAssemblyStateCreateInfo {
                 topology: vk::PrimitiveTopology::TRIANGLE_LIST,
@@ -334,6 +346,19 @@ impl<'a> PipelineCreateInfo<'a> {
                 ..Default::default()
             },
         }
+    }
+
+    pub fn vertex_shader_uri(mut self, vertex_shader_uri: String) -> Self {
+        self.vertex_shader_uri = Some(vertex_shader_uri);
+        self
+    }
+    pub fn geometry_shader_uri(mut self, geometry_shader_uri: String) -> Self {
+        self.geometry_shader_uri = Some(geometry_shader_uri);
+        self
+    }
+    pub fn fragment_shader_uri(mut self, fragment_shader_uri: String) -> Self {
+        self.fragment_shader_uri = Some(fragment_shader_uri);
+        self
     }
 
     pub fn pipeline_vertex_input_state(mut self, pipeline_vertex_input_state: PipelineVertexInputStateCreateInfo<'a>) -> Self {
@@ -382,12 +407,12 @@ impl Pass {
         let base = create_info.base;
         let has_depth = create_info.depth_attachment_create_info.is_some();
         if !create_info.is_present_pass {
-            for _ in 0..create_info.frames_in_flight {
+            for frame in 0..create_info.frames_in_flight {
                 let mut frame_textures = Vec::new();
                 for texture in 0..create_info.color_attachment_create_infos.len() {
-                    frame_textures.push(Texture::new(&create_info.color_attachment_create_infos[texture]));
+                    frame_textures.push(Texture::new(&create_info.color_attachment_create_infos[texture][frame]));
                 }
-                if has_depth { frame_textures.push(Texture::new(&create_info.depth_attachment_create_info.unwrap())) };
+                if has_depth { frame_textures.push(Texture::new(&create_info.depth_attachment_create_info.as_ref().unwrap()[frame])) };
                 textures.push(frame_textures);
             }
         }
@@ -401,11 +426,11 @@ impl Pass {
                     vk::AttachmentDescription {
                         format: texture.format,
                         samples: texture.samples,
-                        load_op: vk::AttachmentLoadOp::CLEAR,
+                        load_op: texture.load_op,
                         store_op: vk::AttachmentStoreOp::STORE,
                         stencil_load_op: vk::AttachmentLoadOp::CLEAR,
                         stencil_store_op: vk::AttachmentStoreOp::STORE,
-                        initial_layout: vk::ImageLayout::UNDEFINED,
+                        initial_layout: texture.initial_layout,
                         final_layout: if texture.is_depth { vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL } else { vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL },
                         ..Default::default()
                     }
@@ -473,9 +498,9 @@ impl Pass {
         let mut height = base.surface_resolution.height;
         let mut array_layers= 1;
         if !create_info.is_present_pass {
-            let resolution_info = create_info
-                .depth_attachment_create_info
-                .unwrap_or_else(|| create_info.color_attachment_create_infos[0]);
+            let resolution_info = &create_info
+                .depth_attachment_create_info.as_ref()
+                .unwrap_or_else(|| &create_info.color_attachment_create_infos[0])[0];
             width = resolution_info.width;
             height = resolution_info.height;
             array_layers = resolution_info.array_layers;
@@ -486,7 +511,7 @@ impl Pass {
             clear_values = textures[0].iter().map(|texture| {texture.clear_value}).collect();
             let framebuffers = (0..create_info.frames_in_flight)
                 .map(|i| {
-                    let framebuffer_attachments_vec: Vec<vk::ImageView> = textures[i].iter().map(|texture| { texture.image_view }).collect();
+                    let framebuffer_attachments_vec: Vec<ImageView> = textures[i].iter().map(|texture| { texture.device_texture.borrow().image_view }).collect();
                     let framebuffer_attachments = framebuffer_attachments_vec.as_slice();
 
                     let framebuffer_create_info = vk::FramebufferCreateInfo::default()
@@ -585,7 +610,7 @@ impl Pass {
                 dst_access_mask: vk::AccessFlags::SHADER_READ,
                 src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
                 dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
-                image: tex.image,
+                image: tex.device_texture.borrow().image,
                 subresource_range: ImageSubresourceRange {
                     aspect_mask,
                     base_mip_level: 0,
@@ -613,7 +638,7 @@ impl Pass {
             for framebuffer in &self.framebuffers {
                 self.device.destroy_framebuffer(*framebuffer, None);
             }
-            for frame_textures in &self.textures {
+            for frame_textures in &mut self.textures {
                 for texture in frame_textures {
                     texture.destroy();
                 }
@@ -626,8 +651,8 @@ impl Pass {
 pub struct PassCreateInfo<'a> {
     pub base: &'a VkBase,
     pub frames_in_flight: usize,
-    pub color_attachment_create_infos: Vec<TextureCreateInfo<'a>>,
-    pub depth_attachment_create_info: Option<TextureCreateInfo<'a>>,
+    pub color_attachment_create_infos: Vec<Vec<TextureCreateInfo<'a>>>,
+    pub depth_attachment_create_info: Option<Vec<TextureCreateInfo<'a>>>,
     pub is_present_pass: bool,
 }
 impl<'a> PassCreateInfo<'a> {
@@ -645,11 +670,39 @@ impl<'a> PassCreateInfo<'a> {
         self
     }
     pub fn add_color_attachment_info(mut self, color_attachment_create_info: TextureCreateInfo<'a>) -> Self {
-        self.color_attachment_create_infos.push(color_attachment_create_info);
+        self.color_attachment_create_infos.push(vec![color_attachment_create_info; self.frames_in_flight]);
+        self
+    }
+    pub fn grab_attachment(mut self, other: &'a Pass, attachment_index: usize, load_op: vk::AttachmentLoadOp, initial_layout: vk::ImageLayout) -> Self {
+        let mut create_infos = Vec::new();
+        for frame in 0..other.textures.len() {
+            let texture = &other.textures[frame][attachment_index];
+            create_infos.push(
+                TextureCreateInfo::new(self.base)
+                    .base_on_preexisting(texture)
+                    .load_op(load_op)
+                    .initial_layout(initial_layout)
+            );
+        }
+        self.color_attachment_create_infos.push(create_infos);
+        self
+    }
+    pub fn grab_depth_attachment(mut self, other: &'a Pass, attachment_index: usize, load_op: vk::AttachmentLoadOp, initial_layout: vk::ImageLayout) -> Self {
+        let mut create_infos = Vec::new();
+        for frame in 0..other.textures.len() {
+            let texture = &other.textures[frame][attachment_index];
+            create_infos.push(
+                TextureCreateInfo::new(self.base)
+                    .base_on_preexisting(texture)
+                    .load_op(load_op)
+                    .initial_layout(initial_layout)
+            );
+        }
+        self.depth_attachment_create_info = Some(create_infos);
         self
     }
     pub fn depth_attachment_info(mut self, depth_attachment_create_info: TextureCreateInfo<'a>) -> Self {
-        self.depth_attachment_create_info = Some(depth_attachment_create_info);
+        self.depth_attachment_create_info = Some(vec![depth_attachment_create_info; self.frames_in_flight]);
         self
     }
     pub fn set_is_present_pass(mut self, is_present_pass: bool) -> Self {
@@ -662,10 +715,7 @@ impl<'a> PassCreateInfo<'a> {
 pub struct Texture {
     pub device: Device,
 
-    pub image: vk::Image,
-    pub image_view: vk::ImageView,
-    pub stencil_image_view: Option<vk::ImageView>,
-    pub device_memory: DeviceMemory,
+    pub device_texture: Arc<RefCell<DeviceTexture>>,
 
     pub clear_value: ClearValue,
     pub format: Format,
@@ -674,72 +724,49 @@ pub struct Texture {
     pub samples: SampleCountFlags,
     pub is_depth: bool,
     pub has_stencil: bool,
+
+    pub load_op: vk::AttachmentLoadOp,
+    pub initial_layout: vk::ImageLayout,
 }
 impl Texture {
     pub unsafe fn new(create_info: &TextureCreateInfo) -> Self { unsafe {
-        if create_info.depth < 1 { panic!("texture depth is too low"); }
-        let color_image_create_info = vk::ImageCreateInfo {
-            s_type: vk::StructureType::IMAGE_CREATE_INFO,
-            image_type: if create_info.depth > 1 { vk::ImageType::TYPE_3D } else if create_info.height > 1 { vk::ImageType::TYPE_2D } else { vk::ImageType::TYPE_1D },
-            extent: Extent3D { width: create_info.width, height: create_info.height, depth: create_info.depth },
-            mip_levels: 1,
-            array_layers: create_info.array_layers,
-            format: create_info.format,
-            tiling: vk::ImageTiling::OPTIMAL,
-            initial_layout: vk::ImageLayout::UNDEFINED,
-            usage: if create_info.is_depth || create_info.has_stencil { ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT } else { ImageUsageFlags::COLOR_ATTACHMENT } | create_info.usage_flags,
-            sharing_mode: vk::SharingMode::EXCLUSIVE,
-            samples: create_info.samples,
-            ..Default::default()
-        };
-        let image = create_info.device.create_image(&color_image_create_info, None).expect("Failed to create image");
-        let image_memory_req = create_info.device.get_image_memory_requirements(image);
-        let image_alloc_info = vk::MemoryAllocateInfo {
-            s_type: vk::StructureType::MEMORY_ALLOCATE_INFO,
-            allocation_size: image_memory_req.size,
-            memory_type_index: find_memorytype_index(
-                &image_memory_req,
-                &create_info.instance.get_physical_device_memory_properties(*create_info.p_device),
-                MemoryPropertyFlags::DEVICE_LOCAL,
-            ).expect("unable to get mem type index for texture image"),
-            ..Default::default()
-        };
-        // println!("this texture requires {}", image_memory_req.size);
-        let image_memory = create_info.device.allocate_memory(&image_alloc_info, None).expect("Failed to allocate image memory");
-        create_info.device.bind_image_memory(image, image_memory, 0).expect("Failed to bind image memory");
-        let image_view_info = vk::ImageViewCreateInfo {
-            s_type: vk::StructureType::IMAGE_VIEW_CREATE_INFO,
-            image,
-            view_type: if create_info.array_layers > 1 {
-                    if create_info.height > 1 {
-                        vk::ImageViewType::TYPE_2D_ARRAY
-                    } else {
-                        vk::ImageViewType::TYPE_1D_ARRAY
-                    }
-                } else if create_info.depth > 1 {
-                    vk::ImageViewType::TYPE_3D
-                } else if create_info.height > 1 {
-                    vk::ImageViewType::TYPE_2D
-                } else {
-                    vk::ImageViewType::TYPE_1D
-                },
-            format: create_info.format,
-            subresource_range: ImageSubresourceRange {
-                aspect_mask: if create_info.is_depth {
-                    ImageAspectFlags::DEPTH
-                } else {
-                    ImageAspectFlags::COLOR
-                },
-                base_mip_level: 0,
-                level_count: 1,
-                base_array_layer: 0,
-                layer_count: create_info.array_layers,
+        if let Some(preexisting) = &create_info.preexisting {
+            let mut new = preexisting.clone();
+            new.load_op = create_info.load_op;
+            new.initial_layout = create_info.initial_layout;
+            new
+        } else {
+            if create_info.depth < 1 { panic!("texture depth is too low"); }
+            let color_image_create_info = vk::ImageCreateInfo {
+                s_type: vk::StructureType::IMAGE_CREATE_INFO,
+                image_type: if create_info.depth > 1 { vk::ImageType::TYPE_3D } else if create_info.height > 1 { vk::ImageType::TYPE_2D } else { vk::ImageType::TYPE_1D },
+                extent: Extent3D { width: create_info.width, height: create_info.height, depth: create_info.depth },
+                mip_levels: 1,
+                array_layers: create_info.array_layers,
+                format: create_info.format,
+                tiling: vk::ImageTiling::OPTIMAL,
+                initial_layout: create_info.initial_layout,
+                usage: if create_info.is_depth || create_info.has_stencil { ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT } else { ImageUsageFlags::COLOR_ATTACHMENT } | create_info.usage_flags,
+                sharing_mode: vk::SharingMode::EXCLUSIVE,
+                samples: create_info.samples,
                 ..Default::default()
-            },
-            ..Default::default()
-        };
-        let stencil_image_view = if create_info.has_stencil {
-            Some(create_info.device.create_image_view(&vk::ImageViewCreateInfo {
+            };
+            let image = create_info.device.create_image(&color_image_create_info, None).expect("Failed to create image");
+            let image_memory_req = create_info.device.get_image_memory_requirements(image);
+            let image_alloc_info = vk::MemoryAllocateInfo {
+                s_type: vk::StructureType::MEMORY_ALLOCATE_INFO,
+                allocation_size: image_memory_req.size,
+                memory_type_index: find_memorytype_index(
+                    &image_memory_req,
+                    &create_info.instance.get_physical_device_memory_properties(*create_info.p_device),
+                    MemoryPropertyFlags::DEVICE_LOCAL,
+                ).expect("unable to get mem type index for texture image"),
+                ..Default::default()
+            };
+            // println!("this texture requires {}", image_memory_req.size);
+            let image_memory = create_info.device.allocate_memory(&image_alloc_info, None).expect("Failed to allocate image memory");
+            create_info.device.bind_image_memory(image, image_memory, 0).expect("Failed to bind image memory");
+            let image_view_info = vk::ImageViewCreateInfo {
                 s_type: vk::StructureType::IMAGE_VIEW_CREATE_INFO,
                 image,
                 view_type: if create_info.array_layers > 1 {
@@ -757,7 +784,11 @@ impl Texture {
                 },
                 format: create_info.format,
                 subresource_range: ImageSubresourceRange {
-                    aspect_mask: ImageAspectFlags::STENCIL,
+                    aspect_mask: if create_info.is_depth {
+                        ImageAspectFlags::DEPTH
+                    } else {
+                        ImageAspectFlags::COLOR
+                    },
                     base_mip_level: 0,
                     level_count: 1,
                     base_array_layer: 0,
@@ -765,24 +796,60 @@ impl Texture {
                     ..Default::default()
                 },
                 ..Default::default()
-            }, None).expect("failed to create stencil image view"))
-        } else { None };
+            };
+            let stencil_image_view = if create_info.has_stencil {
+                Some(create_info.device.create_image_view(&vk::ImageViewCreateInfo {
+                    s_type: vk::StructureType::IMAGE_VIEW_CREATE_INFO,
+                    image,
+                    view_type: if create_info.array_layers > 1 {
+                        if create_info.height > 1 {
+                            vk::ImageViewType::TYPE_2D_ARRAY
+                        } else {
+                            vk::ImageViewType::TYPE_1D_ARRAY
+                        }
+                    } else if create_info.depth > 1 {
+                        vk::ImageViewType::TYPE_3D
+                    } else if create_info.height > 1 {
+                        vk::ImageViewType::TYPE_2D
+                    } else {
+                        vk::ImageViewType::TYPE_1D
+                    },
+                    format: create_info.format,
+                    subresource_range: ImageSubresourceRange {
+                        aspect_mask: ImageAspectFlags::STENCIL,
+                        base_mip_level: 0,
+                        level_count: 1,
+                        base_array_layer: 0,
+                        layer_count: create_info.array_layers,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                }, None).expect("failed to create stencil image view"))
+            } else { None };
 
-        Self {
-            device: create_info.device.clone(),
+            Self {
+                device: create_info.device.clone(),
 
-            image,
-            image_view: create_info.device.create_image_view(&image_view_info, None).expect("failed to create image view"),
-            stencil_image_view,
-            device_memory: image_memory,
+                device_texture: Arc::new(RefCell::new(DeviceTexture {
+                    image,
+                    image_view: create_info.device.create_image_view(&image_view_info, None).expect("failed to create image view"),
+                    stencil_image_view,
+                    device_memory: image_memory,
 
-            clear_value: Self::clear_value_for_format(create_info.format, create_info.clear_value),
-            format: create_info.format,
-            resolution: Extent3D::default().width(create_info.width).height(create_info.height).depth(create_info.depth),
-            array_layers: create_info.array_layers,
-            samples: create_info.samples,
-            is_depth: create_info.is_depth,
-            has_stencil: create_info.has_stencil,
+                    destroyed: false
+                })),
+
+                clear_value: Self::clear_value_for_format(create_info.format, create_info.clear_value),
+                format: create_info.format,
+                resolution: Extent3D::default().width(create_info.width).height(create_info.height).depth(create_info.depth),
+                array_layers: create_info.array_layers,
+                samples: create_info.samples,
+                is_depth: create_info.is_depth,
+                has_stencil: create_info.has_stencil,
+
+                load_op: create_info.load_op,
+                initial_layout: create_info.initial_layout,
+            }
         }
     } }
     pub unsafe fn sample(&self, base: &VkBase, x: i32, y: i32, z: i32) -> Box<[f32]> { unsafe {
@@ -792,10 +859,13 @@ impl Texture {
             Format::R32G32B32A32_SFLOAT => 16,
             Format::R16G16B16A16_SFLOAT => 8,
             Format::R16_UINT => 2,
+            Format::R16G16_UINT => 4,
             Format::R32_UINT => 4,
             Format::D32_SFLOAT => 4,
             _ => panic!("Unsupported format {:?}", self.format),
         };
+
+        let image = self.device_texture.borrow().image;
 
         let buffer_info = vk::BufferCreateInfo {
             s_type: vk::StructureType::BUFFER_CREATE_INFO,
@@ -866,7 +936,7 @@ impl Texture {
         };
 
         base.transition_image_layout(
-            self.image,
+            image,
             subresource_range,
             vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
             vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
@@ -877,7 +947,7 @@ impl Texture {
 
             self.device.cmd_copy_image_to_buffer(
                 cmd,
-                self.image,
+                image,
                 vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
                 staging_buffer,
                 &[region],
@@ -931,6 +1001,13 @@ impl Texture {
                 Box::new([u16::from_ne_bytes(slice.try_into().unwrap()) as f32])
             }
 
+            Format::R16G16_UINT => {
+                Box::new([
+                    u16::from_ne_bytes(slice[0..2].try_into().unwrap()) as f32,
+                    u16::from_ne_bytes(slice[2..4].try_into().unwrap()) as f32,
+                ])
+            }
+
             Format::R32_UINT => {
                 Box::new([u32::from_ne_bytes(slice.try_into().unwrap()) as f32])
             }
@@ -947,7 +1024,7 @@ impl Texture {
         self.device.free_memory(staging_memory, None);
 
         base.transition_image_layout(
-            self.image,
+            image,
             subresource_range,
             vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
             vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
@@ -997,13 +1074,8 @@ impl Texture {
             _ => unimplemented!("decode for {:?}", format),
         }
     }
-    pub unsafe fn destroy(&self) { unsafe {
-        self.device.destroy_image(self.image, None);
-        self.device.destroy_image_view(self.image_view, None);
-        self.device.free_memory(self.device_memory, None);
-        if let Some(stencil_view) = self.stencil_image_view {
-            self.device.destroy_image_view(stencil_view, None);
-        }
+    pub unsafe fn destroy(&mut self) { {
+        self.device_texture.borrow_mut().destroy(&self.device);
     } }
 
     fn clear_value_for_format(format: Format, clear: [f32; 4]) -> ClearValue {
@@ -1041,6 +1113,7 @@ impl Texture {
             Format::R8_UINT
             | Format::R16_UINT
             | Format::R32_UINT
+            | Format::R16G16_UINT
             | Format::R8G8B8A8_UINT
             | Format::R16G16B16A16_UINT
             | Format::R32G32B32A32_UINT => {
@@ -1079,11 +1152,34 @@ impl Texture {
         }
     }
 }
-#[derive(Copy, Clone)]
+#[derive(Clone)]
+pub struct DeviceTexture {
+    pub image: vk::Image,
+    pub image_view: ImageView,
+    pub stencil_image_view: Option<ImageView>,
+    pub device_memory: DeviceMemory,
+
+    pub destroyed: bool,
+}
+impl DeviceTexture {
+    pub unsafe fn destroy(&mut self, device: &Device) {
+        if !self.destroyed { unsafe {
+            self.destroyed = true;
+            device.destroy_image(self.image, None);
+            device.destroy_image_view(self.image_view, None);
+            device.free_memory(self.device_memory, None);
+            if let Some(stencil_view) = self.stencil_image_view {
+                device.destroy_image_view(stencil_view, None);
+            }
+        }
+    } }
+}
+#[derive(Clone)]
 pub struct TextureCreateInfo<'a> {
     pub device: &'a Device,
     pub p_device: &'a PhysicalDevice,
     pub instance: &'a Instance,
+    pub preexisting: Option<Texture>,
     pub width: u32,
     pub height: u32,
     pub depth: u32,
@@ -1094,6 +1190,8 @@ pub struct TextureCreateInfo<'a> {
     pub usage_flags: ImageUsageFlags,
     pub array_layers: u32,
     pub clear_value: [f32; 4],
+    pub load_op: vk::AttachmentLoadOp,
+    pub initial_layout: vk::ImageLayout,
 }
 impl TextureCreateInfo<'_> {
     pub fn new(base: &VkBase) -> TextureCreateInfo {
@@ -1101,6 +1199,7 @@ impl TextureCreateInfo<'_> {
             device: &base.device,
             p_device: &base.pdevice,
             instance: &base.instance,
+            preexisting: None,
             width: base.surface_resolution.width,
             height: base.surface_resolution.height,
             depth: 1,
@@ -1111,6 +1210,8 @@ impl TextureCreateInfo<'_> {
             usage_flags: ImageUsageFlags::SAMPLED,
             array_layers: 1,
             clear_value: [0.0; 4],
+            load_op: vk::AttachmentLoadOp::CLEAR,
+            initial_layout: vk::ImageLayout::UNDEFINED,
         }
     }
     pub fn new_without_base<'a>(device: &'a Device, p_device: &'a PhysicalDevice, instance: &'a Instance, surface_resolution: &vk::Extent2D) -> TextureCreateInfo<'a> {
@@ -1118,6 +1219,7 @@ impl TextureCreateInfo<'_> {
             device,
             p_device,
             instance,
+            preexisting: None,
             width: surface_resolution.width,
             height: surface_resolution.height,
             depth: 1,
@@ -1128,6 +1230,8 @@ impl TextureCreateInfo<'_> {
             usage_flags: ImageUsageFlags::SAMPLED,
             array_layers: 1,
             clear_value: [0.0; 4],
+            load_op: vk::AttachmentLoadOp::CLEAR,
+            initial_layout: vk::ImageLayout::UNDEFINED,
         }
     }
     pub fn width(mut self, width: u32) -> Self {
@@ -1162,6 +1266,10 @@ impl TextureCreateInfo<'_> {
         self.usage_flags = self.usage_flags | usage_flag;
         self
     }
+    pub fn load_op(mut self, load_op: vk::AttachmentLoadOp) -> Self {
+        self.load_op = load_op;
+        self
+    }
     pub fn array_layers(mut self, array_layers: u32) -> Self {
         self.array_layers = array_layers;
         self
@@ -1178,6 +1286,14 @@ impl TextureCreateInfo<'_> {
     }
     pub fn has_stencil(mut self, has_stencil: bool) -> Self {
         self.has_stencil = has_stencil;
+        self
+    }
+    pub fn base_on_preexisting(mut self, preexisting: &Texture) -> Self {
+        self.preexisting = Some(preexisting.clone());
+        self
+    }
+    pub fn initial_layout(mut self, initial_layout: vk::ImageLayout) -> Self {
+        self.initial_layout = initial_layout;
         self
     }
 }

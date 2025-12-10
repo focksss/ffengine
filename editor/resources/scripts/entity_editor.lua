@@ -25,12 +25,29 @@ function Awake()
 	
 end
 
+local queued_entity_open_from_read = 0
 function Update()
     if gui == nil then return end
+
+    if queued_entity_open_from_read > 0 then
+        queued_entity_open_from_read = queued_entity_open_from_read + 1
+    end
+    if queued_entity_open_from_read > 3 then
+        local hovered_entity_index = Engine.renderer.scene_renderer.hovered_entity - 1
+        if hovered_entity_index > -1 then
+            local selected_render_component = Engine.renderer.scene_renderer.hovered_child_component_number - 1
+            render_component_editor(Engine.scene:get_entity(hovered_entity_index):get_render_component_index(selected_render_component))
+            queued_entity_open_from_read = 0
+        end
+    end
 
     entity_editor_scroll_bar_node:set_height("Factor",
 		math.min(1.0, entity_editor_area_node.size.y / editor_height) --- visible pixels / total pixels
 	)
+end
+function click_entity()
+    Engine.renderer.scene_renderer.queue_hovered_component_read = true --- TEMP
+    queued_entity_open_from_read = 1
 end
 
 _G.editor_node_to_render_component_map = {}
@@ -95,8 +112,13 @@ function open_transform_editor()
 	entity_editor_root_node:add_child_index(transform_editor_ui_node.index)
 end
 function open_render_component_editor() 
+    render_component_editor(_G.node_to_render_components_map[gui.ActiveNode.index])
+end
+
+function render_component_editor(component_index) 
+
     Engine.scene:reset_outlines()
-	local selected_render_component = _G.node_to_render_components_map[gui.ActiveNode.index]
+	local selected_render_component = Engine.scene:get_render_component(component_index).index
     Engine.scene:add_outlined(selected_render_component);
 
     entity_editor_root_node:clear_children()

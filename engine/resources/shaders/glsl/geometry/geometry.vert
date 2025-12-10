@@ -11,13 +11,13 @@ layout (location = 5) in uvec4 joint_indices;
 layout (location = 6) in vec4 weights;
 
 layout (location = 7) in mat4 model;
-layout (location = 11) in ivec3 indices;
+layout (location = 11) in ivec4 indices;
 
 layout (location = 0) out vec3 o_view_normal;
 layout (location = 1) out vec2 o_uv;
 layout (location = 2) out uint o_material;
 layout (location = 3) out mat3 view_TBN;
-layout (location = 6) out uint o_id;
+layout (location = 6) out uvec2 o_id;
 
 layout(push_constant) uniform constants {
     mat4 view;
@@ -31,7 +31,7 @@ layout(set = 0, binding = 1, std430) readonly buffer JointsSSBO {
 void main() {
     int material = indices.x;
     int skin = indices.y;
-    o_id = indices.z + 1;
+    o_id = indices.zw + 1;
     mat4 model_matrix = model;
     if (skin > -1) {
         uint joint_offset = uint((joints_SSBO.joint_matrices[uint(skin)])[0][0]);

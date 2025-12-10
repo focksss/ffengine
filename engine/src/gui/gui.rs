@@ -252,10 +252,10 @@ impl GUI {
         let quad_renderpass_create_info = { RenderpassCreateInfo::new(base)
             .pass_ref(pass_ref.clone())
             .descriptor_set_create_info(quad_descriptor_set_create_info)
-            .vertex_shader_uri(String::from("gui\\quad\\quad.vert.spv"))
-            .fragment_shader_uri(String::from("gui\\quad\\quad.frag.spv"))
             .add_pipeline_create_info(PipelineCreateInfo::new()
-                .pipeline_color_blend_state_create_info(color_blend_state))
+                .pipeline_color_blend_state_create_info(color_blend_state)
+                .vertex_shader_uri(String::from("gui\\quad\\quad.vert.spv"))
+                .fragment_shader_uri(String::from("gui\\quad\\quad.frag.spv")))
             .push_constant_range(vk::PushConstantRange {
                 stage_flags: ShaderStageFlags::ALL_GRAPHICS,
                 offset: 0,
@@ -1886,7 +1886,7 @@ impl GUI {
                     device.cmd_bind_pipeline(
                         command_buffer,
                         vk::PipelineBindPoint::GRAPHICS,
-                        self.quad_renderpass.pipelines[0],
+                        self.quad_renderpass.pipelines[0].vulkan_pipeline,
                     );
                     device.cmd_set_viewport(command_buffer, 0, &[self.quad_renderpass.viewport]);
                     device.cmd_set_scissor(command_buffer, 0, &[self.quad_renderpass.scissor]);
@@ -1937,7 +1937,7 @@ impl GUI {
                     device.cmd_bind_pipeline(
                         command_buffer,
                         vk::PipelineBindPoint::GRAPHICS,
-                        self.quad_renderpass.pipelines[0],
+                        self.quad_renderpass.pipelines[0].vulkan_pipeline,
                     );
                     device.cmd_set_viewport(command_buffer, 0, &[self.quad_renderpass.viewport]);
                     device.cmd_set_scissor(command_buffer, 0, &[self.quad_renderpass.scissor]);

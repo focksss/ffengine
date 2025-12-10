@@ -19,8 +19,7 @@ void main() {
 
         bool is_edge = false;
 
-        // Sample in a circular pattern
-        const int num_samples = 32; // Increase for smoother circle
+        const int num_samples = 32;
         float max_distance = pc.thickness;
 
         for (int i = 0; i < num_samples; i++) {

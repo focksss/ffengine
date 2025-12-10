@@ -268,10 +268,10 @@ impl Scene {
         base: &VkBase,
         frame: usize,
         parent_world_transform: &Matrix,
-        entity: usize,
+        entity_index: usize,
         dirty_primitive_instance_data: &mut Vec<Instance>
     ) {
-        let entity = &self.entities[entity];
+        let entity = &self.entities[entity_index];
         let entity_local_transform = {
             let entity_transform_component = &mut self.transforms[entity.transform];
             entity_transform_component.update_matrix();
@@ -289,7 +289,7 @@ impl Scene {
 
         {
             let world = &mut self.world.borrow_mut();
-            for render_object_index in entity.render_objects.iter() {
+            for (i, render_object_index) in entity.render_objects.iter().enumerate() {
                 let render_component = &self.render_components[*render_object_index];
 
                 self.transforms[render_component.transform].update_matrix();
@@ -305,7 +305,8 @@ impl Scene {
                         indices: [
                             render_component.material_index as i32,
                             render_component.skin_index.map_or(-1, |i| i),
-                            *render_object_index as i32
+                            entity_index as i32,
+                            i as i32
                         ]
                     }
                 );
@@ -317,7 +318,7 @@ impl Scene {
         }
     }
 
-    pub unsafe fn draw(&self, scene_renderer: &SceneRenderer, frame: usize, frustum: Option<&Frustum>, do_outline: bool) {
+    pub unsafe fn draw(&self, scene_renderer: &SceneRenderer, frame: usize, frustum: Option<&Frustum>, is_deferred: bool) {
         let command_buffer = get_command_buffer();
         let world = &self.world.borrow();
         unsafe {
@@ -340,7 +341,9 @@ impl Scene {
                 vk::IndexType::UINT32,
             );
 
-            if do_outline {
+            if !is_deferred {
+                self.render_components[0].draw(self, scene_renderer, &command_buffer, world, frustum);
+                /*
                 for (i, render_component) in self.render_components.iter().enumerate() {
                     if !self.outlined_components.contains(&i) {
                         render_component.draw(&self, scene_renderer, &command_buffer, world, frustum);
@@ -350,7 +353,7 @@ impl Scene {
                 scene_renderer.device.cmd_bind_pipeline(
                     command_buffer,
                     vk::PipelineBindPoint::GRAPHICS,
-                    scene_renderer.geometry_renderpass.pipelines[1],
+                    scene_renderer.geometry_renderpass.pipelines[1].vulkan_pipeline,
                 );
                 for index in self.outlined_components.iter() {
                     self.render_components[*index].draw(&self, scene_renderer, &command_buffer, world, frustum);
@@ -359,13 +362,15 @@ impl Scene {
                 scene_renderer.device.cmd_bind_pipeline(
                     command_buffer,
                     vk::PipelineBindPoint::GRAPHICS,
-                    scene_renderer.geometry_renderpass.pipelines[2],
+                    scene_renderer.geometry_renderpass.pipelines[2].vulkan_pipeline,
                 );
                 for index in self.outlined_components.iter() {
                     self.render_components[*index].draw(&self, scene_renderer, &command_buffer, world, frustum);
                 }
+                 */
             } else {
-                for render_component in self.render_components.iter() {
+                for (i, render_component) in self.render_components.iter().enumerate() {
+                    if i == 0 { continue }
                     render_component.draw(&self, scene_renderer, &command_buffer, world, frustum);
                 }
             }
@@ -443,6 +448,8 @@ impl Default for Transform {
         }
     }
 }
+
+
 
 pub struct AnimationComponent {
     owner_entity: usize,
@@ -602,13 +609,13 @@ pub struct SunComponent {
 #[repr(C)]
 pub struct Instance {
     pub matrix: [f32; 16],
-    pub indices: [i32; 3],
+    pub indices: [i32; 4], // material id, skin id, owner entity id, component child id
 }
 impl Instance {
-    pub fn new(matrix: Matrix, material: u32, skin: i32, component_id: u32) -> Self {
+    pub fn new(matrix: Matrix, material: u32, skin: i32, owner_entity: u32, component_number: u32) -> Self {
         Self {
             matrix: matrix.data,
-            indices: [material as i32, skin, component_id as i32],
+            indices: [material as i32, skin, owner_entity as i32, component_number as i32],
         }
     }
 }

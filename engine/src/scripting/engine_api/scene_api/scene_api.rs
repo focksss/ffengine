@@ -89,7 +89,15 @@ impl UserData for EntityPointer {
         });
     }
     fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
-        
+        methods.add_method("get_render_component", |lua, this, index: usize| {
+            with_scene!(lua => scene);
+            Ok(lua.create_userdata(RenderComponentPointer { index: scene.entities[this.index].render_objects[index] }))
+        });
+
+        methods.add_method("get_render_component_index", |lua, this, index: usize| {
+            with_scene!(lua => scene);
+            Ok(scene.entities[this.index].render_objects[index])
+        });
     }
 }
 

@@ -8,13 +8,13 @@ use ash::vk::{Format, SampleCountFlags, Sampler};
 use serde_json::Value;
 use crate::gui::text::glyph::Glyph;
 use crate::math::Vector;
-use crate::render::render_helper::Texture;
+use crate::render::render_helper::{DeviceTexture, Texture};
 use crate::render::vulkan_base::VkBase;
 
 pub struct Font {
     pub device: ash::Device,
 
-    pub texture: Texture,
+    pub texture: DeviceTexture,
     pub sampler: Sampler,
     pub glyphs: HashMap<char, Glyph>,
     pub atlas_size: Vector,
@@ -54,19 +54,13 @@ impl Font {
             .expect("Failed to run msdfgen");
 
         let atlas = base.create_2d_texture_image(&PathBuf::from(atlas_path_str), false);
-        let atlas_texture = Texture {
-            device: base.device.clone(),
+        let atlas_texture = DeviceTexture {
             image: atlas.1.0,
             image_view: atlas.0.0,
             stencil_image_view: None,
             device_memory: atlas.1.1,
-            clear_value: vk::ClearValue::default(),
-            format: Format::R8G8B8A8_UNORM,
-            resolution: vk::Extent3D::default(),
-            array_layers: 1,
-            samples: SampleCountFlags::TYPE_1,
-            is_depth: false,
-            has_stencil: false,
+
+            destroyed: false
         };
 
         let file = fs::File::open(json_path_str).unwrap();
@@ -123,7 +117,10 @@ impl Font {
         }
     } }
     pub unsafe fn destroy(&self) { unsafe {
-        self.texture.destroy();
+        self.device.destroy_image(self.texture.image, None);
+        self.device.free_memory(self.texture.device_memory, None);
+        self.device.destroy_image_view(self.texture.image_view, None);
+
         self.device.destroy_sampler(self.sampler, None);
     } }
 }

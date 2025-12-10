@@ -45,8 +45,16 @@ impl UserData for SceneRendererRef {
             lua.create_userdata(object)
         });
         
-        fields.add_field_method_get("hovered_id", |lua, this| {
-            Ok(this.0.borrow().hovered_component_id)
+        fields.add_field_method_get("hovered_entity", |lua, this| {
+            Ok(this.0.borrow().hovered_ids.0)
+        });
+
+        fields.add_field_method_get("hovered_child_component_number", |lua, this| {
+            Ok(this.0.borrow().hovered_ids.1)
+        });
+
+        fields.add_field_method_set("queue_hovered_component_read", |lua, this, v: bool| {
+            Ok(this.0.borrow_mut().queued_id_buffer_sample = v)
         });
     }
 }

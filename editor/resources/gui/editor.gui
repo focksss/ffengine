@@ -794,7 +794,14 @@
         },
         {
           "name": "scene_view_area",
-          "interactable_information": {},
+          "interactable_information": {
+            "left_up_actions": [
+              {
+                "script": 3,
+                "method": "click_entity"
+              }
+            ]
+          },
           "parent_relation": {
             "type": "Docking",
             "info": {

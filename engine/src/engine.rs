@@ -105,6 +105,7 @@ impl Engine {
         let mut last_resize = Instant::now();
         let event_loop_ptr = base.event_loop.as_ptr();
         let mut first_frame = true;
+        println!("starting render loop");
         unsafe {
             (*event_loop_ptr).run_on_demand(|event, elwp| {
                 elwp.set_control_flow(ControlFlow::Poll);
@@ -240,14 +241,18 @@ impl Engine {
 
                             let renderer_ref = &mut self.renderer.borrow();
                             let mut scene_renderer_ref = renderer_ref.scene_renderer.borrow_mut();
-                            let hovered = scene_renderer_ref.geometry_renderpass.pass.borrow().textures[current_frame][4].sample(
-                                base,
-                                controller_mut.cursor_position.x as i32,
-                                controller_mut.cursor_position.y as i32,
-                                0
-                            )[0] as usize;
-                            scene_renderer_ref.hovered_component_id = hovered;
-                            
+                            if scene_renderer_ref.queued_id_buffer_sample {
+                                scene_renderer_ref.queued_id_buffer_sample = false;
+                                let hovered = scene_renderer_ref.geometry_renderpass.pass.borrow().textures[current_frame][4].sample(
+                                    base,
+                                    controller_mut.cursor_position.x as i32,
+                                    controller_mut.cursor_position.y as i32,
+                                    0
+                                );
+                                let pair = (hovered[0] as usize, hovered[1] as usize);
+                                println!("Hovered: {:?}", pair);
+                                scene_renderer_ref.hovered_ids = pair;
+                            }
                             controller_mut.reset_deltas()
                         };
                         // let start = std::time::Instant::now();

@@ -37,12 +37,15 @@ MovementMode = {
         ---@field scale Vector
     
         ---@class RenderComponent
+        ---@field index integer
 
         ---@class Entity
         ---@field transform_index integer
         ---@field children_indices integer[]
         ---@field name string
         ---@field render_component_indices integer[]
+        ---@field get_render_component fun(self:Entity, index:integer):RenderComponent
+        ---@field get_render_component_index fun(self:Entity, index:integer):integer
         ---@field index integer
     
     ---@class RenderComponent

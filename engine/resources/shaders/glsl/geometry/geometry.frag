@@ -8,13 +8,13 @@ layout (location = 0) out vec4 frag_albedo;
 layout (location = 1) out vec4 frag_metallic_roughness;
 layout (location = 2) out vec4 frag_extra_material_properties;
 layout (location = 3) out vec4 frag_view_normal;
-layout (location = 4) out uint frag_id;
+layout (location = 4) out uvec2 frag_id;
 
 layout (location = 0) in vec3 o_view_normal;
 layout (location = 1) in vec2 o_uv;
 layout (location = 2) flat in uint material;
 layout (location = 3) in mat3 view_TBN;
-layout (location = 6) flat in uint o_id;
+layout (location = 6) flat in uvec2 o_id;
 
 layout(set = 0, binding = 2) uniform sampler2D textures[];
 

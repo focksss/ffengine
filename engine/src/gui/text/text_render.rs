@@ -131,13 +131,13 @@ impl TextRenderer {
         let mut renderpass_create_info = RenderpassCreateInfo::new(base)
             .pass_create_info(pass_create_info)
             .descriptor_set_create_info(descriptor_set_create_info)
-            .vertex_shader_uri(String::from("gui\\text\\text.vert.spv"))
-            .fragment_shader_uri(String::from("gui\\text\\text.frag.spv"))
             .push_constant_range(push_constant_range)
             .add_pipeline_create_info(PipelineCreateInfo::new()
                 .pipeline_input_assembly_state(vertex_input_assembly_state_info)
                 .pipeline_vertex_input_state(vertex_input_state_info)
-                .pipeline_color_blend_state_create_info(color_blend_state));
+                .pipeline_color_blend_state_create_info(color_blend_state)
+                .vertex_shader_uri(String::from("gui\\text\\text.vert.spv"))
+                .fragment_shader_uri(String::from("gui\\text\\text.frag.spv")));
         if pass_ref.is_some() {
             renderpass_create_info = renderpass_create_info.pass_ref(pass_ref.unwrap());
         }
@@ -160,10 +160,11 @@ impl TextRenderer {
             });
         }
         let missing = MAX_FONTS - image_infos.len();
+        let default_device_texture = &self.default_font.texture;
         for _ in 0..missing {
             image_infos.push(vk::DescriptorImageInfo {
                 image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                image_view: self.default_font.texture.image_view,
+                image_view: default_device_texture.image_view,
                 sampler: self.default_font.sampler,
                 ..Default::default()
             });
@@ -203,7 +204,7 @@ impl TextRenderer {
         device.cmd_bind_pipeline(
             frame_command_buffer,
             vk::PipelineBindPoint::GRAPHICS,
-            self.renderpass.pipelines[0],
+            self.renderpass.pipelines[0].vulkan_pipeline,
         );
         device.cmd_set_viewport(frame_command_buffer, 0, &[self.renderpass.viewport]);
         device.cmd_set_scissor(frame_command_buffer, 0, &[self.renderpass.scissor]);

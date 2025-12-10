@@ -114,7 +114,7 @@ impl Renderer {
             }).collect::<Vec<&Texture>>());
 
             let scene_renderer_ref = renderer.scene_renderer.borrow();
-            let scene_pass = scene_renderer_ref.lighting_renderpass.pass.borrow();
+            let scene_pass = scene_renderer_ref.forward_renderpass.pass.borrow();
             let scene_textures = scene_pass.textures
                 .iter()
                 .map(|f| f[0].clone())
@@ -200,10 +200,10 @@ impl Renderer {
                     polygon_mode: vk::PolygonMode::FILL,
                     ..Default::default()
                 })
-                .pipeline_color_blend_state_create_info(color_blend_state))
+                .pipeline_color_blend_state_create_info(color_blend_state)
+                .vertex_shader_uri(String::from("hitbox_display\\hitbox.vert.spv"))
+                .fragment_shader_uri(String::from("hitbox_display\\hitbox.frag.spv")))
             .descriptor_set_create_info(hitbox_descriptor_set_create_info)
-            .vertex_shader_uri(String::from("hitbox_display\\hitbox.vert.spv"))
-            .fragment_shader_uri(String::from("hitbox_display\\hitbox.frag.spv"))
             .push_constant_range(vk::PushConstantRange {
                 stage_flags: ShaderStageFlags::ALL_GRAPHICS,
                 offset: 0,
@@ -218,8 +218,9 @@ impl Renderer {
         let outline_renderpass_create_info = RenderpassCreateInfo::new(base)
             .pass_create_info(outline_pass_create_info)
             .descriptor_set_create_info(outline_descriptor_set_create_info)
-            .vertex_shader_uri(String::from("quad\\quad.vert.spv"))
-            .fragment_shader_uri(String::from("outline\\outline.frag.spv"))
+            .add_pipeline_create_info(PipelineCreateInfo::new()
+                .vertex_shader_uri(String::from("quad\\quad.vert.spv"))
+                .fragment_shader_uri(String::from("outline\\outline.frag.spv")))
             .viewport(scene_viewport)
             .push_constant_range(vk::PushConstantRange {
                 stage_flags: ShaderStageFlags::FRAGMENT,
@@ -235,8 +236,9 @@ impl Renderer {
         let present_renderpass_create_info = { RenderpassCreateInfo::new(base)
             .pass_create_info(present_pass_create_info)
             .descriptor_set_create_info(present_descriptor_set_create_info)
-            .vertex_shader_uri(String::from("quad\\quad.vert.spv"))
-            .fragment_shader_uri(String::from("quad\\quad.frag.spv")) };
+            .add_pipeline_create_info(PipelineCreateInfo::new()
+                .vertex_shader_uri(String::from("quad\\quad.vert.spv"))
+                .fragment_shader_uri(String::from("quad\\quad.frag.spv"))) };
 
         let composite_layers_descriptor_create_info = DescriptorCreateInfo::new(base)
             .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
@@ -255,8 +257,9 @@ impl Renderer {
         let compositing_renderpass_create_info = { RenderpassCreateInfo::new(base)
             .pass_create_info(compositing_pass_create_info)
             .descriptor_set_create_info(compositing_descriptor_set_create_info)
-            .vertex_shader_uri(String::from("quad\\quad.vert.spv"))
-            .fragment_shader_uri(String::from("composite.frag.spv"))
+            .add_pipeline_create_info(PipelineCreateInfo::new()
+                .vertex_shader_uri(String::from("quad\\quad.vert.spv"))
+                .fragment_shader_uri(String::from("composite.frag.spv")))
             .push_constant_range(vk::PushConstantRange {
                 stage_flags: ShaderStageFlags::FRAGMENT,
                 offset: 0,
@@ -268,7 +271,7 @@ impl Renderer {
             let image_infos = [
                 vk::DescriptorImageInfo {
                     sampler: scene_renderer.nearest_sampler,
-                    image_view: scene_renderer.geometry_renderpass.pass.borrow().textures[frame][5].stencil_image_view.unwrap(),
+                    image_view: scene_renderer.geometry_renderpass.pass.borrow().textures[frame][5].device_texture.borrow().stencil_image_view.unwrap(),
                     image_layout: vk::ImageLayout::STENCIL_READ_ONLY_OPTIMAL,
                 } // id buffer
             ];
@@ -324,7 +327,7 @@ impl Renderer {
                 &frame_textures[0]
             }).collect::<Vec<&Texture>>());
             
-            let scene_pass = scene_renderer.lighting_renderpass.pass.borrow();
+            let scene_pass = scene_renderer.forward_renderpass.pass.borrow();
             let scene_textures = scene_pass.textures
                 .iter()
                 .map(|f| f[0].clone())
@@ -371,7 +374,7 @@ impl Renderer {
         for current_frame in 0..MAX_FRAMES_IN_FLIGHT {
             let present_info = [vk::DescriptorImageInfo {
                 sampler: self.present_sampler,
-                image_view: texture_set[current_frame].image_view,
+                image_view: texture_set[current_frame].device_texture.borrow().image_view,
                 image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
             }];
             let present_descriptor_writes: Vec<vk::WriteDescriptorSet> = vec![
@@ -389,7 +392,7 @@ impl Renderer {
             let mut image_infos = texture_sets.iter().map(|texture_set| {
                 vk::DescriptorImageInfo {
                     sampler: self.present_sampler,
-                    image_view: texture_set[current_frame].image_view,
+                    image_view: texture_set[current_frame].device_texture.borrow().image_view,
                     image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                 }
             }).collect::<Vec<vk::DescriptorImageInfo>>();
@@ -513,6 +516,7 @@ impl Renderer {
             }),
             None::<fn()>,
             None,
+            true,
         );
 
         self.compositing_renderpass.do_renderpass(
@@ -525,7 +529,8 @@ impl Renderer {
                 ));
             }),
             None::<fn()>,
-            None
+            None,
+            true
         );
         self.present_renderpass.begin_renderpass(current_frame, frame_command_buffer, Some(present_index));
         self.device.cmd_draw(frame_command_buffer, 6, 1, 0, 0);
@@ -595,7 +600,7 @@ pub unsafe fn screenshot_texture(base: &VkBase, texture: &Texture, layout: vk::I
         .new_layout(vk::ImageLayout::TRANSFER_SRC_OPTIMAL)
         .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
         .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-        .image(texture.image)
+        .image(texture.device_texture.borrow().image)
         .subresource_range(ImageSubresourceRange {
             aspect_mask: if texture.is_depth { ImageAspectFlags::DEPTH } else { ImageAspectFlags::COLOR },
             base_mip_level: 0,
@@ -629,14 +634,14 @@ pub unsafe fn screenshot_texture(base: &VkBase, texture: &Texture, layout: vk::I
         .image_offset(vk::Offset3D { x: 0, y: 0, z: 0 })
         .image_extent(texture.resolution);
 
-    unsafe {base.device.cmd_copy_image_to_buffer(cmd_buffer, texture.image, vk::ImageLayout::TRANSFER_SRC_OPTIMAL, staging_buffer, &[copy]); }
+    unsafe {base.device.cmd_copy_image_to_buffer(cmd_buffer, texture.device_texture.borrow().image, vk::ImageLayout::TRANSFER_SRC_OPTIMAL, staging_buffer, &[copy]); }
 
     let barrier_back = vk::ImageMemoryBarrier::default()
         .old_layout(vk::ImageLayout::TRANSFER_SRC_OPTIMAL)
         .new_layout(layout)
         .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
         .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-        .image(texture.image)
+        .image(texture.device_texture.borrow().image)
         .subresource_range(ImageSubresourceRange {
             aspect_mask: if texture.is_depth { ImageAspectFlags::DEPTH } else { ImageAspectFlags::COLOR },
             base_mip_level: 0,
