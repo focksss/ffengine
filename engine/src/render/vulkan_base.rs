@@ -16,6 +16,8 @@ use ash::{
 use ash::vk::{Buffer, CommandBuffer, DeviceMemory, Extent3D, Format, Image, ImageAspectFlags, ImageSubresourceLayers, ImageSubresourceRange, ImageUsageFlags, ImageView, MemoryPropertyFlags, Offset3D, Sampler, SurfaceFormatKHR, SwapchainKHR};
 use walkdir::WalkDir;
 use winit::{event_loop::EventLoop, raw_window_handle, raw_window_handle::{HasDisplayHandle, HasWindowHandle}, window::WindowBuilder};
+use winit::platform::windows::WindowBuilderExtWindows;
+use winit::window::Icon;
 
 // Simple offset_of macro akin to C++ offsetof
 #[macro_export]
@@ -172,11 +174,19 @@ impl VkBase {
         max_frames_in_flight: usize
     ) -> Result<Self, Box<dyn Error>> {
         unsafe {
+            let icon_image = image::open("engine\\resources\\images\\icon.png")
+                .expect("Failed to open icon image")
+                .to_rgba8();
+            let (width, height) = icon_image.dimensions();
+            let data = icon_image.into_raw();
+            let icon = Some(Icon::from_rgba(data, width, height)?);
+
             let event_loop = EventLoop::new()?;
             let window = WindowBuilder::new()
                 .with_title(window_title)
                 .with_decorations(false)
-                .with_blur(true)
+                .with_taskbar_icon(icon.clone())
+                .with_window_icon(icon)
                 .with_inner_size(winit::dpi::LogicalSize::new(
                     f64::from(window_width),
                     f64::from(window_height),
