@@ -1,0 +1,3322 @@
+{
+  "guis": [
+    {
+      "name": "editor",
+      "nodes": [0, 1]
+    }
+  ],
+  "scripts": [
+    {
+      "uri": "editor\\resources\\scripts\\editor.lua"
+    },
+    {
+      "uri": "editor\\resources\\scripts\\transform_editor.lua"
+    },
+    {
+      "uri": "editor\\resources\\scripts\\render_component_editor.lua"
+    },
+    {
+      "uri": "editor\\resources\\scripts\\entity_editor.lua"
+    }
+  ],
+  "fonts": [
+    {
+      "uri": "editor\\resources\\fonts\\Oxygen-Regular.ttf",
+      "glyph_msdf_size": 32,
+      "glyph_msdf_distance_range": 2.0
+    }
+  ],
+  "elements": [
+    {
+      "name": "minimize",
+      "type": "Image",
+      "info": {
+        "uri": "editor\\resources\\gui\\images\\minimize.png",
+        "additive_tint": [1.0, 1.0, 1.0, 0.0],
+        "multiplicative_tint": [1.0, 1.0, 1.0, 2.0]
+      }
+    },
+    {
+      "name": "maximize",
+      "type": "Image",
+      "info": {
+        "uri": "editor\\resources\\gui\\images\\maximize.png",
+        "additive_tint": [1.0, 1.0, 1.0, 0.0]
+      }
+    },
+    {
+      "name": "scene graph light quad",
+      "type": "Quad",
+      "info": {
+        "color": [0.4, 0.4, 0.4, 1.0],
+        "corner_radius": 5.0
+      }
+    },
+    {
+      "name": "scene graph dark quad",
+      "type": "Quad",
+      "info": {
+        "color": [0.3, 0.3, 0.3, 1.0],
+        "corner_radius": 5.0
+      }
+    },
+    {
+      "name": "collapsed",
+      "type": "Image",
+      "info": {
+        "uri": "editor\\resources\\gui\\images\\collapsed.png",
+        "additive_tint": [1.0, 1.0, 1.0, 0.0],
+        "multiplicative_tint": [1.0, 1.0, 1.0, 2.0]
+      }
+    },
+    {
+      "name": "expanded",
+      "type": "Image",
+      "info": {
+        "uri": "editor\\resources\\gui\\images\\expanded.png",
+        "additive_tint": [1.0, 1.0, 1.0, 0.0],
+        "multiplicative_tint": [1.0, 1.0, 1.0, 2.0]
+      }
+    },
+    {
+      "name": "transform icon",
+      "type": "Image",
+      "info": {
+        "uri": "editor\\resources\\gui\\images\\transform.png",
+        "additive_tint": [0.0, 0.0, 0.0, 0.0],
+        "multiplicative_tint": [1.0, 1.0, 1.0, 1.0]
+      }
+    },
+    {
+      "name": "primitive icon",
+      "type": "Image",
+      "info": {
+        "uri": "editor\\resources\\gui\\images\\primitive.png",
+        "additive_tint": [0.0, 0.0, 0.0, 0.0],
+        "multiplicative_tint": [1.0, 1.0, 1.0, 1.0]
+      }
+    },
+    {
+      "name": "scene graph selected quad",
+      "type": "Quad",
+      "info": {
+        "color": [0.3, 0.3, 1.0, 0.2],
+        "corner_radius": 5.0
+      }
+    },
+    {
+      "name": "object icon",
+      "type": "Image",
+      "info": {
+        "uri": "editor\\resources\\gui\\images\\object.png",
+        "additive_tint": [1.0, 1.0, 1.0, 0.0],
+        "multiplicative_tint": [1.0, 1.0, 1.0, 1.0]
+      }
+    },
+    {
+      "name": "scene graph child selected quad",
+      "type": "Quad",
+      "info": {
+        "color": [1.0, 1.0, 1.0, 0.2],
+        "corner_radius": 5.0
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "name": "root",
+      "container": {
+        "type": "Dock"
+      },
+      "parent_relation": {
+        "type": "Independent",
+        "info": {
+          "relative": false,
+          "anchor": "TopLeft"
+        }
+      },
+      "width": {
+        "type": "Factor",
+        "info": {
+          "factor": 1.0
+        }
+      },
+      "height": {
+        "type": "Factor",
+        "info": {
+          "factor": 1.0
+        }
+      },
+      "children": [
+        {
+          "name": "title_bar",
+          "interactable_information": {
+            "left_hold_actions": [
+              {
+                "method": "drag_window",
+                "script": 0
+              }
+            ]
+          },
+          "container": {
+            "type": "Dock"
+          },
+          "parent_relation": {
+            "type": "Docking",
+            "info": {
+              "mode": "Top"
+            }
+          },
+          "width": {
+            "type": "FillFactor",
+            "info": {
+              "factor": 1.0
+            }
+          },
+          "height": {
+            "type": "Absolute",
+            "info": {
+              "pixels": 40.0
+            }
+          },
+          "elements": [
+            {
+              "type": "Quad",
+              "info": {
+                "color": [0.3, 0.3, 0.3, 0.8]
+              }
+            }
+          ],
+          "children": [
+            {
+              "name": "close_button",
+              "interactable_information": {
+                "hover_actions": [
+                  {
+                    "method": "close_hovered",
+                    "script": 0
+                  },
+                  {
+                    "method": "hover_cursor",
+                    "script": 0
+                  }
+                ],
+                "unhover_actions": [
+                  {
+                    "method": "color_image_unhovered",
+                    "script": 0
+                  }
+                ],
+                "left_up_actions": [
+                  {
+                    "method": "close_window",
+                    "script": 0
+                  }
+                ]
+              },
+              "parent_relation": {
+                "type": "Docking",
+                "info": {
+                  "mode": "Right"
+                }
+              },
+              "width": {
+                "type": "Absolute",
+                "info": {
+                  "pixels": 40
+                }
+              },
+              "height": {
+                "type": "Factor",
+                "info": {
+                  "factor": 1.0
+                }
+              },
+              "elements": [
+                {
+                  "type": "Image",
+                  "info": {
+                    "uri": "editor\\resources\\gui\\images\\close.png",
+                    "additive_tint": [0.3, 0.3, 0.3, 0.0]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "toggle_maximize_button",
+              "interactable_information": {
+                "hover_actions": [
+                  {
+                    "method": "color_image_hovered",
+                    "script": 0
+                  },
+                  {
+                    "method": "hover_cursor",
+                    "script": 0
+                  }
+                ],
+                "unhover_actions": [
+                  {
+                    "method": "color_image_unhovered",
+                    "script": 0
+                  }
+                ],
+                "left_up_actions": [
+                  {
+                    "method": "toggle_maximize",
+                    "script": 0
+                  }
+                ]
+              },
+              "parent_relation": {
+                "type": "Docking",
+                "info": {
+                  "mode": "Right"
+                }
+              },
+              "width": {
+                "type": "Absolute",
+                "info": {
+                  "pixels": 40
+                }
+              },
+              "height": {
+                "type": "Factor",
+                "info": {
+                  "factor": 1.0
+                }
+              },
+              "elements": [
+                0
+              ]
+            },
+            {
+              "name": "hide_button",
+              "interactable_information": {
+                "hover_actions": [
+                  {
+                    "method": "color_image_hovered",
+                    "script": 0
+                  },
+                  {
+                    "method": "hover_cursor",
+                    "script": 0
+                  }
+                ],
+                "unhover_actions": [
+                  {
+                    "method": "color_image_unhovered",
+                    "script": 0
+                  }
+                ],
+                "left_up_actions": [
+                  {
+                    "method": "minimize_window",
+                    "script": 0
+                  }
+                ]
+              },
+              "parent_relation": {
+                "type": "Docking",
+                "info": {
+                  "mode": "Right"
+                }
+              },
+              "width": {
+                "type": "Absolute",
+                "info": {
+                  "pixels": 40
+                }
+              },
+              "height": {
+                "type": "Factor",
+                "info": {
+                  "factor": 1.0
+                }
+              },
+              "elements": [
+                {
+                  "type": "Image",
+                  "info": {
+                    "uri": "editor\\resources\\gui\\images\\minimize_window.png",
+                    "additive_tint": [1.0, 1.0, 1.0, 0.0]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "reload_button_container",
+              "parent_relation": {
+                "type": "Docking",
+                "info": {
+                  "mode": "Top"
+                }
+              },
+              "container": {
+                "type": "Stack",
+                "info": {
+                  "horizontal": false,
+                  "alignment": "End"
+                }
+              },
+              "height": {
+                "type": "Factor",
+                "info": {
+                  "factor": 1.0
+                }
+              },
+              "children": [
+                {
+                  "name": "reload_button",
+                  "interactable_information": {
+                    "hover_actions": [
+                      {
+                        "method": "color_image_hovered",
+                        "script": 0
+                      },
+                      {
+                        "method": "hover_cursor",
+                        "script": 0
+                      }
+                    ],
+                    "unhover_actions": [
+                      {
+                        "method": "color_image_unhovered",
+                        "script": 0
+                      }
+                    ],
+                    "left_up_actions": [
+                      {
+                        "method": "recompile",
+                        "script": 0
+                      }
+                    ]
+                  },
+                  "width": {
+                    "type": "Absolute",
+                    "info": {
+                      "pixels": 40.0
+                    }
+                  },
+                  "height": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "elements": [
+                    {
+                      "type": "Image",
+                      "info": {
+                        "uri": "editor\\resources\\gui\\images\\reload.png",
+                        "additive_tint": [1.0, 1.0, 1.0, 0.0]
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "title",
+              "parent_relation": {
+                "type": "Independent",
+                "info": {
+                  "relative": true,
+                  "anchor": "TopLeft",
+                  "offset_x": {
+                    "type": "Pixels",
+                    "value": 5.0
+                  },
+                  "offset_y": {
+                    "type": "Pixels",
+                    "value": -5.0
+                  }
+                }
+              },
+              "width": {
+                "type": "Absolute",
+                "info": {
+                  "pixels": 200.0
+                }
+              },
+              "height": {
+                "type": "Absolute",
+                "info": {
+                  "pixels": 45.0
+                }
+              },
+              "elements": [
+                {
+                  "type": "Text",
+                  "info": {
+                    "text": "ffengine",
+                    "color": [1.0, 1.0, 1.0, 1.0],
+                    "font": 0,
+                    "font_size": 35.0,
+                    "newline_distance": 300.0
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "right_area",
+          "container": {
+            "type": "Stack",
+            "info": {
+              "horizontal": false,
+              "spacing": 5.0,
+              "padding": {
+                "left": 5.0,
+                "right": 5.0,
+                "top": 5.0,
+                "bottom": 5.0
+              },
+              "packing": "Start",
+              "stack_direction": "Normal",
+              "alignment": "Start"
+            }
+          },
+          "parent_relation": {
+            "type": "Docking",
+            "info": {
+              "mode": "Right"
+            }
+          },
+          "width": {
+            "type": "Factor",
+            "info": {
+              "factor": 0.2
+            }
+          },
+          "height": {
+            "type": "FillFactor",
+            "info": {
+              "pixels": 1.0
+            }
+          },
+          "children": [
+            {
+              "name": "scene_graph_area",
+              "interactable_information": {},
+              "container": {
+                "type": "Dock"
+              },
+              "width": {
+                "type": "Factor",
+                "info": {
+                  "factor": 1.0
+                }
+              },
+              "height": {
+                "type": "Factor",
+                "info": {
+                  "factor": 0.5
+                }
+              },
+              "elements": [
+                {
+                  "type": "Quad",
+                  "info": {
+                    "color": [0.3, 0.3, 0.3, 0.8],
+                    "corner_radius": 5.0
+                  }
+                }
+              ],
+              "children": [
+                {
+                  "name": "scene_graph_root",
+                  "parent_relation": {
+                    "type": "Independent",
+                    "info": {
+                      "relative": true,
+                      "anchor": "TopLeft"
+                    }
+                  },
+                  "width": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "height": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 10.0
+                    }
+                  }
+                },
+                {
+                  "name": "scene_graph_scroll_bar_dock",
+                  "parent_relation": {
+                    "type": "Docking",
+                    "info": {
+                      "mode": "Right"
+                    }
+                  },
+                  "width": {
+                    "type": "Absolute",
+                    "info": {
+                      "pixels": 10.0
+                    }
+                  },
+                  "height": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "children": [
+                    {
+                      "name": "scene_graph_scroll_bar",
+                      "parent_relation": {
+                        "type": "Independent"
+                      },
+                      "width": {
+                        "type": "Factor",
+                        "info": {
+                          "factor": 1.0
+                        }
+                      },
+                      "height": {
+                        "type": "Factor",
+                        "info": {
+                          "factor": 1.0
+                        }
+                      },
+                      "elements": [
+                        {
+                          "type": "Quad",
+                          "info": {
+                            "color": [0.5, 0.5, 0.5, 1.0],
+                            "corner_radius": 5.0
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "name": "right_area_vertical_split",
+                  "clipping": false,
+                  "interactable_information": {
+                    "left_hold_actions": [
+                      {
+                        "method": "resize_vertical",
+                        "script": 0
+                      }
+                    ],
+                    "left_up_actions": [
+                      {
+                        "method": "height_to_factor",
+                        "script": 0
+                      }
+                    ],
+                    "hover_actions": [
+                      {
+                        "method": "vertical_resize_cursor",
+                        "script": 0
+                      }
+                    ]
+                  },
+                  "width": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "height": {
+                    "type": "Absolute",
+                    "info": {
+                      "pixels": 15.0
+                    }
+                  },
+                  "parent_relation": {
+                    "type": "Independent",
+                    "info": {
+                      "relative": true,
+                      "anchor": "BottomLeft",
+                      "offset_y": {
+                        "type": "Pixels",
+                        "value": -5.0
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "name": "entity_editor_area",
+              "width": {
+                "type": "Factor",
+                "info": {
+                  "factor": 1.0
+                }
+              },
+              "height": {
+                "type": "FillFactor",
+                "info": {
+                  "factor": 1.0
+                }
+              },
+              "elements": [
+                {
+                  "type": "Quad",
+                  "info": {
+                    "color": [0.3, 0.3, 0.3, 0.8],
+                    "corner_radius": 5.0
+                  }
+                }
+              ],
+              "children": [
+                {
+                  "name": "entity_editor_root",
+                  "container": {
+                    "type": "Stack",
+                    "info": {
+                      "horizontal": false,
+                      "spacing": 5.0,
+                      "padding": {
+                        "left": 5.0,
+                        "right": 5.0,
+                        "top": 5.0,
+                        "bottom": 5.0
+                      },
+                      "packing": "Start",
+                      "stack_direction": "Normal",
+                      "alignment": "Start"
+                    }
+                  },
+                  "parent_relation": {
+                    "type": "Independent",
+                    "info": {
+                      "relative": true,
+                      "anchor": "TopLeft"
+                    }
+                  },
+                  "width": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "height": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 10.0
+                    }
+                  }
+                },
+                {
+                  "name": "entity_editor_scroll_bar_dock",
+                  "parent_relation": {
+                    "type": "Docking",
+                    "info": {
+                      "mode": "Right"
+                    }
+                  },
+                  "width": {
+                    "type": "Absolute",
+                    "info": {
+                      "pixels": 10.0
+                    }
+                  },
+                  "height": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "children": [
+                    {
+                      "name": "entity_editor_scroll_bar",
+                      "parent_relation": {
+                        "type": "Independent"
+                      },
+                      "width": {
+                        "type": "Factor",
+                        "info": {
+                          "factor": 1.0
+                        }
+                      },
+                      "height": {
+                        "type": "Factor",
+                        "info": {
+                          "factor": 1.0
+                        }
+                      },
+                      "elements": [
+                        {
+                          "type": "Quad",
+                          "info": {
+                            "color": [0.5, 0.5, 0.5, 1.0],
+                            "corner_radius": 5.0
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "right_area_resize",
+              "parent_relation": {
+                "type": "Independent",
+                "info": {
+                  "relative": true,
+                  "anchor": "TopLeft",
+                  "offset_x": {
+                    "type": "Pixels",
+                    "value": -5.0
+                  }
+                }
+              },
+              "interactable_information": {
+                "left_hold_actions": [
+                  {
+                    "method": "resize_horizontal_from_right",
+                    "script": 0
+                  }
+                ],
+                "left_up_actions": [
+                  {
+                    "method": "width_to_factor",
+                    "script": 0
+                  }
+                ],
+                "hover_actions": [
+                  {
+                    "method": "horizontal_resize_cursor",
+                    "script": 0
+                  }
+                ]
+              },
+              "clipping": false,
+              "width": {
+                "type": "Absolute",
+                "info": {
+                  "pixels": 10.0
+                }
+              },
+              "height": {
+                "type": "Factor",
+                "info": {
+                  "factor": 1.0
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "scene_view_area",
+          "interactable_information": {
+            "left_up_actions": [
+              {
+                "script": 3,
+                "method": "click_entity"
+              }
+            ]
+          },
+          "parent_relation": {
+            "type": "Docking",
+            "info": {
+              "mode": "Right"
+            }
+          },
+          "width": {
+            "type": "Factor",
+            "info": {
+              "factor": 1.0
+            }
+          },
+          "height": {
+            "type": "FillFactor",
+            "info": {
+              "factor": 1.0
+            }
+          },
+          "children": [
+            {
+              "name": "hud",
+              "parent_relation": {
+                "type": "Independent",
+                "info": {
+                  "relative": true,
+                  "anchor": "TopLeft",
+                  "offset_x": {
+                    "type": "Pixels",
+                    "value": 20.0
+                  },
+                  "offset_y": {
+                    "type": "Pixels",
+                    "value": 10.0
+                  }
+                }
+              },
+              "width": {
+                "type": "Absolute",
+                "info": {
+                  "pixels": 160.0
+                }
+              },
+              "height": {
+                "type": "Absolute",
+                "info": {
+                  "pixels": 80.0
+                }
+              },
+              "children": [
+                {
+                  "name": "fps",
+                  "interactable_information": {
+                    "passive_actions": [
+                      {
+                        "method": "update_fps",
+                        "script": 0
+                      }
+                    ]
+                  },
+                  "parent_relation": {
+                    "type": "Independent",
+                    "info": {
+                      "relative": true,
+                      "offset_y": {
+                        "type": "Pixels",
+                        "value": 0.0
+                      }
+                    }
+                  },
+                  "width": {
+                    "type": "Absolute",
+                    "info": {
+                      "pixels": 80.0
+                    }
+                  },
+                  "height": {
+                    "type": "Absolute",
+                    "info": {
+                      "pixels": 20.0
+                    }
+                  },
+                  "elements": [
+                    {
+                      "type": "Text",
+                      "info": {
+                        "text": "FPS: XXX.XX",
+                        "color": [1.0, 1.0, 1.0, 1.0],
+                        "font": 0,
+                        "font_size": 15.0,
+                        "newline_distance": 100.0
+                      }
+                    },
+                    {
+                      "type": "Quad",
+                      "info": {
+                        "color": [0.3, 0.3, 0.3, 0.4],
+                        "corner_radius": 5.0
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "resize_handles",
+      "parent_relation": {
+        "type": "Independent",
+        "info": {
+          "relative": false,
+          "anchor": "TopLeft"
+        }
+      },
+      "container": {
+        "type": "Dock"
+      },
+      "width": {
+        "type": "Factor",
+        "info": {
+          "factor": 1.0
+        }
+      },
+      "height": {
+        "type": "Factor",
+        "info": {
+          "factor": 1.0
+        }
+      },
+      "children": [
+        {
+          "name": "top",
+          "container": {
+            "type": "Dock"
+          },
+          "parent_relation": {
+            "type": "Docking",
+            "info": {
+              "mode": "Top"
+            }
+          },
+          "width": {
+            "type": "Factor",
+            "info": {
+              "factor": 1.0
+            }
+          },
+          "height": {
+            "type": "Absolute",
+            "info": {
+              "pixels": 12.0
+            }
+          },
+          "children": [
+            {
+              "name": "resize_tl",
+              "interactable_information": {
+                "left_hold_actions": [
+                  {
+                    "method": "drag_resize_northwest",
+                    "script": 0
+                  }
+                ],
+                "hover_actions": [
+                  {
+                    "method": "nw_resize_cursor",
+                    "script": 0
+                  }
+                ]
+              },
+              "parent_relation": {
+                "type": "Docking",
+                "info": {
+                  "mode": "Left"
+                }
+              },
+              "width": {
+                "type": "Absolute",
+                "info": {
+                  "pixels": 12.0
+                }
+              },
+              "height": {
+                "type": "Absolute",
+                "info": {
+                  "pixels": 12.0
+                }
+              }
+            },
+            {
+              "name": "resize_tr",
+              "interactable_information": {
+                "left_hold_actions": [
+                  {
+                    "method": "drag_resize_northeast",
+                    "script": 0
+                  }
+                ],
+                "hover_actions": [
+                  {
+                    "method": "sw_resize_cursor",
+                    "script": 0
+                  }
+                ]
+              },
+              "parent_relation": {
+                "type": "Docking",
+                "info": {
+                  "mode": "Right"
+                }
+              },
+              "width": {
+                "type": "Absolute",
+                "info": {
+                  "pixels": 12.0
+                }
+              },
+              "height": {
+                "type": "Absolute",
+                "info": {
+                  "pixels": 12.0
+                }
+              }
+            },
+            {
+              "name": "resize_top",
+              "interactable_information": {
+                "left_hold_actions": [
+                  {
+                    "method": "drag_resize_north",
+                    "script": 0
+                  }
+                ],
+                "hover_actions": [
+                  {
+                    "method": "vertical_resize_cursor",
+                    "script": 0
+                  }
+                ]
+              },
+              "parent_relation": {
+                "type": "Docking",
+                "info": {
+                  "mode": "Top"
+                }
+              },
+              "width": {
+                "type": "Factor",
+                "info": {
+                  "factor": 1.0
+                }
+              },
+              "height": {
+                "type": "Absolute",
+                "info": {
+                  "pixels": 10.0
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "bottom",
+          "container": {
+            "type": "Dock"
+          },
+          "parent_relation": {
+            "type": "Docking",
+            "info": {
+              "mode": "Bottom"
+            }
+          },
+          "width": {
+            "type": "Factor",
+            "info": {
+              "factor": 1.0
+            }
+          },
+          "height": {
+            "type": "Absolute",
+            "info": {
+              "pixels": 12.0
+            }
+          },
+          "children": [
+            {
+              "name": "resize_bl",
+              "interactable_information": {
+                "left_hold_actions": [
+                  {
+                    "method": "drag_resize_southwest",
+                    "script": 0
+                  }
+                ],
+                "hover_actions": [
+                  {
+                    "method": "sw_resize_cursor",
+                    "script": 0
+                  }
+                ]
+              },
+              "parent_relation": {
+                "type": "Docking",
+                "info": {
+                  "mode": "Left"
+                }
+              },
+              "width": {
+                "type": "Absolute",
+                "info": {
+                  "pixels": 12.0
+                }
+              },
+              "height": {
+                "type": "Absolute",
+                "info": {
+                  "pixels": 12.0
+                }
+              }
+            },
+            {
+              "name": "resize_br",
+              "interactable_information": {
+                "left_hold_actions": [
+                  {
+                    "method": "drag_resize_southeast",
+                    "script": 0
+                  }
+                ],
+                "hover_actions": [
+                  {
+                    "method": "nw_resize_cursor",
+                    "script": 0
+                  }
+                ]
+              },
+              "parent_relation": {
+                "type": "Docking",
+                "info": {
+                  "mode": "Right"
+                }
+              },
+              "width": {
+                "type": "Absolute",
+                "info": {
+                  "pixels": 12.0
+                }
+              },
+              "height": {
+                "type": "Absolute",
+                "info": {
+                  "pixels": 12.0
+                }
+              }
+            },
+            {
+              "name": "resize_bottom",
+              "interactable_information": {
+                "left_hold_actions": [
+                  {
+                    "method": "drag_resize_south",
+                    "script": 0
+                  }
+                ],
+                "hover_actions": [
+                  {
+                    "method": "vertical_resize_cursor",
+                    "script": 0
+                  }
+                ]
+              },
+              "parent_relation": {
+                "type": "Docking",
+                "info": {
+                  "mode": "Bottom"
+                }
+              },
+              "width": {
+                "type": "Factor",
+                "info": {
+                  "factor": 1.0
+                }
+              },
+              "height": {
+                "type": "Absolute",
+                "info": {
+                  "pixels": 10.0
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "resize_left",
+          "interactable_information": {
+            "left_hold_actions": [
+              {
+                "method": "drag_resize_west",
+                "script": 0
+              }
+            ],
+            "hover_actions": [
+              {
+                "method": "horizontal_resize_cursor",
+                "script": 0
+              }
+            ]
+          },
+          "parent_relation": {
+            "type": "Docking",
+            "info": {
+              "mode": "Left"
+            }
+          },
+          "width": {
+            "type": "Absolute",
+            "info": {
+              "pixels": 10.0
+            }
+          },
+          "height": {
+            "type": "Factor",
+            "info": {
+              "factor": 1.0
+            }
+          }
+        },
+        {
+          "name": "resize_right",
+          "interactable_information": {
+            "left_hold_actions": [
+              {
+                "method": "drag_resize_east",
+                "script": 0
+              }
+            ],
+            "hover_actions": [
+              {
+                "method": "horizontal_resize_cursor",
+                "script": 0
+              }
+            ]
+          },
+          "parent_relation": {
+            "type": "Docking",
+            "info": {
+              "mode": "Right"
+            }
+          },
+          "width": {
+            "type": "Absolute",
+            "info": {
+              "pixels": 10.0
+            }
+          },
+          "height": {
+            "type": "Factor",
+            "info": {
+              "factor": 1.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "transform editor ui",
+      "container": {
+        "type": "Stack",
+        "info": {
+          "horizontal": false,
+          "spacing": 5.0,
+          "padding": {
+            "left": 0.0,
+            "right": 0.0,
+            "top": 0.0,
+            "bottom": 0.0
+          },
+          "packing": "Start",
+          "stack_direction": "Normal",
+          "alignment": "Start"
+        }
+      },
+      "width": {
+        "type": "Factor",
+        "info": {
+          "factor": 1.0
+        }
+      },
+      "height": {
+        "type": "Absolute",
+        "info": {
+          "pixels": 20.0
+        }
+      },
+      "elements": [
+        3
+      ],
+      "children": [
+        {
+          "name": "component type display",
+          "interactable_information": {
+            "hover_actions": [
+              {
+                "script": 0,
+                "method": "hover_cursor"
+              }
+            ],
+            "left_up_actions": [
+              {
+                "script": 1,
+                "method": "collapse"
+              }
+            ]
+          },
+          "container": {
+            "type": "Dock"
+          },
+          "width": {
+            "type": "Factor",
+            "info": {
+              "factor": 1.0
+            }
+          },
+          "height": {
+            "type": "Absolute",
+            "info": {
+              "pixels": 20.0
+            }
+          },
+          "elements": [
+            {
+              "type": "Quad",
+              "info": {
+                "color": [0.25, 0.25, 0.25, 0.8],
+                "corner_radius": 5.0
+              }
+            }
+          ],
+          "children": [
+            {
+              "name": "icon",
+              "parent_relation": {
+                "type": "Docking",
+                "info": {
+                  "mode": "Left"
+                }
+              },
+              "width": {
+                "type": "Absolute",
+                "info": {
+                  "pixels": 20.0
+                }
+              },
+              "height": {
+                "type": "Factor",
+                "info": {
+                  "factor": 1.0
+                }
+              },
+              "elements": [
+                6
+              ]
+            },
+            {
+              "name": "text",
+              "parent_relation": {
+                "type": "Docking",
+                "info": {
+                  "mode": "Left"
+                }
+              },
+              "width": {
+                "type": "Factor",
+                "info": {
+                  "factor": 1.0
+                }
+              },
+              "height": {
+                "type": "Factor",
+                "info": {
+                  "factor": 1.0
+                }
+              },
+              "elements": [
+                {
+                  "type": "Text",
+                  "info": {
+                    "text": "Transform Editor",
+                    "color": [1.0, 1.0, 1.0, 1.0],
+                    "font": 0,
+                    "font_size": 15.0,
+                    "newline_distance": 300.0
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "translation sliders",
+          "container": {
+            "type": "Dock"
+          },
+          "width": {
+            "type": "Factor",
+            "info": {
+              "factor": 1.0
+            }
+          },
+          "height": {
+            "type": "Absolute",
+            "info": {
+              "pixels": 60.0
+            }
+          },
+          "children": [
+            {
+              "name": "translation x editor",
+              "container": {
+                "type": "Dock"
+              },
+              "parent_relation": {
+                "type": "Docking",
+                "info": {
+                  "mode": "Top"
+                }
+              },
+              "width": {
+                "type": "Factor",
+                "info": {
+                  "factor": 1.0
+                }
+              },
+              "height": {
+                "type": "Absolute",
+                "info": {
+                  "pixels": 20.0
+                }
+              },
+              "elements": [
+                {
+                  "type": "Quad",
+                  "info": {
+                    "color": [0.275, 0.275, 0.275, 0.8],
+                    "corner_radius": 5.0
+                  }
+                }
+              ],
+              "children": [
+                {
+                  "name": "slider",
+                  "interactable_information": {
+                    "hover_actions": [
+                      {
+                        "script": 0,
+                        "method": "horizontal_resize_cursor"
+                      },
+                      {
+                        "script": 1,
+                        "method": "color_slider_hovered"
+                      }
+                    ],
+                    "unhover_actions": [
+                      {
+                        "script": 1,
+                        "method": "color_slider_unhovered"
+                      }
+                    ],
+                    "left_down_actions": [
+                      {
+                        "script": 1,
+                        "method": "begin_drag"
+                      },
+                      {
+                        "script": 1,
+                        "method": "set_drag_mode_translation_x"
+                      }
+                    ],
+                    "left_hold_actions": [
+                      {
+                        "script": 0,
+                        "method": "horizontal_resize_cursor"
+                      },
+                      {
+                        "script": 1,
+                        "method": "update_drag"
+                      }
+                    ]
+                  },
+                  "container": {
+                    "type": "Stack",
+                    "info": {
+                      "horizontal": false,
+                      "spacing": 0.0,
+                      "padding": {
+                        "left": 0.0,
+                        "right": 0.0,
+                        "top": 0.0,
+                        "bottom": 0.0
+                      },
+                      "packing": "Start",
+                      "stack_direction": "Normal",
+                      "alignment": "Center"
+                    }
+                  },
+                  "parent_relation": {
+                    "type": "Docking",
+                    "info": {
+                      "mode": "Right"
+                    }
+                  },
+                  "width": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 0.6
+                    }
+                  },
+                  "height": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "elements": [
+                    {
+                      "type": "Quad",
+                      "info": {
+                        "color": [0.35, 0.35, 0.35, 0.8],
+                        "corner_radius": 5.0
+                      }
+                    }
+                  ],
+                  "children": [
+                    {
+                      "name": "text",
+                      "interactable_information": {
+                        "passive_actions": [
+                          {
+                            "script": 1,
+                            "method": "update_translation_x_display"
+                          }
+                        ]
+                      },
+                      "width": {
+                        "type": "Absolute",
+                        "info": {
+                          "pixels": 60
+                        }
+                      },
+                      "height": {
+                        "type": "Factor",
+                        "info": {
+                          "factor": 1.0
+                        }
+                      },
+                      "elements": [
+                        {
+                          "type": "Text",
+                          "info": {
+                            "text": "XXXX.XXX",
+                            "color": [1.0, 1.0, 1.0, 1.0],
+                            "font": 0,
+                            "font_size": 15.0,
+                            "newline_distance": 300.0
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "name": "text",
+                  "parent_relation": {
+                    "type": "Docking",
+                    "info": {
+                      "mode": "Right"
+                    }
+                  },
+                  "width": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "height": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "elements": [
+                    {
+                      "type": "Text",
+                      "info": {
+                        "text": "Translation X:",
+                        "color": [1.0, 1.0, 1.0, 1.0],
+                        "font": 0,
+                        "font_size": 15.0,
+                        "newline_distance": 300.0
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "translation y editor",
+              "container": {
+                "type": "Dock"
+              },
+              "parent_relation": {
+                "type": "Docking",
+                "info": {
+                  "mode": "Top"
+                }
+              },
+              "width": {
+                "type": "Factor",
+                "info": {
+                  "factor": 1.0
+                }
+              },
+              "height": {
+                "type": "Absolute",
+                "info": {
+                  "pixels": 20.0
+                }
+              },
+              "elements": [
+                {
+                  "type": "Quad",
+                  "info": {
+                    "color": [0.275, 0.275, 0.275, 0.8],
+                    "corner_radius": 5.0
+                  }
+                }
+              ],
+              "children": [
+                {
+                  "name": "slider",
+                  "interactable_information": {
+                    "hover_actions": [
+                      {
+                        "script": 0,
+                        "method": "horizontal_resize_cursor"
+                      },
+                      {
+                        "script": 1,
+                        "method": "color_slider_hovered"
+                      }
+                    ],
+                    "unhover_actions": [
+                      {
+                        "script": 1,
+                        "method": "color_slider_unhovered"
+                      }
+                    ],
+                    "left_down_actions": [
+                      {
+                        "script": 1,
+                        "method": "begin_drag"
+                      },
+                      {
+                        "script": 1,
+                        "method": "set_drag_mode_translation_y"
+                      }
+                    ],
+                    "left_hold_actions": [
+                      {
+                        "script": 0,
+                        "method": "horizontal_resize_cursor"
+                      },
+                      {
+                        "script": 1,
+                        "method": "update_drag"
+                      }
+                    ]
+                  },
+                  "container": {
+                    "type": "Stack",
+                    "info": {
+                      "horizontal": false,
+                      "spacing": 0.0,
+                      "padding": {
+                        "left": 0.0,
+                        "right": 0.0,
+                        "top": 0.0,
+                        "bottom": 0.0
+                      },
+                      "packing": "Start",
+                      "stack_direction": "Normal",
+                      "alignment": "Center"
+                    }
+                  },
+                  "parent_relation": {
+                    "type": "Docking",
+                    "info": {
+                      "mode": "Right"
+                    }
+                  },
+                  "width": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 0.6
+                    }
+                  },
+                  "height": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "elements": [
+                    {
+                      "type": "Quad",
+                      "info": {
+                        "color": [0.35, 0.35, 0.35, 0.8],
+                        "corner_radius": 5.0
+                      }
+                    }
+                  ],
+                  "children": [
+                    {
+                      "name": "text",
+                      "interactable_information": {
+                        "passive_actions": [
+                          {
+                            "script": 1,
+                            "method": "update_translation_y_display"
+                          }
+                        ]
+                      },
+                      "width": {
+                        "type": "Absolute",
+                        "info": {
+                          "pixels": 60
+                        }
+                      },
+                      "height": {
+                        "type": "Factor",
+                        "info": {
+                          "factor": 1.0
+                        }
+                      },
+                      "elements": [
+                        {
+                          "type": "Text",
+                          "info": {
+                            "text": "XXXX.XXX",
+                            "color": [1.0, 1.0, 1.0, 1.0],
+                            "font": 0,
+                            "font_size": 15.0,
+                            "newline_distance": 300.0
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "name": "text",
+                  "parent_relation": {
+                    "type": "Docking",
+                    "info": {
+                      "mode": "Right"
+                    }
+                  },
+                  "width": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "height": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "elements": [
+                    {
+                      "type": "Text",
+                      "info": {
+                        "text": "Translation Y:",
+                        "color": [1.0, 1.0, 1.0, 1.0],
+                        "font": 0,
+                        "font_size": 15.0,
+                        "newline_distance": 300.0
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "translation z editor",
+              "container": {
+                "type": "Dock"
+              },
+              "parent_relation": {
+                "type": "Docking",
+                "info": {
+                  "mode": "Top"
+                }
+              },
+              "width": {
+                "type": "Factor",
+                "info": {
+                  "factor": 1.0
+                }
+              },
+              "height": {
+                "type": "Absolute",
+                "info": {
+                  "pixels": 20.0
+                }
+              },
+              "elements": [
+                {
+                  "type": "Quad",
+                  "info": {
+                    "color": [0.275, 0.275, 0.275, 0.8],
+                    "corner_radius": 5.0
+                  }
+                }
+              ],
+              "children": [
+                {
+                  "name": "slider",
+                  "interactable_information": {
+                    "hover_actions": [
+                      {
+                        "script": 0,
+                        "method": "horizontal_resize_cursor"
+                      },
+                      {
+                        "script": 1,
+                        "method": "color_slider_hovered"
+                      }
+                    ],
+                    "unhover_actions": [
+                      {
+                        "script": 1,
+                        "method": "color_slider_unhovered"
+                      }
+                    ],
+                    "left_down_actions": [
+                      {
+                        "script": 1,
+                        "method": "begin_drag"
+                      },
+                      {
+                        "script": 1,
+                        "method": "set_drag_mode_translation_z"
+                      }
+                    ],
+                    "left_hold_actions": [
+                      {
+                        "script": 0,
+                        "method": "horizontal_resize_cursor"
+                      },
+                      {
+                        "script": 1,
+                        "method": "update_drag"
+                      }
+                    ]
+                  },
+                  "container": {
+                    "type": "Stack",
+                    "info": {
+                      "horizontal": false,
+                      "spacing": 0.0,
+                      "padding": {
+                        "left": 0.0,
+                        "right": 0.0,
+                        "top": 0.0,
+                        "bottom": 0.0
+                      },
+                      "packing": "Start",
+                      "stack_direction": "Normal",
+                      "alignment": "Center"
+                    }
+                  },
+                  "parent_relation": {
+                    "type": "Docking",
+                    "info": {
+                      "mode": "Right"
+                    }
+                  },
+                  "width": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 0.6
+                    }
+                  },
+                  "height": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "elements": [
+                    {
+                      "type": "Quad",
+                      "info": {
+                        "color": [0.35, 0.35, 0.35, 0.8],
+                        "corner_radius": 5.0
+                      }
+                    }
+                  ],
+                  "children": [
+                    {
+                      "name": "text",
+                      "interactable_information": {
+                        "passive_actions": [
+                          {
+                            "script": 1,
+                            "method": "update_translation_z_display"
+                          }
+                        ]
+                      },
+                      "width": {
+                        "type": "Absolute",
+                        "info": {
+                          "pixels": 60
+                        }
+                      },
+                      "height": {
+                        "type": "Factor",
+                        "info": {
+                          "factor": 1.0
+                        }
+                      },
+                      "elements": [
+                        {
+                          "type": "Text",
+                          "info": {
+                            "text": "XXXX.XXX",
+                            "color": [1.0, 1.0, 1.0, 1.0],
+                            "font": 0,
+                            "font_size": 15.0,
+                            "newline_distance": 300.0
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "name": "text",
+                  "parent_relation": {
+                    "type": "Docking",
+                    "info": {
+                      "mode": "Right"
+                    }
+                  },
+                  "width": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "height": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "elements": [
+                    {
+                      "type": "Text",
+                      "info": {
+                        "text": "Translation Z:",
+                        "color": [1.0, 1.0, 1.0, 1.0],
+                        "font": 0,
+                        "font_size": 15.0,
+                        "newline_distance": 300.0
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "rotation sliders",
+          "container": {
+            "type": "Dock"
+          },
+          "width": {
+            "type": "Factor",
+            "info": {
+              "factor": 1.0
+            }
+          },
+          "height": {
+            "type": "Absolute",
+            "info": {
+              "pixels": 60.0
+            }
+          },
+          "children": [
+            {
+              "name": "rotation x editor",
+              "container": {
+                "type": "Dock"
+              },
+              "parent_relation": {
+                "type": "Docking",
+                "info": {
+                  "mode": "Top"
+                }
+              },
+              "width": {
+                "type": "Factor",
+                "info": {
+                  "factor": 1.0
+                }
+              },
+              "height": {
+                "type": "Absolute",
+                "info": {
+                  "pixels": 20.0
+                }
+              },
+              "elements": [
+                {
+                  "type": "Quad",
+                  "info": {
+                    "color": [0.275, 0.275, 0.275, 0.8],
+                    "corner_radius": 5.0
+                  }
+                }
+              ],
+              "children": [
+                {
+                  "name": "slider",
+                  "interactable_information": {
+                    "hover_actions": [
+                      {
+                        "script": 0,
+                        "method": "horizontal_resize_cursor"
+                      },
+                      {
+                        "script": 1,
+                        "method": "color_slider_hovered"
+                      }
+                    ],
+                    "unhover_actions": [
+                      {
+                        "script": 1,
+                        "method": "color_slider_unhovered"
+                      }
+                    ],
+                    "left_down_actions": [
+                      {
+                        "script": 1,
+                        "method": "begin_drag"
+                      },
+                      {
+                        "script": 1,
+                        "method": "set_drag_mode_rotation_x"
+                      }
+                    ],
+                    "left_hold_actions": [
+                      {
+                        "script": 0,
+                        "method": "horizontal_resize_cursor"
+                      },
+                      {
+                        "script": 1,
+                        "method": "update_drag"
+                      }
+                    ]
+                  },
+                  "container": {
+                    "type": "Stack",
+                    "info": {
+                      "horizontal": false,
+                      "spacing": 0.0,
+                      "padding": {
+                        "left": 0.0,
+                        "right": 0.0,
+                        "top": 0.0,
+                        "bottom": 0.0
+                      },
+                      "packing": "Start",
+                      "stack_direction": "Normal",
+                      "alignment": "Center"
+                    }
+                  },
+                  "parent_relation": {
+                    "type": "Docking",
+                    "info": {
+                      "mode": "Right"
+                    }
+                  },
+                  "width": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 0.6
+                    }
+                  },
+                  "height": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "elements": [
+                    {
+                      "type": "Quad",
+                      "info": {
+                        "color": [0.35, 0.35, 0.35, 0.8],
+                        "corner_radius": 5.0
+                      }
+                    }
+                  ],
+                  "children": [
+                    {
+                      "name": "text",
+                      "interactable_information": {
+                        "passive_actions": [
+                          {
+                            "script": 1,
+                            "method": "update_rotation_x_display"
+                          }
+                        ]
+                      },
+                      "width": {
+                        "type": "Absolute",
+                        "info": {
+                          "pixels": 60
+                        }
+                      },
+                      "height": {
+                        "type": "Factor",
+                        "info": {
+                          "factor": 1.0
+                        }
+                      },
+                      "elements": [
+                        {
+                          "type": "Text",
+                          "info": {
+                            "text": "XXXX.XXX",
+                            "color": [1.0, 1.0, 1.0, 1.0],
+                            "font": 0,
+                            "font_size": 15.0,
+                            "newline_distance": 300.0
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "name": "text",
+                  "parent_relation": {
+                    "type": "Docking",
+                    "info": {
+                      "mode": "Right"
+                    }
+                  },
+                  "width": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "height": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "elements": [
+                    {
+                      "type": "Text",
+                      "info": {
+                        "text": "Rotation X:",
+                        "color": [1.0, 1.0, 1.0, 1.0],
+                        "font": 0,
+                        "font_size": 15.0,
+                        "newline_distance": 300.0
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "rotation y editor",
+              "container": {
+                "type": "Dock"
+              },
+              "parent_relation": {
+                "type": "Docking",
+                "info": {
+                  "mode": "Top"
+                }
+              },
+              "width": {
+                "type": "Factor",
+                "info": {
+                  "factor": 1.0
+                }
+              },
+              "height": {
+                "type": "Absolute",
+                "info": {
+                  "pixels": 20.0
+                }
+              },
+              "elements": [
+                {
+                  "type": "Quad",
+                  "info": {
+                    "color": [0.275, 0.275, 0.275, 0.8],
+                    "corner_radius": 5.0
+                  }
+                }
+              ],
+              "children": [
+                {
+                  "name": "slider",
+                  "interactable_information": {
+                    "hover_actions": [
+                      {
+                        "script": 0,
+                        "method": "horizontal_resize_cursor"
+                      },
+                      {
+                        "script": 1,
+                        "method": "color_slider_hovered"
+                      }
+                    ],
+                    "unhover_actions": [
+                      {
+                        "script": 1,
+                        "method": "color_slider_unhovered"
+                      }
+                    ],
+                    "left_down_actions": [
+                      {
+                        "script": 1,
+                        "method": "begin_drag"
+                      },
+                      {
+                        "script": 1,
+                        "method": "set_drag_mode_rotation_y"
+                      }
+                    ],
+                    "left_hold_actions": [
+                      {
+                        "script": 0,
+                        "method": "horizontal_resize_cursor"
+                      },
+                      {
+                        "script": 1,
+                        "method": "update_drag"
+                      }
+                    ]
+                  },
+                  "container": {
+                    "type": "Stack",
+                    "info": {
+                      "horizontal": false,
+                      "spacing": 0.0,
+                      "padding": {
+                        "left": 0.0,
+                        "right": 0.0,
+                        "top": 0.0,
+                        "bottom": 0.0
+                      },
+                      "packing": "Start",
+                      "stack_direction": "Normal",
+                      "alignment": "Center"
+                    }
+                  },
+                  "parent_relation": {
+                    "type": "Docking",
+                    "info": {
+                      "mode": "Right"
+                    }
+                  },
+                  "width": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 0.6
+                    }
+                  },
+                  "height": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "elements": [
+                    {
+                      "type": "Quad",
+                      "info": {
+                        "color": [0.35, 0.35, 0.35, 0.8],
+                        "corner_radius": 5.0
+                      }
+                    }
+                  ],
+                  "children": [
+                    {
+                      "name": "text",
+                      "interactable_information": {
+                        "passive_actions": [
+                          {
+                            "script": 1,
+                            "method": "update_rotation_y_display"
+                          }
+                        ]
+                      },
+                      "width": {
+                        "type": "Absolute",
+                        "info": {
+                          "pixels": 60
+                        }
+                      },
+                      "height": {
+                        "type": "Factor",
+                        "info": {
+                          "factor": 1.0
+                        }
+                      },
+                      "elements": [
+                        {
+                          "type": "Text",
+                          "info": {
+                            "text": "XXXX.XXX",
+                            "color": [1.0, 1.0, 1.0, 1.0],
+                            "font": 0,
+                            "font_size": 15.0,
+                            "newline_distance": 300.0
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "name": "text",
+                  "parent_relation": {
+                    "type": "Docking",
+                    "info": {
+                      "mode": "Right"
+                    }
+                  },
+                  "width": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "height": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "elements": [
+                    {
+                      "type": "Text",
+                      "info": {
+                        "text": "Rotation Y:",
+                        "color": [1.0, 1.0, 1.0, 1.0],
+                        "font": 0,
+                        "font_size": 15.0,
+                        "newline_distance": 300.0
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "rotation z editor",
+              "container": {
+                "type": "Dock"
+              },
+              "parent_relation": {
+                "type": "Docking",
+                "info": {
+                  "mode": "Top"
+                }
+              },
+              "width": {
+                "type": "Factor",
+                "info": {
+                  "factor": 1.0
+                }
+              },
+              "height": {
+                "type": "Absolute",
+                "info": {
+                  "pixels": 20.0
+                }
+              },
+              "elements": [
+                {
+                  "type": "Quad",
+                  "info": {
+                    "color": [0.275, 0.275, 0.275, 0.8],
+                    "corner_radius": 5.0
+                  }
+                }
+              ],
+              "children": [
+                {
+                  "name": "slider",
+                  "interactable_information": {
+                    "hover_actions": [
+                      {
+                        "script": 0,
+                        "method": "horizontal_resize_cursor"
+                      },
+                      {
+                        "script": 1,
+                        "method": "color_slider_hovered"
+                      }
+                    ],
+                    "unhover_actions": [
+                      {
+                        "script": 1,
+                        "method": "color_slider_unhovered"
+                      }
+                    ],
+                    "left_down_actions": [
+                      {
+                        "script": 1,
+                        "method": "begin_drag"
+                      },
+                      {
+                        "script": 1,
+                        "method": "set_drag_mode_rotation_z"
+                      }
+                    ],
+                    "left_hold_actions": [
+                      {
+                        "script": 0,
+                        "method": "horizontal_resize_cursor"
+                      },
+                      {
+                        "script": 1,
+                        "method": "update_drag"
+                      }
+                    ]
+                  },
+                  "container": {
+                    "type": "Stack",
+                    "info": {
+                      "horizontal": false,
+                      "spacing": 0.0,
+                      "padding": {
+                        "left": 0.0,
+                        "right": 0.0,
+                        "top": 0.0,
+                        "bottom": 0.0
+                      },
+                      "packing": "Start",
+                      "stack_direction": "Normal",
+                      "alignment": "Center"
+                    }
+                  },
+                  "parent_relation": {
+                    "type": "Docking",
+                    "info": {
+                      "mode": "Right"
+                    }
+                  },
+                  "width": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 0.6
+                    }
+                  },
+                  "height": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "elements": [
+                    {
+                      "type": "Quad",
+                      "info": {
+                        "color": [0.35, 0.35, 0.35, 0.8],
+                        "corner_radius": 5.0
+                      }
+                    }
+                  ],
+                  "children": [
+                    {
+                      "name": "text",
+                      "interactable_information": {
+                        "passive_actions": [
+                          {
+                            "script": 1,
+                            "method": "update_rotation_z_display"
+                          }
+                        ]
+                      },
+                      "width": {
+                        "type": "Absolute",
+                        "info": {
+                          "pixels": 60
+                        }
+                      },
+                      "height": {
+                        "type": "Factor",
+                        "info": {
+                          "factor": 1.0
+                        }
+                      },
+                      "elements": [
+                        {
+                          "type": "Text",
+                          "info": {
+                            "text": "XXXX.XXX",
+                            "color": [1.0, 1.0, 1.0, 1.0],
+                            "font": 0,
+                            "font_size": 15.0,
+                            "newline_distance": 300.0
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "name": "text",
+                  "parent_relation": {
+                    "type": "Docking",
+                    "info": {
+                      "mode": "Right"
+                    }
+                  },
+                  "width": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "height": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "elements": [
+                    {
+                      "type": "Text",
+                      "info": {
+                        "text": "Rotation Z:",
+                        "color": [1.0, 1.0, 1.0, 1.0],
+                        "font": 0,
+                        "font_size": 15.0,
+                        "newline_distance": 300.0
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "scale sliders",
+          "container": {
+            "type": "Dock"
+          },
+          "width": {
+            "type": "Factor",
+            "info": {
+              "factor": 1.0
+            }
+          },
+          "height": {
+            "type": "Absolute",
+            "info": {
+              "pixels": 60.0
+            }
+          },
+          "children": [
+            {
+              "name": "scale x editor",
+              "container": {
+                "type": "Dock"
+              },
+              "parent_relation": {
+                "type": "Docking",
+                "info": {
+                  "mode": "Top"
+                }
+              },
+              "width": {
+                "type": "Factor",
+                "info": {
+                  "factor": 1.0
+                }
+              },
+              "height": {
+                "type": "Absolute",
+                "info": {
+                  "pixels": 20.0
+                }
+              },
+              "elements": [
+                {
+                  "type": "Quad",
+                  "info": {
+                    "color": [0.275, 0.275, 0.275, 0.8],
+                    "corner_radius": 5.0
+                  }
+                }
+              ],
+              "children": [
+                {
+                  "name": "slider",
+                  "interactable_information": {
+                    "hover_actions": [
+                      {
+                        "script": 0,
+                        "method": "horizontal_resize_cursor"
+                      },
+                      {
+                        "script": 1,
+                        "method": "color_slider_hovered"
+                      }
+                    ],
+                    "unhover_actions": [
+                      {
+                        "script": 1,
+                        "method": "color_slider_unhovered"
+                      }
+                    ],
+                    "left_down_actions": [
+                      {
+                        "script": 1,
+                        "method": "begin_drag"
+                      },
+                      {
+                        "script": 1,
+                        "method": "set_drag_mode_scale_x"
+                      }
+                    ],
+                    "left_hold_actions": [
+                      {
+                        "script": 0,
+                        "method": "horizontal_resize_cursor"
+                      },
+                      {
+                        "script": 1,
+                        "method": "update_drag"
+                      }
+                    ]
+                  },
+                  "container": {
+                    "type": "Stack",
+                    "info": {
+                      "horizontal": false,
+                      "spacing": 0.0,
+                      "padding": {
+                        "left": 0.0,
+                        "right": 0.0,
+                        "top": 0.0,
+                        "bottom": 0.0
+                      },
+                      "packing": "Start",
+                      "stack_direction": "Normal",
+                      "alignment": "Center"
+                    }
+                  },
+                  "parent_relation": {
+                    "type": "Docking",
+                    "info": {
+                      "mode": "Right"
+                    }
+                  },
+                  "width": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 0.6
+                    }
+                  },
+                  "height": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "elements": [
+                    {
+                      "type": "Quad",
+                      "info": {
+                        "color": [0.35, 0.35, 0.35, 0.8],
+                        "corner_radius": 5.0
+                      }
+                    }
+                  ],
+                  "children": [
+                    {
+                      "name": "text",
+                      "interactable_information": {
+                        "passive_actions": [
+                          {
+                            "script": 1,
+                            "method": "update_scale_x_display"
+                          }
+                        ]
+                      },
+                      "width": {
+                        "type": "Absolute",
+                        "info": {
+                          "pixels": 60
+                        }
+                      },
+                      "height": {
+                        "type": "Factor",
+                        "info": {
+                          "factor": 1.0
+                        }
+                      },
+                      "elements": [
+                        {
+                          "type": "Text",
+                          "info": {
+                            "text": "XXXX.XXX",
+                            "color": [1.0, 1.0, 1.0, 1.0],
+                            "font": 0,
+                            "font_size": 15.0,
+                            "newline_distance": 300.0
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "name": "text",
+                  "parent_relation": {
+                    "type": "Docking",
+                    "info": {
+                      "mode": "Right"
+                    }
+                  },
+                  "width": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "height": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "elements": [
+                    {
+                      "type": "Text",
+                      "info": {
+                        "text": "Scale X:",
+                        "color": [1.0, 1.0, 1.0, 1.0],
+                        "font": 0,
+                        "font_size": 15.0,
+                        "newline_distance": 300.0
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "scale y editor",
+              "container": {
+                "type": "Dock"
+              },
+              "parent_relation": {
+                "type": "Docking",
+                "info": {
+                  "mode": "Top"
+                }
+              },
+              "width": {
+                "type": "Factor",
+                "info": {
+                  "factor": 1.0
+                }
+              },
+              "height": {
+                "type": "Absolute",
+                "info": {
+                  "pixels": 20.0
+                }
+              },
+              "elements": [
+                {
+                  "type": "Quad",
+                  "info": {
+                    "color": [0.275, 0.275, 0.275, 0.8],
+                    "corner_radius": 5.0
+                  }
+                }
+              ],
+              "children": [
+                {
+                  "name": "slider",
+                  "interactable_information": {
+                    "hover_actions": [
+                      {
+                        "script": 0,
+                        "method": "horizontal_resize_cursor"
+                      },
+                      {
+                        "script": 1,
+                        "method": "color_slider_hovered"
+                      }
+                    ],
+                    "unhover_actions": [
+                      {
+                        "script": 1,
+                        "method": "color_slider_unhovered"
+                      }
+                    ],
+                    "left_down_actions": [
+                      {
+                        "script": 1,
+                        "method": "begin_drag"
+                      },
+                      {
+                        "script": 1,
+                        "method": "set_drag_mode_scale_y"
+                      }
+                    ],
+                    "left_hold_actions": [
+                      {
+                        "script": 0,
+                        "method": "horizontal_resize_cursor"
+                      },
+                      {
+                        "script": 1,
+                        "method": "update_drag"
+                      }
+                    ]
+                  },
+                  "container": {
+                    "type": "Stack",
+                    "info": {
+                      "horizontal": false,
+                      "spacing": 0.0,
+                      "padding": {
+                        "left": 0.0,
+                        "right": 0.0,
+                        "top": 0.0,
+                        "bottom": 0.0
+                      },
+                      "packing": "Start",
+                      "stack_direction": "Normal",
+                      "alignment": "Center"
+                    }
+                  },
+                  "parent_relation": {
+                    "type": "Docking",
+                    "info": {
+                      "mode": "Right"
+                    }
+                  },
+                  "width": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 0.6
+                    }
+                  },
+                  "height": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "elements": [
+                    {
+                      "type": "Quad",
+                      "info": {
+                        "color": [0.35, 0.35, 0.35, 0.8],
+                        "corner_radius": 5.0
+                      }
+                    }
+                  ],
+                  "children": [
+                    {
+                      "name": "text",
+                      "interactable_information": {
+                        "passive_actions": [
+                          {
+                            "script": 1,
+                            "method": "update_scale_y_display"
+                          }
+                        ]
+                      },
+                      "width": {
+                        "type": "Absolute",
+                        "info": {
+                          "pixels": 60
+                        }
+                      },
+                      "height": {
+                        "type": "Factor",
+                        "info": {
+                          "factor": 1.0
+                        }
+                      },
+                      "elements": [
+                        {
+                          "type": "Text",
+                          "info": {
+                            "text": "XXXX.XXX",
+                            "color": [1.0, 1.0, 1.0, 1.0],
+                            "font": 0,
+                            "font_size": 15.0,
+                            "newline_distance": 300.0
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "name": "text",
+                  "parent_relation": {
+                    "type": "Docking",
+                    "info": {
+                      "mode": "Right"
+                    }
+                  },
+                  "width": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "height": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "elements": [
+                    {
+                      "type": "Text",
+                      "info": {
+                        "text": "Scale Y:",
+                        "color": [1.0, 1.0, 1.0, 1.0],
+                        "font": 0,
+                        "font_size": 15.0,
+                        "newline_distance": 300.0
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "scale z editor",
+              "container": {
+                "type": "Dock"
+              },
+              "parent_relation": {
+                "type": "Docking",
+                "info": {
+                  "mode": "Top"
+                }
+              },
+              "width": {
+                "type": "Factor",
+                "info": {
+                  "factor": 1.0
+                }
+              },
+              "height": {
+                "type": "Absolute",
+                "info": {
+                  "pixels": 20.0
+                }
+              },
+              "elements": [
+                {
+                  "type": "Quad",
+                  "info": {
+                    "color": [0.275, 0.275, 0.275, 0.8],
+                    "corner_radius": 5.0
+                  }
+                }
+              ],
+              "children": [
+                {
+                  "name": "slider",
+                  "interactable_information": {
+                    "hover_actions": [
+                      {
+                        "script": 0,
+                        "method": "horizontal_resize_cursor"
+                      },
+                      {
+                        "script": 1,
+                        "method": "color_slider_hovered"
+                      }
+                    ],
+                    "unhover_actions": [
+                      {
+                        "script": 1,
+                        "method": "color_slider_unhovered"
+                      }
+                    ],
+                    "left_down_actions": [
+                      {
+                        "script": 1,
+                        "method": "begin_drag"
+                      },
+                      {
+                        "script": 1,
+                        "method": "set_drag_mode_scale_z"
+                      }
+                    ],
+                    "left_hold_actions": [
+                      {
+                        "script": 0,
+                        "method": "horizontal_resize_cursor"
+                      },
+                      {
+                        "script": 1,
+                        "method": "update_drag"
+                      }
+                    ]
+                  },
+                  "container": {
+                    "type": "Stack",
+                    "info": {
+                      "horizontal": false,
+                      "spacing": 0.0,
+                      "padding": {
+                        "left": 0.0,
+                        "right": 0.0,
+                        "top": 0.0,
+                        "bottom": 0.0
+                      },
+                      "packing": "Start",
+                      "stack_direction": "Normal",
+                      "alignment": "Center"
+                    }
+                  },
+                  "parent_relation": {
+                    "type": "Docking",
+                    "info": {
+                      "mode": "Right"
+                    }
+                  },
+                  "width": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 0.6
+                    }
+                  },
+                  "height": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "elements": [
+                    {
+                      "type": "Quad",
+                      "info": {
+                        "color": [0.35, 0.35, 0.35, 0.8],
+                        "corner_radius": 5.0
+                      }
+                    }
+                  ],
+                  "children": [
+                    {
+                      "name": "text",
+                      "interactable_information": {
+                        "passive_actions": [
+                          {
+                            "script": 1,
+                            "method": "update_scale_z_display"
+                          }
+                        ]
+                      },
+                      "width": {
+                        "type": "Absolute",
+                        "info": {
+                          "pixels": 60
+                        }
+                      },
+                      "height": {
+                        "type": "Factor",
+                        "info": {
+                          "factor": 1.0
+                        }
+                      },
+                      "elements": [
+                        {
+                          "type": "Text",
+                          "info": {
+                            "text": "XXXX.XXX",
+                            "color": [1.0, 1.0, 1.0, 1.0],
+                            "font": 0,
+                            "font_size": 15.0,
+                            "newline_distance": 300.0
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "name": "text",
+                  "parent_relation": {
+                    "type": "Docking",
+                    "info": {
+                      "mode": "Right"
+                    }
+                  },
+                  "width": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "height": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "elements": [
+                    {
+                      "type": "Text",
+                      "info": {
+                        "text": "Scale Z:",
+                        "color": [1.0, 1.0, 1.0, 1.0],
+                        "font": 0,
+                        "font_size": 15.0,
+                        "newline_distance": 300.0
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "render component editor ui",
+      "container": {
+        "type": "Stack",
+        "info": {
+          "horizontal": false,
+          "spacing": 5.0,
+          "padding": {
+            "left": 0.0,
+            "right": 0.0,
+            "top": 0.0,
+            "bottom": 0.0
+          },
+          "packing": "Start",
+          "stack_direction": "Normal",
+          "alignment": "Start"
+        }
+      },
+      "width": {
+        "type": "Factor",
+        "info": {
+          "factor": 1.0
+        }
+      },
+      "height": {
+        "type": "Absolute",
+        "info": {
+          "pixels": 20.0
+        }
+      },
+      "elements": [
+        3
+      ],
+      "children": [
+        {
+          "name": "component type display",
+          "interactable_information": {
+            "hover_actions": [
+              {
+                "script": 0,
+                "method": "hover_cursor"
+              }
+            ],
+            "left_up_actions": [
+              {
+                "script": 2,
+                "method": "collapse"
+              }
+            ]
+          },
+          "container": {
+            "type": "Dock"
+          },
+          "width": {
+            "type": "Factor",
+            "info": {
+              "factor": 1.0
+            }
+          },
+          "height": {
+            "type": "Absolute",
+            "info": {
+              "pixels": 20.0
+            }
+          },
+          "elements": [
+            {
+              "type": "Quad",
+              "info": {
+                "color": [0.25, 0.25, 0.25, 0.8],
+                "corner_radius": 5.0
+              }
+            }
+          ],
+          "children": [
+            {
+              "name": "icon",
+              "parent_relation": {
+                "type": "Docking",
+                "info": {
+                  "mode": "Left"
+                }
+              },
+              "width": {
+                "type": "Absolute",
+                "info": {
+                  "pixels": 20.0
+                }
+              },
+              "height": {
+                "type": "Factor",
+                "info": {
+                  "factor": 1.0
+                }
+              },
+              "elements": [
+                7
+              ]
+            },
+            {
+              "name": "text",
+              "parent_relation": {
+                "type": "Docking",
+                "info": {
+                  "mode": "Left"
+                }
+              },
+              "width": {
+                "type": "Factor",
+                "info": {
+                  "factor": 1.0
+                }
+              },
+              "height": {
+                "type": "Factor",
+                "info": {
+                  "factor": 1.0
+                }
+              },
+              "elements": [
+                {
+                  "type": "Text",
+                  "info": {
+                    "text": "Render Component Editor",
+                    "color": [1.0, 1.0, 1.0, 1.0],
+                    "font": 0,
+                    "font_size": 15.0,
+                    "newline_distance": 300.0
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

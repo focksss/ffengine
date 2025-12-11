@@ -1,0 +1,602 @@
+{
+  "guis": [
+    {
+      "name": "editor",
+      "nodes": [0, 6, 12, 15, 16, 17, 18, 19, 20, 21, 22]
+    }
+  ],
+  "scripts": [
+    {
+      "uri": "editor\\resources\\scripts\\editor.lua"
+    }
+  ],
+  "fonts": [
+    {
+      "uri": "editor\\resources\\fonts\\Oxygen-Regular.ttf",
+      "glyph_msdf_size": 32,
+      "glyph_msdf_distance_range": 2.0
+    }
+  ],
+  "images": [
+    {
+      "uri": "editor\\resources\\gui\\images\\reload.png",
+      "alpha_threshold": 0.1
+    },
+    {
+      "uri": "editor\\resources\\gui\\images\\close.png",
+      "alpha_threshold": 0.1
+    },
+    {
+      "uri": "editor\\resources\\gui\\images\\minimize.png",
+      "alpha_threshold": 0.1
+    },
+    {
+      "uri": "editor\\resources\\gui\\images\\maximize.png",
+      "alpha_threshold": 0.1
+    },
+    {
+      "uri": "editor\\resources\\gui\\images\\minimize_window.png",
+      "alpha_threshold": 0.1
+    },
+    {
+      "uri": "editor\\resources\\gui\\images\\collapsed.png",
+      "alpha_threshold": 0.1
+    },
+    {
+      "uri": "editor\\resources\\gui\\images\\expanded.png",
+      "alpha_threshold": 0.1
+    }
+  ],
+  "quads": [
+    {
+      "color": [0.3, 0.3, 0.3, 0.8]
+    },
+    {
+      "color": [0.3, 0.3, 0.3, 0.0],
+      "image": 1
+    },
+    {
+      "color": [0.0, 0.0, 0.0, 0.0],
+      "corner_radius": 5.0,
+      "image": 0
+    },
+    {
+      "color": [0.3, 0.3, 0.3, 0.8],
+      "corner_radius": 5.0
+    },
+    {
+      "color": [0.3, 0.3, 0.3, 0.4],
+      "corner_radius": 5.0
+    },
+    {
+      "color": [0.0, 0.0, 0.0, 0.0],
+      "image": 2
+    },
+    {
+      "color": [0.0, 0.0, 0.0, 0.0],
+      "image": 3
+    },
+    {
+      "color": [0.0, 0.0, 0.0, 0.0],
+      "image": 4
+    },
+    {
+      "color": [0.4, 0.4, 0.4, 1.0],
+      "corner_radius": 5.0
+    },
+    {
+      "color": [1.0, 1.0, 1.0, 0.0],
+      "scale": [20, 1.0],
+      "absolute_scale": [true, false],
+      "image": 5
+    },
+    {
+      "color": [1.0, 1.0, 1.0, 0.0],
+      "scale": [20, 1.0],
+      "absolute_scale": [true, false],
+      "image": 6
+    }
+  ],
+  "texts": [
+    {
+      "text_information": {
+        "font": 0,
+        "text": "ffengine",
+        "font_size": 32.0,
+        "newline_distance": 1720.0
+      },
+      "position": [0.01, 0.2],
+      "scale": [1.0, 1.0],
+      "clip_min": [0.0, 0.0],
+      "clip_max": [1.0, 1.0],
+      "color": [1.0, 1.0, 1.0, 1.0]
+    },
+    {
+      "text_information": {
+        "font": 0,
+        "text": "FPS: XXX.XX",
+        "font_size": 15.0,
+        "newline_distance": 1720.0
+      },
+      "position": [0.01, 0.2],
+      "scale": [1.0, 1.0],
+      "clip_min": [0.0, 0.0],
+      "clip_max": [1.0, 1.0],
+      "color": [1.0, 1.0, 1.0, 1.0]
+    }
+  ],
+  "nodes": [
+    {
+      "name": "top_bar",
+      "interactable_information": {
+        "left_hold_actions": [
+          {
+            "method": "drag_window",
+            "script": 0
+          }
+        ]
+      },
+      "children": [1, 2, 3, 4, 5],
+      "position": [0, 0],
+      "scale": [1.0, 40.0],
+      "anchor_point": "top_left",
+      "absolute_scale": [false, true],
+      "texts": [0],
+      "quads": [0]
+    },
+      {
+        "name": "close_button",
+        "interactable_information": {
+          "hover_actions": [
+            {
+              "method": "close_hovered",
+              "script": 0
+            },
+            {
+              "method": "hover_cursor",
+              "script": 0
+            }
+          ],
+          "unhover_actions": [
+            {
+              "method": "color_unhovered",
+              "script": 0
+            }
+          ],
+          "left_tap_actions": [
+            {
+              "method": "close_window",
+              "script": 0
+            }
+          ]
+        },
+        "children": [],
+        "position": [0, 0],
+        "scale": [40.0, 1.0],
+        "anchor_point": "top_right",
+        "absolute_scale": [true, false],
+        "quads": [1]
+      },
+      {
+        "name": "minimize_button",
+        "interactable_information": {
+          "hover_actions": [
+            {
+              "method": "color_hovered",
+              "script": 0
+            },
+            {
+              "method": "hover_cursor",
+              "script": 0
+            }
+          ],
+          "unhover_actions": [
+            {
+              "method": "color_unhovered",
+              "script": 0
+            }
+          ],
+          "left_tap_actions": [
+            {
+              "method": "minimize",
+              "script": 0
+            }
+          ]
+        },
+        "children": [],
+        "position": [-40, 0],
+        "scale": [40.0, 1.0],
+        "anchor_point": "top_right",
+        "absolute_position": [true, true],
+        "absolute_scale": [true, false],
+        "quads": [5],
+        "hidden": true
+      },
+      {
+        "name": "maximize_button",
+        "interactable_information": {
+          "hover_actions": [
+            {
+              "method": "color_hovered",
+              "script": 0
+            },
+            {
+              "method": "hover_cursor",
+              "script": 0
+            }
+          ],
+          "unhover_actions": [
+            {
+              "method": "color_unhovered",
+              "script": 0
+            }
+          ],
+          "left_tap_actions": [
+            {
+              "method": "maximize",
+              "script": 0
+            }
+          ]
+        },
+        "children": [],
+        "position": [-40, 0],
+        "scale": [40.0, 1.0],
+        "anchor_point": "top_right",
+        "absolute_position": [true, true],
+        "absolute_scale": [true, false],
+        "quads": [6]
+      },
+      {
+      "name": "minimize_window_button",
+      "interactable_information": {
+        "hover_actions": [
+          {
+            "method": "color_hovered",
+            "script": 0
+          },
+          {
+            "method": "hover_cursor",
+            "script": 0
+          }
+        ],
+        "unhover_actions": [
+          {
+            "method": "color_unhovered",
+            "script": 0
+          }
+        ],
+        "left_tap_actions": [
+          {
+            "method": "minimize_window",
+            "script": 0
+          }
+        ]
+      },
+      "children": [],
+      "position": [-80, 0],
+      "scale": [40.0, 1.0],
+      "anchor_point": "top_right",
+      "absolute_position": [true, true],
+      "absolute_scale": [true, false],
+      "quads": [7]
+    },
+      {
+      "name": "run_button",
+      "interactable_information": {
+        "hover_actions": [
+          {
+            "method": "color_hovered",
+            "script": 0
+          },
+          {
+            "method": "hover_cursor",
+            "script": 0
+          }
+        ],
+        "unhover_actions": [
+          {
+            "method": "color_unhovered",
+            "script": 0
+          }
+        ],
+        "left_tap_actions": [
+          {
+            "method": "recompile",
+            "script": 0
+          }
+        ]
+      },
+      "children": [],
+      "position": [40, 0],
+      "scale": [40.0, 1.0],
+      "anchor_point": "top_middle",
+      "absolute_scale": [true, false],
+      "absolute_position": [true, false],
+      "quads": [2]
+    },
+
+    {
+      "name": "right_area",
+      "children": [7, 8, 11],
+      "position": [0, -40],
+      "scale": [200.0, 0.0],
+      "anchor_point": "top_right",
+      "absolute_scale": [true, true],
+      "absolute_position": [false, true]
+    },
+      {
+        "name": "right_area_resize",
+        "interactable_information": {
+          "left_hold_actions": [
+            {
+              "method": "resize_right_area",
+              "script": 0
+            }
+          ],
+          "hover_actions": [
+            {
+              "method": "horizontal_resize_cursor",
+              "script": 0
+            }
+          ]
+        },
+        "children": [],
+        "position": [0, 0],
+        "scale": [10, 1.0],
+        "absolute_scale": [true, false],
+        "anchor_point": "bottom_left"
+      },
+      {
+        "name": "scene_graph_area",
+        "interactable_information": {},
+        "children": [9, 10],
+        "position": [0, 0],
+        "scale": [1.0, 0.5],
+        "anchor_point": "top_left",
+        "absolute_scale": [false, false],
+        "quads": [3]
+      },
+        {
+          "name": "graph_parent",
+          "children": [],
+          "position": [0, 0],
+          "scale": [1.0, 1.0],
+          "clip_max": [1.0, 1000.0],
+          "clip_min": [0.0, -1000.0],
+          "anchor_point": "top_left",
+          "absolute_position": [false, true]
+        },
+        {
+          "name": "scene_graph_scroll_bar",
+          "scale": [10, 0.5],
+          "anchor_point": "top_right",
+          "absolute_scale": [true, false],
+          "absolute_position": [true, true],
+          "quads": [8]
+        },
+      {
+        "name": "entity_editor_area",
+        "interactable_information": {},
+        "position": [0, 0],
+        "scale": [1.0, 0.5],
+        "anchor_point": "bottom_left",
+        "quads": [3]
+      },
+
+    {
+      "name": "scene_view",
+      "interactable_information": {},
+      "children": [13],
+      "position": [0, 0],
+      "scale": [1920, 1040],
+      "anchor_point": "bottom_left",
+      "absolute_scale": [true, true]
+    },
+      {
+        "name": "hud",
+        "children": [14],
+        "position": [20, -10],
+        "scale": [80, 20],
+        "absolute_scale": [true, true],
+        "absolute_position": [true, true],
+        "anchor_point": "top_left"
+      },
+        {
+        "name": "fps",
+        "interactable_information": {
+          "passive_actions": [
+            {
+              "method": "update_fps",
+              "script": 0
+            }
+          ]
+        },
+        "children": [],
+        "position": [0, 0],
+        "scale": [80, 20],
+        "absolute_scale": [true, true],
+        "absolute_position": [true, true],
+        "quads": [4],
+        "texts": [1],
+        "anchor_point": "top_left"
+      },
+
+    {
+      "name": "top_resize",
+      "interactable_information": {
+        "left_hold_actions": [
+          {
+            "method": "drag_resize_north",
+            "script": 0
+          }
+        ],
+        "hover_actions": [
+          {
+            "method": "vertical_resize_cursor",
+            "script": 0
+          }
+        ]
+      },
+      "position": [0, 0],
+      "scale": [1.0, 10],
+      "anchor_point": "top_middle",
+      "absolute_position": [false, true],
+      "absolute_scale": [false, true]
+    },
+    {
+      "name": "bottom_resize",
+      "interactable_information": {
+        "left_hold_actions": [
+          {
+            "method": "drag_resize_south",
+            "script": 0
+          }
+        ],
+        "hover_actions": [
+          {
+            "method": "vertical_resize_cursor",
+            "script": 0
+          }
+        ]
+      },
+      "position": [0, 0],
+      "scale": [1.0, 10],
+      "anchor_point": "bottom_middle",
+      "absolute_position": [false, true],
+      "absolute_scale": [false, true]
+    },
+    {
+      "name": "left_resize",
+      "interactable_information": {
+        "left_hold_actions": [
+          {
+            "method": "drag_resize_west",
+            "script": 0
+          }
+        ],
+        "hover_actions": [
+          {
+            "method": "horizontal_resize_cursor",
+            "script": 0
+          }
+        ]
+      },
+      "position": [0, 0],
+      "scale": [10, 1.0],
+      "anchor_point": "left",
+      "absolute_position": [true, false],
+      "absolute_scale": [true, false]
+    },
+    {
+      "name": "right_resize",
+      "interactable_information": {
+        "left_hold_actions": [
+          {
+            "method": "drag_resize_east",
+            "script": 0
+          }
+        ],
+        "hover_actions": [
+          {
+            "method": "horizontal_resize_cursor",
+            "script": 0
+          }
+        ]
+      },
+      "position": [10, 0],
+      "scale": [20, 1.0],
+      "anchor_point": "right",
+      "absolute_position": [true, false],
+      "absolute_scale": [true, false]
+    },
+
+    {
+      "name": "top_left_resize",
+      "interactable_information": {
+        "left_hold_actions": [
+          {
+            "method": "drag_resize_northwest",
+            "script": 0
+          }
+        ],
+        "hover_actions": [
+          {
+            "method": "nw_resize_cursor",
+            "script": 0
+          }
+        ]
+      },
+      "position": [0, 0],
+      "scale": [12, 12],
+      "anchor_point": "top_left",
+      "absolute_position": [true, true],
+      "absolute_scale": [true, true]
+    },
+    {
+      "name": "top_right_resize",
+      "interactable_information": {
+        "left_hold_actions": [
+          {
+            "method": "drag_resize_northeast",
+            "script": 0
+          }
+        ],
+        "hover_actions": [
+          {
+            "method": "sw_resize_cursor",
+            "script": 0
+          }
+        ]
+      },
+      "position": [0, 0],
+      "scale": [12, 12],
+      "anchor_point": "top_right",
+      "absolute_position": [true, true],
+      "absolute_scale": [true, true]
+    },
+    {
+      "name": "bottom_right_resize",
+      "interactable_information": {
+        "left_hold_actions": [
+          {
+            "method": "drag_resize_southeast",
+            "script": 0
+          }
+        ],
+        "hover_actions": [
+          {
+            "method": "nw_resize_cursor",
+            "script": 0
+          }
+        ]
+      },
+      "position": [0, 0],
+      "scale": [12, 12],
+      "anchor_point": "bottom_right",
+      "absolute_position": [true, true],
+      "absolute_scale": [true, true]
+    },
+    {
+      "name": "bottom_left_resize",
+      "interactable_information": {
+        "left_hold_actions": [
+          {
+            "method": "drag_resize_southwest",
+            "script": 0
+          }
+        ],
+        "hover_actions": [
+          {
+            "method": "sw_resize_cursor",
+            "script": 0
+          }
+        ]
+      },
+      "position": [0, 0],
+      "scale": [12, 12],
+      "anchor_point": "bottom_left",
+      "absolute_position": [true, true],
+      "absolute_scale": [true, true]
+    }
+  ]
+}
