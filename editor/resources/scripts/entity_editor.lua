@@ -32,12 +32,16 @@ function Update()
     if queued_entity_open_from_read > 0 then
         queued_entity_open_from_read = queued_entity_open_from_read + 1
     end
-    if queued_entity_open_from_read > 3 then
+    if queued_entity_open_from_read > 1 then
+        Engine.scene:reset_outlines()
         local hovered_entity_index = Engine.renderer.scene_renderer.hovered_entity - 1
         if hovered_entity_index > -1 then
+            _G.Editor.select_entity(hovered_entity_index)
             local selected_render_component = Engine.renderer.scene_renderer.hovered_child_component_number - 1
             render_component_editor(Engine.scene:get_entity(hovered_entity_index):get_render_component_index(selected_render_component))
             queued_entity_open_from_read = 0
+        else
+            _G.Editor.deselect() 
         end
     end
 
@@ -107,6 +111,7 @@ end
 
 function open_transform_editor() 
 	_G.selected_transform = _G.node_to_transform_map[gui.ActiveNode.index]
+    _G.Editor.select_entity(Engine.scene:get_transform(_G.selected_transform).owner_index)
 
 	entity_editor_root_node:clear_children()
 	entity_editor_root_node:add_child_index(transform_editor_ui_node.index)
@@ -117,7 +122,6 @@ end
 
 function render_component_editor(component_index) 
 
-    Engine.scene:reset_outlines()
 	local selected_render_component = Engine.scene:get_render_component(component_index).index
     Engine.scene:add_outlined(selected_render_component);
 

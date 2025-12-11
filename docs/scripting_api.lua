@@ -35,6 +35,8 @@ MovementMode = {
         ---@field translation Vector
         ---@field rotation Vector
         ---@field scale Vector
+        ---@field owner Transform
+        ---@field owner_index integer
     
         ---@class RenderComponent
         ---@field index integer
@@ -47,6 +49,8 @@ MovementMode = {
         ---@field get_render_component fun(self:Entity, index:integer):RenderComponent
         ---@field get_render_component_index fun(self:Entity, index:integer):integer
         ---@field index integer
+        ---@field parent Entity
+        ---@field parent_index integer
     
     ---@class RenderComponent
 

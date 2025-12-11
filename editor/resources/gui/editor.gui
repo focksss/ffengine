@@ -103,6 +103,23 @@
         "color": [0.3, 0.3, 1.0, 0.2],
         "corner_radius": 5.0
       }
+    },
+    {
+      "name": "object icon",
+      "type": "Image",
+      "info": {
+        "uri": "editor\\resources\\gui\\images\\object.png",
+        "additive_tint": [1.0, 1.0, 1.0, 0.0],
+        "multiplicative_tint": [1.0, 1.0, 1.0, 1.0]
+      }
+    },
+    {
+      "name": "scene graph child selected quad",
+      "type": "Quad",
+      "info": {
+        "color": [1.0, 1.0, 1.0, 0.2],
+        "corner_radius": 5.0
+      }
     }
   ],
   "nodes": [

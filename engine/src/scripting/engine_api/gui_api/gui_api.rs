@@ -413,7 +413,10 @@ impl UserData for GUINodePointer {
         });
         methods.add_method_mut("remove_element_index_at", |lua, this, val: i32| {
             with_gui_mut!(lua, this.gui_index => gui);
-            Ok(gui.nodes[this.index].element_indices.remove(val as usize))
+            let node = &mut gui.nodes[this.index];
+            Ok(if node.element_indices.len() > val as usize {
+                node.element_indices.remove(val as usize);
+            })
         });
 
         methods.add_method_mut("add_left_up_action", |lua, this, val: (String, usize)| {

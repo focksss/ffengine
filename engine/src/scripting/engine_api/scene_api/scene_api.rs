@@ -58,6 +58,15 @@ impl UserData for EntityPointer {
            Ok(this.index)
         });
 
+        fields.add_field_method_get("parent_index", |lua, this| {
+            with_scene!(lua => scene);
+            Ok(scene.entities[this.index].parent)
+        });
+        fields.add_field_method_get("parent", |lua, this| {
+            with_scene!(lua => scene);
+            Ok(EntityPointer{ index: scene.entities[this.index].parent })
+        });
+
         fields.add_field_method_get("transform_index", |lua, this| {
             with_scene!(lua => scene);
             Ok(scene.entities[this.index].transform)
@@ -108,6 +117,15 @@ impl UserData for TransformPointer {
     fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
         fields.add_field_method_get("index", |lua, this|{
             Ok(this.index)
+        });
+
+        fields.add_field_method_get("owner_index", |lua, this| {
+            with_scene!(lua => scene);
+            Ok(scene.transforms[this.index].owner)
+        });
+        fields.add_field_method_get("owner", |lua, this| {
+            with_scene!(lua => scene);
+            Ok(EntityPointer{ index: scene.transforms[this.index].owner })
         });
 
         fields.add_field_method_get("translation", |lua, this|{

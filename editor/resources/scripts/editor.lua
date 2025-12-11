@@ -1,3 +1,5 @@
+_G.Editor = {}
+
 _G.target_cursor_icon = CursorIcon.Default
 local has_set_target_cursor = false
 
@@ -67,16 +69,57 @@ function Update()
 
 end
 
+local passively_selected_entities = {}
+local entity_to_node_map = {}
 local selected_node = -1
 local selected_entity = 0
-function select_entity()
-	if selected_node > -1 then
-		gui:get_node(selected_node):remove_element_index_at(1)
+_G.Editor.deselect = function()
+	for _, entity_index in ipairs(passively_selected_entities) do
+		local node_index = entity_to_node_map[entity_index]
+		if node_index ~= nil then
+			gui:get_node(node_index):get_child(2):remove_element_index_at(1)
+		end
 	end
+	passively_selected_entities = {}
+	
+	if selected_node > -1 then
+		local node = gui:get_node(selected_node)
+		node:remove_element_index_at(1)
+		node:get_child(2):remove_element_index_at(1)
+	end
+end
+_G.Editor.select_entity = function(select_entity_index)
+	_G.Editor.deselect()
 
-	gui.ActiveNode:add_element_index(8)
-	selected_node = gui.ActiveNode.index
-	selected_entity = _G.node_to_entity_map[selected_node]
+	local node_index = entity_to_node_map[select_entity_index]
+	if node_index ~= nil then
+		local node = gui:get_node(node_index)
+		node:add_element_index(8)
+		node:get_child(2):add_element_index(10)
+		selected_node = node.index
+	end
+	selected_entity = select_entity_index
+
+	local entity = Engine.scene:get_entity(selected_entity)
+	local parent = entity.parent
+	passively_selected_entities[1] = selected_entity
+	local num_passively_selected_entities = 1
+
+	while parent.index ~= parent.parent.index do
+		node_index = entity_to_node_map[parent.index]
+		if node_index ~= nil then
+			gui:get_node(node_index):get_child(2):add_element_index(10)
+		end
+		num_passively_selected_entities = num_passively_selected_entities + 1
+		passively_selected_entities[num_passively_selected_entities] = parent.index
+		parent = parent.parent
+	end
+	gui:get_node(entity_to_node_map[parent.index]):get_child(2):add_element_index(10)
+	num_passively_selected_entities = num_passively_selected_entities + 1
+	passively_selected_entities[num_passively_selected_entities] = parent.index
+end
+function select_entity()
+	_G.Editor.select_entity(_G.node_to_entity_map[gui.ActiveNode.index])
 end
 local expanded_entities = {}
 _G.node_to_entity_map = {}
@@ -130,6 +173,7 @@ function build_graph()
 	--- reset mappings (and start root expanded)
 	selected_node = -1
 	_G.node_to_entity_map = {}
+	entity_to_node_map = {}
 	_G.node_to_render_components_map = {}
 	_G.node_to_transform_map = {}
 	if expanded_entities[0] == nil then
@@ -148,6 +192,13 @@ function build_graph()
 	
 	local root_entity = Engine.scene:get_entity(0)
 	build_graph_recursive(root_entity, 0, 0, scene_graph_root_node)
+
+	for _, entity_index in ipairs(passively_selected_entities) do
+		local node_index = entity_to_node_map[entity_index]
+		if node_index ~= nil then
+			gui:get_node(entity_to_node_map[entity_index]):get_child(2):add_element_index(10)
+		end
+	end
 
 	scene_graph_root_node:set_height("Absolute", graph_height)
 end
@@ -188,7 +239,7 @@ function build_graph_recursive(entity, entity_index, depth)
 	local text_node_index = get_next_graph_node_index()
 	local text_node = gui:get_node(text_node_index)
 	text_node:reset()
-	text_node:set_x("Pixels", 20)
+	text_node:set_x("Pixels", 40)
 	text_node:set_width("Factor", 1.0)
 	text_node:set_height("Factor", 1.0)
 	node:add_child_index(text_node_index)
@@ -202,10 +253,20 @@ function build_graph_recursive(entity, entity_index, depth)
 	button_node:set_width("Absolute", 20.0)
 	button_node:set_height("Absolute", 20.0)
 	node:add_child_index(button_node_index)
+	-- object icon node
+	local object_node_index = get_next_graph_node_index()
+	local object_node = gui:get_node(object_node_index)
+	object_node:reset()
+	object_node:set_x("Pixels", 20)
+	object_node:set_width("Absolute", 20.0)
+	object_node:set_height("Absolute", 20.0)
+	object_node:add_element_index(9)
+	node:add_child_index(object_node_index)
 	
 	--- map 
 	_G.node_to_entity_map[button_node_index] = entity_index
 	_G.node_to_entity_map[node_index] = entity_index
+	entity_to_node_map[entity_index] = node_index
 	local is_expanded = expanded_entities[entity_index]
 	local display_name = entity.name
 	local children = entity.children_indices
