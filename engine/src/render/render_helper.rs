@@ -4,15 +4,15 @@ use std::io::{BufWriter, Cursor};
 use std::sync::Arc;
 use ash::{vk, Device, Instance};
 use ash::util::read_spv;
-use ash::vk::{Buffer, ClearColorValue, ClearDepthStencilValue, ClearValue, DescriptorBindingFlags, DescriptorImageInfo, DescriptorPool, DescriptorPoolCreateFlags, DescriptorPoolSize, DescriptorSetLayout, DescriptorSetLayoutCreateFlags, DescriptorType, DeviceMemory, DeviceSize, DynamicState, Extent3D, Format, GraphicsPipelineCreateInfo, ImageAspectFlags, ImageSubresourceRange, ImageUsageFlags, ImageView, MemoryPropertyFlags, PhysicalDevice, PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo, PipelineDepthStencilStateCreateInfo, PipelineInputAssemblyStateCreateInfo, PipelineMultisampleStateCreateInfo, PipelineRasterizationStateCreateInfo, PipelineShaderStageCreateInfo, PipelineTessellationStateCreateInfo, PipelineVertexInputStateCreateInfo, PushConstantRange, SampleCountFlags, ShaderModule, ShaderModuleCreateInfo, ShaderStageFlags, StencilOpState};
+use ash::vk::{Buffer, ClearColorValue, ClearDepthStencilValue, ClearValue, DescriptorBindingFlags, DescriptorImageInfo, DescriptorPool, DescriptorPoolCreateFlags, DescriptorPoolSize, DescriptorSetLayout, DescriptorSetLayoutCreateFlags, DescriptorType, DeviceMemory, DeviceSize, DynamicState, Extent3D, Format, GraphicsPipelineCreateInfo, ImageAspectFlags, ImageSubresourceRange, ImageUsageFlags, ImageView, MemoryPropertyFlags, Offset2D, PhysicalDevice, PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo, PipelineDepthStencilStateCreateInfo, PipelineInputAssemblyStateCreateInfo, PipelineMultisampleStateCreateInfo, PipelineRasterizationStateCreateInfo, PipelineShaderStageCreateInfo, PipelineTessellationStateCreateInfo, PipelineVertexInputStateCreateInfo, PushConstantRange, SampleCountFlags, ShaderModule, ShaderModuleCreateInfo, ShaderStageFlags, StencilOpState};
 use crate::engine::get_command_buffer;
 use crate::render::render::MAX_FRAMES_IN_FLIGHT;
-use crate::render::vulkan_base::{find_memorytype_index, load_file, VkBase};
+use crate::render::vulkan_base::{find_memorytype_index, load_file, Context, VkBase};
 
 const SHADER_PATH: &str = "engine\\resources\\shaders\\spv\\";
 
 pub struct Renderpass {
-    pub device: Device,
+    context: Arc<Context>,
 
     pub pass: Arc<RefCell<Pass>>,
     pub descriptor_set: Arc<RefCell<DescriptorSet>>,
@@ -23,7 +23,7 @@ pub struct Renderpass {
 }
 impl Renderpass {
     pub unsafe fn new(create_info: RenderpassCreateInfo) -> Renderpass { unsafe {
-        let base = create_info.base;
+        let context = create_info.context.clone();
         let pass = if let Some(pass_create_info) = create_info.pass_create_info {
             Arc::new(RefCell::new(Pass::new(pass_create_info)))
         } else {
@@ -34,7 +34,7 @@ impl Renderpass {
         } else {
             create_info.descriptor_set_ref.expect("Renderpass builder did not contain a pass_ref or a pass_create_info")
         };
-        let pipeline_layout = base
+        let pipeline_layout = context
             .device
             .create_pipeline_layout(
                 &vk::PipelineLayoutCreateInfo {
@@ -56,7 +56,7 @@ impl Renderpass {
 
         let shaders = create_info.pipeline_create_infos.iter().map(|info| {
             Shader::new(
-                base,
+                &context,
                 info.vertex_shader_uri.as_ref().expect("Must have a vertex shader per pipeline"),
                 info.fragment_shader_uri.as_ref().expect("Must have a fragment shader per pipeline"),
                 info.geometry_shader_uri.as_ref().map(|s| s.as_str()),
@@ -84,7 +84,7 @@ impl Renderpass {
                     .layout(pipeline_layout)
                     .render_pass(pass.borrow().renderpass)
             }).collect::<Vec<GraphicsPipelineCreateInfo>>();
-        let vulkan_pipelines = base.device.create_graphics_pipelines(
+        let vulkan_pipelines = context.device.create_graphics_pipelines(
             vk::PipelineCache::null(),
             &pipeline_create_infos,
             None
@@ -98,10 +98,98 @@ impl Renderpass {
             })
             .collect();
         Renderpass {
-            device: base.device.clone(),
+            context,
 
             pass,
             descriptor_set,
+            pipelines,
+            pipeline_layout,
+            viewport: create_info.viewport,
+            scissor: create_info.scissor,
+        }
+    } }
+    pub unsafe fn new_present_renderpass(base: &VkBase) -> Renderpass { unsafe {
+        let context = base.context.clone();
+        let mut create_info = RenderpassCreateInfo::new(&context);
+        let create_info = create_info.add_pipeline_create_info(
+            PipelineCreateInfo::new()
+                .vertex_shader_uri(String::from("quad\\quad.vert.spv"))
+                .fragment_shader_uri(String::from("quad\\quad.frag.spv"))
+        );
+
+        let pass = Pass::new_present_pass(base);
+        let descriptor_set = DescriptorSet::new(DescriptorSetCreateInfo::new(&context)
+            .add_descriptor(Descriptor::new(&DescriptorCreateInfo::new(&context)
+                .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
+                .shader_stages(ShaderStageFlags::FRAGMENT)
+            ))
+        );
+        let pipeline_layout = context
+            .device
+            .create_pipeline_layout(
+                &vk::PipelineLayoutCreateInfo {
+                    s_type: vk::StructureType::PIPELINE_LAYOUT_CREATE_INFO,
+                    set_layout_count: 1,
+                    p_set_layouts: &descriptor_set.descriptor_set_layout,
+                    ..Default::default()
+                }, None
+            ).unwrap();
+        let viewports = [create_info.viewport];
+        let scissors = [create_info.scissor];
+        let viewport_state = vk::PipelineViewportStateCreateInfo::default()
+            .viewports(&viewports)
+            .scissors(&scissors);
+        let dynamic_state_info =
+            vk::PipelineDynamicStateCreateInfo::default().dynamic_states(&create_info.dynamic_state);
+
+        let shaders = create_info.pipeline_create_infos.iter().map(|info| {
+            Shader::new(
+                &context,
+                info.vertex_shader_uri.as_ref().expect("Must have a vertex shader per pipeline"),
+                info.fragment_shader_uri.as_ref().expect("Must have a fragment shader per pipeline"),
+                info.geometry_shader_uri.as_ref().map(|s| s.as_str()),
+            )
+        }).collect::<Vec<Shader>>();
+        let shader_stage_create_infos = shaders.iter().map(|shader| {
+            shader.generate_shader_stage_create_infos()
+        }).collect::<Vec<Vec<PipelineShaderStageCreateInfo>>>();
+
+        let pipeline_create_infos = create_info
+            .pipeline_create_infos
+            .iter().enumerate()
+            .map(|(i, info)| {
+                GraphicsPipelineCreateInfo::default()
+                    .stages(&shader_stage_create_infos[i])
+                    .vertex_input_state(&info.pipeline_vertex_input_state_create_info)
+                    .input_assembly_state(&info.pipeline_input_assembly_state_create_info)
+                    .tessellation_state(&info.pipeline_tess_state_create_info)
+                    .viewport_state(&viewport_state)
+                    .rasterization_state(&info.pipeline_rasterization_state_create_info)
+                    .multisample_state(&info.pipeline_multisample_state_create_info)
+                    .depth_stencil_state(&info.pipeline_depth_stencil_state_create_info)
+                    .color_blend_state(&info.pipeline_color_blend_state_create_info)
+                    .dynamic_state(&dynamic_state_info)
+                    .layout(pipeline_layout)
+                    .render_pass(pass.renderpass)
+            }).collect::<Vec<GraphicsPipelineCreateInfo>>();
+        let vulkan_pipelines = context.device.create_graphics_pipelines(
+            vk::PipelineCache::null(),
+            &pipeline_create_infos,
+            None
+        ).expect("Failed to create pipeline");
+        let pipelines: Vec<Pipeline> = shaders
+            .into_iter()
+            .zip(vulkan_pipelines.into_iter())
+            .map(|(shader, vk_pipeline)| Pipeline {
+                shader,
+                vulkan_pipeline: vk_pipeline,
+            })
+            .collect();
+        Renderpass {
+            context,
+
+            pass: Arc::new(RefCell::new(pass)),
+            descriptor_set: Arc::new(RefCell::new(descriptor_set)),
             pipelines,
             pipeline_layout,
             viewport: create_info.viewport,
@@ -121,7 +209,7 @@ impl Renderpass {
         framebuffer_index: Option<usize>,
         do_transition: bool,
     ) { unsafe {
-        let device = &self.device;
+        let device = &self.context.device;
         self.begin_renderpass(current_frame, command_buffer, framebuffer_index);
         if let Some(push_constant_action) = push_constant_action { push_constant_action() };
         if let Some(draw_action) = draw_action { draw_action() } else {
@@ -133,7 +221,7 @@ impl Renderpass {
         }
     } }
     pub unsafe fn begin_renderpass(&self, current_frame: usize, command_buffer: vk::CommandBuffer, framebuffer_index: Option<usize>) { unsafe {
-        let device = &self.device;
+        let device = &self.context.device;
         device.cmd_begin_render_pass(
             command_buffer,
             &self.pass.borrow().get_pass_begin_info(current_frame, framebuffer_index, self.scissor),
@@ -159,23 +247,19 @@ impl Renderpass {
     pub unsafe fn destroy(&mut self) { unsafe {
         for pipeline in self.pipelines.iter() {
             pipeline.shader.destroy();
-            self.device.destroy_pipeline(pipeline.vulkan_pipeline, None);
+            self.context.device.destroy_pipeline(pipeline.vulkan_pipeline, None);
         }
         let mut pass = self.pass.borrow_mut();
         if !pass.destroyed { pass.destroy() };
-        self.device.destroy_pipeline_layout(self.pipeline_layout, None);
+        self.context.device.destroy_pipeline_layout(self.pipeline_layout, None);
         self.descriptor_set.borrow_mut().destroy();
     } }
 }
-pub struct Pipeline {
-    shader: Shader,
-    pub vulkan_pipeline: vk::Pipeline,
-}
 pub struct RenderpassCreateInfo<'a> {
-    pub base: &'a VkBase,
-    pub pass_create_info: Option<PassCreateInfo<'a>>,
+    pub context: Arc<Context>,
+    pub pass_create_info: Option<PassCreateInfo>,
     pub pass_ref: Option<Arc<RefCell<Pass>>>,
-    pub descriptor_set_create_info: Option<DescriptorSetCreateInfo<'a>>,
+    pub descriptor_set_create_info: Option<DescriptorSetCreateInfo>,
     pub descriptor_set_ref: Option<Arc<RefCell<DescriptorSet>>>,
     pub viewport: vk::Viewport,
     pub scissor: vk::Rect2D,
@@ -192,22 +276,25 @@ impl<'a> RenderpassCreateInfo<'a> {
     /**
     * Defaults to pipeline create info intended for a fullscreen quad pass without blending or depth testing.
     */
-    pub fn new(base: &'a VkBase) -> Self {
+    pub fn new(context: &Arc<Context>) -> Self {
         RenderpassCreateInfo {
-            base,
-            pass_create_info: Some(PassCreateInfo::new(base)),
+            context: context.clone(),
+            pass_create_info: Some(PassCreateInfo::new(context)),
             pass_ref: None,
-            descriptor_set_create_info: Some(DescriptorSetCreateInfo::new(base)),
+            descriptor_set_create_info: Some(DescriptorSetCreateInfo::new(context)),
             descriptor_set_ref: None,
             viewport: vk::Viewport {
                 x: 0.0,
                 y: 0.0,
-                width: base.surface_resolution.width as f32,
-                height: base.surface_resolution.height as f32,
+                width: context.window.inner_size().width as f32,
+                height: context.window.inner_size().height as f32,
                 min_depth: 0.0,
                 max_depth: 1.0,
             },
-            scissor: base.surface_resolution.into(),
+            scissor: vk::Rect2D {
+                extent: vk::Extent2D { width: context.window.inner_size().width, height: context.window.inner_size().height },
+                ..Default::default()
+            },
 
             push_constant_info: None,
 
@@ -228,7 +315,7 @@ impl<'a> RenderpassCreateInfo<'a> {
         };
         self
     }
-    pub fn pass_create_info(mut self, pass_create_info: PassCreateInfo<'a>) -> Self {
+    pub fn pass_create_info(mut self, pass_create_info: PassCreateInfo) -> Self {
         self.pass_create_info = Some(pass_create_info);
         self.pass_ref = None;
         self
@@ -249,7 +336,7 @@ impl<'a> RenderpassCreateInfo<'a> {
     /**
     * All descriptor set layouts must be identical per Renderpass
     */
-    pub fn descriptor_set_create_info(mut self, descriptor_set_create_info: DescriptorSetCreateInfo<'a>) -> Self {
+    pub fn descriptor_set_create_info(mut self, descriptor_set_create_info: DescriptorSetCreateInfo) -> Self {
         self.descriptor_set_create_info = Some(descriptor_set_create_info);
         self
     }
@@ -276,6 +363,10 @@ impl<'a> RenderpassCreateInfo<'a> {
     }
 }
 
+pub struct Pipeline {
+    shader: Shader,
+    pub vulkan_pipeline: vk::Pipeline,
+}
 pub struct PipelineCreateInfo<'a> {
     pub vertex_shader_uri: Option<String>,
     pub geometry_shader_uri: Option<String>,
@@ -392,7 +483,7 @@ impl<'a> PipelineCreateInfo<'a> {
 }
 
 pub struct Pass {
-    pub device: Device,
+    context: Arc<Context>,
 
     pub renderpass: vk::RenderPass,
     pub textures: Vec<Vec<Texture>>,
@@ -404,24 +495,21 @@ pub struct Pass {
 impl Pass {
     pub unsafe fn new(create_info: PassCreateInfo) -> Self { unsafe {
         let mut textures = Vec::new();
-        let base = create_info.base;
+        let context = create_info.context.clone();
         let has_depth = create_info.depth_attachment_create_info.is_some();
-        if !create_info.is_present_pass {
-            for frame in 0..create_info.frames_in_flight {
-                let mut frame_textures = Vec::new();
-                for texture in 0..create_info.color_attachment_create_infos.len() {
-                    frame_textures.push(Texture::new(&create_info.color_attachment_create_infos[texture][frame]));
-                }
-                if has_depth { frame_textures.push(Texture::new(&create_info.depth_attachment_create_info.as_ref().unwrap()[frame])) };
-                textures.push(frame_textures);
+        for frame in 0..create_info.frames_in_flight {
+            let mut frame_textures = Vec::new();
+            for texture in 0..create_info.color_attachment_create_infos.len() {
+                frame_textures.push(Texture::new(&create_info.color_attachment_create_infos[texture][frame]));
             }
+            if has_depth { frame_textures.push(Texture::new(&create_info.depth_attachment_create_info.as_ref().unwrap()[frame])) };
+            textures.push(frame_textures);
         }
 
         let mut attachments_vec = Vec::new();
         let mut color_attachment_refs_vec = Vec::new();
         let mut depth_attachment_index = None;
-        if !create_info.is_present_pass {
-            for (i, texture) in textures[0].iter().enumerate() {
+        for (i, texture) in textures[0].iter().enumerate() {
                 attachments_vec.push(
                     vk::AttachmentDescription {
                         format: texture.format,
@@ -444,21 +532,6 @@ impl Pass {
                     depth_attachment_index = Some(i as u32);
                 }
             }
-        } else {
-            attachments_vec.push(vk::AttachmentDescription {
-                format: base.surface_format.format,
-                samples: SampleCountFlags::TYPE_1,
-                load_op: vk::AttachmentLoadOp::CLEAR,
-                store_op: vk::AttachmentStoreOp::STORE,
-                initial_layout: vk::ImageLayout::UNDEFINED,
-                final_layout: vk::ImageLayout::PRESENT_SRC_KHR,
-                ..Default::default()
-            });
-            color_attachment_refs_vec.push(vk::AttachmentReference {
-                attachment: 0,
-                layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-            });
-        }
 
         let attachments = attachments_vec.as_slice();
         let color_attachment_refs = color_attachment_refs_vec.as_slice();
@@ -488,26 +561,20 @@ impl Pass {
             .subpasses(std::slice::from_ref(&subpass))
             .dependencies(&dependencies);
 
-        let renderpass = base
+        let renderpass = context
             .device
             .create_render_pass(&renderpass_create_info, None)
             .unwrap();
 
-
-        let mut width = base.surface_resolution.width;
-        let mut height = base.surface_resolution.height;
-        let mut array_layers= 1;
-        if !create_info.is_present_pass {
-            let resolution_info = &create_info
-                .depth_attachment_create_info.as_ref()
-                .unwrap_or_else(|| &create_info.color_attachment_create_infos[0])[0];
-            width = resolution_info.width;
-            height = resolution_info.height;
-            array_layers = resolution_info.array_layers;
-        }
+        let resolution_info = &create_info
+            .depth_attachment_create_info.as_ref()
+            .unwrap_or_else(|| &create_info.color_attachment_create_infos[0])[0];
+        let width = resolution_info.width;
+        let height = resolution_info.height;
+        let array_layers = resolution_info.array_layers;
 
         let clear_values;
-        let framebuffers: Vec<vk::Framebuffer> = if !create_info.is_present_pass {
+        let framebuffers: Vec<vk::Framebuffer> = {
             clear_values = textures[0].iter().map(|texture| {texture.clear_value}).collect();
             let framebuffers = (0..create_info.frames_in_flight)
                 .map(|i| {
@@ -521,7 +588,7 @@ impl Pass {
                         .height(height)
                         .layers(array_layers);
 
-                    let fb = base
+                    let fb = context
                         .device
                         .create_framebuffer(&framebuffer_create_info, None)
                         .expect("Failed to create framebuffer");
@@ -530,7 +597,71 @@ impl Pass {
                 })
                 .collect();
             framebuffers
-        } else {
+        };
+
+        Self {
+            context,
+
+            renderpass,
+            textures,
+            framebuffers,
+            clear_values,
+
+            destroyed: false
+        }
+    } }
+    pub unsafe fn new_present_pass(base: &VkBase) -> Self { unsafe {
+        let context = &base.context;
+        let mut textures = Vec::new();
+
+        let mut attachments_vec = Vec::new();
+        let mut color_attachment_refs_vec = Vec::new();
+
+        attachments_vec.push(vk::AttachmentDescription {
+            format: context.surface_format.format,
+            samples: SampleCountFlags::TYPE_1,
+            load_op: vk::AttachmentLoadOp::CLEAR,
+            store_op: vk::AttachmentStoreOp::STORE,
+            initial_layout: vk::ImageLayout::UNDEFINED,
+            final_layout: vk::ImageLayout::PRESENT_SRC_KHR,
+            ..Default::default()
+        });
+        color_attachment_refs_vec.push(vk::AttachmentReference {
+            attachment: 0,
+            layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+        });
+
+        let attachments = attachments_vec.as_slice();
+        let color_attachment_refs = color_attachment_refs_vec.as_slice();
+
+        let dependencies = [vk::SubpassDependency {
+            src_subpass: vk::SUBPASS_EXTERNAL,
+            src_stage_mask: vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+            dst_access_mask: vk::AccessFlags::COLOR_ATTACHMENT_READ | vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
+            dst_stage_mask: vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+            ..Default::default()
+        }];
+
+        let subpass = vk::SubpassDescription::default()
+            .color_attachments(&color_attachment_refs)
+            .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS);
+
+        let renderpass_create_info = vk::RenderPassCreateInfo::default()
+            .attachments(&attachments)
+            .subpasses(std::slice::from_ref(&subpass))
+            .dependencies(&dependencies);
+
+        let renderpass = context
+            .device
+            .create_render_pass(&renderpass_create_info, None)
+            .unwrap();
+
+        let mut width = context.window.inner_size().width;
+        let mut height = context.window.inner_size().height;
+        let mut array_layers= 1;
+
+        let clear_values;
+        let framebuffers: Vec<vk::Framebuffer> = {
             clear_values = vec![
                 ClearValue {
                     color: ClearColorValue {
@@ -546,8 +677,8 @@ impl Pass {
                     let framebuffer_create_info = vk::FramebufferCreateInfo::default()
                         .render_pass(renderpass)
                         .attachments(&framebuffer_attachments)
-                        .width(base.surface_resolution.width)
-                        .height(base.surface_resolution.height)
+                        .width(context.window.inner_size().width)
+                        .height(context.window.inner_size().height)
                         .layers(1);
                     let fb = base
                         .device
@@ -562,7 +693,7 @@ impl Pass {
         };
 
         Self {
-            device: base.device.clone(),
+            context: context.clone(),
 
             renderpass,
             textures,
@@ -621,7 +752,7 @@ impl Pass {
                 ..Default::default()
             };
 
-            self.device.cmd_pipeline_barrier(
+            self.context.device.cmd_pipeline_barrier(
                 command_buffer,
                 stage,
                 vk::PipelineStageFlags::FRAGMENT_SHADER,
@@ -636,49 +767,47 @@ impl Pass {
     pub unsafe fn destroy(&mut self) { unsafe {
         if !self.destroyed {
             for framebuffer in &self.framebuffers {
-                self.device.destroy_framebuffer(*framebuffer, None);
+                self.context.device.destroy_framebuffer(*framebuffer, None);
             }
             for frame_textures in &mut self.textures {
                 for texture in frame_textures {
                     texture.destroy();
                 }
             }
-            self.device.destroy_render_pass(self.renderpass, None);
+            self.context.device.destroy_render_pass(self.renderpass, None);
             self.destroyed = true;
         }
     }}
 }
-pub struct PassCreateInfo<'a> {
-    pub base: &'a VkBase,
+pub struct PassCreateInfo {
+    context: Arc<Context>,
     pub frames_in_flight: usize,
-    pub color_attachment_create_infos: Vec<Vec<TextureCreateInfo<'a>>>,
-    pub depth_attachment_create_info: Option<Vec<TextureCreateInfo<'a>>>,
-    pub is_present_pass: bool,
+    pub color_attachment_create_infos: Vec<Vec<TextureCreateInfo>>,
+    pub depth_attachment_create_info: Option<Vec<TextureCreateInfo>>,
 }
-impl<'a> PassCreateInfo<'a> {
-    pub fn new(base: &'a VkBase) -> PassCreateInfo<'a> {
+impl PassCreateInfo {
+    pub fn new(context: &Arc<Context>) -> PassCreateInfo {
         PassCreateInfo {
-            base,
+            context: context.clone(),
             frames_in_flight: MAX_FRAMES_IN_FLIGHT,
             color_attachment_create_infos: Vec::new(),
             depth_attachment_create_info: None,
-            is_present_pass: false,
         }
     }
     pub fn frames_in_flight(mut self, frames_in_flight: usize) -> Self {
         self.frames_in_flight = frames_in_flight;
         self
     }
-    pub fn add_color_attachment_info(mut self, color_attachment_create_info: TextureCreateInfo<'a>) -> Self {
+    pub fn add_color_attachment_info(mut self, color_attachment_create_info: TextureCreateInfo) -> Self {
         self.color_attachment_create_infos.push(vec![color_attachment_create_info; self.frames_in_flight]);
         self
     }
-    pub fn grab_attachment(mut self, other: &'a Pass, attachment_index: usize, load_op: vk::AttachmentLoadOp, initial_layout: vk::ImageLayout) -> Self {
+    pub fn grab_attachment(mut self, other: &Pass, attachment_index: usize, load_op: vk::AttachmentLoadOp, initial_layout: vk::ImageLayout) -> Self {
         let mut create_infos = Vec::new();
         for frame in 0..other.textures.len() {
             let texture = &other.textures[frame][attachment_index];
             create_infos.push(
-                TextureCreateInfo::new(self.base)
+                TextureCreateInfo::new(&self.context)
                     .base_on_preexisting(texture)
                     .load_op(load_op)
                     .initial_layout(initial_layout)
@@ -687,12 +816,12 @@ impl<'a> PassCreateInfo<'a> {
         self.color_attachment_create_infos.push(create_infos);
         self
     }
-    pub fn grab_depth_attachment(mut self, other: &'a Pass, attachment_index: usize, load_op: vk::AttachmentLoadOp, initial_layout: vk::ImageLayout) -> Self {
+    pub fn grab_depth_attachment(mut self, other: &Pass, attachment_index: usize, load_op: vk::AttachmentLoadOp, initial_layout: vk::ImageLayout) -> Self {
         let mut create_infos = Vec::new();
         for frame in 0..other.textures.len() {
             let texture = &other.textures[frame][attachment_index];
             create_infos.push(
-                TextureCreateInfo::new(self.base)
+                TextureCreateInfo::new(&self.context)
                     .base_on_preexisting(texture)
                     .load_op(load_op)
                     .initial_layout(initial_layout)
@@ -701,19 +830,15 @@ impl<'a> PassCreateInfo<'a> {
         self.depth_attachment_create_info = Some(create_infos);
         self
     }
-    pub fn depth_attachment_info(mut self, depth_attachment_create_info: TextureCreateInfo<'a>) -> Self {
+    pub fn depth_attachment_info(mut self, depth_attachment_create_info: TextureCreateInfo) -> Self {
         self.depth_attachment_create_info = Some(vec![depth_attachment_create_info; self.frames_in_flight]);
-        self
-    }
-    pub fn set_is_present_pass(mut self, is_present_pass: bool) -> Self {
-        self.is_present_pass = is_present_pass;
         self
     }
 }
 
 #[derive(Clone)]
 pub struct Texture {
-    pub device: Device,
+    context: Arc<Context>,
 
     pub device_texture: Arc<RefCell<DeviceTexture>>,
 
@@ -731,45 +856,57 @@ pub struct Texture {
 impl Texture {
     pub unsafe fn new(create_info: &TextureCreateInfo) -> Self { unsafe {
         if let Some(preexisting) = &create_info.preexisting {
+            println!("{}, {}", preexisting.resolution.width, preexisting.resolution.height);
             let mut new = preexisting.clone();
             new.load_op = create_info.load_op;
             new.initial_layout = create_info.initial_layout;
             new
         } else {
             if create_info.depth < 1 { panic!("texture depth is too low"); }
+            let mut usage = create_info.usage_flags;
+            usage = usage | if create_info.is_depth || create_info.has_stencil { ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT } else { ImageUsageFlags::COLOR_ATTACHMENT };
+            let mut flags = vk::ImageCreateFlags::empty();
+            if create_info.is_cubemap { flags |= vk::ImageCreateFlags::CUBE_COMPATIBLE };
+            let layer_count = if create_info.is_cubemap { 6 } else { create_info.array_layers };
             let color_image_create_info = vk::ImageCreateInfo {
                 s_type: vk::StructureType::IMAGE_CREATE_INFO,
                 image_type: if create_info.depth > 1 { vk::ImageType::TYPE_3D } else if create_info.height > 1 { vk::ImageType::TYPE_2D } else { vk::ImageType::TYPE_1D },
                 extent: Extent3D { width: create_info.width, height: create_info.height, depth: create_info.depth },
                 mip_levels: 1,
-                array_layers: create_info.array_layers,
+                array_layers: layer_count,
                 format: create_info.format,
                 tiling: vk::ImageTiling::OPTIMAL,
                 initial_layout: create_info.initial_layout,
-                usage: if create_info.is_depth || create_info.has_stencil { ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT } else { ImageUsageFlags::COLOR_ATTACHMENT } | create_info.usage_flags,
+                usage,
                 sharing_mode: vk::SharingMode::EXCLUSIVE,
                 samples: create_info.samples,
+                flags,
                 ..Default::default()
             };
-            let image = create_info.device.create_image(&color_image_create_info, None).expect("Failed to create image");
-            let image_memory_req = create_info.device.get_image_memory_requirements(image);
+
+            let context = create_info.context.clone();
+
+            let image = context.device.create_image(&color_image_create_info, None).expect("Failed to create image");
+            let image_memory_req = context.device.get_image_memory_requirements(image);
             let image_alloc_info = vk::MemoryAllocateInfo {
                 s_type: vk::StructureType::MEMORY_ALLOCATE_INFO,
                 allocation_size: image_memory_req.size,
                 memory_type_index: find_memorytype_index(
                     &image_memory_req,
-                    &create_info.instance.get_physical_device_memory_properties(*create_info.p_device),
+                    &context.instance.get_physical_device_memory_properties(context.pdevice),
                     MemoryPropertyFlags::DEVICE_LOCAL,
                 ).expect("unable to get mem type index for texture image"),
                 ..Default::default()
             };
             // println!("this texture requires {}", image_memory_req.size);
-            let image_memory = create_info.device.allocate_memory(&image_alloc_info, None).expect("Failed to allocate image memory");
-            create_info.device.bind_image_memory(image, image_memory, 0).expect("Failed to bind image memory");
+            let image_memory = context.device.allocate_memory(&image_alloc_info, None).expect("Failed to allocate image memory");
+            context.device.bind_image_memory(image, image_memory, 0).expect("Failed to bind image memory");
             let image_view_info = vk::ImageViewCreateInfo {
                 s_type: vk::StructureType::IMAGE_VIEW_CREATE_INFO,
                 image,
-                view_type: if create_info.array_layers > 1 {
+                view_type: if create_info.is_cubemap {
+                    vk::ImageViewType::CUBE
+                } else { if create_info.array_layers > 1 {
                     if create_info.height > 1 {
                         vk::ImageViewType::TYPE_2D_ARRAY
                     } else {
@@ -781,7 +918,7 @@ impl Texture {
                     vk::ImageViewType::TYPE_2D
                 } else {
                     vk::ImageViewType::TYPE_1D
-                },
+                } },
                 format: create_info.format,
                 subresource_range: ImageSubresourceRange {
                     aspect_mask: if create_info.is_depth {
@@ -792,13 +929,13 @@ impl Texture {
                     base_mip_level: 0,
                     level_count: 1,
                     base_array_layer: 0,
-                    layer_count: create_info.array_layers,
+                    layer_count,
                     ..Default::default()
                 },
                 ..Default::default()
             };
             let stencil_image_view = if create_info.has_stencil {
-                Some(create_info.device.create_image_view(&vk::ImageViewCreateInfo {
+                Some(context.device.create_image_view(&vk::ImageViewCreateInfo {
                     s_type: vk::StructureType::IMAGE_VIEW_CREATE_INFO,
                     image,
                     view_type: if create_info.array_layers > 1 {
@@ -828,11 +965,11 @@ impl Texture {
             } else { None };
 
             Self {
-                device: create_info.device.clone(),
+                context,
 
                 device_texture: Arc::new(RefCell::new(DeviceTexture {
                     image,
-                    image_view: create_info.device.create_image_view(&image_view_info, None).expect("failed to create image view"),
+                    image_view: create_info.context.device.create_image_view(&image_view_info, None).expect("failed to create image view"),
                     stencil_image_view,
                     device_memory: image_memory,
 
@@ -852,7 +989,9 @@ impl Texture {
             }
         }
     } }
-    pub unsafe fn sample(&self, base: &VkBase, x: i32, y: i32, z: i32) -> Box<[f32]> { unsafe {
+    pub unsafe fn sample(&self, x: i32, y: i32, z: i32) -> Box<[f32]> { unsafe {
+        let context = &self.context;
+
         let pixel_size = match self.format {
             Format::R8G8B8A8_UNORM => 4,
             Format::R32_SFLOAT => 4,
@@ -874,13 +1013,13 @@ impl Texture {
             sharing_mode: vk::SharingMode::EXCLUSIVE,
             ..Default::default()
         };
-        let staging_buffer = self.device.create_buffer(&buffer_info, None).unwrap();
+        let staging_buffer = context.device.create_buffer(&buffer_info, None).unwrap();
 
-        let req = self.device.get_buffer_memory_requirements(staging_buffer);
+        let req = context.device.get_buffer_memory_requirements(staging_buffer);
 
-        let mem_index = base
+        let mem_index = context
             .instance
-            .get_physical_device_memory_properties(base.pdevice)
+            .get_physical_device_memory_properties(context.pdevice)
             .memory_types
             .iter()
             .enumerate()
@@ -900,8 +1039,8 @@ impl Texture {
             memory_type_index: mem_index,
             ..Default::default()
         };
-        let staging_memory = self.device.allocate_memory(&alloc_info, None).unwrap();
-        self.device.bind_buffer_memory(staging_buffer, staging_memory, 0).unwrap();
+        let staging_memory = context.device.allocate_memory(&alloc_info, None).unwrap();
+        context.device.bind_buffer_memory(staging_buffer, staging_memory, 0).unwrap();
 
         let region = vk::BufferImageCopy {
             buffer_offset: 0,
@@ -935,7 +1074,7 @@ impl Texture {
             layer_count: 1,
         };
 
-        base.transition_image_layout(
+        context.transition_image_layout(
             image,
             subresource_range,
             vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
@@ -943,9 +1082,9 @@ impl Texture {
         );
 
         {
-            let cmd = base.begin_single_time_commands(1)[0];
+            let cmd = context.begin_single_time_commands(1)[0];
 
-            self.device.cmd_copy_image_to_buffer(
+            context.device.cmd_copy_image_to_buffer(
                 cmd,
                 image,
                 vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
@@ -953,10 +1092,10 @@ impl Texture {
                 &[region],
             );
 
-            base.end_single_time_commands(vec![cmd]);
+            context.end_single_time_commands(vec![cmd]);
         }
 
-        let ptr = self.device.map_memory(
+        let ptr = self.context.device.map_memory(
             staging_memory,
             0,
             pixel_size as u64,
@@ -1018,12 +1157,12 @@ impl Texture {
 
             _ => panic!("ehlp"),
         };
-        self.device.unmap_memory(staging_memory);
+        self.context.device.unmap_memory(staging_memory);
 
-        self.device.destroy_buffer(staging_buffer, None);
-        self.device.free_memory(staging_memory, None);
+        self.context.device.destroy_buffer(staging_buffer, None);
+        self.context.device.free_memory(staging_memory, None);
 
-        base.transition_image_layout(
+        context.transition_image_layout(
             image,
             subresource_range,
             vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
@@ -1075,7 +1214,7 @@ impl Texture {
         }
     }
     pub unsafe fn destroy(&mut self) { {
-        self.device_texture.borrow_mut().destroy(&self.device);
+        self.device_texture.borrow_mut().destroy(&self.context);
     } }
 
     fn clear_value_for_format(format: Format, clear: [f32; 4]) -> ClearValue {
@@ -1162,23 +1301,21 @@ pub struct DeviceTexture {
     pub destroyed: bool,
 }
 impl DeviceTexture {
-    pub unsafe fn destroy(&mut self, device: &Device) {
+    pub unsafe fn destroy(&mut self, context: &Arc<Context>) {
         if !self.destroyed { unsafe {
             self.destroyed = true;
-            device.destroy_image(self.image, None);
-            device.destroy_image_view(self.image_view, None);
-            device.free_memory(self.device_memory, None);
+            context.device.destroy_image(self.image, None);
+            context.device.destroy_image_view(self.image_view, None);
+            context.device.free_memory(self.device_memory, None);
             if let Some(stencil_view) = self.stencil_image_view {
-                device.destroy_image_view(stencil_view, None);
+                context.device.destroy_image_view(stencil_view, None);
             }
         }
     } }
 }
 #[derive(Clone)]
-pub struct TextureCreateInfo<'a> {
-    pub device: &'a Device,
-    pub p_device: &'a PhysicalDevice,
-    pub instance: &'a Instance,
+pub struct TextureCreateInfo {
+    context: Arc<Context>,
     pub preexisting: Option<Texture>,
     pub width: u32,
     pub height: u32,
@@ -1186,6 +1323,7 @@ pub struct TextureCreateInfo<'a> {
     pub samples: SampleCountFlags,
     pub format: Format,
     pub is_depth: bool,
+    pub is_cubemap: bool,
     pub has_stencil: bool,
     pub usage_flags: ImageUsageFlags,
     pub array_layers: u32,
@@ -1193,39 +1331,18 @@ pub struct TextureCreateInfo<'a> {
     pub load_op: vk::AttachmentLoadOp,
     pub initial_layout: vk::ImageLayout,
 }
-impl TextureCreateInfo<'_> {
-    pub fn new(base: &VkBase) -> TextureCreateInfo {
+impl TextureCreateInfo {
+    pub fn new(context: &Arc<Context>) -> TextureCreateInfo {
         TextureCreateInfo {
-            device: &base.device,
-            p_device: &base.pdevice,
-            instance: &base.instance,
+            context: context.clone(),
             preexisting: None,
-            width: base.surface_resolution.width,
-            height: base.surface_resolution.height,
+            width: context.window.inner_size().width,
+            height: context.window.inner_size().height,
             depth: 1,
             samples: SampleCountFlags::TYPE_1,
             format: Format::R16G16B16A16_SFLOAT,
             is_depth: false,
-            has_stencil: false,
-            usage_flags: ImageUsageFlags::SAMPLED,
-            array_layers: 1,
-            clear_value: [0.0; 4],
-            load_op: vk::AttachmentLoadOp::CLEAR,
-            initial_layout: vk::ImageLayout::UNDEFINED,
-        }
-    }
-    pub fn new_without_base<'a>(device: &'a Device, p_device: &'a PhysicalDevice, instance: &'a Instance, surface_resolution: &vk::Extent2D) -> TextureCreateInfo<'a> {
-        TextureCreateInfo {
-            device,
-            p_device,
-            instance,
-            preexisting: None,
-            width: surface_resolution.width,
-            height: surface_resolution.height,
-            depth: 1,
-            samples: SampleCountFlags::TYPE_1,
-            format: Format::R16G16B16A16_SFLOAT,
-            is_depth: false,
+            is_cubemap: false,
             has_stencil: false,
             usage_flags: ImageUsageFlags::SAMPLED,
             array_layers: 1,
@@ -1256,6 +1373,10 @@ impl TextureCreateInfo<'_> {
     }
     pub fn is_depth(mut self, is_depth: bool) -> Self {
         self.is_depth = is_depth;
+        self
+    }
+    pub fn is_cubemap(mut self, is_cubemap: bool) -> Self {
+        self.is_cubemap = is_cubemap;
         self
     }
     pub fn usage_flags(mut self, usage_flags: ImageUsageFlags) -> Self {
@@ -1299,7 +1420,7 @@ impl TextureCreateInfo<'_> {
 }
 
 pub struct DescriptorSet {
-    pub device: Device,
+    context: Arc<Context>,
     pub descriptor_sets: Vec<vk::DescriptorSet>,
     pub descriptor_set_layout: DescriptorSetLayout,
     pub descriptor_pool: DescriptorPool,
@@ -1309,7 +1430,7 @@ pub struct DescriptorSet {
 }
 impl DescriptorSet {
     pub unsafe fn new(create_info: DescriptorSetCreateInfo) -> DescriptorSet { unsafe {
-        let base = create_info.base;
+        let context = create_info.context.clone();
         let mut has_dynamic = false;
         let mut has_update_after_bind = false;
         let mut variable_descriptor_count = 0;
@@ -1333,7 +1454,7 @@ impl DescriptorSet {
             flags: if has_dynamic || has_update_after_bind {DescriptorPoolCreateFlags::UPDATE_AFTER_BIND} else {DescriptorPoolCreateFlags::empty()},
             ..Default::default()
         };
-        let descriptor_pool = base.device.create_descriptor_pool(&descriptor_pool_create_info, None).expect("failed to create descriptor pool");
+        let descriptor_pool = context.device.create_descriptor_pool(&descriptor_pool_create_info, None).expect("failed to create descriptor pool");
 
         let mut i = 0;
 
@@ -1371,7 +1492,7 @@ impl DescriptorSet {
             flags: if has_dynamic || has_update_after_bind {DescriptorSetLayoutCreateFlags::UPDATE_AFTER_BIND_POOL} else {DescriptorSetLayoutCreateFlags::empty()},
             ..Default::default()
         };
-        let descriptor_set_layout = base.device.create_descriptor_set_layout(&descriptor_layout_create_info, None).expect("failed to create descriptor set layout");
+        let descriptor_set_layout = context.device.create_descriptor_set_layout(&descriptor_layout_create_info, None).expect("failed to create descriptor set layout");
         let descriptor_set_layouts = vec![descriptor_set_layout; create_info.frames_in_flight];
 
         let variable_counts = vec![variable_descriptor_count; create_info.frames_in_flight];
@@ -1389,7 +1510,7 @@ impl DescriptorSet {
             p_set_layouts: descriptor_set_layouts.as_ptr(),
             ..Default::default()
         };
-        let descriptor_sets = base.device.allocate_descriptor_sets(&alloc_info)
+        let descriptor_sets = context.device.allocate_descriptor_sets(&alloc_info)
             .expect("failed to allocate descriptor sets");
 
         let mut binding = 0;
@@ -1448,10 +1569,10 @@ impl DescriptorSet {
                     ..Default::default()
                 })
             }).collect::<Vec<_>>();
-            base.device.update_descriptor_sets(&descriptor_writes, &[]);
+            context.device.update_descriptor_sets(&descriptor_writes, &[]);
         }
         DescriptorSet {
-            device: base.device.clone(),
+            context,
             descriptor_sets,
             descriptor_set_layout,
             descriptor_pool,
@@ -1462,8 +1583,8 @@ impl DescriptorSet {
     } }
     pub unsafe fn destroy(&mut self) { unsafe {
         if !self.destroyed {
-            self.device.destroy_descriptor_set_layout(self.descriptor_set_layout, None);
-            self.device.destroy_descriptor_pool(self.descriptor_pool, None);
+            self.context.device.destroy_descriptor_set_layout(self.descriptor_set_layout, None);
+            self.context.device.destroy_descriptor_pool(self.descriptor_pool, None);
             for descriptor in &self.descriptors {
                 descriptor.destroy();
             }
@@ -1471,15 +1592,15 @@ impl DescriptorSet {
         }
     } }
 }
-pub struct DescriptorSetCreateInfo<'a> {
-    pub base: &'a VkBase,
+pub struct DescriptorSetCreateInfo {
+    context: Arc<Context>,
     pub descriptors: Vec<Descriptor>,
     pub frames_in_flight: usize,
 }
-impl DescriptorSetCreateInfo<'_> {
-    pub fn new(base: &VkBase) -> DescriptorSetCreateInfo {
+impl DescriptorSetCreateInfo {
+    pub fn new(context: &Arc<Context>) -> DescriptorSetCreateInfo {
         DescriptorSetCreateInfo {
-            base,
+            context: context.clone(),
             descriptors: Vec::new(),
             frames_in_flight: MAX_FRAMES_IN_FLIGHT,
         }
@@ -1495,7 +1616,7 @@ impl DescriptorSetCreateInfo<'_> {
 }
 
 pub struct Descriptor {
-    pub device: Device,
+    context: Arc<Context>,
 
     pub descriptor_type: DescriptorType,
     pub shader_stages: ShaderStageFlags,
@@ -1510,7 +1631,7 @@ pub struct Descriptor {
 }
 impl Descriptor {
     pub unsafe fn new(create_info: &DescriptorCreateInfo) -> Self { unsafe {
-        let base = create_info.base;
+        let context = &create_info.context;
         match create_info.descriptor_type {
             DescriptorType::UNIFORM_BUFFER => {
                 let mut uniform_buffers = Vec::new();
@@ -1519,14 +1640,14 @@ impl Descriptor {
                 for i in 0..create_info.frames_in_flight {
                     uniform_buffers.push(Buffer::null());
                     uniform_buffers_memory.push(DeviceMemory::null());
-                    base.create_buffer(
+                    context.create_buffer(
                         create_info.size.expect("DescriptorCreateInfo of type UNIFORM_BUFFER does not contain buffer size"),
                         vk::BufferUsageFlags::UNIFORM_BUFFER,
                         create_info.memory_property_flags,
                         &mut uniform_buffers[i],
                         &mut uniform_buffers_memory[i],
                     );
-                    uniform_buffers_mapped.push(base.device.map_memory(
+                    uniform_buffers_mapped.push(context.device.map_memory(
                         uniform_buffers_memory[i],
                         0,
                         create_info.size.expect("DescriptorCreateInfo of type UNIFORM_BUFFER does not contain buffer size"),
@@ -1534,7 +1655,7 @@ impl Descriptor {
                     ).expect("failed to map uniform buffer"));
                 }
                 Descriptor {
-                    device: base.device.clone(),
+                    context: context.clone(),
                     descriptor_type: DescriptorType::UNIFORM_BUFFER,
                     shader_stages: create_info.shader_stages,
                     is_dynamic: create_info.dynamic,
@@ -1549,7 +1670,7 @@ impl Descriptor {
             }
             DescriptorType::STORAGE_BUFFER => {
                 Descriptor {
-                    device: base.device.clone(),
+                    context: context.clone(),
                     descriptor_type: DescriptorType::STORAGE_BUFFER,
                     shader_stages: create_info.shader_stages,
                     is_dynamic: create_info.dynamic,
@@ -1564,7 +1685,7 @@ impl Descriptor {
             }
             DescriptorType::COMBINED_IMAGE_SAMPLER => {
                 Descriptor {
-                    device: base.device.clone(),
+                    context: context.clone(),
                     descriptor_type: DescriptorType::COMBINED_IMAGE_SAMPLER,
                     shader_stages: create_info.shader_stages,
                     is_dynamic: create_info.dynamic,
@@ -1579,7 +1700,7 @@ impl Descriptor {
             }
             _ => {
                 Descriptor {
-                    device: base.device.clone(),
+                    context: context.clone(),
                     descriptor_type: DescriptorType::COMBINED_IMAGE_SAMPLER,
                     shader_stages: ShaderStageFlags::FRAGMENT,
                     is_dynamic: false,
@@ -1598,14 +1719,14 @@ impl Descriptor {
     pub unsafe fn destroy(&self) { unsafe {
         if self.descriptor_type == DescriptorType::UNIFORM_BUFFER || self.descriptor_type == DescriptorType::STORAGE_BUFFER {
             for i in 0..self.owned_buffers.0.len() {
-                self.device.destroy_buffer(self.owned_buffers.0[i], None);
-                self.device.free_memory(self.owned_buffers.1[i], None);
+                self.context.device.destroy_buffer(self.owned_buffers.0[i], None);
+                self.context.device.free_memory(self.owned_buffers.1[i], None);
             }
         }
     } }
 }
-pub struct DescriptorCreateInfo<'a> {
-    pub base: &'a VkBase,
+pub struct DescriptorCreateInfo {
+    pub context: Arc<Context>,
     pub frames_in_flight: usize,
     pub descriptor_type: DescriptorType,
     pub size: Option<u64>,
@@ -1618,10 +1739,10 @@ pub struct DescriptorCreateInfo<'a> {
     pub dynamic: bool,
     pub binding_flags: Option<DescriptorBindingFlags>,
 }
-impl DescriptorCreateInfo<'_> {
-    pub fn new(base: &VkBase) -> DescriptorCreateInfo {
+impl DescriptorCreateInfo {
+    pub fn new(context: &Arc<Context>) -> DescriptorCreateInfo {
         DescriptorCreateInfo {
-            base,
+            context: context.clone(),
             frames_in_flight: MAX_FRAMES_IN_FLIGHT,
             descriptor_type: DescriptorType::COMBINED_IMAGE_SAMPLER,
             size: None,
@@ -1682,14 +1803,14 @@ impl DescriptorCreateInfo<'_> {
 }
 
 pub struct Shader {
-    pub device: Device,
+    context: Arc<Context>,
 
     pub vertex_module: ShaderModule,
     pub geometry_module: Option<ShaderModule>,
     pub fragment_module: ShaderModule,
 }
 impl Shader {
-    pub unsafe fn new(base: &VkBase, vert_path: &str, frag_path: &str, geometry_path: Option<&str>) -> Self { unsafe {
+    pub unsafe fn new(context: &Arc<Context>, vert_path: &str, frag_path: &str, geometry_path: Option<&str>) -> Self { unsafe {
         let mut vertex_spv_file = Cursor::new(load_file(&(SHADER_PATH.to_owned() + vert_path)).unwrap());
         let mut frag_spv_file = Cursor::new(load_file(&(SHADER_PATH.to_owned() + frag_path)).unwrap());
         let geometry_spv_file: Option<Cursor<Vec<u8>>> = if geometry_path.is_some() {
@@ -1713,24 +1834,24 @@ impl Shader {
             .as_ref()
             .map(|code| ShaderModuleCreateInfo::default().code(code));
 
-        let vertex_shader_module = base
+        let vertex_shader_module = context
             .device
             .create_shader_module(&vertex_shader_info, None)
             .expect("Vertex shader module error");
         let geometry_shader_module: Option<ShaderModule> = if geometry_path.is_some() {
-            Some(base
+            Some(context
                 .device
                 .create_shader_module(&geometry_shader_info.unwrap(), None)
                 .expect("Geometry shader module error"))
         } else {
             None
         };
-        let fragment_shader_module = base
+        let fragment_shader_module = context
             .device
             .create_shader_module(&frag_shader_info, None)
             .expect("Fragment shader module error");
         Shader {
-            device: base.device.clone(),
+            context: context.clone(),
             vertex_module: vertex_shader_module,
             geometry_module: geometry_shader_module,
             fragment_module: fragment_shader_module,
@@ -1781,10 +1902,10 @@ impl Shader {
     }
 
     pub fn destroy(&self) { unsafe {
-        self.device.destroy_shader_module(self.vertex_module, None);
+        self.context.device.destroy_shader_module(self.vertex_module, None);
         if self.geometry_module.is_some() {
-            self.device.destroy_shader_module(self.geometry_module.unwrap(), None);
+            self.context.device.destroy_shader_module(self.geometry_module.unwrap(), None);
         }
-        self.device.destroy_shader_module(self.fragment_module, None);
+        self.context.device.destroy_shader_module(self.fragment_module, None);
     } }
 }

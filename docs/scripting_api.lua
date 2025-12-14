@@ -30,6 +30,7 @@ MovementMode = {
     ---@field get_transform fun(self:Scene, index:integer):Transform
     ---@field reset_outlines fun(self:Scene):nil
     ---@field add_outlined fun(self:Scene, index:integer):nil
+    ---@field load_model fun(self:Scene, parent_index:integer):nil
     
         ---@class Transform
         ---@field translation Vector

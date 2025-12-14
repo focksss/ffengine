@@ -10,7 +10,7 @@ use std::sync::Arc;
 use crate::math::Vector;
 use crate::render::render::MAX_FRAMES_IN_FLIGHT;
 use crate::render::render_helper::{Descriptor, DescriptorCreateInfo, DescriptorSetCreateInfo, DeviceTexture, PassCreateInfo, PipelineCreateInfo, Renderpass, RenderpassCreateInfo, Texture, TextureCreateInfo};
-use crate::render::vulkan_base::{copy_data_to_memory, VkBase};
+use crate::render::vulkan_base::{copy_data_to_memory, Context, VkBase};
 use crate::scene::scene::{DrawMode, Instance, Scene};
 use crate::scene::world::camera::Camera;
 use crate::scene::world::world::{World, SunSendable, Vertex};
@@ -22,8 +22,7 @@ pub const SHADOW_RES: u32 = 4096;
 
 //TODO() FIX SSAO UPSAMPLING
 pub struct SceneRenderer {
-    pub device: ash::Device,
-    pub draw_command_buffers: Vec<vk::CommandBuffer>,
+    context: Arc<Context>,
 
     pub viewport: Arc<RefCell<vk::Viewport>>,
 
@@ -43,6 +42,8 @@ pub struct SceneRenderer {
     pub ssao_blur_vertical_renderpass: Renderpass,
     pub ssao_upsample_renderpass: Renderpass,
 
+    pub equirectangular_to_cubemap_renderpass: Renderpass,
+
     pub lighting_renderpass: Renderpass,
 
     pub sampler: vk::Sampler,
@@ -51,9 +52,9 @@ pub struct SceneRenderer {
     pub ssao_noise_texture: Texture,
 }
 impl SceneRenderer {
-    pub unsafe fn new(base: &VkBase, world: &World, viewport: vk::Viewport) -> SceneRenderer { unsafe {
-        let null_tex_info = base.create_2d_texture_image(&PathBuf::from("").join("engine\\resources\\checker_2x2.png"), true) ;
-        base.device.destroy_sampler(null_tex_info.0.1, None);
+    pub unsafe fn new(context: &Arc<Context>, world: &World, viewport: vk::Viewport) -> SceneRenderer { unsafe {
+        let null_tex_info = context.create_2d_texture_image(&PathBuf::from("").join("engine\\resources\\checker_2x2.png"), true) ;
+        context.device.destroy_sampler(null_tex_info.0.1, None);
         let sampler_info = vk::SamplerCreateInfo {
             s_type: vk::StructureType::SAMPLER_CREATE_INFO,
             mag_filter: vk::Filter::NEAREST,
@@ -62,7 +63,7 @@ impl SceneRenderer {
             address_mode_v: vk::SamplerAddressMode::REPEAT,
             address_mode_w: vk::SamplerAddressMode::REPEAT,
             anisotropy_enable: vk::TRUE,
-            max_anisotropy: base.pdevice_properties.limits.max_sampler_anisotropy,
+            max_anisotropy: context.pdevice_properties.limits.max_sampler_anisotropy,
             border_color: vk::BorderColor::INT_OPAQUE_BLACK,
             unnormalized_coordinates: vk::FALSE,
             mipmap_mode: vk::SamplerMipmapMode::LINEAR,
@@ -79,7 +80,7 @@ impl SceneRenderer {
 
             destroyed: false,
         };
-        let null_tex_sampler = base.device.create_sampler(&sampler_info, None).expect("failed to create sampler");
+        let null_tex_sampler = context.device.create_sampler(&sampler_info, None).expect("failed to create sampler");
 
         let (
             geometry_renderpass,
@@ -90,8 +91,9 @@ impl SceneRenderer {
             ssao_blur_horizontal_renderpass,
             ssao_blur_vertical_renderpass,
             ssao_upsample_renderpass,
-            lighting_renderpass
-        ) = SceneRenderer::create_rendering_objects(base, &null_texture, &null_tex_sampler, world, viewport);
+            lighting_renderpass,
+            equirectangular_to_cubemap_renderpass,
+        ) = SceneRenderer::create_rendering_objects(context, &null_texture, &null_tex_sampler, world, viewport);
 
         //<editor-fold desc = "ssao sampling setup">
         let mut rng = rng();
@@ -110,7 +112,7 @@ impl SceneRenderer {
                 rng.random_range(-1.0..1.0),
             ]);
         }
-        let ssao_noise_tex_info = TextureCreateInfo::new(base)
+        let ssao_noise_tex_info = TextureCreateInfo::new(context)
             .width(4)
             .height(4)
             .depth(1)
@@ -121,7 +123,7 @@ impl SceneRenderer {
             );
         let ssao_noise_texture = Texture::new(&ssao_noise_tex_info);
 
-        let ((staging_buffer, staging_buffer_memory), _) = base.create_device_and_staging_buffer(
+        let ((staging_buffer, staging_buffer_memory), _) = context.create_device_and_staging_buffer(
             0,
             &noise_data,
             vk::BufferUsageFlags::TRANSFER_SRC,
@@ -129,7 +131,7 @@ impl SceneRenderer {
             false,
             true,
         );
-        base.transition_image_layout(
+        context.transition_image_layout(
             ssao_noise_texture.device_texture.borrow().image,
             vk::ImageSubresourceRange {
                 aspect_mask: vk::ImageAspectFlags::COLOR,
@@ -142,12 +144,12 @@ impl SceneRenderer {
             vk::ImageLayout::UNDEFINED,
             vk::ImageLayout::TRANSFER_DST_OPTIMAL,
         );
-        base.copy_buffer_to_image(
+        context.copy_buffer_to_image(
             staging_buffer,
             ssao_noise_texture.device_texture.borrow().image,
             vk::Extent3D { width: 4, height: 4, depth: 1 },
         );
-        base.transition_image_layout(
+        context.transition_image_layout(
             ssao_noise_texture.device_texture.borrow().image,
             vk::ImageSubresourceRange {
                 aspect_mask: vk::ImageAspectFlags::COLOR,
@@ -160,11 +162,11 @@ impl SceneRenderer {
             vk::ImageLayout::TRANSFER_DST_OPTIMAL,
             vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
         );
-        base.device.destroy_buffer(staging_buffer, None);
-        base.device.free_memory(staging_buffer_memory, None);
+        context.device.destroy_buffer(staging_buffer, None);
+        context.device.free_memory(staging_buffer_memory, None);
         //</editor-fold>
         //<editor-fold desc = "descriptor updates">
-        let sampler = base.device.create_sampler(&vk::SamplerCreateInfo {
+        let sampler = context.device.create_sampler(&vk::SamplerCreateInfo {
             mag_filter: vk::Filter::LINEAR,
             min_filter: vk::Filter::LINEAR,
             address_mode_u: vk::SamplerAddressMode::CLAMP_TO_BORDER,
@@ -173,7 +175,7 @@ impl SceneRenderer {
             border_color: vk::BorderColor::FLOAT_OPAQUE_WHITE,
             ..Default::default()
         }, None).unwrap();
-        let nearest_sampler = base.device.create_sampler(&vk::SamplerCreateInfo {
+        let nearest_sampler = context.device.create_sampler(&vk::SamplerCreateInfo {
             mag_filter: vk::Filter::NEAREST,
             min_filter: vk::Filter::NEAREST,
             address_mode_u: vk::SamplerAddressMode::REPEAT,
@@ -229,7 +231,7 @@ impl SceneRenderer {
                     .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
                     .image_info(slice::from_ref(info))
             }).collect();
-            base.device.update_descriptor_sets(&lighting_descriptor_writes, &[]);
+            context.device.update_descriptor_sets(&lighting_descriptor_writes, &[]);
             //</editor-fold>
             //<editor-fold desc = "ssao pre downsample">
             let image_infos = [
@@ -251,7 +253,7 @@ impl SceneRenderer {
                     .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
                     .image_info(slice::from_ref(info))
             }).collect();
-            base.device.update_descriptor_sets(&ssao_pre_downsample_descriptor_writes, &[]);
+            context.device.update_descriptor_sets(&ssao_pre_downsample_descriptor_writes, &[]);
             //</editor-fold>
             //<editor-fold desc = "ssao gen">
             let image_infos = [
@@ -273,7 +275,7 @@ impl SceneRenderer {
                     .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
                     .image_info(slice::from_ref(info))
             }).collect();
-            base.device.update_descriptor_sets(&ssao_descriptor_writes, &[]);
+            context.device.update_descriptor_sets(&ssao_descriptor_writes, &[]);
             //</editor-fold>
             //<editor-fold desc = "ssao blur">
             let image_infos = [
@@ -295,7 +297,7 @@ impl SceneRenderer {
                     .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
                     .image_info(slice::from_ref(info))
             }).collect();
-            base.device.update_descriptor_sets(&descriptor_writes, &[]);
+            context.device.update_descriptor_sets(&descriptor_writes, &[]);
 
             let image_infos = [
                 vk::DescriptorImageInfo {
@@ -316,7 +318,7 @@ impl SceneRenderer {
                     .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
                     .image_info(slice::from_ref(info))
             }).collect();
-            base.device.update_descriptor_sets(&descriptor_writes, &[]);
+            context.device.update_descriptor_sets(&descriptor_writes, &[]);
 
             let image_infos = [
                 vk::DescriptorImageInfo {
@@ -347,14 +349,13 @@ impl SceneRenderer {
                     .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
                     .image_info(slice::from_ref(info))
             }).collect();
-            base.device.update_descriptor_sets(&descriptor_writes, &[]);
+            context.device.update_descriptor_sets(&descriptor_writes, &[]);
             //</editor-fold>
         }
         //</editor-fold>
 
         SceneRenderer {
-            device: base.device.clone(),
-            draw_command_buffers: base.draw_command_buffers.clone(),
+            context: context.clone(),
 
             hovered_ids: (0, 0),
             queued_id_buffer_sample: false,
@@ -372,6 +373,7 @@ impl SceneRenderer {
             ssao_blur_horizontal_renderpass,
             ssao_blur_vertical_renderpass,
             ssao_upsample_renderpass,
+            equirectangular_to_cubemap_renderpass,
             lighting_renderpass,
 
             sampler,
@@ -381,7 +383,7 @@ impl SceneRenderer {
         }
     } }
     pub unsafe fn create_rendering_objects(
-        base: &VkBase,
+        context: &Arc<Context>,
         null_tex: &DeviceTexture,
         null_tex_sampler: &vk::Sampler,
         world: &World,
@@ -396,6 +398,7 @@ impl SceneRenderer {
         Renderpass, // ssao blur vertical renderpass
         Renderpass, // ssao upsample renderpass
         Renderpass, // lighting pass
+        Renderpass, // equirectangular_to_cubemap pass
     ) { unsafe {
         let resolution = Extent2D { width: viewport.width as u32, height: viewport.height as u32 };
         let image_infos: Vec<vk::DescriptorImageInfo> = vec![vk::DescriptorImageInfo {
@@ -405,120 +408,128 @@ impl SceneRenderer {
             ..Default::default()
         }; 1024];
 
-        let texture_sampler_create_info = DescriptorCreateInfo::new(base)
+        let texture_sampler_create_info = DescriptorCreateInfo::new(context)
             .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
             .shader_stages(ShaderStageFlags::FRAGMENT);
         //<editor-fold desc = "passes">
-        let ssao_res_color_tex_create_info = TextureCreateInfo::new(base).format(Format::R8_UNORM)
+        let ssao_res_color_tex_create_info = TextureCreateInfo::new(context).format(Format::R8_UNORM)
             .width(resolution.width as u32).height(resolution.height as u32)
             .resolution_denominator((1.0 / SSAO_RESOLUTION_MULTIPLIER) as u32);
-        let geometry_pass_create_info = PassCreateInfo::new(base)
+        let geometry_pass_create_info = PassCreateInfo::new(context)
             // .add_color_attachment_info(TextureCreateInfo::new(base).format(Format::R16_SINT)) // material
-            .add_color_attachment_info(TextureCreateInfo::new(base).format(Format::R8G8B8A8_UNORM)
+            .add_color_attachment_info(TextureCreateInfo::new(context).format(Format::R8G8B8A8_UNORM)
                 .width(resolution.width).height(resolution.height)) // albedo
-            .add_color_attachment_info(TextureCreateInfo::new(base).format(Format::R8G8B8A8_UNORM)
+            .add_color_attachment_info(TextureCreateInfo::new(context).format(Format::R8G8B8A8_UNORM)
                 .width(resolution.width).height(resolution.height)) // metallic roughness
-            .add_color_attachment_info(TextureCreateInfo::new(base).format(Format::R8G8B8A8_UNORM)
+            .add_color_attachment_info(TextureCreateInfo::new(context).format(Format::R8G8B8A8_UNORM)
                 .width(resolution.width).height(resolution.height)) // extra properties
-            .add_color_attachment_info(TextureCreateInfo::new(base).format(Format::R16G16B16A16_SFLOAT)
+            .add_color_attachment_info(TextureCreateInfo::new(context).format(Format::R16G16B16A16_SFLOAT)
                 .width(resolution.width).height(resolution.height)) // view normal
-            .add_color_attachment_info(TextureCreateInfo::new(base).format(Format::R16G16_UINT)
+            .add_color_attachment_info(TextureCreateInfo::new(context).format(Format::R16G16_UINT)
                 .usage_flags(vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::TRANSFER_SRC)
                 .width(resolution.width).height(resolution.height)) // id buffer
-            .depth_attachment_info(TextureCreateInfo::new(base).format(Format::D32_SFLOAT_S8_UINT)
+            .depth_attachment_info(TextureCreateInfo::new(context).format(Format::D32_SFLOAT_S8_UINT)
                 .width(resolution.width).height(resolution.height)
                 .is_depth(true).clear_value([0.0, 0.0, 0.0, 0.0])
                 .has_stencil(true)); // depth
 
-        let shadow_pass_create_info = PassCreateInfo::new(base)
-            .depth_attachment_info(TextureCreateInfo::new(base).format(Format::D16_UNORM).is_depth(true).clear_value([0.0, 0.0, 0.0, 0.0]).width(SHADOW_RES).height(SHADOW_RES).array_layers(5)); // depth;
+        let shadow_pass_create_info = PassCreateInfo::new(context)
+            .depth_attachment_info(TextureCreateInfo::new(context).format(Format::D16_UNORM).is_depth(true).clear_value([0.0, 0.0, 0.0, 0.0]).width(SHADOW_RES).height(SHADOW_RES).array_layers(5)); // depth;
 
-        let ssao_depth_downsample_pass_create_info = PassCreateInfo::new(base)
-            .add_color_attachment_info(TextureCreateInfo::new(base).format(Format::R16G16B16A16_SFLOAT)
+        let ssao_depth_downsample_pass_create_info = PassCreateInfo::new(context)
+            .add_color_attachment_info(TextureCreateInfo::new(context).format(Format::R16G16B16A16_SFLOAT)
                 .width(resolution.width).height(resolution.height)
                 .resolution_denominator((1.0 / SSAO_RESOLUTION_MULTIPLIER) as u32));
-        let ssao_pass_create_info = PassCreateInfo::new(base)
+        let ssao_pass_create_info = PassCreateInfo::new(context)
             .add_color_attachment_info(ssao_res_color_tex_create_info.clone());
-        let ssao_blur_horizontal_pass_create_info = PassCreateInfo::new(base)
+        let ssao_blur_horizontal_pass_create_info = PassCreateInfo::new(context)
             .add_color_attachment_info(ssao_res_color_tex_create_info.clone());
-        let ssao_blur_vertical_pass_create_info = PassCreateInfo::new(base)
+        let ssao_blur_vertical_pass_create_info = PassCreateInfo::new(context)
             .add_color_attachment_info(ssao_res_color_tex_create_info);
-        let ssao_upsample_pass_create_info = PassCreateInfo::new(base)
-            .add_color_attachment_info(TextureCreateInfo::new(base).format(Format::R8_UNORM)
+        let ssao_upsample_pass_create_info = PassCreateInfo::new(context)
+            .add_color_attachment_info(TextureCreateInfo::new(context).format(Format::R8_UNORM)
                 .width(resolution.width).height(resolution.height));
 
+        let equirectangular_to_cubemap_pass_create_info = PassCreateInfo::new(context)
+            .add_color_attachment_info(TextureCreateInfo::new(context).format(Format::R16G16B16A16_SFLOAT)
+                .add_usage_flag(vk::ImageUsageFlags::TRANSFER_SRC)
+                .width(512).height(512)
+                .is_cubemap(true)
+            );
+
         // set to window size, not the scene viewport size // TODO: DON'T DO THIS
-        let lighting_pass_create_info = PassCreateInfo::new(base)
-            .add_color_attachment_info(TextureCreateInfo::new(base).format(Format::R16G16B16A16_SFLOAT).add_usage_flag(vk::ImageUsageFlags::TRANSFER_SRC));
+        let lighting_pass_create_info = PassCreateInfo::new(context)
+            .add_color_attachment_info(TextureCreateInfo::new(context).format(Format::R16G16B16A16_SFLOAT).add_usage_flag(vk::ImageUsageFlags::TRANSFER_SRC)
+            );
         //</editor-fold>
         //<editor-fold desc = "geometry + shadow descriptor sets"
-        let sun_ubo_create_info = DescriptorCreateInfo::new(base)
+        let sun_ubo_create_info = DescriptorCreateInfo::new(context)
             .descriptor_type(DescriptorType::UNIFORM_BUFFER)
             .shader_stages(ShaderStageFlags::GEOMETRY)
             .size(size_of::<SunSendable>() as u64);
-        let material_ssbo_create_info = DescriptorCreateInfo::new(base)
+        let material_ssbo_create_info = DescriptorCreateInfo::new(context)
             .descriptor_type(DescriptorType::STORAGE_BUFFER)
             .shader_stages(ShaderStageFlags::FRAGMENT)
             .buffers(world.material_buffers.iter().map(|b| {b.0.clone()}).collect());
-        let joints_ssbo_create_info = DescriptorCreateInfo::new(base)
+        let joints_ssbo_create_info = DescriptorCreateInfo::new(context)
             .descriptor_type(DescriptorType::STORAGE_BUFFER)
             .shader_stages(ShaderStageFlags::VERTEX)
             .buffers(world.joints_buffers.iter().map(|b| {b.0.clone()}).collect());
-        let world_texture_samplers_create_info = DescriptorCreateInfo::new(base)
+        let world_texture_samplers_create_info = DescriptorCreateInfo::new(context)
             .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
             .shader_stages(ShaderStageFlags::FRAGMENT)
             .dynamic(true)
             .image_infos(image_infos.clone());
 
-        let geometry_descriptor_set_create_info = DescriptorSetCreateInfo::new(base)
+        let geometry_descriptor_set_create_info = DescriptorSetCreateInfo::new(context)
             .add_descriptor(Descriptor::new(&material_ssbo_create_info))
             .add_descriptor(Descriptor::new(&joints_ssbo_create_info))
             .add_descriptor(Descriptor::new(&world_texture_samplers_create_info));
 
-        let shadow_descriptor_set_create_info = DescriptorSetCreateInfo::new(base)
+        let shadow_descriptor_set_create_info = DescriptorSetCreateInfo::new(context)
             .add_descriptor(Descriptor::new(&material_ssbo_create_info))
             .add_descriptor(Descriptor::new(&joints_ssbo_create_info))
             .add_descriptor(Descriptor::new(&sun_ubo_create_info))
             .add_descriptor(Descriptor::new(&world_texture_samplers_create_info));
         //</editor-fold>]
         // <editor-fold desc = "SSAO descriptor sets">
-        let ssao_depth_downsample_descriptor_set_create_info = DescriptorSetCreateInfo::new(base)
+        let ssao_depth_downsample_descriptor_set_create_info = DescriptorSetCreateInfo::new(context)
             .add_descriptor(Descriptor::new(&texture_sampler_create_info))
             .add_descriptor(Descriptor::new(&texture_sampler_create_info));
-        let ssbo_ubo_create_info = DescriptorCreateInfo::new(base)
+        let ssbo_ubo_create_info = DescriptorCreateInfo::new(context)
             .descriptor_type(DescriptorType::UNIFORM_BUFFER)
             .size(size_of::<SSAOPassUniformData>() as u64)
             .shader_stages(ShaderStageFlags::FRAGMENT);
-        let ssao_descriptor_set_create_info = DescriptorSetCreateInfo::new(base)
+        let ssao_descriptor_set_create_info = DescriptorSetCreateInfo::new(context)
             .add_descriptor(Descriptor::new(&texture_sampler_create_info))
             .add_descriptor(Descriptor::new(&texture_sampler_create_info))
             .add_descriptor(Descriptor::new(&ssbo_ubo_create_info));
-        let ssao_blur_horizontal_descriptor_set_create_info = DescriptorSetCreateInfo::new(base)
+        let ssao_blur_horizontal_descriptor_set_create_info = DescriptorSetCreateInfo::new(context)
             .add_descriptor(Descriptor::new(&texture_sampler_create_info)) // input (ssao)
             .add_descriptor(Descriptor::new(&texture_sampler_create_info)); // g_info (ssao res)
-        let ssao_blur_vertical_descriptor_set_create_info = DescriptorSetCreateInfo::new(base)
+        let ssao_blur_vertical_descriptor_set_create_info = DescriptorSetCreateInfo::new(context)
             .add_descriptor(Descriptor::new(&texture_sampler_create_info)) // input (ssao)
             .add_descriptor(Descriptor::new(&texture_sampler_create_info)); // g_info (ssao res)
-        let ssao_upsample_descriptor_set_create_info = DescriptorSetCreateInfo::new(base)
+        let ssao_upsample_descriptor_set_create_info = DescriptorSetCreateInfo::new(context)
             .add_descriptor(Descriptor::new(&texture_sampler_create_info)) // input (low res)
             .add_descriptor(Descriptor::new(&texture_sampler_create_info)) // g_info (low res)
             .add_descriptor(Descriptor::new(&texture_sampler_create_info)) // normal (full_res)
             .add_descriptor(Descriptor::new(&texture_sampler_create_info)); // depth (full_res)
         //</editor-fold>
         //<editor-fold desc = "lighting descriptor set">
-        let lights_ssbo_create_info = DescriptorCreateInfo::new(base)
+        let lights_ssbo_create_info = DescriptorCreateInfo::new(context)
             .descriptor_type(DescriptorType::STORAGE_BUFFER)
             .shader_stages(ShaderStageFlags::FRAGMENT)
             .buffers(world.lights_buffers.iter().map(|b| {b.0.clone()}).collect());
-        let sun_ubo_create_info = DescriptorCreateInfo::new(base)
+        let sun_ubo_create_info = DescriptorCreateInfo::new(context)
             .descriptor_type(DescriptorType::UNIFORM_BUFFER)
             .size(size_of::<SunSendable>() as u64)
             .shader_stages(ShaderStageFlags::FRAGMENT);
-        let lighting_ubo_create_info = DescriptorCreateInfo::new(base)
+        let lighting_ubo_create_info = DescriptorCreateInfo::new(context)
             .descriptor_type(DescriptorType::UNIFORM_BUFFER)
             .size(size_of::<LightingUniformData>() as u64)
             .shader_stages(ShaderStageFlags::FRAGMENT);
-        let lighting_descriptor_set_create_info = DescriptorSetCreateInfo::new(base)
+        let lighting_descriptor_set_create_info = DescriptorSetCreateInfo::new(context)
             .add_descriptor(Descriptor::new(&texture_sampler_create_info))
             .add_descriptor(Descriptor::new(&texture_sampler_create_info))
             .add_descriptor(Descriptor::new(&texture_sampler_create_info))
@@ -530,7 +541,7 @@ impl SceneRenderer {
             .add_descriptor(Descriptor::new(&lights_ssbo_create_info))
             .add_descriptor(Descriptor::new(&lighting_ubo_create_info))
             .add_descriptor(Descriptor::new(&sun_ubo_create_info))
-            .add_descriptor(Descriptor::new(&DescriptorCreateInfo::new(base)
+            .add_descriptor(Descriptor::new(&DescriptorCreateInfo::new(context)
                 .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
                 .shader_stages(ShaderStageFlags::FRAGMENT)
                 .binding_flags(vk::DescriptorBindingFlags::UPDATE_AFTER_BIND))
@@ -709,15 +720,6 @@ impl SceneRenderer {
             polygon_mode: vk::PolygonMode::FILL,
             ..Default::default()
         };
-        let outline_rasterization_info = vk::PipelineRasterizationStateCreateInfo {
-            front_face: vk::FrontFace::COUNTER_CLOCKWISE,
-            cull_mode: vk::CullModeFlags::BACK,
-            line_width: 1.0,
-            polygon_mode: vk::PolygonMode::FILL,
-            depth_bias_enable: vk::TRUE,
-            depth_clamp_enable: 1,
-            ..Default::default()
-        };
         let shadow_rasterization_info = vk::PipelineRasterizationStateCreateInfo {
             front_face: vk::FrontFace::COUNTER_CLOCKWISE,
             cull_mode: vk::CullModeFlags::NONE,
@@ -783,7 +785,7 @@ impl SceneRenderer {
             .attachments(&null_blend_states);
         //</editor-fold>
 
-        let geometry_renderpass_create_info = { RenderpassCreateInfo::new(base)
+        let geometry_renderpass_create_info = { RenderpassCreateInfo::new(context)
             .pass_create_info(geometry_pass_create_info)
             .resolution(resolution)
             .descriptor_set_create_info(geometry_descriptor_set_create_info)
@@ -797,7 +799,7 @@ impl SceneRenderer {
                 .fragment_shader_uri(String::from("geometry\\geometry.frag.spv"))) };
         let geometry_renderpass = Renderpass::new(geometry_renderpass_create_info);
 
-        let shadow_renderpass_create_info = { RenderpassCreateInfo::new(base)
+        let shadow_renderpass_create_info = { RenderpassCreateInfo::new(context)
             .pass_create_info(shadow_pass_create_info)
             .descriptor_set_create_info(shadow_descriptor_set_create_info)
             .add_pipeline_create_info(PipelineCreateInfo::new()
@@ -819,7 +821,7 @@ impl SceneRenderer {
         let shadow_renderpass = Renderpass::new(shadow_renderpass_create_info);
 
         let ssao_pre_downsample_renderpass_create_info = {
-            RenderpassCreateInfo::new(base)
+            RenderpassCreateInfo::new(context)
                 .pass_create_info(ssao_depth_downsample_pass_create_info)
                 .descriptor_set_create_info(ssao_depth_downsample_descriptor_set_create_info)
                 .add_pipeline_create_info(PipelineCreateInfo::new()
@@ -830,7 +832,7 @@ impl SceneRenderer {
                     height: (resolution.height as f32 * SSAO_RESOLUTION_MULTIPLIER) as u32,
                 }) };
         let ssao_pre_downsample_renderpass = Renderpass::new(ssao_pre_downsample_renderpass_create_info);
-        let ssao_renderpass_create_info = { RenderpassCreateInfo::new(base)
+        let ssao_renderpass_create_info = { RenderpassCreateInfo::new(context)
             .pass_create_info(ssao_pass_create_info)
             .descriptor_set_create_info(ssao_descriptor_set_create_info)
             .add_pipeline_create_info(PipelineCreateInfo::new()
@@ -841,7 +843,7 @@ impl SceneRenderer {
                 height: (resolution.height as f32 * SSAO_RESOLUTION_MULTIPLIER) as u32,
             }) };
         let ssao_renderpass = Renderpass::new(ssao_renderpass_create_info);
-        let ssao_blur_horizontal_renderpass_create_info = { RenderpassCreateInfo::new(base)
+        let ssao_blur_horizontal_renderpass_create_info = { RenderpassCreateInfo::new(context)
             .pass_create_info(ssao_blur_horizontal_pass_create_info)
             .descriptor_set_create_info(ssao_blur_horizontal_descriptor_set_create_info)
             .add_pipeline_create_info(PipelineCreateInfo::new()
@@ -857,7 +859,7 @@ impl SceneRenderer {
                 height: (resolution.height as f32 * SSAO_RESOLUTION_MULTIPLIER) as u32,
             }) };
         let ssao_blur_horizontal_renderpass = Renderpass::new(ssao_blur_horizontal_renderpass_create_info);
-        let ssao_blur_vertical_renderpass_create_info = { RenderpassCreateInfo::new(base)
+        let ssao_blur_vertical_renderpass_create_info = { RenderpassCreateInfo::new(context)
             .pass_create_info(ssao_blur_vertical_pass_create_info)
             .descriptor_set_create_info(ssao_blur_vertical_descriptor_set_create_info)
             .add_pipeline_create_info(PipelineCreateInfo::new()
@@ -873,7 +875,7 @@ impl SceneRenderer {
                 height: (resolution.height as f32 * SSAO_RESOLUTION_MULTIPLIER) as u32,
             }) };
         let ssao_blur_vertical_renderpass = Renderpass::new(ssao_blur_vertical_renderpass_create_info);
-        let ssao_upsample_renderpass_create_info = { RenderpassCreateInfo::new(base)
+        let ssao_upsample_renderpass_create_info = { RenderpassCreateInfo::new(context)
             .pass_create_info(ssao_upsample_pass_create_info)
             .descriptor_set_create_info(ssao_upsample_descriptor_set_create_info)
             .add_pipeline_create_info(PipelineCreateInfo::new()
@@ -888,7 +890,7 @@ impl SceneRenderer {
         };
         let ssao_upsample_renderpass = Renderpass::new(ssao_upsample_renderpass_create_info);
 
-        let lighting_renderpass_create_info = { RenderpassCreateInfo::new(base)
+        let lighting_renderpass_create_info = { RenderpassCreateInfo::new(context)
             .pass_create_info(lighting_pass_create_info)
             .descriptor_set_create_info(lighting_descriptor_set_create_info)
             .add_pipeline_create_info(PipelineCreateInfo::new()
@@ -899,13 +901,30 @@ impl SceneRenderer {
         };
         let lighting_renderpass = Renderpass::new(lighting_renderpass_create_info);
 
+        let equirectangular_to_cubemap_renderpass_create_info = RenderpassCreateInfo::new(&context)
+            .pass_create_info(equirectangular_to_cubemap_pass_create_info)
+            .viewport(vk::Viewport {
+                x: 0.0, y: 0.0,
+                width: 512.0, height: 512.0,
+                min_depth: 0.0, max_depth: 1.0,
+            })
+            .descriptor_set_create_info(DescriptorSetCreateInfo::new(context)
+                .add_descriptor(Descriptor::new(&texture_sampler_create_info))
+            )
+            .add_pipeline_create_info(PipelineCreateInfo::new()
+                .vertex_shader_uri(String::from("equirectangular_to_cubemap\\equirectangular_to_cubemap.vert.spv"))
+                .fragment_shader_uri(String::from("equirectangular_to_cubemap\\equirectangular_to_cubemap.frag.spv"))
+            )
+            .push_constant_range(camera_push_constant_range_vertex);
+        let equirectangular_to_cubemap_renderpass = Renderpass::new(equirectangular_to_cubemap_renderpass_create_info);
+
         let forward_renderpass = {
             let light_pass = lighting_renderpass.pass.borrow();
             let geometry_pass = geometry_renderpass.pass.borrow();
-            let forward_pass_create_info = PassCreateInfo::new(base)
+            let forward_pass_create_info = PassCreateInfo::new(context)
                 .grab_attachment(&light_pass, 0, vk::AttachmentLoadOp::LOAD, vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
                 .grab_depth_attachment(&geometry_pass, 5, vk::AttachmentLoadOp::LOAD, vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL);
-            let forward_descriptor_set_create_info = DescriptorSetCreateInfo::new(base)
+            let forward_descriptor_set_create_info = DescriptorSetCreateInfo::new(context)
                 .add_descriptor(Descriptor::new(&material_ssbo_create_info))
                 .add_descriptor(Descriptor::new(&joints_ssbo_create_info))
                 .add_descriptor(Descriptor::new(&world_texture_samplers_create_info));
@@ -922,7 +941,7 @@ impl SceneRenderer {
             let color_blend_state = vk::PipelineColorBlendStateCreateInfo::default()
                 .logic_op(vk::LogicOp::CLEAR)
                 .attachments(&color_blend_attachment_states);
-            let forward_renderpass_create_info = { RenderpassCreateInfo::new(base)
+            let forward_renderpass_create_info = { RenderpassCreateInfo::new(context)
                 .pass_create_info(forward_pass_create_info)
                 .resolution(resolution)
                 .descriptor_set_create_info(forward_descriptor_set_create_info)
@@ -947,15 +966,16 @@ impl SceneRenderer {
             ssao_blur_horizontal_renderpass,
             ssao_blur_vertical_renderpass,
             ssao_upsample_renderpass,
-            lighting_renderpass
+            lighting_renderpass,
+            equirectangular_to_cubemap_renderpass,
         )
     } }
-    pub fn update_world_textures_all_frames(&self, base: &VkBase, world: &World) {
+    pub fn update_world_textures_all_frames(&self, world: &World) {
         for frame in 0..MAX_FRAMES_IN_FLIGHT {
-            self.update_world_textures(base, world, frame);
+            self.update_world_textures(world, frame);
         }
     }
-    pub fn update_world_textures(&self, base: &VkBase, world: &World, frame: usize) { unsafe {
+    pub fn update_world_textures(&self, world: &World, frame: usize) { unsafe {
         let mut image_infos: Vec<vk::DescriptorImageInfo> = Vec::with_capacity(1024);
         for model in &world.models {
             for texture in &model.textures {
@@ -999,7 +1019,7 @@ impl SceneRenderer {
             p_image_info: image_infos,
             ..Default::default()
         };
-        base.device.update_descriptor_sets(&[descriptor_write], &[]);
+        self.context.device.update_descriptor_sets(&[descriptor_write], &[]);
     }}
 
     pub unsafe fn render_world(
@@ -1007,9 +1027,9 @@ impl SceneRenderer {
         current_frame: usize,
         scene: &Scene, player_camera_index: usize,
     ) { unsafe {
-        let device = &self.device;
+        let device = &self.context.device;
 
-        let frame_command_buffer = self.draw_command_buffers[current_frame];
+        let frame_command_buffer = self.context.draw_command_buffers[current_frame];
 
         let ubo = scene.world.borrow().sun.to_sendable();
         
@@ -1164,15 +1184,16 @@ impl SceneRenderer {
         self.ssao_blur_horizontal_renderpass.destroy();
         self.ssao_blur_vertical_renderpass.destroy();
         self.ssao_upsample_renderpass.destroy();
+        self.equirectangular_to_cubemap_renderpass.destroy();
         self.lighting_renderpass.destroy();
 
         self.ssao_noise_texture.destroy();
 
-        self.device.destroy_sampler(self.sampler, None);
-        self.device.destroy_sampler(self.nearest_sampler, None);
-        self.device.destroy_sampler(self.null_tex_sampler, None);
+        self.context.device.destroy_sampler(self.sampler, None);
+        self.context.device.destroy_sampler(self.nearest_sampler, None);
+        self.context.device.destroy_sampler(self.null_tex_sampler, None);
 
-        self.null_texture.destroy(&self.device);
+        self.null_texture.destroy(&self.context);
     } }
 }
 

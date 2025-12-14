@@ -117,13 +117,14 @@
 
 ### InteractableInformation Structure
 
-| Key                | Type        | Description                                                                                                                 |
-|--------------------|-------------|-----------------------------------------------------------------------------------------------------------------------------|
-| passive_actions    | `[Method]`  | Methods to be executed constantly by the node                                                                               |
-| hover_actions      | `[Method]`  | Methods to be executed when the mouse is hovering over the hitbox                                                           |
-| unhover_actions    | `[Method]`  | Methods to be executed when the mouse is not hovering over the hitbox (intended to undo the hover action)                   |
-| left_down_actions  | `[Method]`  | Methods to be executed upon the left mouse being first pressed on the node                                                  |
-| left_up_actions    | `[Method]`  | Methods to be executed upon the left mouse being released from the node. Only activates if mouse is still hovering the node |
-| right_tap_actions  | `[Method]`  | Methods to be executed upon a single right click of the hitbox                                                              |
-| left_hold_actions  | `[Method]`  | Methods to be executed whenever the left mouse button is pressed and hovering over the hitbox                               |
-| right_hold_actions | `[Method]`  | Methods to be executed whenever the right mouse button is pressed and hovering over the hitbox                              |
+| Key                | Type        | Description                                                                                                                  |
+|--------------------|-------------|------------------------------------------------------------------------------------------------------------------------------|
+| passive_actions    | `[Method]`  | Methods to be executed constantly by the node                                                                                |
+| hover_actions      | `[Method]`  | Methods to be executed when the mouse is hovering over the hitbox                                                            |
+| unhover_actions    | `[Method]`  | Methods to be executed when the mouse is not hovering over the hitbox (intended to undo the hover action)                    |
+| left_down_actions  | `[Method]`  | Methods to be executed upon the left mouse being first pressed on the node                                                   |
+| left_up_actions    | `[Method]`  | Methods to be executed upon the left mouse being released from the node. Only activates if mouse is still hovering the node  |
+| right_down_actions | `[Method]`  | Methods to be executed upon the right mouse being first pressed on the node                                                  |
+| right_up_actions   | `[Method]`  | Methods to be executed upon the right mouse being released from the node. Only activates if mouse is still hovering the node |
+| left_hold_actions  | `[Method]`  | Methods to be executed whenever the left mouse button is pressed and hovering over the hitbox                                |
+| right_hold_actions | `[Method]`  | Methods to be executed whenever the right mouse button is pressed and hovering over the hitbox                               |

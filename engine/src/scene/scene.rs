@@ -9,7 +9,7 @@ use crate::math::matrix::Matrix;
 use crate::math::Vector;
 use crate::render::render::{Renderer, MAX_FRAMES_IN_FLIGHT};
 use crate::render::scene_renderer::SceneRenderer;
-use crate::render::vulkan_base::{copy_buffer_synchronous, copy_data_to_memory, VkBase};
+use crate::render::vulkan_base::{copy_buffer_synchronous, copy_data_to_memory, Context, VkBase};
 use crate::scene::physics::physics_engine::PhysicsEngine;
 use crate::scene::world::camera::Frustum;
 use crate::scene::world::world::{World};
@@ -18,6 +18,8 @@ use crate::scene::world::world::{World};
 //TODO change World structure to have a single flat list of Primitives. Store Meshes here, Meshes have child primitives, and are RenderComponents.
 //TODO refactor scene structure to allow multiple components of each type
 pub struct Scene {
+    context: Arc<Context>,
+
     pub entities: Vec<Entity>, // will always have a root node with sun
 
     pub unupdated_entities: Vec<usize>,
@@ -36,11 +38,13 @@ pub struct Scene {
     pub world: Arc<RefCell<World>>,
     pub physics_engine: Arc<RefCell<PhysicsEngine>>,
 
-    dirty_primitives: Vec<usize>,
+    dirty_render_components: Vec<usize>,
 }
 impl Scene {
-    pub fn new(renderer: Arc<RefCell<Renderer>>, world: Arc<RefCell<World>>, physics_engine: Arc<RefCell<PhysicsEngine>>) -> Self {
+    pub fn new(context: &Arc<Context>, renderer: Arc<RefCell<Renderer>>, world: Arc<RefCell<World>>, physics_engine: Arc<RefCell<PhysicsEngine>>) -> Self {
         let mut scene = Self {
+            context: context.clone(),
+
             entities: Vec::new(),
             unupdated_entities: Vec::new(),
             transforms: Vec::new(),
@@ -54,7 +58,7 @@ impl Scene {
             renderer,
             world,
             physics_engine,
-            dirty_primitives: Vec::new(),
+            dirty_render_components: Vec::new(),
         };
         scene.transforms.push(Transform::default());
         scene.entities.push(Entity {
@@ -73,15 +77,15 @@ impl Scene {
         scene
     }
 
-    pub fn new_entity_from_model(&mut self, base: &VkBase, parent_index: usize, uri: &str) {
+    pub fn new_entity_from_model(&mut self, parent_index: usize, uri: &str) {
         let model_entity_index = self.entities.len();
         self.unupdated_entities.push(model_entity_index);
         let (new_nodes, new_skins, new_animations) = {
             let world = &mut self.world.borrow_mut();
 
-            unsafe { world.add_model(base, uri) }
+            let model_index = unsafe { world.add_model(uri) };
 
-            let new_model = &world.models[world.models.len() - 1];
+            let new_model = &world.models[model_index];
 
             let entity_transform_index = self.transforms.len();
             let mut model_transform = Transform::default();
@@ -190,7 +194,7 @@ impl Scene {
         }
     }
 
-    pub unsafe fn update_scene(&mut self, base: &VkBase, frame: usize) {
+    pub unsafe fn update_scene(&mut self, frame: usize) {
         if frame == 0 {
             for animation in self.animation_components.iter_mut() {
                 animation.update(&mut self.entities, &mut self.transforms, &mut self.unupdated_entities)
@@ -206,7 +210,6 @@ impl Scene {
                     self.transforms[self.entities[parent_index].transform].world.clone()
                 };
                 self.update_entity(
-                    base,
                     frame,
                     &parent_transform,
                     *entity_index,
@@ -234,14 +237,14 @@ impl Scene {
                 );
 
                 let mut copy_regions = Vec::new();
-                for (i, &primitive_id) in self.dirty_primitives.iter().enumerate() {
+                for (i, &render_component_id) in self.dirty_render_components.iter().enumerate() {
                     copy_regions.push(vk::BufferCopy {
                         src_offset: (i * size_of::<Instance>()) as u64,
-                        dst_offset: (primitive_id * size_of::<Instance>()) as u64,
+                        dst_offset: (render_component_id * size_of::<Instance>()) as u64,
                         size: size_of::<Instance>() as u64,
                     });
                 }
-                self.dirty_primitives.clear();
+                self.dirty_render_components.clear();
 
                 copy_data_to_memory(world.joints_staging_buffer.2, &joints);
 
@@ -249,7 +252,7 @@ impl Scene {
                 if !copy_regions.is_empty() {
                     for frame in 0..MAX_FRAMES_IN_FLIGHT {
                         copy_buffer_synchronous(
-                            &base.device,
+                            &self.context.device,
                             command_buffer,
                             &world.instance_staging_buffer.0,
                             &world.instance_buffers[frame].0,
@@ -257,7 +260,7 @@ impl Scene {
                             &0u64
                         );
 
-                        copy_buffer_synchronous(&world.device, command_buffer, &world.joints_staging_buffer.0, &world.joints_buffers[frame].0, None, &world.joints_buffers_size);
+                        copy_buffer_synchronous(&self.context.device, command_buffer, &world.joints_staging_buffer.0, &world.joints_buffers[frame].0, None, &world.joints_buffers_size);
                     }
                 }
             }
@@ -265,7 +268,6 @@ impl Scene {
     }
     pub fn update_entity(
         &mut self,
-        base: &VkBase,
         frame: usize,
         parent_world_transform: &Matrix,
         entity_index: usize,
@@ -287,34 +289,30 @@ impl Scene {
         };
         self.transforms[entity.transform].world = entity_world_transform;
 
-        {
-            let world = &mut self.world.borrow_mut();
-            for (i, render_object_index) in entity.render_objects.iter().enumerate() {
-                let render_component = &self.render_components[*render_object_index];
+        for (i, render_object_index) in entity.render_objects.iter().enumerate() {
+            let render_component = &self.render_components[*render_object_index];
 
-                self.transforms[render_component.transform].update_matrix();
+            self.transforms[render_component.transform].update_matrix();
 
-                let render_component_transform = &mut self.transforms[render_component.transform];
-                render_component_transform.world = entity_world_transform * render_component_transform.matrix;
+            let render_component_transform = &mut self.transforms[render_component.transform];
+            render_component_transform.world = entity_world_transform * render_component_transform.matrix;
 
-                let primitive = &world.meshes[render_component.mesh_primitive_index.0].primitives[render_component.mesh_primitive_index.1];
-                self.dirty_primitives.push(primitive.id);
-                dirty_primitive_instance_data.push(
-                    Instance {
-                        matrix: render_component_transform.world.data,
-                        indices: [
-                            render_component.material_index as i32,
-                            render_component.skin_index.map_or(-1, |i| i),
-                            entity_index as i32,
-                            i as i32
-                        ]
-                    }
-                );
-            }
+            self.dirty_render_components.push(*render_object_index);
+            dirty_primitive_instance_data.push(
+                Instance {
+                    matrix: render_component_transform.world.data,
+                    indices: [
+                        render_component.material_index as i32,
+                        render_component.skin_index.map_or(-1, |i| i),
+                        entity_index as i32,
+                        i as i32
+                    ]
+                }
+            );
         }
 
         for child in entity.children_indices.clone().iter() {
-            self.update_entity(base, frame, &entity_world_transform, *child, dirty_primitive_instance_data)
+            self.update_entity(frame, &entity_world_transform, *child, dirty_primitive_instance_data)
         }
     }
 
@@ -322,19 +320,19 @@ impl Scene {
         let command_buffer = get_command_buffer();
         let world = &self.world.borrow();
         unsafe {
-            scene_renderer.device.cmd_bind_vertex_buffers(
+            self.context.device.cmd_bind_vertex_buffers(
                 command_buffer,
                 1,
                 &[world.instance_buffers[frame].0],
                 &[0],
             );
-            scene_renderer.device.cmd_bind_vertex_buffers(
+            self.context.device.cmd_bind_vertex_buffers(
                 command_buffer,
                 0,
                 &[world.vertex_buffer.0],
                 &[0],
             );
-            scene_renderer.device.cmd_bind_index_buffer(
+            self.context.device.cmd_bind_index_buffer(
                 command_buffer,
                 world.index_buffer.0,
                 0,
@@ -349,18 +347,18 @@ impl Scene {
             };
 
             if do_outline {
-                scene_renderer.device.cmd_bind_pipeline(
+                self.context.device.cmd_bind_pipeline(
                     command_buffer,
                     vk::PipelineBindPoint::GRAPHICS,
                     scene_renderer.forward_renderpass.pipelines[0].vulkan_pipeline,
                 );
                 for index in self.outlined_components.iter() {
-                    self.render_components[*index].draw(&self, scene_renderer, &command_buffer, world, frustum);
+                    self.render_components[*index].draw(&self, scene_renderer, &command_buffer, world, *index, frustum);
                 }
             } else {
                 if do_deferred {
-                    for render_component in self.render_components.iter() {
-                        render_component.draw(&self, scene_renderer, &command_buffer, world, frustum);
+                    for (i, render_component) in self.render_components.iter().enumerate() {
+                        render_component.draw(&self, scene_renderer, &command_buffer, world, i, frustum);
                     }
                 }
                 if do_forward {
@@ -556,7 +554,16 @@ pub struct RenderComponent {
     material_index: usize,
 }
 impl RenderComponent {
-    unsafe fn draw(&self, scene: &Scene, scene_renderer: &SceneRenderer, command_buffer: &CommandBuffer, world: &World, frustum: Option<&Frustum>) {
+    unsafe fn draw(
+        &self,
+        scene:
+        &Scene,
+        scene_renderer: &SceneRenderer,
+        command_buffer: &CommandBuffer,
+        world: &World,
+        index: usize,
+        frustum: Option<&Frustum>
+    ) {
         let mut all_points_outside_of_same_plane = false;
 
         let primitive = &world.meshes[self.mesh_primitive_index.0].primitives[self.mesh_primitive_index.1];
@@ -581,13 +588,13 @@ impl RenderComponent {
         }
         if !all_points_outside_of_same_plane || frustum.is_none() {
             unsafe {
-                scene_renderer.device.cmd_draw_indexed(
+                scene.context.device.cmd_draw_indexed(
                     *command_buffer,
                     world.accessors[primitive.indices].count as u32,
                     1,
                     primitive.index_buffer_offset as u32,
                     0,
-                    primitive.id as u32,
+                    index as u32,
                 );
             }
         }

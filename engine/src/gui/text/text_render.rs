@@ -12,22 +12,22 @@ use crate::math::Vector;
 use crate::offset_of;
 use crate::render::render::MAX_FRAMES_IN_FLIGHT;
 use crate::render::render_helper::{Descriptor, DescriptorCreateInfo, DescriptorSetCreateInfo, Pass, PassCreateInfo, PipelineCreateInfo, Renderpass, RenderpassCreateInfo, Texture, TextureCreateInfo};
-use crate::render::vulkan_base::{copy_buffer_synchronous, copy_data_to_memory, VkBase};
+use crate::render::vulkan_base::{copy_buffer_synchronous, copy_data_to_memory, Context, VkBase};
 
 const OUTPUT_DIR: &str = "resources\\fonts\\generated";
 const MAX_FONTS: usize = 10;
 
 pub struct TextRenderer {
-    pub draw_command_buffers: Vec<CommandBuffer>,
-    pub device: ash::Device,
+    context: Arc<Context>,
+
     pub renderpass: Renderpass,
 
     pub default_font: Arc<Font>,
     sampler: Sampler,
 }
 impl TextRenderer {
-    pub unsafe fn new(base: &VkBase, pass_ref: Option<Arc<RefCell<Pass>>>) -> TextRenderer { unsafe {
-        let sampler = base.device.create_sampler(&vk::SamplerCreateInfo {
+    pub unsafe fn new(context: &Arc<Context>, pass_ref: Option<Arc<RefCell<Pass>>>) -> TextRenderer { unsafe {
+        let sampler = context.device.create_sampler(&vk::SamplerCreateInfo {
             mag_filter: vk::Filter::LINEAR,
             min_filter: vk::Filter::LINEAR,
             address_mode_u: vk::SamplerAddressMode::CLAMP_TO_BORDER,
@@ -36,24 +36,23 @@ impl TextRenderer {
             border_color: vk::BorderColor::FLOAT_OPAQUE_WHITE,
             ..Default::default()
         }, None).unwrap();
-        let default_font = Arc::new(Font::new(&base, "engine\\resources\\fonts\\Oxygen-Regular.ttf", Some(32), Some(2.0)));
+        let default_font = Arc::new(Font::new(context, "engine\\resources\\fonts\\Oxygen-Regular.ttf", Some(32), Some(2.0)));
         TextRenderer {
-            draw_command_buffers: base.draw_command_buffers.clone(),
-            device: base.device.clone(),
-            renderpass: Self::create_text_renderpass(base, default_font.clone(), pass_ref),
+            context: context.clone(),
+            renderpass: Self::create_text_renderpass(context, default_font.clone(), pass_ref),
             default_font: default_font.clone(),
             sampler,
         }
     } }
     pub unsafe fn destroy(&mut self) { unsafe {
         self.renderpass.destroy();
-        self.device.destroy_sampler(self.sampler, None);
+        self.context.device.destroy_sampler(self.sampler, None);
         self.default_font.destroy();
     } }
 
-    pub unsafe fn create_text_renderpass(base: &VkBase, default_font: Arc<Font>, pass_ref: Option<Arc<RefCell<Pass>>>) -> Renderpass { unsafe {
-        let color_tex_create_info = TextureCreateInfo::new(base).format(Format::R8G8B8A8_UNORM);
-        let pass_create_info = PassCreateInfo::new(base)
+    pub unsafe fn create_text_renderpass(context: &Arc<Context>, default_font: Arc<Font>, pass_ref: Option<Arc<RefCell<Pass>>>) -> Renderpass { unsafe {
+        let color_tex_create_info = TextureCreateInfo::new(context).format(Format::R8G8B8A8_UNORM);
+        let pass_create_info = PassCreateInfo::new(context)
             .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
             .add_color_attachment_info(color_tex_create_info.add_usage_flag(vk::ImageUsageFlags::TRANSFER_SRC));
         //<editor-fold desc = "descriptor set">
@@ -63,13 +62,13 @@ impl TextRenderer {
             sampler: default_font.sampler,
             ..Default::default()
         }; MAX_FONTS];
-        let atlas_samplers_create_info = DescriptorCreateInfo::new(base)
+        let atlas_samplers_create_info = DescriptorCreateInfo::new(context)
             .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
             .shader_stages(ShaderStageFlags::FRAGMENT)
             .dynamic(true)
             .image_infos(image_infos.clone());
 
-        let descriptor_set_create_info = DescriptorSetCreateInfo::new(base)
+        let descriptor_set_create_info = DescriptorSetCreateInfo::new(context)
             .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
             .add_descriptor(Descriptor::new(&atlas_samplers_create_info));
         //</editor-fold>
@@ -128,7 +127,7 @@ impl TextRenderer {
         let color_blend_state = vk::PipelineColorBlendStateCreateInfo::default()
             .attachments(&color_blend_attachment_states);
 
-        let mut renderpass_create_info = RenderpassCreateInfo::new(base)
+        let mut renderpass_create_info = RenderpassCreateInfo::new(context)
             .pass_create_info(pass_create_info)
             .descriptor_set_create_info(descriptor_set_create_info)
             .push_constant_range(push_constant_range)
@@ -181,7 +180,7 @@ impl TextRenderer {
             p_image_info: image_infos,
             ..Default::default()
         };
-        self.device.update_descriptor_sets(&[descriptor_write], &[]);
+        self.context.device.update_descriptor_sets(&[descriptor_write], &[]);
     }}
 
     /**
@@ -198,8 +197,8 @@ impl TextRenderer {
         clip_min: Vector,
         clip_max: Vector,
     ) { unsafe {
-        let frame_command_buffer = self.draw_command_buffers[frame];
-        let device = &self.device;
+        let frame_command_buffer = self.context.draw_command_buffers[frame];
+        let device = &self.context.device;
 
         device.cmd_bind_pipeline(
             frame_command_buffer,
@@ -258,7 +257,7 @@ impl TextRenderer {
     } }
 }
 pub struct TextInformation {
-    device: ash::Device,
+    context: Arc<Context>,
 
     font: Arc<Font>,
     font_index: Option<u32>,
@@ -275,8 +274,10 @@ pub struct TextInformation {
     pub glyph_count: u32,
     pub vertex_buffer: Vec<(vk::Buffer, DeviceMemory)>,
     pub vertex_staging_buffer: (vk::Buffer, DeviceMemory, *mut c_void),
+    vertex_buffer_size: u64,
     pub index_buffer: Vec<(vk::Buffer, DeviceMemory)>,
     pub index_staging_buffer: (vk::Buffer, DeviceMemory, *mut c_void),
+    index_buffer_size: u64,
 }
 #[derive(Debug)]
 pub enum BaselineAlignment {
@@ -287,7 +288,7 @@ pub enum BaselineAlignment {
 impl TextInformation {
     pub fn new(font: Arc<Font>) -> TextInformation {
         TextInformation {
-            device: font.device.clone(),
+            context: font.context.clone(),
             font,
             font_index: None,
 
@@ -304,23 +305,25 @@ impl TextInformation {
             glyph_count: 0,
             vertex_buffer: vec![(vk::Buffer::null(), DeviceMemory::null()); MAX_FRAMES_IN_FLIGHT],
             vertex_staging_buffer: (vk::Buffer::null(), DeviceMemory::null(), null_mut()),
+            vertex_buffer_size: 0,
             index_buffer: vec![(vk::Buffer::null(), DeviceMemory::null()); MAX_FRAMES_IN_FLIGHT],
             index_staging_buffer: (vk::Buffer::null(), DeviceMemory::null(), null_mut()),
+            index_buffer_size: 0,
         }
     }
     pub fn destroy(&self) { unsafe {
         for buffer in self.vertex_buffer.iter() {
-            self.device.destroy_buffer(buffer.0, None);
-            self.device.free_memory(buffer.1, None);
+            self.context.device.destroy_buffer(buffer.0, None);
+            self.context.device.free_memory(buffer.1, None);
         }
         for buffer in self.index_buffer.iter() {
-            self.device.destroy_buffer(buffer.0, None);
-            self.device.free_memory(buffer.1, None);
+            self.context.device.destroy_buffer(buffer.0, None);
+            self.context.device.free_memory(buffer.1, None);
         }
-        self.device.destroy_buffer(self.index_staging_buffer.0, None);
-        self.device.free_memory(self.index_staging_buffer.1, None);
-        self.device.destroy_buffer(self.vertex_staging_buffer.0, None);
-        self.device.free_memory(self.vertex_staging_buffer.1, None);
+        self.context.device.destroy_buffer(self.index_staging_buffer.0, None);
+        self.context.device.free_memory(self.index_staging_buffer.1, None);
+        self.context.device.destroy_buffer(self.vertex_staging_buffer.0, None);
+        self.context.device.free_memory(self.vertex_staging_buffer.1, None);
     } }
     /** To get the quad for a glyph:
           * Let P = ( x: Σ(prior advances) + baseline x, y: baseline y )
@@ -393,36 +396,38 @@ impl TextInformation {
         }
         (vertices, indices)
     }
-    pub fn build_set_buffers(mut self, base: &VkBase) -> Self {
-        self.set_buffers(base);
+    pub fn build_set_buffers(mut self) -> Self {
+        self.set_buffers();
         self
     }
-    pub fn set_buffers(&mut self, base: &VkBase) {
+    pub fn set_buffers(&mut self) {
         let (vertices, indices) = self.get_vertex_and_index_data();
         let vertex_buffer_size = (size_of::<GlyphQuadVertex>() * vertices.len()) as u64 + 5000;
+        self.vertex_buffer_size = vertex_buffer_size;
         let index_buffer_size = (size_of::<u32>() * indices.len()) as u64 + 2000;
+        self.index_buffer_size = index_buffer_size;
         unsafe {
             for i in 0..MAX_FRAMES_IN_FLIGHT {
                 if i == 0 {
                     (self.vertex_buffer[i], self.vertex_staging_buffer) =
-                        base.create_device_and_staging_buffer(
+                        self.context.create_device_and_staging_buffer(
                             vertex_buffer_size,
                             &vertices,
                             vk::BufferUsageFlags::VERTEX_BUFFER, false, true, true
                         );
                     (self.index_buffer[i], self.index_staging_buffer) =
-                        base.create_device_and_staging_buffer(
+                        self.context.create_device_and_staging_buffer(
                             index_buffer_size,
                             &indices,
                             vk::BufferUsageFlags::INDEX_BUFFER, false, true, true
                         );
                 } else {
-                    self.vertex_buffer[i] = base.create_device_and_staging_buffer(
+                    self.vertex_buffer[i] = self.context.create_device_and_staging_buffer(
                         vertex_buffer_size,
                         &vertices,
                         vk::BufferUsageFlags::VERTEX_BUFFER, true, false, true
                     ).0;
-                    self.index_buffer[i] = base.create_device_and_staging_buffer(
+                    self.index_buffer[i] = self.context.create_device_and_staging_buffer(
                         index_buffer_size,
                         &indices,
                         vk::BufferUsageFlags::INDEX_BUFFER, true, false, true
@@ -439,7 +444,7 @@ impl TextInformation {
         copy_data_to_memory(self.vertex_staging_buffer.2, &vertices);
         copy_data_to_memory(self.index_staging_buffer.2, &indices);
         copy_buffer_synchronous(
-            &self.device,
+            &self.context.device,
             command_buffer,
             &self.vertex_staging_buffer.0,
             &self.vertex_buffer[frame].0,
@@ -447,7 +452,7 @@ impl TextInformation {
             &(vertex_buffer_size as u64)
         );
         copy_buffer_synchronous(
-            &self.device,
+            &self.context.device,
             command_buffer,
             &self.index_staging_buffer.0,
             &self.index_buffer[frame].0,

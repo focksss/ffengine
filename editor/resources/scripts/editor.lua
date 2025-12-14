@@ -121,6 +121,10 @@ end
 function select_entity()
 	_G.Editor.select_entity(_G.node_to_entity_map[gui.ActiveNode.index])
 end
+function import_model_as_child() 
+	local entity_index = _G.node_to_entity_map[gui.ActiveNode.index]
+	Engine.scene:load_model(entity_index)
+end
 local expanded_entities = {}
 _G.node_to_entity_map = {}
 _G.node_to_render_components_map = {}
@@ -228,6 +232,7 @@ function build_graph_recursive(entity, entity_index, depth)
 	node:reset()
 	node:add_left_up_action("open_entity_editor", 3)
 	node:add_left_up_action("select_entity", 0)
+	node:add_right_up_action("import_model_as_child", 0)
 	node:add_hover_action("hover_cursor", 0)
 	node:set_x("Pixels", depth * graph_child_indent)
 	node:set_y("Pixels", graph_height)

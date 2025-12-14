@@ -126,8 +126,796 @@ pub fn find_memorytype_index(
         .map(|(index, _memory_type)| index as _)
 }
 
+pub struct Context {
+    pub device: Device,
+    pub window: Arc<winit::window::Window>,
+    pub pdevice: vk::PhysicalDevice,
+    pub device_memory_properties: vk::PhysicalDeviceMemoryProperties,
+    pub pool: vk::CommandPool,
+    pub draw_command_buffers: Vec<CommandBuffer>,
+    pub setup_command_buffer: CommandBuffer,
+    pub pdevice_properties: vk::PhysicalDeviceProperties,
+    pub instance: Instance,
+    pub surface_format: vk::SurfaceFormatKHR,
+    pub graphics_queue: vk::Queue
+}
+impl Context {
+    pub unsafe fn create_buffer(
+        &self,
+        size: vk::DeviceSize,
+        usage: vk::BufferUsageFlags,
+        properties: MemoryPropertyFlags,
+        buffer: &mut Buffer,
+        buffer_memory: &mut DeviceMemory)
+    { unsafe {
+        let buffer_info = vk::BufferCreateInfo {
+            s_type: vk::StructureType::BUFFER_CREATE_INFO,
+            size,
+            usage,
+            sharing_mode: vk::SharingMode::EXCLUSIVE,
+            ..Default::default()
+        };
+        *buffer = self.device.create_buffer(&buffer_info, None).expect("failed to create buffer");
+
+        let memory_requirements = self.device.get_buffer_memory_requirements(*buffer);
+        let memory_indices = find_memorytype_index(
+            &memory_requirements,
+            &self.device_memory_properties,
+            properties,
+        ).expect("failed to find suitable memory type for buffer");
+        let allocation_info = vk::MemoryAllocateInfo {
+            allocation_size: memory_requirements.size,
+            memory_type_index: memory_indices,
+            ..Default::default()
+        };
+
+        *buffer_memory = self.device.allocate_memory(&allocation_info, None).expect("failed to allocate buffer memory");
+
+        self.device
+            .bind_buffer_memory(*buffer, *buffer_memory, 0)
+            .expect("failed to bind buffer memory");
+    }
+    }
+    pub unsafe fn copy_buffer(&self, src_buffer: &Buffer, dst_buffer: &Buffer, size: &vk::DeviceSize) { unsafe {
+        let command_buffers = self.begin_single_time_commands(1);
+        let copy_region = [vk::BufferCopy {
+            src_offset: 0,
+            dst_offset: 0,
+            size: *size,
+            ..Default::default()
+        }];
+        self.device.cmd_copy_buffer(command_buffers[0], *src_buffer, *dst_buffer, &copy_region);
+        self.end_single_time_commands(command_buffers);
+    } }
+
+    pub unsafe fn create_device_and_staging_buffer<T: Copy>(
+        &self,
+        buffer_size_in: u64,
+        data: &[T],
+        usage: vk::BufferUsageFlags,
+        destroy_staging: bool,
+        keep_ptr: bool,
+        do_initial_copy: bool
+    ) -> ((Buffer, DeviceMemory), (Buffer, DeviceMemory, *mut c_void)) { unsafe {
+        let buffer_size;
+        if buffer_size_in > 0 {
+            buffer_size = buffer_size_in;
+        } else {
+            buffer_size = (size_of::<T>() * data.len()) as u64;
+        }
+        let mut staging_buffer = Buffer::null();
+        let mut staging_buffer_memory = DeviceMemory::null();
+        self.create_buffer(
+            buffer_size,
+            vk::BufferUsageFlags::TRANSFER_SRC,
+            MemoryPropertyFlags::HOST_VISIBLE | MemoryPropertyFlags::HOST_COHERENT,
+            &mut staging_buffer,
+            &mut staging_buffer_memory,
+        );
+        let mut ptr = null_mut();
+        let mut mapped = false;
+        if do_initial_copy || keep_ptr {
+            mapped = true;
+            ptr = self
+                .device
+                .map_memory(
+                    staging_buffer_memory,
+                    0,
+                    buffer_size,
+                    vk::MemoryMapFlags::empty(),
+                )
+                .expect("Failed to map index buffer memory");
+            if do_initial_copy {
+                copy_data_to_memory(ptr, &data);
+            }
+        }
+        let mut buffer = Buffer::null();
+        let mut buffer_memory = DeviceMemory::null();
+        self.create_buffer(
+            buffer_size,
+            vk::BufferUsageFlags::TRANSFER_DST | usage,
+            MemoryPropertyFlags::DEVICE_LOCAL,
+            &mut buffer,
+            &mut buffer_memory,
+        );
+        if do_initial_copy {
+            self.copy_buffer(&staging_buffer, &buffer, &buffer_size);
+        }
+        if destroy_staging {
+            self.device.destroy_buffer(staging_buffer, None);
+            self.device.free_memory(staging_buffer_memory, None);
+            ((buffer, buffer_memory), (Buffer::null(), DeviceMemory::null(), null_mut()))
+        } else {
+            if !keep_ptr && mapped {
+                self.device.unmap_memory(staging_buffer_memory);
+                ptr = null_mut();
+            }
+            ((buffer, buffer_memory), (staging_buffer, staging_buffer_memory, ptr))
+        }
+    } }
+    pub unsafe fn update_buffer_through_staging<T: Copy>(
+        &self,
+        command_buffer: &CommandBuffer,
+        buffer: &(Buffer, DeviceMemory),
+        staging_buffer: &(Buffer, DeviceMemory, *mut c_void),
+        data: &[T],
+        dst_offset: u64,
+        copy_to_staging: bool,
+    ) { unsafe {
+        if copy_to_staging {
+            // use ptr if mapped, otherwise map it
+            let ptr = if staging_buffer.2 != null_mut() {
+                staging_buffer.2
+            } else {
+                self.device.map_memory(
+                    staging_buffer.1,
+                    0,
+                    size_of::<T>() as u64 * data.len() as u64,
+                    vk::MemoryMapFlags::empty(),
+                )
+                    .expect("Failed to map buffer memory")
+            };
+            copy_data_to_memory(ptr, &data);
+        }
+        let copy_region = vk::BufferCopy {
+            src_offset: 0,
+            dst_offset,
+            size: size_of::<T>() as u64 * data.len() as u64,
+            ..Default::default()
+        };
+        self.device.cmd_copy_buffer(*command_buffer, staging_buffer.0, buffer.0, &[copy_region]);
+    } }
+    pub fn load_image_fast(uri: &PathBuf) -> (Vec<u8>, u32, u32) {
+        let bytes = fs::read(uri).expect(uri.to_string_lossy().as_ref());
+
+        if uri.extension().and_then(|s| s.to_str()) == Some("png") {
+            let decoder = png::Decoder::new(Cursor::new(&bytes));
+            let mut reader = decoder.read_info().expect("Failed to read PNG info");
+            let mut buf = vec![0; reader.output_buffer_size().expect("Failed to read buffer size")];
+            let info = reader.next_frame(&mut buf).expect("Failed to decode PNG");
+
+            let (width, height) = (info.width, info.height);
+
+            let rgba_data = match info.color_type {
+                png::ColorType::Rgba => buf[..info.buffer_size()].to_vec(),
+                png::ColorType::Rgb => {
+                    let mut rgba = Vec::with_capacity((width * height * 4) as usize);
+                    for chunk in buf[..info.buffer_size()].chunks(3) {
+                        rgba.extend_from_slice(chunk);
+                        rgba.push(255);
+                    }
+                    rgba
+                }
+                png::ColorType::Grayscale => {
+                    let mut rgba = Vec::with_capacity((width * height * 4) as usize);
+                    for &gray in &buf[..info.buffer_size()] {
+                        rgba.extend_from_slice(&[gray, gray, gray, 255]);
+                    }
+                    rgba
+                }
+                png::ColorType::GrayscaleAlpha => {
+                    let mut rgba = Vec::with_capacity((width * height * 4) as usize);
+                    for chunk in buf[..info.buffer_size()].chunks(2) {
+                        let gray = chunk[0];
+                        let alpha = chunk[1];
+                        rgba.extend_from_slice(&[gray, gray, gray, alpha]);
+                    }
+                    rgba
+                }
+                _ => {
+                    let img = image::load_from_memory(&bytes)
+                        .expect("Failed to load image")
+                        .to_rgba8();
+                    let width = img.width();
+                    let height = img.height();
+                    return (img.into_raw(), width, height);
+                }
+            };
+
+            return (rgba_data, width, height);
+        }
+
+        if let Some(ext) = uri.extension().and_then(|s| s.to_str()) {
+            if ext == "jpg" || ext == "jpeg" {
+                let mut decoder = jpeg_decoder::Decoder::new(Cursor::new(&bytes));
+                let pixels = decoder.decode().expect("Failed to decode JPEG");
+                let info = decoder.info().expect("Failed to get JPEG info");
+
+                let (width, height) = (info.width as u32, info.height as u32);
+
+                let mut rgba = Vec::with_capacity((width * height * 4) as usize);
+                match info.pixel_format {
+                    jpeg_decoder::PixelFormat::RGB24 => {
+                        for chunk in pixels.chunks(3) {
+                            rgba.extend_from_slice(chunk);
+                            rgba.push(255);
+                        }
+                    }
+                    jpeg_decoder::PixelFormat::L8 => {
+                        for &gray in &pixels {
+                            rgba.extend_from_slice(&[gray, gray, gray, 255]);
+                        }
+                    }
+                    _ => {
+                        let img = image::load_from_memory(&bytes)
+                            .expect("Failed to load image")
+                            .to_rgba8();
+                        let width = img.width();
+                        let height = img.height();
+                        return (img.into_raw(), width, height);
+                    }
+                }
+
+                return (rgba, width, height);
+            }
+        }
+
+        let img = image::load_from_memory(&bytes)
+            .expect("Failed to load image")
+            .to_rgba8();
+        let width = img.width();
+        let height = img.height();
+        (img.into_raw(), width, height)
+    }
+    fn load_images_parallel(uris: &[PathBuf]) -> Vec<(Vec<u8>, u32, u32)> {
+        use rayon::prelude::*;
+        uris.par_iter()
+            .map(|uri| {
+                let result = Context::load_image_fast(uri);
+                result
+            })
+            .collect()
+    }
+    pub unsafe fn transition_image_layout_batched(
+        &self,
+        command_buffer: CommandBuffer,
+        image: Image,
+        subresource_range: ImageSubresourceRange,
+        old_layout: vk::ImageLayout,
+        new_layout: vk::ImageLayout,
+    ) {
+        unsafe {
+            let mut barrier = vk::ImageMemoryBarrier {
+                s_type: vk::StructureType::IMAGE_MEMORY_BARRIER,
+                old_layout,
+                new_layout,
+                src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+                dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+                image,
+                subresource_range,
+                ..Default::default()
+            };
+
+            let mut source_stage = vk::PipelineStageFlags::empty();
+            let mut destination_stage = vk::PipelineStageFlags::empty();
+
+            if old_layout == vk::ImageLayout::UNDEFINED && new_layout == vk::ImageLayout::TRANSFER_DST_OPTIMAL {
+                barrier.src_access_mask = vk::AccessFlags::empty();
+                barrier.dst_access_mask = vk::AccessFlags::TRANSFER_WRITE;
+                source_stage = vk::PipelineStageFlags::TOP_OF_PIPE;
+                destination_stage = vk::PipelineStageFlags::TRANSFER;
+            } else if old_layout == vk::ImageLayout::TRANSFER_DST_OPTIMAL && new_layout == vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL {
+                barrier.src_access_mask = vk::AccessFlags::TRANSFER_WRITE;
+                barrier.dst_access_mask = vk::AccessFlags::SHADER_READ;
+                source_stage = vk::PipelineStageFlags::TRANSFER;
+                destination_stage = vk::PipelineStageFlags::FRAGMENT_SHADER;
+            } else {
+                eprintln!("unsupported layout transition");
+            }
+
+            self.device.cmd_pipeline_barrier(
+                command_buffer,
+                source_stage,
+                destination_stage,
+                vk::DependencyFlags::empty(),
+                &[],
+                &[],
+                &[barrier],
+            );
+        }
+    }
+    pub unsafe fn copy_buffer_to_image_batched(
+        &self,
+        command_buffer: CommandBuffer,
+        buffer: Buffer,
+        image: Image,
+        extent: Extent3D,
+    ) {
+        unsafe {
+            let region = vk::BufferImageCopy {
+                buffer_offset: 0,
+                buffer_row_length: 0,
+                buffer_image_height: 0,
+                image_subresource: ImageSubresourceLayers {
+                    aspect_mask: ImageAspectFlags::COLOR,
+                    mip_level: 0,
+                    base_array_layer: 0,
+                    layer_count: 1,
+                    ..Default::default()
+                },
+                image_offset: Offset3D { x: 0, y: 0, z: 0 },
+                image_extent: extent,
+                ..Default::default()
+            };
+            self.device.cmd_copy_buffer_to_image(
+                command_buffer,
+                buffer,
+                image,
+                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                &[region],
+            );
+        }
+    }
+    pub unsafe fn generate_mipmaps_batched(
+        &self,
+        command_buffer: CommandBuffer,
+        image: Image,
+        mips: u32,
+        extent: Extent3D,
+    ) {
+        unsafe {
+            let mut barrier = vk::ImageMemoryBarrier {
+                s_type: vk::StructureType::IMAGE_MEMORY_BARRIER,
+                image,
+                src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+                dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+                subresource_range: ImageSubresourceRange {
+                    aspect_mask: ImageAspectFlags::COLOR,
+                    base_array_layer: 0,
+                    layer_count: 1,
+                    level_count: 1,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut width = extent.width as i32;
+            let mut height = extent.height as i32;
+
+            for i in 1..mips {
+                barrier.subresource_range.base_mip_level = i - 1;
+                barrier.old_layout = vk::ImageLayout::TRANSFER_DST_OPTIMAL;
+                barrier.new_layout = vk::ImageLayout::TRANSFER_SRC_OPTIMAL;
+                barrier.src_access_mask = vk::AccessFlags::TRANSFER_WRITE;
+                barrier.dst_access_mask = vk::AccessFlags::TRANSFER_READ;
+
+                self.device.cmd_pipeline_barrier(
+                    command_buffer,
+                    vk::PipelineStageFlags::TRANSFER,
+                    vk::PipelineStageFlags::TRANSFER,
+                    vk::DependencyFlags::empty(),
+                    &[],
+                    &[],
+                    &[barrier],
+                );
+
+                let blit = vk::ImageBlit {
+                    src_offsets: [
+                        Offset3D { x: 0, y: 0, z: 0 },
+                        Offset3D { x: width, y: height, z: 1 }
+                    ],
+                    src_subresource: ImageSubresourceLayers {
+                        aspect_mask: ImageAspectFlags::COLOR,
+                        mip_level: i - 1,
+                        base_array_layer: 0,
+                        layer_count: 1,
+                        ..Default::default()
+                    },
+                    dst_offsets: [
+                        Offset3D { x: 0, y: 0, z: 0 },
+                        Offset3D {
+                            x: if width > 1 { width / 2 } else { 1 },
+                            y: if height > 1 { height / 2 } else { 1 },
+                            z: 1
+                        }
+                    ],
+                    dst_subresource: ImageSubresourceLayers {
+                        aspect_mask: ImageAspectFlags::COLOR,
+                        mip_level: i,
+                        base_array_layer: 0,
+                        layer_count: 1,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                };
+
+                self.device.cmd_blit_image(
+                    command_buffer,
+                    image,
+                    vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+                    image,
+                    vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                    &[blit],
+                    vk::Filter::LINEAR,
+                );
+
+                barrier.old_layout = vk::ImageLayout::TRANSFER_SRC_OPTIMAL;
+                barrier.new_layout = vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL;
+                barrier.src_access_mask = vk::AccessFlags::TRANSFER_READ;
+                barrier.dst_access_mask = vk::AccessFlags::SHADER_READ;
+
+                self.device.cmd_pipeline_barrier(
+                    command_buffer,
+                    vk::PipelineStageFlags::TRANSFER,
+                    vk::PipelineStageFlags::FRAGMENT_SHADER,
+                    vk::DependencyFlags::empty(),
+                    &[],
+                    &[],
+                    &[barrier],
+                );
+
+                if width > 1 { width /= 2; }
+                if height > 1 { height /= 2; }
+            }
+
+            barrier.subresource_range.base_mip_level = mips - 1;
+            barrier.old_layout = vk::ImageLayout::TRANSFER_DST_OPTIMAL;
+            barrier.new_layout = vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL;
+            barrier.src_access_mask = vk::AccessFlags::TRANSFER_WRITE;
+            barrier.dst_access_mask = vk::AccessFlags::SHADER_READ;
+
+            self.device.cmd_pipeline_barrier(
+                command_buffer,
+                vk::PipelineStageFlags::TRANSFER,
+                vk::PipelineStageFlags::FRAGMENT_SHADER,
+                vk::DependencyFlags::empty(),
+                &[],
+                &[],
+                &[barrier],
+            );
+        }
+    }
+    pub unsafe fn load_textures_batched(
+        &self,
+        uris: &[PathBuf],
+        generate_mipmaps: bool,
+    ) -> Vec<((ImageView, Sampler), (Image, DeviceMemory), u32)> { unsafe {
+        if uris.is_empty() {
+            return Vec::new();
+        }
+
+        // println!("starting parallel image decode...");
+        let decode_start = Instant::now();
+
+        let decoded_images = Context::load_images_parallel(uris);
+
+        // println!("all images decoded in {:?}", decode_start.elapsed());
+        // println!("starting gpu upload...");
+        let upload_start = Instant::now();
+
+        let command_buffers = self.begin_single_time_commands(1);
+        let command_buffer = command_buffers[0];
+
+        let mut results = Vec::with_capacity(uris.len());
+        let mut staging_buffers = Vec::with_capacity(uris.len());
+
+        for (image_data, img_width, img_height) in decoded_images {
+            let image_extent = vk::Extent2D { width: img_width, height: img_height };
+            let image_size = (img_width * img_height * 4) as u64;
+
+            let mut image_mip_levels = 1 + image_extent.height.max(image_extent.width).ilog2();
+            let usage: ImageUsageFlags;
+            if generate_mipmaps {
+                usage = ImageUsageFlags::TRANSFER_SRC | ImageUsageFlags::TRANSFER_DST | ImageUsageFlags::SAMPLED;
+            } else {
+                image_mip_levels = 1;
+                usage = ImageUsageFlags::TRANSFER_DST | ImageUsageFlags::SAMPLED;
+            }
+
+            let mut image_staging_buffer = Buffer::null();
+            let mut image_staging_buffer_memory = DeviceMemory::null();
+            Context::create_buffer(
+                self,
+                image_size,
+                vk::BufferUsageFlags::TRANSFER_SRC,
+                MemoryPropertyFlags::HOST_VISIBLE | MemoryPropertyFlags::HOST_COHERENT,
+                &mut image_staging_buffer,
+                &mut image_staging_buffer_memory,
+            );
+
+            let image_ptr = self.device
+                .map_memory(
+                    image_staging_buffer_memory,
+                    0,
+                    image_size,
+                    vk::MemoryMapFlags::empty(),
+                )
+                .expect("Failed to map image buffer memory");
+            copy_data_to_memory(image_ptr, &image_data);
+            self.device.unmap_memory(image_staging_buffer_memory);
+
+            let texture_image_create_info = vk::ImageCreateInfo {
+                s_type: vk::StructureType::IMAGE_CREATE_INFO,
+                image_type: vk::ImageType::TYPE_2D,
+                extent: Extent3D {
+                    width: image_extent.width,
+                    height: image_extent.height,
+                    depth: 1
+                },
+                mip_levels: image_mip_levels,
+                array_layers: 1,
+                format: Format::R8G8B8A8_UNORM,
+                tiling: vk::ImageTiling::OPTIMAL,
+                initial_layout: vk::ImageLayout::UNDEFINED,
+                usage,
+                sharing_mode: vk::SharingMode::EXCLUSIVE,
+                samples: vk::SampleCountFlags::TYPE_1,
+                ..Default::default()
+            };
+
+            let mut texture_image = Image::null();
+            let mut texture_image_memory = DeviceMemory::null();
+            self.create_image(
+                &texture_image_create_info,
+                MemoryPropertyFlags::DEVICE_LOCAL,
+                &mut texture_image,
+                &mut texture_image_memory,
+            );
+
+            self.transition_image_layout_batched(
+                command_buffer,
+                texture_image,
+                ImageSubresourceRange {
+                    aspect_mask: ImageAspectFlags::COLOR,
+                    base_mip_level: 0,
+                    level_count: image_mip_levels,
+                    base_array_layer: 0,
+                    layer_count: 1,
+                    ..Default::default()
+                },
+                vk::ImageLayout::UNDEFINED,
+                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+            );
+
+            self.copy_buffer_to_image_batched(
+                command_buffer,
+                image_staging_buffer,
+                texture_image,
+                image_extent.into(),
+            );
+
+            if generate_mipmaps {
+                self.generate_mipmaps_batched(
+                    command_buffer,
+                    texture_image,
+                    image_mip_levels,
+                    image_extent.into(),
+                );
+            } else {
+                self.transition_image_layout_batched(
+                    command_buffer,
+                    texture_image,
+                    ImageSubresourceRange {
+                        aspect_mask: ImageAspectFlags::COLOR,
+                        base_mip_level: 0,
+                        level_count: 1,
+                        base_array_layer: 0,
+                        layer_count: 1,
+                        ..Default::default()
+                    },
+                    vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                    vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                );
+            }
+
+            let view_info = vk::ImageViewCreateInfo {
+                s_type: vk::StructureType::IMAGE_VIEW_CREATE_INFO,
+                image: texture_image,
+                view_type: vk::ImageViewType::TYPE_2D,
+                format: Format::R8G8B8A8_UNORM,
+                subresource_range: ImageSubresourceRange {
+                    aspect_mask: ImageAspectFlags::COLOR,
+                    base_mip_level: 0,
+                    level_count: image_mip_levels,
+                    base_array_layer: 0,
+                    layer_count: 1,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let sampler_info = vk::SamplerCreateInfo {
+                s_type: vk::StructureType::SAMPLER_CREATE_INFO,
+                mag_filter: vk::Filter::LINEAR,
+                min_filter: vk::Filter::LINEAR,
+                address_mode_u: vk::SamplerAddressMode::REPEAT,
+                address_mode_v: vk::SamplerAddressMode::REPEAT,
+                address_mode_w: vk::SamplerAddressMode::REPEAT,
+                anisotropy_enable: vk::TRUE,
+                max_anisotropy: self.pdevice_properties.limits.max_sampler_anisotropy,
+                border_color: vk::BorderColor::INT_OPAQUE_BLACK,
+                unnormalized_coordinates: vk::FALSE,
+                mipmap_mode: vk::SamplerMipmapMode::LINEAR,
+                mip_lod_bias: 0.0,
+                min_lod: 0.0,
+                max_lod: image_mip_levels as f32,
+                ..Default::default()
+            };
+
+            let texture = (
+                self.device.create_image_view(&view_info, None).expect("failed to create image view"),
+                self.device.create_sampler(&sampler_info, None).expect("failed to create sampler")
+            );
+
+            results.push((texture, (texture_image, texture_image_memory), image_mip_levels));
+            staging_buffers.push((image_staging_buffer, image_staging_buffer_memory));
+        }
+
+        self.end_single_time_commands(command_buffers);
+        // println!("gpu upload complete in {:?}", upload_start.elapsed());
+
+        for (buffer, memory) in staging_buffers {
+            self.device.destroy_buffer(buffer, None);
+            self.device.free_memory(memory, None);
+        }
+
+        results
+    } }
+    pub unsafe fn create_2d_texture_image(
+        &self,
+        uri: &PathBuf,
+        generate_mipmaps: bool,
+    ) -> ((ImageView, Sampler), (Image, DeviceMemory), u32) {
+        unsafe {
+            let mut results = self.load_textures_batched(&[uri.clone()], generate_mipmaps);
+            results.pop().expect("Failed to load texture")
+        }
+    }
+    pub unsafe fn create_image(
+        &self,
+        create_info: &vk::ImageCreateInfo<'_>,
+        properties: MemoryPropertyFlags,
+        image: &mut Image,
+        image_memory: &mut DeviceMemory)
+    { unsafe {
+        *image = self.device.create_image(create_info, None).expect("Failed to create image");
+        let texture_image_memory_req = self.device.get_image_memory_requirements(*image);
+        let texture_image_alloc_info = vk::MemoryAllocateInfo {
+            s_type: vk::StructureType::MEMORY_ALLOCATE_INFO,
+            allocation_size: texture_image_memory_req.size,
+            memory_type_index: find_memorytype_index(
+                &texture_image_memory_req,
+                &self.instance.get_physical_device_memory_properties(self.pdevice),
+                properties
+            ).expect("unable to get mem type index for texture image"),
+            ..Default::default()
+        };
+        *image_memory = self.device.allocate_memory(&texture_image_alloc_info, None).expect("Failed to allocate image memory");
+        self.device.bind_image_memory(*image, *image_memory, 0).expect("Failed to bind image memory");
+    } }
+    pub unsafe fn begin_single_time_commands(&self, command_buffer_count: u32) -> Vec<CommandBuffer> { unsafe {
+        let alloc_info = vk::CommandBufferAllocateInfo {
+            s_type: vk::StructureType::COMMAND_BUFFER_ALLOCATE_INFO,
+            level: vk::CommandBufferLevel::PRIMARY,
+            command_pool: self.pool,
+            command_buffer_count,
+            ..Default::default()
+        };
+        let command_buffers = self.device.allocate_command_buffers(&alloc_info).unwrap();
+        let begin_info = vk::CommandBufferBeginInfo {
+            s_type: vk::StructureType::COMMAND_BUFFER_BEGIN_INFO,
+            flags: vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT,
+            ..Default::default()
+        };
+        for i in 0usize..command_buffer_count as usize {
+            self.device.begin_command_buffer(command_buffers[i], &begin_info).unwrap();
+        }
+        command_buffers
+    } }
+    pub unsafe fn end_single_time_commands(&self, command_buffers: Vec<CommandBuffer>) { unsafe {
+        for command_buffer in command_buffers.iter() {
+            self.device.end_command_buffer(*command_buffer).unwrap();
+        }
+        let submit_info = [vk::SubmitInfo {
+            s_type: vk::StructureType::SUBMIT_INFO,
+            command_buffer_count: 1,
+            p_command_buffers: &command_buffers[0],
+            ..Default::default()
+        }];
+        self.device.queue_submit(self.graphics_queue, &submit_info, vk::Fence::null()).unwrap();
+        self.device.queue_wait_idle(self.graphics_queue).unwrap();
+        self.device.free_command_buffers(self.pool, &command_buffers);
+    } }
+    pub unsafe fn transition_image_layout(&self, image: Image, subresource_range: ImageSubresourceRange, old_layout: vk::ImageLayout, new_layout: vk::ImageLayout) { unsafe {
+        let command_buffers = self.begin_single_time_commands(1);
+        let mut barrier = vk::ImageMemoryBarrier {
+            s_type: vk::StructureType::IMAGE_MEMORY_BARRIER,
+            old_layout,
+            new_layout,
+            src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+            dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+            image,
+            subresource_range,
+            ..Default::default()
+        };
+        let mut source_stage = vk::PipelineStageFlags::empty();
+        let mut destination_stage = vk::PipelineStageFlags::empty();
+
+        if old_layout == vk::ImageLayout::UNDEFINED && new_layout == vk::ImageLayout::TRANSFER_DST_OPTIMAL {
+            barrier.src_access_mask = vk::AccessFlags::empty();
+            barrier.dst_access_mask = vk::AccessFlags::TRANSFER_WRITE;
+
+            source_stage = vk::PipelineStageFlags::TOP_OF_PIPE;
+            destination_stage = vk::PipelineStageFlags::TRANSFER;
+        } else if old_layout == vk::ImageLayout::TRANSFER_DST_OPTIMAL && new_layout == vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL {
+            barrier.src_access_mask = vk::AccessFlags::TRANSFER_WRITE;
+            barrier.dst_access_mask = vk::AccessFlags::SHADER_READ;
+
+            source_stage = vk::PipelineStageFlags::TRANSFER;
+            destination_stage = vk::PipelineStageFlags::FRAGMENT_SHADER;
+        } else if old_layout == vk::ImageLayout::TRANSFER_SRC_OPTIMAL && new_layout == vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL {
+            barrier.src_access_mask = vk::AccessFlags::TRANSFER_READ;
+            barrier.dst_access_mask = vk::AccessFlags::SHADER_READ;
+
+            source_stage = vk::PipelineStageFlags::TRANSFER;
+            destination_stage = vk::PipelineStageFlags::FRAGMENT_SHADER;
+        } else if old_layout == vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL && new_layout == vk::ImageLayout::TRANSFER_SRC_OPTIMAL {
+            barrier.src_access_mask = vk::AccessFlags::SHADER_READ;
+            barrier.dst_access_mask = vk::AccessFlags::TRANSFER_READ;
+
+            source_stage = vk::PipelineStageFlags::FRAGMENT_SHADER;
+            destination_stage = vk::PipelineStageFlags::TRANSFER;
+        } else {
+            eprintln!("unsupported layout transition");
+        }
+
+        self.device.cmd_pipeline_barrier(
+            command_buffers[0],
+            source_stage,
+            destination_stage,
+            vk::DependencyFlags::empty(),
+            &[],
+            &[],
+            &[barrier],
+        );
+
+        self.end_single_time_commands(command_buffers);
+    } }
+    pub unsafe fn copy_buffer_to_image(&self, buffer: Buffer, image: Image, extent: Extent3D) { unsafe {
+        let command_buffers = self.begin_single_time_commands(1);
+        let region = vk::BufferImageCopy {
+            buffer_offset: 0,
+            buffer_row_length: 0,
+            buffer_image_height: 0,
+            image_subresource: ImageSubresourceLayers {
+                aspect_mask: ImageAspectFlags::COLOR,
+                mip_level: 0,
+                base_array_layer: 0,
+                layer_count: 1,
+                ..Default::default()
+            },
+            image_offset: Offset3D { x: 0, y: 0, z: 0 },
+            image_extent: extent,
+            ..Default::default()
+        };
+        self.device.cmd_copy_buffer_to_image(command_buffers[0], buffer, image, vk::ImageLayout::TRANSFER_DST_OPTIMAL, &[region]);
+        self.end_single_time_commands(command_buffers);
+    } }
+}
 pub struct VkBase {
     pub needs_swapchain_recreate: bool,
+
+    pub context: Arc<Context>,
 
     pub entry: Entry,
     pub instance: Instance,
@@ -460,8 +1248,23 @@ impl VkBase {
             let present_image_views = present_images_create_info.1;
             //</editor-fold>
 
+            let window = Arc::new(window);
             Ok(Self {
                 needs_swapchain_recreate: false,
+
+                context: Arc::new(Context {
+                    device: device.clone(),
+                    device_memory_properties,
+                    window: window.clone(),
+                    pool,
+                    draw_command_buffers: draw_command_buffers.clone(),
+                    setup_command_buffer,
+                    pdevice,
+                    pdevice_properties,
+                    instance: instance.clone(),
+                    surface_format,
+                    graphics_queue,
+                }),
 
                 event_loop: RefCell::new(event_loop),
                 entry,
@@ -470,7 +1273,7 @@ impl VkBase {
                 queue_family_index,
                 pdevice,
                 device_memory_properties,
-                window: Arc::new(window),
+                window,
                 surface_loader,
                 surface_format,
                 present_queue,
@@ -711,778 +1514,6 @@ impl VkBase {
             .collect();
         (present_images, present_image_views)
     }}
-
-    pub unsafe fn create_buffer(
-        &self,
-        size: vk::DeviceSize,
-        usage: vk::BufferUsageFlags,
-        properties: MemoryPropertyFlags,
-        buffer: &mut Buffer,
-        buffer_memory: &mut DeviceMemory)
-    { unsafe {
-        let buffer_info = vk::BufferCreateInfo {
-            s_type: vk::StructureType::BUFFER_CREATE_INFO,
-            size,
-            usage,
-            sharing_mode: vk::SharingMode::EXCLUSIVE,
-            ..Default::default()
-        };
-        *buffer = self.device.create_buffer(&buffer_info, None).expect("failed to create buffer");
-
-        let memory_requirements = self.device.get_buffer_memory_requirements(*buffer);
-        let memory_indices = find_memorytype_index(
-            &memory_requirements,
-            &self.device_memory_properties,
-            properties,
-        ).expect("failed to find suitable memory type for buffer");
-        let allocation_info = vk::MemoryAllocateInfo {
-            allocation_size: memory_requirements.size,
-            memory_type_index: memory_indices,
-            ..Default::default()
-        };
-
-        *buffer_memory = self.device.allocate_memory(&allocation_info, None).expect("failed to allocate buffer memory");
-
-        self.device
-            .bind_buffer_memory(*buffer, *buffer_memory, 0)
-            .expect("failed to bind buffer memory");
-    }
-    }
-    pub unsafe fn copy_buffer(&self, src_buffer: &Buffer, dst_buffer: &Buffer, size: &vk::DeviceSize) { unsafe {
-        let command_buffers = self.begin_single_time_commands(1);
-        let copy_region = [vk::BufferCopy {
-            src_offset: 0,
-            dst_offset: 0,
-            size: *size,
-            ..Default::default()
-        }];
-        self.device.cmd_copy_buffer(command_buffers[0], *src_buffer, *dst_buffer, &copy_region);
-        self.end_single_time_commands(command_buffers);
-    } }
-
-    pub unsafe fn create_device_and_staging_buffer<T: Copy>(
-        &self,
-        buffer_size_in: u64,
-        data: &[T],
-        usage: vk::BufferUsageFlags,
-        destroy_staging: bool,
-        keep_ptr: bool,
-        do_initial_copy: bool
-    ) -> ((Buffer, DeviceMemory), (Buffer, DeviceMemory, *mut c_void)) { unsafe {
-        let buffer_size;
-        if buffer_size_in > 0 {
-            buffer_size = buffer_size_in;
-        } else {
-            buffer_size = (size_of::<T>() * data.len()) as u64;
-        }
-        let mut staging_buffer = Buffer::null();
-        let mut staging_buffer_memory = DeviceMemory::null();
-        self.create_buffer(
-            buffer_size,
-            vk::BufferUsageFlags::TRANSFER_SRC,
-            MemoryPropertyFlags::HOST_VISIBLE | MemoryPropertyFlags::HOST_COHERENT,
-            &mut staging_buffer,
-            &mut staging_buffer_memory,
-        );
-        let mut ptr = null_mut();
-        let mut mapped = false;
-        if do_initial_copy || keep_ptr {
-            mapped = true;
-            ptr = self
-                .device
-                .map_memory(
-                    staging_buffer_memory,
-                    0,
-                    buffer_size,
-                    vk::MemoryMapFlags::empty(),
-                )
-                .expect("Failed to map index buffer memory");
-            if do_initial_copy {
-                copy_data_to_memory(ptr, &data);
-            }
-        }
-        let mut buffer = Buffer::null();
-        let mut buffer_memory = DeviceMemory::null();
-        self.create_buffer(
-            buffer_size,
-            vk::BufferUsageFlags::TRANSFER_DST | usage,
-            MemoryPropertyFlags::DEVICE_LOCAL,
-            &mut buffer,
-            &mut buffer_memory,
-        );
-        if do_initial_copy {
-            self.copy_buffer(&staging_buffer, &buffer, &buffer_size);
-        }
-        if destroy_staging {
-            self.device.destroy_buffer(staging_buffer, None);
-            self.device.free_memory(staging_buffer_memory, None);
-            ((buffer, buffer_memory), (Buffer::null(), DeviceMemory::null(), null_mut()))
-        } else {
-            if !keep_ptr && mapped {
-                self.device.unmap_memory(staging_buffer_memory);
-                ptr = null_mut();
-            }
-            ((buffer, buffer_memory), (staging_buffer, staging_buffer_memory, ptr))
-        }
-    } }
-    pub unsafe fn update_buffer_through_staging<T: Copy>(
-        &self,
-        command_buffer: &CommandBuffer,
-        buffer: &(Buffer, DeviceMemory),
-        staging_buffer: &(Buffer, DeviceMemory, *mut c_void),
-        data: &[T],
-        dst_offset: u64,
-        copy_to_staging: bool,
-    ) { unsafe {
-        if copy_to_staging {
-            // use ptr if mapped, otherwise map it
-            let ptr = if staging_buffer.2 != null_mut() {
-                staging_buffer.2
-            } else {
-                self.device.map_memory(
-                    staging_buffer.1,
-                    0,
-                    size_of::<T>() as u64 * data.len() as u64,
-                    vk::MemoryMapFlags::empty(),
-                )
-                    .expect("Failed to map buffer memory")
-            };
-            copy_data_to_memory(ptr, &data);
-        }
-        let copy_region = vk::BufferCopy {
-            src_offset: 0,
-            dst_offset,
-            size: size_of::<T>() as u64 * data.len() as u64,
-            ..Default::default()
-        };
-        self.device.cmd_copy_buffer(*command_buffer, staging_buffer.0, buffer.0, &[copy_region]);
-    } }
-    pub fn load_image_fast(uri: &PathBuf) -> (Vec<u8>, u32, u32) {
-        let bytes = fs::read(uri).expect(uri.to_string_lossy().as_ref());
-
-        if uri.extension().and_then(|s| s.to_str()) == Some("png") {
-            let decoder = png::Decoder::new(Cursor::new(&bytes));
-            let mut reader = decoder.read_info().expect("Failed to read PNG info");
-            let mut buf = vec![0; reader.output_buffer_size().expect("Failed to read buffer size")];
-            let info = reader.next_frame(&mut buf).expect("Failed to decode PNG");
-
-            let (width, height) = (info.width, info.height);
-
-            let rgba_data = match info.color_type {
-                png::ColorType::Rgba => buf[..info.buffer_size()].to_vec(),
-                png::ColorType::Rgb => {
-                    let mut rgba = Vec::with_capacity((width * height * 4) as usize);
-                    for chunk in buf[..info.buffer_size()].chunks(3) {
-                        rgba.extend_from_slice(chunk);
-                        rgba.push(255);
-                    }
-                    rgba
-                }
-                png::ColorType::Grayscale => {
-                    let mut rgba = Vec::with_capacity((width * height * 4) as usize);
-                    for &gray in &buf[..info.buffer_size()] {
-                        rgba.extend_from_slice(&[gray, gray, gray, 255]);
-                    }
-                    rgba
-                }
-                png::ColorType::GrayscaleAlpha => {
-                    let mut rgba = Vec::with_capacity((width * height * 4) as usize);
-                    for chunk in buf[..info.buffer_size()].chunks(2) {
-                        let gray = chunk[0];
-                        let alpha = chunk[1];
-                        rgba.extend_from_slice(&[gray, gray, gray, alpha]);
-                    }
-                    rgba
-                }
-                _ => {
-                    let img = image::load_from_memory(&bytes)
-                        .expect("Failed to load image")
-                        .to_rgba8();
-                    let width = img.width();
-                    let height = img.height();
-                    return (img.into_raw(), width, height);
-                }
-            };
-
-            return (rgba_data, width, height);
-        }
-
-        if let Some(ext) = uri.extension().and_then(|s| s.to_str()) {
-            if ext == "jpg" || ext == "jpeg" {
-                let mut decoder = jpeg_decoder::Decoder::new(Cursor::new(&bytes));
-                let pixels = decoder.decode().expect("Failed to decode JPEG");
-                let info = decoder.info().expect("Failed to get JPEG info");
-
-                let (width, height) = (info.width as u32, info.height as u32);
-
-                let mut rgba = Vec::with_capacity((width * height * 4) as usize);
-                match info.pixel_format {
-                    jpeg_decoder::PixelFormat::RGB24 => {
-                        for chunk in pixels.chunks(3) {
-                            rgba.extend_from_slice(chunk);
-                            rgba.push(255);
-                        }
-                    }
-                    jpeg_decoder::PixelFormat::L8 => {
-                        for &gray in &pixels {
-                            rgba.extend_from_slice(&[gray, gray, gray, 255]);
-                        }
-                    }
-                    _ => {
-                        let img = image::load_from_memory(&bytes)
-                            .expect("Failed to load image")
-                            .to_rgba8();
-                        let width = img.width();
-                        let height = img.height();
-                        return (img.into_raw(), width, height);
-                    }
-                }
-
-                return (rgba, width, height);
-            }
-        }
-
-        let img = image::load_from_memory(&bytes)
-            .expect("Failed to load image")
-            .to_rgba8();
-        let width = img.width();
-        let height = img.height();
-        (img.into_raw(), width, height)
-    }
-    fn load_images_parallel(uris: &[PathBuf]) -> Vec<(Vec<u8>, u32, u32)> {
-        use rayon::prelude::*;
-        uris.par_iter()
-            .map(|uri| {
-                let result = VkBase::load_image_fast(uri);
-                result
-            })
-            .collect()
-    }
-    pub unsafe fn transition_image_layout_batched(
-        &self,
-        command_buffer: CommandBuffer,
-        image: Image,
-        subresource_range: ImageSubresourceRange,
-        old_layout: vk::ImageLayout,
-        new_layout: vk::ImageLayout,
-    ) {
-        unsafe {
-            let mut barrier = vk::ImageMemoryBarrier {
-                s_type: vk::StructureType::IMAGE_MEMORY_BARRIER,
-                old_layout,
-                new_layout,
-                src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
-                dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
-                image,
-                subresource_range,
-                ..Default::default()
-            };
-
-            let mut source_stage = vk::PipelineStageFlags::empty();
-            let mut destination_stage = vk::PipelineStageFlags::empty();
-
-            if old_layout == vk::ImageLayout::UNDEFINED && new_layout == vk::ImageLayout::TRANSFER_DST_OPTIMAL {
-                barrier.src_access_mask = vk::AccessFlags::empty();
-                barrier.dst_access_mask = vk::AccessFlags::TRANSFER_WRITE;
-                source_stage = vk::PipelineStageFlags::TOP_OF_PIPE;
-                destination_stage = vk::PipelineStageFlags::TRANSFER;
-            } else if old_layout == vk::ImageLayout::TRANSFER_DST_OPTIMAL && new_layout == vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL {
-                barrier.src_access_mask = vk::AccessFlags::TRANSFER_WRITE;
-                barrier.dst_access_mask = vk::AccessFlags::SHADER_READ;
-                source_stage = vk::PipelineStageFlags::TRANSFER;
-                destination_stage = vk::PipelineStageFlags::FRAGMENT_SHADER;
-            } else {
-                eprintln!("unsupported layout transition");
-            }
-
-            self.device.cmd_pipeline_barrier(
-                command_buffer,
-                source_stage,
-                destination_stage,
-                vk::DependencyFlags::empty(),
-                &[],
-                &[],
-                &[barrier],
-            );
-        }
-    }
-    pub unsafe fn copy_buffer_to_image_batched(
-        &self,
-        command_buffer: CommandBuffer,
-        buffer: Buffer,
-        image: Image,
-        extent: Extent3D,
-    ) {
-        unsafe {
-            let region = vk::BufferImageCopy {
-                buffer_offset: 0,
-                buffer_row_length: 0,
-                buffer_image_height: 0,
-                image_subresource: ImageSubresourceLayers {
-                    aspect_mask: ImageAspectFlags::COLOR,
-                    mip_level: 0,
-                    base_array_layer: 0,
-                    layer_count: 1,
-                    ..Default::default()
-                },
-                image_offset: Offset3D { x: 0, y: 0, z: 0 },
-                image_extent: extent,
-                ..Default::default()
-            };
-            self.device.cmd_copy_buffer_to_image(
-                command_buffer,
-                buffer,
-                image,
-                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                &[region],
-            );
-        }
-    }
-    pub unsafe fn generate_mipmaps_batched(
-        &self,
-        command_buffer: CommandBuffer,
-        image: Image,
-        mips: u32,
-        extent: Extent3D,
-    ) {
-        unsafe {
-            let mut barrier = vk::ImageMemoryBarrier {
-                s_type: vk::StructureType::IMAGE_MEMORY_BARRIER,
-                image,
-                src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
-                dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
-                subresource_range: ImageSubresourceRange {
-                    aspect_mask: ImageAspectFlags::COLOR,
-                    base_array_layer: 0,
-                    layer_count: 1,
-                    level_count: 1,
-                    ..Default::default()
-                },
-                ..Default::default()
-            };
-
-            let mut width = extent.width as i32;
-            let mut height = extent.height as i32;
-
-            for i in 1..mips {
-                barrier.subresource_range.base_mip_level = i - 1;
-                barrier.old_layout = vk::ImageLayout::TRANSFER_DST_OPTIMAL;
-                barrier.new_layout = vk::ImageLayout::TRANSFER_SRC_OPTIMAL;
-                barrier.src_access_mask = vk::AccessFlags::TRANSFER_WRITE;
-                barrier.dst_access_mask = vk::AccessFlags::TRANSFER_READ;
-
-                self.device.cmd_pipeline_barrier(
-                    command_buffer,
-                    vk::PipelineStageFlags::TRANSFER,
-                    vk::PipelineStageFlags::TRANSFER,
-                    vk::DependencyFlags::empty(),
-                    &[],
-                    &[],
-                    &[barrier],
-                );
-
-                let blit = vk::ImageBlit {
-                    src_offsets: [
-                        Offset3D { x: 0, y: 0, z: 0 },
-                        Offset3D { x: width, y: height, z: 1 }
-                    ],
-                    src_subresource: ImageSubresourceLayers {
-                        aspect_mask: ImageAspectFlags::COLOR,
-                        mip_level: i - 1,
-                        base_array_layer: 0,
-                        layer_count: 1,
-                        ..Default::default()
-                    },
-                    dst_offsets: [
-                        Offset3D { x: 0, y: 0, z: 0 },
-                        Offset3D {
-                            x: if width > 1 { width / 2 } else { 1 },
-                            y: if height > 1 { height / 2 } else { 1 },
-                            z: 1
-                        }
-                    ],
-                    dst_subresource: ImageSubresourceLayers {
-                        aspect_mask: ImageAspectFlags::COLOR,
-                        mip_level: i,
-                        base_array_layer: 0,
-                        layer_count: 1,
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                };
-
-                self.device.cmd_blit_image(
-                    command_buffer,
-                    image,
-                    vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
-                    image,
-                    vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                    &[blit],
-                    vk::Filter::LINEAR,
-                );
-
-                barrier.old_layout = vk::ImageLayout::TRANSFER_SRC_OPTIMAL;
-                barrier.new_layout = vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL;
-                barrier.src_access_mask = vk::AccessFlags::TRANSFER_READ;
-                barrier.dst_access_mask = vk::AccessFlags::SHADER_READ;
-
-                self.device.cmd_pipeline_barrier(
-                    command_buffer,
-                    vk::PipelineStageFlags::TRANSFER,
-                    vk::PipelineStageFlags::FRAGMENT_SHADER,
-                    vk::DependencyFlags::empty(),
-                    &[],
-                    &[],
-                    &[barrier],
-                );
-
-                if width > 1 { width /= 2; }
-                if height > 1 { height /= 2; }
-            }
-
-            barrier.subresource_range.base_mip_level = mips - 1;
-            barrier.old_layout = vk::ImageLayout::TRANSFER_DST_OPTIMAL;
-            barrier.new_layout = vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL;
-            barrier.src_access_mask = vk::AccessFlags::TRANSFER_WRITE;
-            barrier.dst_access_mask = vk::AccessFlags::SHADER_READ;
-
-            self.device.cmd_pipeline_barrier(
-                command_buffer,
-                vk::PipelineStageFlags::TRANSFER,
-                vk::PipelineStageFlags::FRAGMENT_SHADER,
-                vk::DependencyFlags::empty(),
-                &[],
-                &[],
-                &[barrier],
-            );
-        }
-    }
-    pub unsafe fn load_textures_batched(
-        &self,
-        uris: &[PathBuf],
-        generate_mipmaps: bool,
-    ) -> Vec<((ImageView, Sampler), (Image, DeviceMemory), u32)> { unsafe {
-        if uris.is_empty() {
-            return Vec::new();
-        }
-
-        // println!("starting parallel image decode...");
-        let decode_start = Instant::now();
-
-        let decoded_images = VkBase::load_images_parallel(uris);
-
-        // println!("all images decoded in {:?}", decode_start.elapsed());
-        // println!("starting gpu upload...");
-        let upload_start = Instant::now();
-
-        let command_buffers = self.begin_single_time_commands(1);
-        let command_buffer = command_buffers[0];
-
-        let mut results = Vec::with_capacity(uris.len());
-        let mut staging_buffers = Vec::with_capacity(uris.len());
-
-        for (image_data, img_width, img_height) in decoded_images {
-            let image_extent = vk::Extent2D { width: img_width, height: img_height };
-            let image_size = (img_width * img_height * 4) as u64;
-
-            let mut image_mip_levels = 1 + image_extent.height.max(image_extent.width).ilog2();
-            let usage: ImageUsageFlags;
-            if generate_mipmaps {
-                usage = ImageUsageFlags::TRANSFER_SRC | ImageUsageFlags::TRANSFER_DST | ImageUsageFlags::SAMPLED;
-            } else {
-                image_mip_levels = 1;
-                usage = ImageUsageFlags::TRANSFER_DST | ImageUsageFlags::SAMPLED;
-            }
-
-            let mut image_staging_buffer = Buffer::null();
-            let mut image_staging_buffer_memory = DeviceMemory::null();
-            VkBase::create_buffer(
-                self,
-                image_size,
-                vk::BufferUsageFlags::TRANSFER_SRC,
-                MemoryPropertyFlags::HOST_VISIBLE | MemoryPropertyFlags::HOST_COHERENT,
-                &mut image_staging_buffer,
-                &mut image_staging_buffer_memory,
-            );
-
-            let image_ptr = self.device
-                .map_memory(
-                    image_staging_buffer_memory,
-                    0,
-                    image_size,
-                    vk::MemoryMapFlags::empty(),
-                )
-                .expect("Failed to map image buffer memory");
-            copy_data_to_memory(image_ptr, &image_data);
-            self.device.unmap_memory(image_staging_buffer_memory);
-
-            let texture_image_create_info = vk::ImageCreateInfo {
-                s_type: vk::StructureType::IMAGE_CREATE_INFO,
-                image_type: vk::ImageType::TYPE_2D,
-                extent: Extent3D {
-                    width: image_extent.width,
-                    height: image_extent.height,
-                    depth: 1
-                },
-                mip_levels: image_mip_levels,
-                array_layers: 1,
-                format: Format::R8G8B8A8_UNORM,
-                tiling: vk::ImageTiling::OPTIMAL,
-                initial_layout: vk::ImageLayout::UNDEFINED,
-                usage,
-                sharing_mode: vk::SharingMode::EXCLUSIVE,
-                samples: vk::SampleCountFlags::TYPE_1,
-                ..Default::default()
-            };
-
-            let mut texture_image = Image::null();
-            let mut texture_image_memory = DeviceMemory::null();
-            self.create_image(
-                &texture_image_create_info,
-                MemoryPropertyFlags::DEVICE_LOCAL,
-                &mut texture_image,
-                &mut texture_image_memory,
-            );
-
-            self.transition_image_layout_batched(
-                command_buffer,
-                texture_image,
-                ImageSubresourceRange {
-                    aspect_mask: ImageAspectFlags::COLOR,
-                    base_mip_level: 0,
-                    level_count: image_mip_levels,
-                    base_array_layer: 0,
-                    layer_count: 1,
-                    ..Default::default()
-                },
-                vk::ImageLayout::UNDEFINED,
-                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-            );
-
-            self.copy_buffer_to_image_batched(
-                command_buffer,
-                image_staging_buffer,
-                texture_image,
-                image_extent.into(),
-            );
-
-            if generate_mipmaps {
-                self.generate_mipmaps_batched(
-                    command_buffer,
-                    texture_image,
-                    image_mip_levels,
-                    image_extent.into(),
-                );
-            } else {
-                self.transition_image_layout_batched(
-                    command_buffer,
-                    texture_image,
-                    ImageSubresourceRange {
-                        aspect_mask: ImageAspectFlags::COLOR,
-                        base_mip_level: 0,
-                        level_count: 1,
-                        base_array_layer: 0,
-                        layer_count: 1,
-                        ..Default::default()
-                    },
-                    vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                    vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                );
-            }
-
-            let view_info = vk::ImageViewCreateInfo {
-                s_type: vk::StructureType::IMAGE_VIEW_CREATE_INFO,
-                image: texture_image,
-                view_type: vk::ImageViewType::TYPE_2D,
-                format: Format::R8G8B8A8_UNORM,
-                subresource_range: ImageSubresourceRange {
-                    aspect_mask: ImageAspectFlags::COLOR,
-                    base_mip_level: 0,
-                    level_count: image_mip_levels,
-                    base_array_layer: 0,
-                    layer_count: 1,
-                    ..Default::default()
-                },
-                ..Default::default()
-            };
-
-            let sampler_info = vk::SamplerCreateInfo {
-                s_type: vk::StructureType::SAMPLER_CREATE_INFO,
-                mag_filter: vk::Filter::LINEAR,
-                min_filter: vk::Filter::LINEAR,
-                address_mode_u: vk::SamplerAddressMode::REPEAT,
-                address_mode_v: vk::SamplerAddressMode::REPEAT,
-                address_mode_w: vk::SamplerAddressMode::REPEAT,
-                anisotropy_enable: vk::TRUE,
-                max_anisotropy: self.pdevice_properties.limits.max_sampler_anisotropy,
-                border_color: vk::BorderColor::INT_OPAQUE_BLACK,
-                unnormalized_coordinates: vk::FALSE,
-                mipmap_mode: vk::SamplerMipmapMode::LINEAR,
-                mip_lod_bias: 0.0,
-                min_lod: 0.0,
-                max_lod: image_mip_levels as f32,
-                ..Default::default()
-            };
-
-            let texture = (
-                self.device.create_image_view(&view_info, None).expect("failed to create image view"),
-                self.device.create_sampler(&sampler_info, None).expect("failed to create sampler")
-            );
-
-            results.push((texture, (texture_image, texture_image_memory), image_mip_levels));
-            staging_buffers.push((image_staging_buffer, image_staging_buffer_memory));
-        }
-
-        self.end_single_time_commands(command_buffers);
-        // println!("gpu upload complete in {:?}", upload_start.elapsed());
-
-        for (buffer, memory) in staging_buffers {
-            self.device.destroy_buffer(buffer, None);
-            self.device.free_memory(memory, None);
-        }
-
-        results
-    } }
-    pub unsafe fn create_2d_texture_image(
-        &self,
-        uri: &PathBuf,
-        generate_mipmaps: bool,
-    ) -> ((ImageView, Sampler), (Image, DeviceMemory), u32) {
-        unsafe {
-            let mut results = self.load_textures_batched(&[uri.clone()], generate_mipmaps);
-            results.pop().expect("Failed to load texture")
-        }
-    }
-    pub unsafe fn create_image(
-        &self,
-        create_info: &vk::ImageCreateInfo<'_>,
-        properties: MemoryPropertyFlags,
-        image: &mut Image,
-        image_memory: &mut DeviceMemory)
-    { unsafe {
-        *image = self.device.create_image(create_info, None).expect("Failed to create image");
-        let texture_image_memory_req = self.device.get_image_memory_requirements(*image);
-        let texture_image_alloc_info = vk::MemoryAllocateInfo {
-            s_type: vk::StructureType::MEMORY_ALLOCATE_INFO,
-            allocation_size: texture_image_memory_req.size,
-            memory_type_index: find_memorytype_index(
-                &texture_image_memory_req,
-                &self.instance.get_physical_device_memory_properties(self.pdevice),
-                properties
-            ).expect("unable to get mem type index for texture image"),
-            ..Default::default()
-        };
-        *image_memory = self.device.allocate_memory(&texture_image_alloc_info, None).expect("Failed to allocate image memory");
-        self.device.bind_image_memory(*image, *image_memory, 0).expect("Failed to bind image memory");
-    } }
-    pub unsafe fn begin_single_time_commands(&self, command_buffer_count: u32) -> Vec<CommandBuffer> { unsafe {
-        let alloc_info = vk::CommandBufferAllocateInfo {
-            s_type: vk::StructureType::COMMAND_BUFFER_ALLOCATE_INFO,
-            level: vk::CommandBufferLevel::PRIMARY,
-            command_pool: self.pool,
-            command_buffer_count,
-            ..Default::default()
-        };
-        let command_buffers = self.device.allocate_command_buffers(&alloc_info).unwrap();
-        let begin_info = vk::CommandBufferBeginInfo {
-            s_type: vk::StructureType::COMMAND_BUFFER_BEGIN_INFO,
-            flags: vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT,
-            ..Default::default()
-        };
-        for i in 0usize..command_buffer_count as usize {
-            self.device.begin_command_buffer(command_buffers[i], &begin_info).unwrap();
-        }
-        command_buffers
-    } }
-    pub unsafe fn end_single_time_commands(&self, command_buffers: Vec<CommandBuffer>) { unsafe {
-        for command_buffer in command_buffers.iter() {
-            self.device.end_command_buffer(*command_buffer).unwrap();
-        }
-        let submit_info = [vk::SubmitInfo {
-            s_type: vk::StructureType::SUBMIT_INFO,
-            command_buffer_count: 1,
-            p_command_buffers: &command_buffers[0],
-            ..Default::default()
-        }];
-        self.device.queue_submit(self.graphics_queue, &submit_info, vk::Fence::null()).unwrap();
-        self.device.queue_wait_idle(self.graphics_queue).unwrap();
-        self.device.free_command_buffers(self.pool, &command_buffers);
-    } }
-    pub unsafe fn transition_image_layout(&self, image: Image, subresource_range: ImageSubresourceRange, old_layout: vk::ImageLayout, new_layout: vk::ImageLayout) { unsafe {
-        let command_buffers = self.begin_single_time_commands(1);
-        let mut barrier = vk::ImageMemoryBarrier {
-            s_type: vk::StructureType::IMAGE_MEMORY_BARRIER,
-            old_layout,
-            new_layout,
-            src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
-            dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
-            image,
-            subresource_range,
-            ..Default::default()
-        };
-        let mut source_stage = vk::PipelineStageFlags::empty();
-        let mut destination_stage = vk::PipelineStageFlags::empty();
-
-        if old_layout == vk::ImageLayout::UNDEFINED && new_layout == vk::ImageLayout::TRANSFER_DST_OPTIMAL {
-            barrier.src_access_mask = vk::AccessFlags::empty();
-            barrier.dst_access_mask = vk::AccessFlags::TRANSFER_WRITE;
-
-            source_stage = vk::PipelineStageFlags::TOP_OF_PIPE;
-            destination_stage = vk::PipelineStageFlags::TRANSFER;
-        } else if old_layout == vk::ImageLayout::TRANSFER_DST_OPTIMAL && new_layout == vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL {
-            barrier.src_access_mask = vk::AccessFlags::TRANSFER_WRITE;
-            barrier.dst_access_mask = vk::AccessFlags::SHADER_READ;
-
-            source_stage = vk::PipelineStageFlags::TRANSFER;
-            destination_stage = vk::PipelineStageFlags::FRAGMENT_SHADER;
-        } else if old_layout == vk::ImageLayout::TRANSFER_SRC_OPTIMAL && new_layout == vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL {
-            barrier.src_access_mask = vk::AccessFlags::TRANSFER_READ;
-            barrier.dst_access_mask = vk::AccessFlags::SHADER_READ;
-
-            source_stage = vk::PipelineStageFlags::TRANSFER;
-            destination_stage = vk::PipelineStageFlags::FRAGMENT_SHADER;
-        } else if old_layout == vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL && new_layout == vk::ImageLayout::TRANSFER_SRC_OPTIMAL {
-            barrier.src_access_mask = vk::AccessFlags::SHADER_READ;
-            barrier.dst_access_mask = vk::AccessFlags::TRANSFER_READ;
-
-            source_stage = vk::PipelineStageFlags::FRAGMENT_SHADER;
-            destination_stage = vk::PipelineStageFlags::TRANSFER;
-        } else {
-            eprintln!("unsupported layout transition");
-        }
-
-        self.device.cmd_pipeline_barrier(
-            command_buffers[0],
-            source_stage,
-            destination_stage,
-            vk::DependencyFlags::empty(),
-            &[],
-            &[],
-            &[barrier],
-        );
-
-        self.end_single_time_commands(command_buffers);
-    } }
-    pub unsafe fn copy_buffer_to_image(&self, buffer: Buffer, image: Image, extent: Extent3D) { unsafe {
-        let command_buffers = self.begin_single_time_commands(1);
-        let region = vk::BufferImageCopy {
-            buffer_offset: 0,
-            buffer_row_length: 0,
-            buffer_image_height: 0,
-            image_subresource: ImageSubresourceLayers {
-                aspect_mask: ImageAspectFlags::COLOR,
-                mip_level: 0,
-                base_array_layer: 0,
-                layer_count: 1,
-                ..Default::default()
-            },
-            image_offset: Offset3D { x: 0, y: 0, z: 0 },
-            image_extent: extent,
-            ..Default::default()
-        };
-        self.device.cmd_copy_buffer_to_image(command_buffers[0], buffer, image, vk::ImageLayout::TRANSFER_DST_OPTIMAL, &[region]);
-        self.end_single_time_commands(command_buffers);
-    } }
 }
 impl Drop for VkBase {
     fn drop(&mut self) {

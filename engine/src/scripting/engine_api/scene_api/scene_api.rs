@@ -36,6 +36,19 @@ impl UserData for SceneRef {
             Ok(lua.create_userdata(TransformPointer { index }))
         });
 
+        methods.add_method("load_model", |lua, this, parent: usize| {
+            with_scene_mut!(lua => scene);
+
+            let file = rfd::FileDialog::new()
+                .add_filter("GLTF Models", &["gltf", "glb"])
+                .pick_file();
+            if let Some(file) = file {
+                scene.new_entity_from_model(parent, file.to_str().unwrap());
+            }
+
+            Ok(())
+        });
+
         methods.add_method("reset_outlines", |lua, this, ()| {
             with_scene_mut!(lua => scene);
             scene.outlined_components.clear();

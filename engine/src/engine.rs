@@ -52,8 +52,8 @@ pub struct EngineRef {
 impl Engine {
     pub unsafe fn new() -> Engine {
         let base = VkBase::new("ffengine".to_string(), 1200, 700, MAX_FRAMES_IN_FLIGHT).unwrap();
-        let mut world = World::new(&base);
-        unsafe { world.initialize(&base) }
+        let mut world = World::new(&base.context);
+        unsafe { world.initialize() }
         let world = Arc::new(RefCell::new(world));
         let physics_engine = Arc::new(RefCell::new(PhysicsEngine::new(Vector::new3(0.0, -9.8, 0.0), 0.9, 0.5)));
 
@@ -68,7 +68,7 @@ impl Engine {
         }, 1))) };
 
         let engine = Engine {
-            scene: Arc::new(RefCell::new(Scene::new(renderer.clone(), world.clone(), physics_engine.clone()))),
+            scene: Arc::new(RefCell::new(Scene::new(&base.context, renderer.clone(), world.clone(), physics_engine.clone()))),
 
             physics_engine,
             renderer,
@@ -99,6 +99,7 @@ impl Engine {
         let base = &mut self.base;
 
         let mut current_frame = 0usize;
+        let mut frame_count = 0usize;
         let mut last_frame_time = Instant::now();
         let mut needs_resize = false;
 
@@ -184,7 +185,10 @@ impl Engine {
 
                         Lua::run_update_methods().expect("Failed to run Update methods");
                         for gui in self.renderer.borrow_mut().guis.iter() {
-                            gui.borrow_mut().initialize_new_texts(base);
+                            gui.borrow_mut().initialize_new_texts();
+                        }
+                        {
+                            self.world.borrow_mut().update_buffers(base);
                         }
                         {
                             if self.client.borrow().flags.borrow().do_physics { self.physics_engine.borrow_mut().tick(delta_time, &mut self.world.borrow_mut()); }
@@ -221,7 +225,7 @@ impl Engine {
                             &[current_rendering_complete_semaphore],
                             |_device, frame_command_buffer| {
                                 {
-                                    self.scene.borrow_mut().update_scene(base, current_frame);
+                                    self.scene.borrow_mut().update_scene(current_frame);
                                     let world_ref = &mut self.world.borrow_mut();
                                     world_ref.update_lights(frame_command_buffer, current_frame);
                                     world_ref.update_cameras();
@@ -244,7 +248,6 @@ impl Engine {
                             if scene_renderer_ref.queued_id_buffer_sample {
                                 scene_renderer_ref.queued_id_buffer_sample = false;
                                 let hovered = scene_renderer_ref.geometry_renderpass.pass.borrow().textures[current_frame][4].sample(
-                                    base,
                                     controller_mut.cursor_position.x as i32,
                                     controller_mut.cursor_position.y as i32,
                                     0
@@ -274,6 +277,7 @@ impl Engine {
 
                         // frametime_manager.reset();
                         current_frame = (current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
+                        frame_count += 1;
                     },
                     _ => { Client::handle_event(self.client.clone(), self.renderer.clone(), event) },
                 }

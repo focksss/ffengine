@@ -3,16 +3,17 @@ use std::fs;
 use std::ops::Add;
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::Arc;
 use ash::vk;
 use ash::vk::{Format, SampleCountFlags, Sampler};
 use serde_json::Value;
 use crate::gui::text::glyph::Glyph;
 use crate::math::Vector;
 use crate::render::render_helper::{DeviceTexture, Texture};
-use crate::render::vulkan_base::VkBase;
+use crate::render::vulkan_base::{Context, VkBase};
 
 pub struct Font {
-    pub device: ash::Device,
+    pub(crate) context: Arc<Context>,
 
     pub texture: DeviceTexture,
     pub sampler: Sampler,
@@ -25,7 +26,7 @@ pub struct Font {
     pub line_gap: f32,
 }
 impl Font {
-    pub fn new(base: &VkBase, path: &str, glyph_size: Option<u32>, distance_range: Option<f32>) -> Self { unsafe {
+    pub fn new(context: &Arc<Context>, path: &str, glyph_size: Option<u32>, distance_range: Option<f32>) -> Self { unsafe {
         let glyph_size_final = glyph_size.unwrap_or(64);
         let distance_range_final = distance_range.unwrap_or(2.0);
         let font_name = PathBuf::from(path).file_name()
@@ -53,7 +54,7 @@ impl Font {
             .status()
             .expect("Failed to run msdfgen");
 
-        let atlas = base.create_2d_texture_image(&PathBuf::from(atlas_path_str), false);
+        let atlas = context.create_2d_texture_image(&PathBuf::from(atlas_path_str), false);
         let atlas_texture = DeviceTexture {
             image: atlas.1.0,
             image_view: atlas.0.0,
@@ -103,7 +104,7 @@ impl Font {
         }
 
         Font {
-            device: base.device.clone(),
+            context: context.clone(),
 
             texture: atlas_texture,
             sampler: atlas.0.1,
@@ -117,10 +118,10 @@ impl Font {
         }
     } }
     pub unsafe fn destroy(&self) { unsafe {
-        self.device.destroy_image(self.texture.image, None);
-        self.device.free_memory(self.texture.device_memory, None);
-        self.device.destroy_image_view(self.texture.image_view, None);
+        self.context.device.destroy_image(self.texture.image, None);
+        self.context.device.free_memory(self.texture.device_memory, None);
+        self.context.device.destroy_image_view(self.texture.image_view, None);
 
-        self.device.destroy_sampler(self.sampler, None);
+        self.context.device.destroy_sampler(self.sampler, None);
     } }
 }

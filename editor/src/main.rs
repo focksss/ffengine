@@ -31,7 +31,9 @@ fn main() { unsafe {
 
 
         {
-            app.scene.borrow_mut().new_entity_from_model(base, 0, "editor/resources/models/ffocks/untitled.gltf");
+            app.scene.borrow_mut().new_entity_from_model(0, "editor/resources/models/ffocks/untitled.gltf");
+            //app.scene.borrow_mut().new_entity_from_model(0, "C:\\Graphics\\assets\\rivals\\luna\\gltf\\luna.gltf");
+            
             let anim = &mut app.scene.borrow_mut().animation_components[0];
             anim.repeat = true;
             anim.snap_back = true;
@@ -74,15 +76,15 @@ fn main() { unsafe {
         */
 
         // /*
-        app.scene.borrow_mut().new_entity_from_model(base, 0, "editor/resources/models/collisionTest/collisionTestNoWalls.gltf");
+        app.scene.borrow_mut().new_entity_from_model(0, "editor/resources/models/collisionTest/collisionTestNoWalls.gltf");
 
-        app.scene.borrow_mut().new_entity_from_model(base, 0, "editor/resources/models/demoBall/scene.gltf");
-        app.scene.borrow_mut().new_entity_from_model(base, 0, "editor/resources/models/demoBall/scene.gltf");
-        app.scene.borrow_mut().new_entity_from_model(base, 0, "editor/resources/models/grassblockGLTF/grassblock.gltf");
+        app.scene.borrow_mut().new_entity_from_model(0, "editor/resources/models/demoBall/scene.gltf");
+        app.scene.borrow_mut().new_entity_from_model(0, "editor/resources/models/demoBall/scene.gltf");
+        app.scene.borrow_mut().new_entity_from_model(0, "editor/resources/models/grassblockGLTF/grassblock.gltf");
 
         physics_engine.add_all_nodes_from_model(&app.world.borrow(), 2, 3);
         physics_engine.add_all_nodes_from_model(&app.world.borrow(), 3, 3);
-        physics_engine.add_all_nodes_from_model(&app.world.borrow(), 4, 3);
+        //physics_engine.add_all_nodes_from_model(&app.world.borrow(), 4, 3);
         physics_engine.add_all_nodes_from_model(&app.world.borrow(), 1, 0);
         physics_engine.rigid_bodies[0].set_static(false);
         physics_engine.rigid_bodies[0].set_mass(1.0);
@@ -128,8 +130,8 @@ fn main() { unsafe {
         */
 
 
-        renderer.scene_renderer.borrow_mut().update_world_textures_all_frames(base, &app.world.borrow());
-        renderer.guis[0].borrow_mut().load_from_file(base, "editor\\resources\\gui\\editor.gui");
+        renderer.scene_renderer.borrow_mut().update_world_textures_all_frames(&app.world.borrow());
+        renderer.guis[0].borrow_mut().load_from_file("editor\\resources\\gui\\editor.gui");
     }
     let player = Player::new(
         app.physics_engine.clone(),

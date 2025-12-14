@@ -1,9 +1,11 @@
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::ffi::c_void;
 use std::fs;
 use std::rc::Rc;
 use std::path::{Path, PathBuf};
 use std::ptr::null_mut;
+use std::sync::Arc;
 use std::time::SystemTime;
 use ash::vk;
 use ash::vk::{CommandBuffer, DeviceMemory, ImageView, Sampler};
@@ -13,7 +15,7 @@ use crate::math::matrix::Matrix;
 use crate::math::Vector;
 use crate::render::render::MAX_FRAMES_IN_FLIGHT;
 use crate::render::scene_renderer::SHADOW_RES;
-use crate::render::vulkan_base::{copy_buffer_synchronous, copy_data_to_memory, VkBase};
+use crate::render::vulkan_base::{copy_buffer_synchronous, copy_data_to_memory, Context, VkBase};
 use crate::scene::scene::{Instance, Scene};
 use crate::scene::world::camera::{Camera, Frustum};
 
@@ -25,13 +27,19 @@ const MAX_MATERIALS: u64 = 10u64 * 10u64.pow(4);
 const MAX_JOINTS: u64 = 10u64 * 10u64.pow(4);
 const MAX_LIGHTS: u64 = 10u64 * 10u64.pow(3);
 pub struct World {
-    pub device: ash::Device,
+    context: Arc<Context>,
 
     pub cameras: Vec<Camera>,
     pub lights: Vec<Light>,
     pub sun: Sun,
 
     pub models: Vec<ModelContainer>,
+    pub loaded_models: HashMap<String, usize>,
+    buffers_need_update: bool,
+    new_vertices: Vec<Vertex>,
+    new_indices: Vec<u32>,
+    new_joints: Vec<Matrix>,
+    new_materials: Vec<MaterialSendable>,
 
     pub nodes: Vec<Node>,
     pub meshes: Vec<Mesh>,
@@ -52,7 +60,9 @@ pub struct World {
     pub vertex_buffer: (vk::Buffer, DeviceMemory),
     pub vertex_staging_buffer: (vk::Buffer, DeviceMemory, *mut c_void),
     pub indices_count: usize,
+    buffer_indices_count: usize,
     pub vertices_count: usize,
+    buffer_vertices_count: usize,
 
     pub instance_staging_buffer: (vk::Buffer, DeviceMemory, *mut c_void),
     pub instance_buffers: Vec<(vk::Buffer, DeviceMemory)>,
@@ -61,11 +71,13 @@ pub struct World {
     pub material_staging_buffer: (vk::Buffer, DeviceMemory, *mut c_void),
     pub material_buffers: Vec<(vk::Buffer, DeviceMemory)>,
     pub materials_count: usize,
+    buffer_materials_count: usize,
     pub material_buffer_size: u64,
 
     pub joints_staging_buffer: (vk::Buffer, DeviceMemory, *mut c_void),
     pub joints_buffers: Vec<(vk::Buffer, DeviceMemory)>,
     pub joints_count: usize,
+    buffer_joints_count: usize,
     pub joints_buffers_size: u64,
 
     pub lights_staging_buffer: (vk::Buffer, DeviceMemory, *mut c_void),
@@ -76,15 +88,21 @@ pub struct World {
     pub primitive_count: usize,
 }
 impl World {
-    pub fn new(base: &VkBase) -> Self {
+    pub fn new(context: &Arc<Context>) -> Self {
         Self {
-            device: base.device.clone(),
+            context: context.clone(),
 
             cameras: Vec::new(),
             lights: Vec::new(),
             sun: Sun::new_sun(Vector::new3(-1.0, -5.0, -1.0), Vector::new3(0.98, 0.84, 0.64)),
+            buffers_need_update: false,
 
             models: Vec::new(),
+            loaded_models: HashMap::new(),
+            new_indices: Vec::new(),
+            new_vertices: Vec::new(),
+            new_joints: Vec::new(),
+            new_materials: Vec::new(),
 
             nodes: Vec::new(),
             meshes: Vec::new(),
@@ -105,16 +123,20 @@ impl World {
             vertex_staging_buffer: (vk::Buffer::null(), DeviceMemory::null(), null_mut()),
             indices_count: 0,
             vertices_count: 0,
+            buffer_indices_count: 0,
+            buffer_vertices_count: 0,
             instance_staging_buffer: (vk::Buffer::null(), DeviceMemory::null(), null_mut()),
             instance_buffers: Vec::new(),
             instance_buffer_size: 0,
             material_staging_buffer: (vk::Buffer::null(), DeviceMemory::null(), null_mut()),
             material_buffers: Vec::new(),
             materials_count: 0,
+            buffer_materials_count: 0,
             material_buffer_size: 0,
             joints_staging_buffer: (vk::Buffer::null(), DeviceMemory::null(), null_mut()),
             joints_buffers: Vec::new(),
             joints_count: 0,
+            buffer_joints_count: 0,
             joints_buffers_size: 0,
             lights_staging_buffer: (vk::Buffer::null(), DeviceMemory::null(), null_mut()),
             lights_buffers: Vec::new(),
@@ -123,12 +145,12 @@ impl World {
             primitive_count: 0,
         }
     }
-    pub unsafe fn initialize(&mut self, base: &VkBase) { unsafe {
+    pub unsafe fn initialize(&mut self) { unsafe {
         self.instance_buffer_size = MAX_INSTANCES * size_of::<Instance>() as u64;
         self.material_buffer_size = MAX_MATERIALS * size_of::<MaterialSendable>() as u64;
         self.lights_buffers_size = MAX_LIGHTS * size_of::<LightSendable>() as u64;
-        (self.vertex_buffer, self.vertex_staging_buffer) = base.create_device_and_staging_buffer(size_of::<Vertex>() as u64 * MAX_VERTICES, &[0], vk::BufferUsageFlags::VERTEX_BUFFER, false, true, false);
-        (self.index_buffer, self.index_staging_buffer) = base.create_device_and_staging_buffer(size_of::<u32>() as u64 * 3 * MAX_INDICES, &[0], vk::BufferUsageFlags::INDEX_BUFFER, false, true, false);
+        (self.vertex_buffer, self.vertex_staging_buffer) = self.context.create_device_and_staging_buffer(size_of::<Vertex>() as u64 * MAX_VERTICES, &[0], vk::BufferUsageFlags::VERTEX_BUFFER, false, true, false);
+        (self.index_buffer, self.index_staging_buffer) = self.context.create_device_and_staging_buffer(size_of::<u32>() as u64 * 3 * MAX_INDICES, &[0], vk::BufferUsageFlags::INDEX_BUFFER, false, true, false);
         for i in 0..MAX_FRAMES_IN_FLIGHT {
             self.instance_buffers.push((vk::Buffer::null(), DeviceMemory::null()));
             self.material_buffers.push((vk::Buffer::null(), DeviceMemory::null()));
@@ -136,120 +158,148 @@ impl World {
             self.joints_buffers.push((vk::Buffer::null(), DeviceMemory::null()));
             if i == 0 {
                 (self.instance_buffers[i], self.instance_staging_buffer) =
-                    base.create_device_and_staging_buffer(self.instance_buffer_size, &[0], vk::BufferUsageFlags::VERTEX_BUFFER, false, true, false);
+                    self.context.create_device_and_staging_buffer(self.instance_buffer_size, &[0], vk::BufferUsageFlags::VERTEX_BUFFER, false, true, false);
                 (self.material_buffers[i], self.material_staging_buffer) =
-                    base.create_device_and_staging_buffer(self.material_buffer_size, &[0], vk::BufferUsageFlags::STORAGE_BUFFER, false, true, false);
+                    self.context.create_device_and_staging_buffer(self.material_buffer_size, &[0], vk::BufferUsageFlags::STORAGE_BUFFER, false, true, false);
                 (self.lights_buffers[i], self.lights_staging_buffer) =
-                    base.create_device_and_staging_buffer(self.lights_buffers_size, &[0], vk::BufferUsageFlags::STORAGE_BUFFER, false, true, false);
+                    self.context.create_device_and_staging_buffer(self.lights_buffers_size, &[0], vk::BufferUsageFlags::STORAGE_BUFFER, false, true, false);
             } else {
-                self.instance_buffers[i] = base.create_device_and_staging_buffer(self.instance_buffer_size, &[0], vk::BufferUsageFlags::VERTEX_BUFFER, true, false, false).0;
-                self.material_buffers[i] = base.create_device_and_staging_buffer(self.material_buffer_size, &[0], vk::BufferUsageFlags::STORAGE_BUFFER, true, false, false).0;
-                self.lights_buffers[i] = base.create_device_and_staging_buffer(self.lights_buffers_size, &[0], vk::BufferUsageFlags::STORAGE_BUFFER, true, false, false).0;
+                self.instance_buffers[i] = self.context.create_device_and_staging_buffer(self.instance_buffer_size, &[0], vk::BufferUsageFlags::VERTEX_BUFFER, true, false, false).0;
+                self.material_buffers[i] = self.context.create_device_and_staging_buffer(self.material_buffer_size, &[0], vk::BufferUsageFlags::STORAGE_BUFFER, true, false, false).0;
+                self.lights_buffers[i] = self.context.create_device_and_staging_buffer(self.lights_buffers_size, &[0], vk::BufferUsageFlags::STORAGE_BUFFER, true, false, false).0;
             }
         }
         self.joints_buffers_size = MAX_JOINTS * size_of::<Matrix>() as u64;
         for i in 0..MAX_FRAMES_IN_FLIGHT {
             if i == 0 {
                 (self.joints_buffers[i], self.joints_staging_buffer) =
-                    base.create_device_and_staging_buffer(self.joints_buffers_size, &[0], vk::BufferUsageFlags::STORAGE_BUFFER, false, true, false);
+                    self.context.create_device_and_staging_buffer(self.joints_buffers_size, &[0], vk::BufferUsageFlags::STORAGE_BUFFER, false, true, false);
             } else {
-                self.joints_buffers[i] = base.create_device_and_staging_buffer(self.joints_buffers_size, &[0], vk::BufferUsageFlags::STORAGE_BUFFER, true, true, false).0;
+                self.joints_buffers[i] = self.context.create_device_and_staging_buffer(self.joints_buffers_size, &[0], vk::BufferUsageFlags::STORAGE_BUFFER, true, true, false).0;
             }
         }
     } }
 
-    pub unsafe fn add_model(&mut self, base: &VkBase, uri: &str) { unsafe {
-        let model = ModelContainer::new(uri, self);
-        let mut new_vertices: Vec<Vertex> = vec![];
-        let mut new_indices: Vec<u32> = vec![];
-        let mut new_materials_send: Vec<MaterialSendable> = vec![];
-        for mesh in &model.meshes {
-            for primitive in &mut self.meshes[*mesh].primitives {
-                primitive.construct_data(&self.accessors, &self.buffer_views, &self.buffers);
-                primitive.vertex_buffer_offset = self.vertices_count + new_vertices.len();
-                primitive.index_buffer_offset = self.indices_count + new_indices.len();
-                new_vertices.extend_from_slice(&primitive.vertex_data);
-                if !primitive.index_data_u8.is_empty() {
-                    new_indices.extend(
-                        primitive.index_data_u8.iter().map(|&i| i as u32 + primitive.vertex_buffer_offset as u32)
-                    );
-                } else if !primitive.index_data_u16.is_empty() {
-                    new_indices.extend(
-                        primitive.index_data_u16.iter().map(|&i| i as u32 + primitive.vertex_buffer_offset as u32)
-                    );
-                } else if !primitive.index_data_u32.is_empty() {
-                    new_indices.extend(
-                        primitive.index_data_u32.iter().map(|&i| i + primitive.vertex_buffer_offset as u32)
-                    );
+    pub unsafe fn add_model(&mut self, uri: &str) -> usize {
+        if !self.loaded_models.contains_key(&String::from(uri)) {
+            self.loaded_models.insert(String::from(uri), self.models.len());
+            let model = ModelContainer::new(uri, self);
+            let mut new_vertices: Vec<Vertex> = vec![];
+            let mut new_indices: Vec<u32> = vec![];
+            let mut new_materials_send: Vec<MaterialSendable> = vec![];
+            for mesh in &model.meshes {
+                for primitive in &mut self.meshes[*mesh].primitives {
+                    primitive.construct_data(&self.accessors, &self.buffer_views, &self.buffers);
+                    primitive.vertex_buffer_offset = self.vertices_count + new_vertices.len();
+                    primitive.index_buffer_offset = self.indices_count + new_indices.len();
+                    new_vertices.extend_from_slice(&primitive.vertex_data);
+                    if !primitive.index_data_u8.is_empty() {
+                        new_indices.extend(
+                            primitive.index_data_u8.iter().map(|&i| i as u32 + primitive.vertex_buffer_offset as u32)
+                        );
+                    } else if !primitive.index_data_u16.is_empty() {
+                        new_indices.extend(
+                            primitive.index_data_u16.iter().map(|&i| i as u32 + primitive.vertex_buffer_offset as u32)
+                        );
+                    } else if !primitive.index_data_u32.is_empty() {
+                        new_indices.extend(
+                            primitive.index_data_u32.iter().map(|&i| i + primitive.vertex_buffer_offset as u32)
+                        );
+                    }
+                    primitive.construct_min_max()
                 }
-                primitive.construct_min_max()
             }
-        }
-        for material in model.materials.iter() {
-            new_materials_send.push(self.materials[*material].to_sendable(self.texture_count));
-        }
+            for material in model.materials.iter() {
+                new_materials_send.push(self.materials[*material].to_sendable(self.texture_count));
+            }
 
-        let mut new_joints_send = Vec::new();
-        for skin_index in model.skins.iter() {
-            let skin = &mut self.skins[*skin_index];
-            skin.construct_joint_matrices(&mut self.nodes, &self.accessors, &self.buffer_views, &self.buffers);
-            for joint in skin.joint_matrices.iter() {
-                new_joints_send.push(joint.clone());
+            let mut new_joints_send = Vec::new();
+            for skin_index in model.skins.iter() {
+                let skin = &mut self.skins[*skin_index];
+                skin.construct_joint_matrices(&mut self.nodes, &self.accessors, &self.buffer_views, &self.buffers);
+                for joint in skin.joint_matrices.iter() {
+                    new_joints_send.push(joint.clone());
+                }
             }
+
+            self.vertices_count += new_vertices.len();
+            self.indices_count += new_indices.len();
+            self.materials_count += new_materials_send.len();
+            self.texture_count += model.textures.len() as i32;
+            self.joints_count += new_joints_send.len();
+
+            self.new_indices.extend(new_indices);
+            self.new_vertices.extend(new_vertices);
+            self.new_joints.extend(new_joints_send);
+            self.new_materials.extend(new_materials_send);
+
+            self.buffers_need_update = true;
+
+            self.models.push(model);
         }
-        let command_buffers = base.begin_single_time_commands(1);
-        base.update_buffer_through_staging(
-            &command_buffers[0],
-            &self.vertex_buffer,
-            &self.vertex_staging_buffer,
-            &new_vertices,
-            size_of::<Vertex>() as u64 * self.vertices_count as u64,
-            true
-        );
-        base.update_buffer_through_staging(
-            &command_buffers[0],
-            &self.index_buffer,
-            &self.index_staging_buffer,
-            &new_indices,
-            size_of::<u32>() as u64 * self.indices_count as u64,
-            true
-        );
-        for frame in 0..self.material_buffers.len() {
-            base.update_buffer_through_staging(
-              &command_buffers[0],
-              &self.material_buffers[frame],
-              &self.material_staging_buffer,
-              &new_materials_send,
-              size_of::<MaterialSendable>() as u64 * self.materials_count as u64,
-              frame == 0
+        *self.loaded_models.get(&String::from(uri)).unwrap()
+    }
+    pub unsafe fn update_buffers(&mut self, base: &VkBase) { unsafe {
+        if self.buffers_need_update {
+            self.buffers_need_update = false;
+
+            self.construct_textures(base);
+
+            let command_buffers = self.context.begin_single_time_commands(1);
+            self.context.update_buffer_through_staging(
+                &command_buffers[0],
+                &self.vertex_buffer,
+                &self.vertex_staging_buffer,
+                &self.new_vertices,
+                size_of::<Vertex>() as u64 * self.buffer_vertices_count as u64,
+                true
             );
-            if new_joints_send.len() > 0 {
-                base.update_buffer_through_staging(
+            self.context.update_buffer_through_staging(
+                &command_buffers[0],
+                &self.index_buffer,
+                &self.index_staging_buffer,
+                &self.new_indices,
+                size_of::<u32>() as u64 * self.buffer_indices_count as u64,
+                true
+            );
+            for frame in 0..self.material_buffers.len() {
+                self.context.update_buffer_through_staging(
                     &command_buffers[0],
-                    &self.joints_buffers[frame],
-                    &self.joints_staging_buffer,
-                    &new_joints_send,
-                    size_of::<Matrix>() as u64 * self.joints_count as u64,
+                    &self.material_buffers[frame],
+                    &self.material_staging_buffer,
+                    &self.new_materials,
+                    size_of::<MaterialSendable>() as u64 * self.buffer_materials_count as u64,
                     frame == 0
                 );
+                if self.new_joints.len() > 0 {
+                    self.context.update_buffer_through_staging(
+                        &command_buffers[0],
+                        &self.joints_buffers[frame],
+                        &self.joints_staging_buffer,
+                        &self.new_joints,
+                        size_of::<Matrix>() as u64 * self.buffer_joints_count as u64,
+                        frame == 0
+                    );
+                }
             }
+            self.buffer_vertices_count += self.new_vertices.len();
+            self.buffer_indices_count += self.new_indices.len();
+            self.buffer_materials_count += self.new_materials.len();
+            self.buffer_joints_count += self.new_joints.len();
+
+            self.new_indices.clear();
+            self.new_vertices.clear();
+            self.new_joints.clear();
+            self.new_materials.clear();
+
+            self.context.end_single_time_commands(command_buffers);
         }
-        base.end_single_time_commands(command_buffers);
-
-        self.vertices_count += new_vertices.len();
-        self.indices_count += new_indices.len();
-        self.materials_count += new_materials_send.len();
-        self.texture_count += model.textures.len() as i32;
-        self.joints_count += new_joints_send.len();
-
-        self.models.push(model);
-        self.construct_textures(base);
     } }
     pub unsafe fn add_light(&mut self, base: &VkBase, light: Light) { unsafe {
         let light_send = light.to_sendable();
-        let command_buffers = base.begin_single_time_commands(1);
+        let command_buffers = self.context.begin_single_time_commands(1);
         for frame in 0..self.material_buffers.len() {
-            base.update_buffer_through_staging(
+            self.context.update_buffer_through_staging(
                 &command_buffers[0],
                 &self.lights_buffers[frame],
                 &self.lights_staging_buffer,
@@ -258,7 +308,7 @@ impl World {
                 frame == 0
             );
         }
-        base.end_single_time_commands(command_buffers);
+        self.context.end_single_time_commands(command_buffers);
 
         self.lights_count += 1;
 
@@ -271,7 +321,7 @@ impl World {
     pub unsafe fn update_lights(&mut self, command_buffer: CommandBuffer, frame: usize) { unsafe {
         let lights_send = self.lights.iter().map(|light| light.to_sendable()).collect::<Vec<_>>();
         copy_data_to_memory(self.lights_staging_buffer.2, &lights_send);
-        copy_buffer_synchronous(&self.device, command_buffer, &self.lights_staging_buffer.0, &self.lights_buffers[frame].0, None, &self.lights_buffers_size);
+        copy_buffer_synchronous(&self.context.device, command_buffer, &self.lights_staging_buffer.0, &self.lights_buffers[frame].0, None, &self.lights_buffers_size);
     } }
     pub fn update_sun(&mut self, primary_camera_index: usize) {
         self.sun.update(&self.cameras[primary_camera_index]);
@@ -301,7 +351,7 @@ impl World {
             }
         }
         copy_data_to_memory(self.joints_staging_buffer.2, &joints);
-        copy_buffer_synchronous(&self.device, command_buffer, &self.joints_staging_buffer.0, &self.joints_buffers[frame].0, None, &self.joints_buffers_size);
+        copy_buffer_synchronous(&self.context.device, command_buffer, &self.joints_staging_buffer.0, &self.joints_buffers[frame].0, None, &self.joints_buffers_size);
     }}
 
     pub unsafe fn construct_textures(&mut self, base: &VkBase) { unsafe {
@@ -315,7 +365,7 @@ impl World {
             .iter()
             .map(|i| self.images[*i].uri.clone())
             .collect();
-        let image_sources = base.load_textures_batched(uris.as_slice(), true);
+        let image_sources = self.context.load_textures_batched(uris.as_slice(), true);
         for (i, ungenerated_image_index) in ungenerated_indices.iter().enumerate() {
             let img = &mut self.images[*ungenerated_image_index];
             let (image_view, image, mips) = image_sources[i];
@@ -1266,8 +1316,8 @@ impl ModelContainer {
             extensions_used,
             scene,
             scenes: (initial_scene_count..world.scenes.len()).collect(),
-            animations: (0..world.animations.len()).collect(),
-            skins: (0..world.skins.len()).collect(),
+            animations: (initial_animation_count..world.animations.len()).collect(),
+            skins: (initial_skins_count..world.skins.len()).collect(),
             nodes: (initial_node_count..world.nodes.len()).collect(),
             meshes: (initial_mesh_count..world.meshes.len()).collect(),
             materials: (initial_materials_count..world.materials.len()).collect(),
@@ -1347,13 +1397,13 @@ impl Image {
         }
     }
 
-    unsafe fn construct_image_view(&mut self, base: &VkBase) { unsafe {
-        let (image_view, image, mips) = base.create_2d_texture_image(&self.uri, true);
+    unsafe fn construct_image_view(&mut self, context: &Arc<Context>) { unsafe {
+        let (image_view, image, mips) = context.create_2d_texture_image(&self.uri, true);
         self.image = image;
         self.image_view = image_view.0;
         self.mip_levels = mips;
         self.generated = true;
-        base.device.destroy_sampler(image_view.1, None);
+        context.device.destroy_sampler(image_view.1, None);
     } }
 }
 

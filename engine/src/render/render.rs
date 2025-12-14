@@ -73,7 +73,7 @@ impl Renderer {
         for i in 0..num_guis {
             guis.push(
                 Arc::new(RefCell::new(GUI::new(i,
-                    base,
+                    &base.context,
                     controller.clone(),
                     scene_renderer.borrow().null_tex_sampler.clone(),
                     scene_renderer.borrow().null_texture.image_view.clone())
@@ -149,7 +149,7 @@ impl Renderer {
             renderer.set_compositing_textures(compositing_textures);
         }
         renderer.set_compositing_layers(4);
-        renderer.scene_renderer.borrow_mut().update_world_textures_all_frames(&base, &world);
+        renderer.scene_renderer.borrow_mut().update_world_textures_all_frames(&world);
 
         renderer
     } }
@@ -162,9 +162,11 @@ impl Renderer {
         Renderpass,
         Renderpass
     ) { unsafe {
-        let scene_renderer = SceneRenderer::new(base, world, scene_viewport);
+        let scene_renderer = SceneRenderer::new(&base.context, world, scene_viewport);
 
-        let texture_sampler_create_info = DescriptorCreateInfo::new(base)
+        let context = &base.context;
+
+        let texture_sampler_create_info = DescriptorCreateInfo::new(context)
             .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
             .shader_stages(ShaderStageFlags::FRAGMENT);
 
@@ -182,10 +184,10 @@ impl Renderer {
             .logic_op(vk::LogicOp::CLEAR)
             .attachments(&color_blend_attachment_states);
 
-        let hitbox_pass_create_info = PassCreateInfo::new(base)
-            .add_color_attachment_info(TextureCreateInfo::new(base).format(Format::R8G8B8A8_UNORM).add_usage_flag(vk::ImageUsageFlags::TRANSFER_SRC));
-        let hitbox_descriptor_set_create_info = DescriptorSetCreateInfo::new(base);
-        let hitbox_renderpass_create_info = RenderpassCreateInfo::new(base)
+        let hitbox_pass_create_info = PassCreateInfo::new(context)
+            .add_color_attachment_info(TextureCreateInfo::new(context).format(Format::R8G8B8A8_UNORM).add_usage_flag(vk::ImageUsageFlags::TRANSFER_SRC));
+        let hitbox_descriptor_set_create_info = DescriptorSetCreateInfo::new(context);
+        let hitbox_renderpass_create_info = RenderpassCreateInfo::new(context)
             .pass_create_info(hitbox_pass_create_info)
             .add_pipeline_create_info(PipelineCreateInfo::new()
                 .pipeline_input_assembly_state(PipelineInputAssemblyStateCreateInfo {
@@ -211,11 +213,11 @@ impl Renderer {
             });
         let hitbox_renderpass = Renderpass::new(hitbox_renderpass_create_info);
 
-        let outline_pass_create_info = PassCreateInfo::new(base)
-            .add_color_attachment_info(TextureCreateInfo::new(base).format(Format::R8G8B8A8_UNORM).add_usage_flag(vk::ImageUsageFlags::TRANSFER_SRC));
-        let outline_descriptor_set_create_info = DescriptorSetCreateInfo::new(base)
+        let outline_pass_create_info = PassCreateInfo::new(context)
+            .add_color_attachment_info(TextureCreateInfo::new(context).format(Format::R8G8B8A8_UNORM).add_usage_flag(vk::ImageUsageFlags::TRANSFER_SRC));
+        let outline_descriptor_set_create_info = DescriptorSetCreateInfo::new(context)
             .add_descriptor(Descriptor::new(&texture_sampler_create_info));
-        let outline_renderpass_create_info = RenderpassCreateInfo::new(base)
+        let outline_renderpass_create_info = RenderpassCreateInfo::new(context)
             .pass_create_info(outline_pass_create_info)
             .descriptor_set_create_info(outline_descriptor_set_create_info)
             .add_pipeline_create_info(PipelineCreateInfo::new()
@@ -229,18 +231,9 @@ impl Renderer {
             });
         let outline_renderpass = Renderpass::new(outline_renderpass_create_info);
 
-        let present_pass_create_info = PassCreateInfo::new(base)
-            .set_is_present_pass(true);
-        let present_descriptor_set_create_info = DescriptorSetCreateInfo::new(base)
-            .add_descriptor(Descriptor::new(&texture_sampler_create_info));
-        let present_renderpass_create_info = { RenderpassCreateInfo::new(base)
-            .pass_create_info(present_pass_create_info)
-            .descriptor_set_create_info(present_descriptor_set_create_info)
-            .add_pipeline_create_info(PipelineCreateInfo::new()
-                .vertex_shader_uri(String::from("quad\\quad.vert.spv"))
-                .fragment_shader_uri(String::from("quad\\quad.frag.spv"))) };
+        let present_renderpass = Renderpass::new_present_renderpass(base);
 
-        let composite_layers_descriptor_create_info = DescriptorCreateInfo::new(base)
+        let composite_layers_descriptor_create_info = DescriptorCreateInfo::new(context)
             .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
             .shader_stages(ShaderStageFlags::FRAGMENT)
             .dynamic(true)
@@ -250,11 +243,11 @@ impl Renderer {
                 sampler: scene_renderer.null_tex_sampler,
                 ..Default::default()
             }; 5]);
-        let compositing_pass_create_info = PassCreateInfo::new(base)
-            .add_color_attachment_info(TextureCreateInfo::new(base).format(Format::R16G16B16A16_SFLOAT).add_usage_flag(vk::ImageUsageFlags::TRANSFER_SRC));
-        let compositing_descriptor_set_create_info = DescriptorSetCreateInfo::new(base)
+        let compositing_pass_create_info = PassCreateInfo::new(context)
+            .add_color_attachment_info(TextureCreateInfo::new(context).format(Format::R16G16B16A16_SFLOAT).add_usage_flag(vk::ImageUsageFlags::TRANSFER_SRC));
+        let compositing_descriptor_set_create_info = DescriptorSetCreateInfo::new(context)
             .add_descriptor(Descriptor::new(&composite_layers_descriptor_create_info));
-        let compositing_renderpass_create_info = { RenderpassCreateInfo::new(base)
+        let compositing_renderpass_create_info = { RenderpassCreateInfo::new(context)
             .pass_create_info(compositing_pass_create_info)
             .descriptor_set_create_info(compositing_descriptor_set_create_info)
             .add_pipeline_create_info(PipelineCreateInfo::new()
@@ -288,7 +281,7 @@ impl Renderer {
         (
             Arc::new(RefCell::new(scene_renderer)),
             Renderpass::new(compositing_renderpass_create_info),
-            Renderpass::new(present_renderpass_create_info),
+            present_renderpass,
             hitbox_renderpass,
             outline_renderpass,
         )
@@ -312,7 +305,7 @@ impl Renderer {
 
         {
             for gui in self.guis.iter() {
-                gui.borrow_mut().reload_rendering(base, scene_renderer.null_tex_sampler, scene_renderer.null_texture.image_view)
+                gui.borrow_mut().reload_rendering(scene_renderer.null_tex_sampler, scene_renderer.null_texture.image_view)
             };
         }
 
@@ -361,7 +354,7 @@ impl Renderer {
 
             self.set_compositing_textures(compositing_textures);
         }
-        scene_renderer.update_world_textures_all_frames(&base, &world);
+        scene_renderer.update_world_textures_all_frames(&world);
     } }
 
     pub unsafe fn compile_shaders() {
@@ -550,8 +543,9 @@ impl Renderer {
     } }
 }
 
-pub unsafe fn screenshot_texture(base: &VkBase, texture: &Texture, layout: vk::ImageLayout, path: &str) {
-    unsafe { base.device.device_wait_idle().unwrap(); }
+/*
+pub unsafe fn screenshot_texture(texture: &Texture, layout: vk::ImageLayout, path: &str) {
+    unsafe { texture.context.device.device_wait_idle().unwrap(); }
 
     let bytes_per_pixel = match texture.format {
         Format::R8G8B8A8_SRGB | Format::R8G8B8A8_UNORM |
@@ -732,6 +726,7 @@ pub unsafe fn screenshot_texture(base: &VkBase, texture: &Texture, layout: vk::I
 
     println!("Screenshot saved to {}", path);
 }
+ */
 
 pub struct HitboxPushConstantSendable {
     view_proj: [f32; 16],
