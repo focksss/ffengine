@@ -6,6 +6,11 @@ layout (location = 0) out vec4 color;
 
 layout(set = 0, binding = 0) uniform sampler2D equirectangular_map;
 
+layout(push_constant) uniform push_constants {
+    mat4 view;
+    int call_index;
+} constants;
+
 const vec2 inv_atan = vec2(0.1591, 0.3183);
 vec2 sample_spherical(vec3 v)
 {

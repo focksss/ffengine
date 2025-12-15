@@ -496,11 +496,14 @@ impl Pass {
     pub unsafe fn new(create_info: PassCreateInfo) -> Self { unsafe {
         let mut textures = Vec::new();
         let context = create_info.context.clone();
+        let mut has_cubemap = false;
         let has_depth = create_info.depth_attachment_create_info.is_some();
         for frame in 0..create_info.frames_in_flight {
             let mut frame_textures = Vec::new();
             for texture in 0..create_info.color_attachment_create_infos.len() {
-                frame_textures.push(Texture::new(&create_info.color_attachment_create_infos[texture][frame]));
+                let create_info = &create_info.color_attachment_create_infos[texture][frame];
+                if create_info.is_cubemap { has_cubemap = true };
+                frame_textures.push(Texture::new(create_info));
             }
             if has_depth { frame_textures.push(Texture::new(&create_info.depth_attachment_create_info.as_ref().unwrap()[frame])) };
             textures.push(frame_textures);
@@ -556,10 +559,17 @@ impl Pass {
             subpass = subpass.depth_stencil_attachment(&depth_ref);
         }
 
-        let renderpass_create_info = vk::RenderPassCreateInfo::default()
+        let mut renderpass_create_info = vk::RenderPassCreateInfo::default()
             .attachments(&attachments)
             .subpasses(std::slice::from_ref(&subpass))
             .dependencies(&dependencies);
+        let cubemap_view_mask: u32 = 0b0011_1111; // 6 views
+        let mut cubemap_multiview_info = vk::RenderPassMultiviewCreateInfo::default()
+            .view_masks(std::slice::from_ref(&cubemap_view_mask))
+            .correlation_masks(std::slice::from_ref(&cubemap_view_mask));
+        if has_cubemap {
+            renderpass_create_info = renderpass_create_info.push_next(&mut cubemap_multiview_info);
+        }
 
         let renderpass = context
             .device
@@ -571,7 +581,7 @@ impl Pass {
             .unwrap_or_else(|| &create_info.color_attachment_create_infos[0])[0];
         let width = resolution_info.width;
         let height = resolution_info.height;
-        let array_layers = resolution_info.array_layers;
+        let array_layers = if has_cubemap { 1 } else { resolution_info.array_layers };
 
         let clear_values;
         let framebuffers: Vec<vk::Framebuffer> = {

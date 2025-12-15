@@ -1134,6 +1134,7 @@ impl VkBase {
                 depth_clamp: vk::TRUE,
                 depth_bias_clamp: vk::TRUE,
                 depth_bounds: vk::TRUE,
+                multi_viewport: vk::TRUE,
                 ..Default::default()
             };
             let priorities = [1.0];
@@ -1143,12 +1144,16 @@ impl VkBase {
                 .queue_priorities(&priorities);
 
             //<editor-fold desc = "device creation">
+            let mut vulkan11_features = vk::PhysicalDeviceVulkan11Features::default();
+            vulkan11_features.multiview = vk::TRUE;
+
             let mut descriptor_indexing_features = vk::PhysicalDeviceDescriptorIndexingFeatures::default();
             descriptor_indexing_features.runtime_descriptor_array = vk::TRUE;
             descriptor_indexing_features.descriptor_binding_partially_bound = vk::TRUE;
             descriptor_indexing_features.descriptor_binding_variable_descriptor_count = vk::TRUE;
             descriptor_indexing_features.shader_sampled_image_array_non_uniform_indexing = vk::TRUE;
             descriptor_indexing_features.descriptor_binding_sampled_image_update_after_bind = vk::TRUE;
+            descriptor_indexing_features.p_next = &mut vulkan11_features as *mut _ as *mut c_void;
             let mut supported_features2 = vk::PhysicalDeviceFeatures2 {
                 p_next: &mut descriptor_indexing_features as *mut _ as *mut c_void,
                 ..Default::default()

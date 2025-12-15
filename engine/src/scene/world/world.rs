@@ -14,6 +14,7 @@ use crate::engine::get_command_buffer;
 use crate::math::matrix::Matrix;
 use crate::math::Vector;
 use crate::render::render::MAX_FRAMES_IN_FLIGHT;
+use crate::render::render_helper::Texture;
 use crate::render::scene_renderer::SHADOW_RES;
 use crate::render::vulkan_base::{copy_buffer_synchronous, copy_data_to_memory, Context, VkBase};
 use crate::scene::scene::{Instance, Scene};
@@ -33,8 +34,9 @@ pub struct World {
     pub lights: Vec<Light>,
     pub sun: Sun,
 
+    pub loaded_files: HashMap<String, usize>,
+
     pub models: Vec<ModelContainer>,
-    pub loaded_models: HashMap<String, usize>,
     buffers_need_update: bool,
     new_vertices: Vec<Vertex>,
     new_indices: Vec<u32>,
@@ -97,8 +99,9 @@ impl World {
             sun: Sun::new_sun(Vector::new3(-1.0, -5.0, -1.0), Vector::new3(0.98, 0.84, 0.64)),
             buffers_need_update: false,
 
+            loaded_files: HashMap::new(),
+
             models: Vec::new(),
-            loaded_models: HashMap::new(),
             new_indices: Vec::new(),
             new_vertices: Vec::new(),
             new_joints: Vec::new(),
@@ -181,8 +184,8 @@ impl World {
     } }
 
     pub unsafe fn add_model(&mut self, uri: &str) -> usize {
-        if !self.loaded_models.contains_key(&String::from(uri)) {
-            self.loaded_models.insert(String::from(uri), self.models.len());
+        if !self.loaded_files.contains_key(&String::from(uri)) {
+            self.loaded_files.insert(String::from(uri), self.models.len());
             let model = ModelContainer::new(uri, self);
             let mut new_vertices: Vec<Vertex> = vec![];
             let mut new_indices: Vec<u32> = vec![];
@@ -237,7 +240,45 @@ impl World {
 
             self.models.push(model);
         }
-        *self.loaded_models.get(&String::from(uri)).unwrap()
+        *self.loaded_files.get(&String::from(uri)).unwrap()
+    }
+    pub unsafe fn add_texture(&mut self, uri: &str, generate_mips: bool) -> usize {
+        let sampler = if !self.loaded_files.contains_key(uri) {
+            let path = PathBuf::from(uri);
+            let (image_view, image, mips) = unsafe { self.context.create_2d_texture_image(&path, generate_mips) };
+            let image = Image {
+                mime_type: String::new(),
+                name: String::from(uri),
+                uri: path,
+                generated: true,
+                image,
+                image_view: image_view.0,
+                mip_levels: mips,
+            };
+            self.loaded_files.insert(String::from(uri), self.images.len());
+            self.images.push(image);
+            image_view.1
+        } else {
+            self.textures[0].sampler
+        };
+
+        let index = self.textures.len();
+        self.textures.push(SceneTexture {
+            source: *self.loaded_files.get(&String::from(uri)).unwrap(),
+            sampler,
+            sampler_info: SceneSampler {
+                mag_filter: vk::Filter::LINEAR,
+                min_filter: vk::Filter::LINEAR,
+                address_mode_u: vk::SamplerAddressMode::REPEAT,
+                address_mode_v: vk::SamplerAddressMode::REPEAT,
+                address_mode_w: vk::SamplerAddressMode::REPEAT,
+            },
+            has_sampler: true
+        });
+
+        self.texture_count += 1;
+
+        index
     }
     pub unsafe fn update_buffers(&mut self, base: &VkBase) { unsafe {
         if self.buffers_need_update {
@@ -710,11 +751,15 @@ impl ModelContainer {
                 None => (),
             }
 
+            let uri = image["uri"].as_str().unwrap();
+
+            world.loaded_files.insert(String::from(uri), initial_images_count + images.len());
+
             images.push(
                 Image::new(
                     mime_type,
                     name,
-                    resolve_gltf_uri(path, image["uri"].as_str().unwrap())
+                    resolve_gltf_uri(path, uri)
                 ))
         }
         world.images.extend(images);

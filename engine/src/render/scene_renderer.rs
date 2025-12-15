@@ -7,6 +7,7 @@ use rand::{rng, Rng};
 use std::path::PathBuf;
 use std::slice;
 use std::sync::Arc;
+use crate::math::matrix::Matrix;
 use crate::math::Vector;
 use crate::render::render::MAX_FRAMES_IN_FLIGHT;
 use crate::render::render_helper::{Descriptor, DescriptorCreateInfo, DescriptorSetCreateInfo, DeviceTexture, PassCreateInfo, PipelineCreateInfo, Renderpass, RenderpassCreateInfo, Texture, TextureCreateInfo};
@@ -41,8 +42,6 @@ pub struct SceneRenderer {
     pub ssao_blur_horizontal_renderpass: Renderpass,
     pub ssao_blur_vertical_renderpass: Renderpass,
     pub ssao_upsample_renderpass: Renderpass,
-
-    pub equirectangular_to_cubemap_renderpass: Renderpass,
 
     pub lighting_renderpass: Renderpass,
 
@@ -92,7 +91,6 @@ impl SceneRenderer {
             ssao_blur_vertical_renderpass,
             ssao_upsample_renderpass,
             lighting_renderpass,
-            equirectangular_to_cubemap_renderpass,
         ) = SceneRenderer::create_rendering_objects(context, &null_texture, &null_tex_sampler, world, viewport);
 
         //<editor-fold desc = "ssao sampling setup">
@@ -373,7 +371,6 @@ impl SceneRenderer {
             ssao_blur_horizontal_renderpass,
             ssao_blur_vertical_renderpass,
             ssao_upsample_renderpass,
-            equirectangular_to_cubemap_renderpass,
             lighting_renderpass,
 
             sampler,
@@ -398,7 +395,6 @@ impl SceneRenderer {
         Renderpass, // ssao blur vertical renderpass
         Renderpass, // ssao upsample renderpass
         Renderpass, // lighting pass
-        Renderpass, // equirectangular_to_cubemap pass
     ) { unsafe {
         let resolution = Extent2D { width: viewport.width as u32, height: viewport.height as u32 };
         let image_infos: Vec<vk::DescriptorImageInfo> = vec![vk::DescriptorImageInfo {
@@ -449,13 +445,6 @@ impl SceneRenderer {
         let ssao_upsample_pass_create_info = PassCreateInfo::new(context)
             .add_color_attachment_info(TextureCreateInfo::new(context).format(Format::R8_UNORM)
                 .width(resolution.width).height(resolution.height));
-
-        let equirectangular_to_cubemap_pass_create_info = PassCreateInfo::new(context)
-            .add_color_attachment_info(TextureCreateInfo::new(context).format(Format::R16G16B16A16_SFLOAT)
-                .add_usage_flag(vk::ImageUsageFlags::TRANSFER_SRC)
-                .width(512).height(512)
-                .is_cubemap(true)
-            );
 
         // set to window size, not the scene viewport size // TODO: DON'T DO THIS
         let lighting_pass_create_info = PassCreateInfo::new(context)
@@ -743,24 +732,6 @@ impl SceneRenderer {
             max_depth_bounds: 1.0,
             ..Default::default()
         };
-        let outline_stencil_state = vk::StencilOpState {
-            pass_op: vk::StencilOp::INCREMENT_AND_CLAMP,
-            depth_fail_op: vk::StencilOp::KEEP,
-            compare_op: vk::CompareOp::ALWAYS,
-            compare_mask: 0xFF,
-            write_mask: 0xFF,
-            reference: 0,
-            ..Default::default()
-        };
-        let outline_depth_state_info = vk::PipelineDepthStencilStateCreateInfo {
-            depth_test_enable: 0,
-            depth_write_enable: 0,
-            depth_compare_op: vk::CompareOp::ALWAYS,
-            stencil_test_enable: 1,
-            front: outline_stencil_state,
-            back: outline_stencil_state,
-            ..Default::default()
-        };
         let shadow_depth_state_info = vk::PipelineDepthStencilStateCreateInfo {
             depth_test_enable: 1,
             depth_write_enable: 1,
@@ -901,23 +872,6 @@ impl SceneRenderer {
         };
         let lighting_renderpass = Renderpass::new(lighting_renderpass_create_info);
 
-        let equirectangular_to_cubemap_renderpass_create_info = RenderpassCreateInfo::new(&context)
-            .pass_create_info(equirectangular_to_cubemap_pass_create_info)
-            .viewport(vk::Viewport {
-                x: 0.0, y: 0.0,
-                width: 512.0, height: 512.0,
-                min_depth: 0.0, max_depth: 1.0,
-            })
-            .descriptor_set_create_info(DescriptorSetCreateInfo::new(context)
-                .add_descriptor(Descriptor::new(&texture_sampler_create_info))
-            )
-            .add_pipeline_create_info(PipelineCreateInfo::new()
-                .vertex_shader_uri(String::from("equirectangular_to_cubemap\\equirectangular_to_cubemap.vert.spv"))
-                .fragment_shader_uri(String::from("equirectangular_to_cubemap\\equirectangular_to_cubemap.frag.spv"))
-            )
-            .push_constant_range(camera_push_constant_range_vertex);
-        let equirectangular_to_cubemap_renderpass = Renderpass::new(equirectangular_to_cubemap_renderpass_create_info);
-
         let forward_renderpass = {
             let light_pass = lighting_renderpass.pass.borrow();
             let geometry_pass = geometry_renderpass.pass.borrow();
@@ -941,6 +895,34 @@ impl SceneRenderer {
             let color_blend_state = vk::PipelineColorBlendStateCreateInfo::default()
                 .logic_op(vk::LogicOp::CLEAR)
                 .attachments(&color_blend_attachment_states);
+            let outline_stencil_state = vk::StencilOpState {
+                pass_op: vk::StencilOp::INCREMENT_AND_CLAMP,
+                depth_fail_op: vk::StencilOp::KEEP,
+                compare_op: vk::CompareOp::ALWAYS,
+                compare_mask: 0xFF,
+                write_mask: 0xFF,
+                reference: 0,
+                ..Default::default()
+            };
+            let outline_depth_state_info = vk::PipelineDepthStencilStateCreateInfo {
+                depth_test_enable: 0,
+                depth_write_enable: 0,
+                depth_compare_op: vk::CompareOp::ALWAYS,
+                stencil_test_enable: 1,
+                front: outline_stencil_state,
+                back: outline_stencil_state,
+                ..Default::default()
+            };
+            let skybox_depth_state_info = vk::PipelineDepthStencilStateCreateInfo {
+                depth_test_enable: 1,
+                depth_write_enable: 0,
+                depth_compare_op: vk::CompareOp::EQUAL,
+                front: noop_stencil_state,
+                back: noop_stencil_state,
+                max_depth_bounds: 1.0,
+                ..Default::default()
+            };
+
             let forward_renderpass_create_info = { RenderpassCreateInfo::new(context)
                 .pass_create_info(forward_pass_create_info)
                 .resolution(resolution)
@@ -952,7 +934,12 @@ impl SceneRenderer {
                     .pipeline_depth_stencil_state(outline_depth_state_info)
                     .pipeline_color_blend_state_create_info(color_blend_state)
                     .vertex_shader_uri(String::from("geometry\\position_only.vert.spv"))
-                    .fragment_shader_uri(String::from("outline\\outline_geometry.frag.spv"))) };
+                    .fragment_shader_uri(String::from("outline\\outline_geometry.frag.spv")))
+                .add_pipeline_create_info(PipelineCreateInfo::new()
+                    .pipeline_depth_stencil_state(skybox_depth_state_info)
+                    .vertex_shader_uri(String::from("skybox\\skybox.vert.spv"))
+                    .fragment_shader_uri(String::from("skybox\\skybox.frag.spv")))
+            };
 
             Renderpass::new(forward_renderpass_create_info)
         };
@@ -967,7 +954,6 @@ impl SceneRenderer {
             ssao_blur_vertical_renderpass,
             ssao_upsample_renderpass,
             lighting_renderpass,
-            equirectangular_to_cubemap_renderpass,
         )
     } }
     pub fn update_world_textures_all_frames(&self, world: &World) {
@@ -977,25 +963,22 @@ impl SceneRenderer {
     }
     pub fn update_world_textures(&self, world: &World, frame: usize) { unsafe {
         let mut image_infos: Vec<vk::DescriptorImageInfo> = Vec::with_capacity(1024);
-        for model in &world.models {
-            for texture in &model.textures {
-                let texture = &world.textures[*texture];
-                let texture_source = &world.images[texture.source];
-                if texture_source.generated {
-                    image_infos.push(vk::DescriptorImageInfo {
-                        image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                        image_view: texture_source.image_view,
-                        sampler: texture.sampler,
-                        ..Default::default()
-                    });
-                } else {
-                    image_infos.push(vk::DescriptorImageInfo {
-                        image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                        image_view: self.null_texture.image_view,
-                        sampler: self.null_tex_sampler,
-                        ..Default::default()
-                    });
-                }
+        for texture in &world.textures {
+            let texture_source = &world.images[texture.source];
+            if texture_source.generated {
+                image_infos.push(vk::DescriptorImageInfo {
+                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                    image_view: texture_source.image_view,
+                    sampler: texture.sampler,
+                    ..Default::default()
+                });
+            } else {
+                image_infos.push(vk::DescriptorImageInfo {
+                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                    image_view: self.null_texture.image_view,
+                    sampler: self.null_tex_sampler,
+                    ..Default::default()
+                });
             }
         }
         let missing = 1024 - image_infos.len();
@@ -1019,7 +1002,19 @@ impl SceneRenderer {
             p_image_info: image_infos,
             ..Default::default()
         };
-        self.context.device.update_descriptor_sets(&[descriptor_write], &[]);
+        let forward_descriptor_write = vk::WriteDescriptorSet {
+            s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
+            dst_set: self.forward_renderpass.descriptor_set.borrow().descriptor_sets[frame],
+            dst_binding: 2,
+            dst_array_element: 0,
+            descriptor_type: DescriptorType::COMBINED_IMAGE_SAMPLER,
+            descriptor_count: 1024,
+            p_image_info: image_infos,
+            ..Default::default()
+        };
+        self.context.device.update_descriptor_sets(&[descriptor_write, forward_descriptor_write], &[]);
+
+        //self.generate_skybox(frame, "editor/resources/citrus_orchard_road_puresky_4k.hdr");
     }}
 
     pub unsafe fn render_world(
@@ -1143,6 +1138,7 @@ impl SceneRenderer {
             ));
         }), None::<fn()>, None, true);
 
+
         self.lighting_renderpass.do_renderpass(
             current_frame,
             frame_command_buffer,
@@ -1167,6 +1163,13 @@ impl SceneRenderer {
                 ));
             }),
             Some(|| {
+                self.context.device.cmd_bind_pipeline(
+                    frame_command_buffer,
+                    vk::PipelineBindPoint::GRAPHICS,
+                    self.forward_renderpass.pipelines[1].vulkan_pipeline,
+                );
+                device.cmd_draw(frame_command_buffer, 36, 1, 0, 0);
+
                 scene.draw(self, current_frame, Some(&player_camera.frustum), DrawMode::Forward);
                 scene.draw(self, current_frame, Some(&player_camera.frustum), DrawMode::Outlined);
             }),
@@ -1184,7 +1187,6 @@ impl SceneRenderer {
         self.ssao_blur_horizontal_renderpass.destroy();
         self.ssao_blur_vertical_renderpass.destroy();
         self.ssao_upsample_renderpass.destroy();
-        self.equirectangular_to_cubemap_renderpass.destroy();
         self.lighting_renderpass.destroy();
 
         self.ssao_noise_texture.destroy();
@@ -1198,6 +1200,13 @@ impl SceneRenderer {
 }
 
 
+#[derive(Clone, Debug, Copy)]
+#[repr(C)]
+struct EquirecToCubemapUniformData {
+    view: [f32; 16],
+    call_index: i32,
+    _pad0: [f32; 3],
+}
 #[derive(Clone, Debug, Copy)]
 #[repr(C)]
 struct CameraMatrixUniformData {
@@ -1241,3 +1250,74 @@ struct DepthAwareUpsamplePassData {
     sharpness: f32, // edge sharpness multiplier (e.g., 8.0)
     infinite_reverse_depth: i32
 }
+
+/*
+        let equirectangular_to_cubemap_pass_create_info = PassCreateInfo::new(context)
+        .add_color_attachment_info(TextureCreateInfo::new(context).format(Format::R16G16B16A16_SFLOAT)
+            .add_usage_flag(vk::ImageUsageFlags::TRANSFER_SRC)
+            .width(512).height(512)
+            .is_cubemap(true)
+        );
+    let equirectangular_to_cubemap_renderpass_create_info = RenderpassCreateInfo::new(&context)
+        .pass_create_info(equirectangular_to_cubemap_pass_create_info)
+        .viewport(vk::Viewport {
+            x: 0.0, y: 0.0,
+            width: 512.0, height: 512.0,
+            min_depth: 0.0, max_depth: 1.0,
+        })
+        .descriptor_set_create_info(DescriptorSetCreateInfo::new(context)
+            .add_descriptor(Descriptor::new(&texture_sampler_create_info))
+        )
+        .add_pipeline_create_info(PipelineCreateInfo::new()
+            .vertex_shader_uri(String::from("equirectangular_to_cubemap\\equirectangular_to_cubemap.vert.spv"))
+            .fragment_shader_uri(String::from("equirectangular_to_cubemap\\equirectangular_to_cubemap.frag.spv"))
+        );
+    let equirectangular_to_cubemap_renderpass = Renderpass::new(equirectangular_to_cubemap_renderpass_create_info);
+
+
+
+pub unsafe fn generate_skybox(&self, current_frame: usize, uri: &str) { unsafe {
+    let texture_info = self.context.load_textures_batched(&[PathBuf::from(uri)], false);
+    let texture = DeviceTexture {
+        image: texture_info[0].1.0,
+        image_view: texture_info[0].0.0,
+        stencil_image_view: None,
+        device_memory: texture_info[0].1.1,
+        destroyed: false,
+    };
+
+    let device = &self.context.device;
+
+    let command_buffer = self.context.begin_single_time_commands(1);
+
+    let image_info = vk::DescriptorImageInfo {
+        sampler: self.sampler,
+        image_view: texture.image_view,
+        image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+    };
+    let descriptor_write = vk::WriteDescriptorSet {
+        s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
+        dst_set: self.equirectangular_to_cubemap_renderpass.descriptor_set.borrow().descriptor_sets[current_frame],
+        dst_binding: 0,
+        dst_array_element: 0,
+        descriptor_type: DescriptorType::COMBINED_IMAGE_SAMPLER,
+        descriptor_count: 1,
+        p_image_info: [image_info].as_ptr(),
+        ..Default::default()
+    };
+    device.update_descriptor_sets(&[descriptor_write], &[]);
+
+    self.equirectangular_to_cubemap_renderpass.do_renderpass(
+        current_frame,
+        command_buffer[0],
+        None::<fn()>,
+        Some(|| {
+            device.cmd_draw(command_buffer[0], 36, 1, 0, 0);
+        }),
+        None,
+        true
+    );
+
+    self.context.end_single_time_commands(command_buffer);
+} }
+ */

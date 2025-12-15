@@ -29,6 +29,7 @@ fn main() { unsafe {
             outer_cutoff: 0.0,
         });
 
+        app.world.borrow_mut().add_texture("editor/resources/citrus_orchard_road_puresky_4k.hdr", false);
 
         {
             app.scene.borrow_mut().new_entity_from_model(0, "editor/resources/models/ffocks/untitled.gltf");

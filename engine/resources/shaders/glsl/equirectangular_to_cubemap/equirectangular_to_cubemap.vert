@@ -1,4 +1,5 @@
 #version 460
+#extension GL_EXT_multiview : enable
 
 vec3[] vertices = {
     // back face
@@ -50,14 +51,65 @@ vec3[] vertices = {
     vec3(-1.0f,  1.0f,  1.0f),
 };
 
+const mat4 proj = mat4(
+    1, 0, 0, 0,
+    0, -1, 0, 0,
+    0, 0, 0, -1,
+    0, 0, 0.01, 0
+);
+const mat4 views[6] = mat4[](
+// +X
+mat4(
+0.0,  0.0, -1.0, 0.0,
+0.0, -1.0,  0.0, 0.0,
+-1.0,  0.0,  0.0, 0.0,
+0.0,  0.0,  0.0, 1.0
+),
+
+// -X
+mat4(
+0.0,  0.0,  1.0, 0.0,
+0.0, -1.0,  0.0, 0.0,
+1.0,  0.0,  0.0, 0.0,
+0.0,  0.0,  0.0, 1.0
+),
+
+// +Y
+mat4(
+1.0,  0.0,  0.0, 0.0,
+0.0,  0.0,  1.0, 0.0,
+0.0, -1.0,  0.0, 0.0,
+0.0,  0.0,  0.0, 1.0
+),
+
+// -Y
+mat4(
+1.0,  0.0,  0.0, 0.0,
+0.0,  0.0, -1.0, 0.0,
+0.0,  1.0,  0.0, 0.0,
+0.0,  0.0,  0.0, 1.0
+),
+
+// +Z
+mat4(
+1.0,  0.0,  0.0, 0.0,
+0.0, -1.0,  0.0, 0.0,
+0.0,  0.0, -1.0, 0.0,
+0.0,  0.0,  0.0, 1.0
+),
+
+// -Z
+mat4(
+-1.0,  0.0,  0.0, 0.0,
+0.0, -1.0,  0.0, 0.0,
+0.0,  0.0,  1.0, 0.0,
+0.0,  0.0,  0.0, 1.0
+)
+);
+
 layout (location = 0) out vec3 local_position;
 
-layout(push_constant) uniform push_constants {
-    mat4 view;
-    mat4 projection;
-} constants;
-
 void main() {
-    local_position = vertices[gl_VertexIndex];
-    gl_Position = constants.projection * constants.view * vec4(local_position, 1.0);
+    local_position = vertices[gl_ViewIndex];
+    gl_Position = proj * views[gl_ViewIndex] * vec4(local_position, 1.0);
 }
