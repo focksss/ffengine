@@ -9,7 +9,7 @@ layout (location = 0) out vec4 color;
 
 const float PI = 3.14159263;
 
-layout(set = 0, binding = 2) uniform sampler2D textures[];
+layout(set = 0, binding = 3) uniform sampler2D textures[];
 
 void main() {
     gl_FragDepth = 0.0;

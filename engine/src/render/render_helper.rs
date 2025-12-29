@@ -41,8 +41,8 @@ impl Renderpass {
                     s_type: vk::StructureType::PIPELINE_LAYOUT_CREATE_INFO,
                     set_layout_count: 1,
                     p_set_layouts: &descriptor_set.borrow().descriptor_set_layout,
-                    p_push_constant_ranges: &create_info.push_constant_info.unwrap_or_default(),
-                    push_constant_range_count: if create_info.push_constant_info.is_some() { 1 } else { 0 },
+                    p_push_constant_ranges: create_info.push_constant_infos.as_slice().as_ptr(),
+                    push_constant_range_count: create_info.push_constant_infos.len() as u32,
                     ..Default::default()
                 }, None
             ).unwrap();
@@ -264,7 +264,7 @@ pub struct RenderpassCreateInfo<'a> {
     pub viewport: vk::Viewport,
     pub scissor: vk::Rect2D,
 
-    pub push_constant_info: Option<PushConstantRange>,
+    pub push_constant_infos: Vec<PushConstantRange>,
 
     pub pipeline_create_infos: Vec<PipelineCreateInfo<'a>>,
 
@@ -296,7 +296,7 @@ impl<'a> RenderpassCreateInfo<'a> {
                 ..Default::default()
             },
 
-            push_constant_info: None,
+            push_constant_infos: Vec::new(),
 
             pipeline_create_infos: vec![PipelineCreateInfo::new()],
 
@@ -353,8 +353,8 @@ impl<'a> RenderpassCreateInfo<'a> {
         self.scissor = scissor;
         self
     }
-    pub fn push_constant_range(mut self, push_constant_range: PushConstantRange) -> Self {
-        self.push_constant_info = Some(push_constant_range);
+    pub fn add_push_constant_range(mut self, push_constant_range: PushConstantRange) -> Self {
+        self.push_constant_infos.push(push_constant_range);
         self
     }
     pub fn dynamic_state(mut self, dynamic_state: Vec<DynamicState>) -> Self {
@@ -713,6 +713,14 @@ impl Pass {
             destroyed: false
         }
     } }
+
+    pub fn get_texture_set(&self, index: usize) -> Vec<Texture> {
+        let mut textures = Vec::new();
+        for frame_textures in self.textures.iter() {
+            textures.push(frame_textures[index].clone());
+        }
+        textures
+    }
 
     pub fn get_pass_begin_info(&self, current_frame: usize, framebuffer_index: Option<usize>, scissor: vk::Rect2D) -> vk::RenderPassBeginInfo {
         vk::RenderPassBeginInfo::default()

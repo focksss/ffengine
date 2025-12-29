@@ -2,6 +2,7 @@
 use std::default::Default;
 use std::path::{Path, PathBuf};
 use ffengine::engine::Engine;
+use ffengine::gui::gui::Element;
 use ffengine::math::Vector;
 use ffengine::scene::physics::player::{MovementMode, Player};
 use ffengine::scene::world::camera::Camera;
@@ -31,11 +32,16 @@ fn main() { unsafe {
 
         app.world.borrow_mut().add_texture("editor/resources/citrus_orchard_road_puresky_4k.hdr", false);
 
+
+
         {
-            app.scene.borrow_mut().new_entity_from_model(0, "editor/resources/models/ffocks/untitled.gltf");
+            let mut scene = app.scene.borrow_mut();
+            scene.new_entity_from_model(0, "editor/resources/models/ffocks/untitled.gltf");
+            let transform_index = scene.entities[1].transform;
+            scene.transforms[transform_index].scale = Vector::fill(0.01);
             //app.scene.borrow_mut().new_entity_from_model(0, "C:\\Graphics\\assets\\rivals\\luna\\gltf\\luna.gltf");
             
-            let anim = &mut app.scene.borrow_mut().animation_components[0];
+            let anim = &mut scene.animation_components[0];
             anim.repeat = true;
             anim.snap_back = true;
             anim.start();
@@ -83,8 +89,8 @@ fn main() { unsafe {
         app.scene.borrow_mut().new_entity_from_model(0, "editor/resources/models/demoBall/scene.gltf");
         app.scene.borrow_mut().new_entity_from_model(0, "editor/resources/models/grassblockGLTF/grassblock.gltf");
 
-        physics_engine.add_all_nodes_from_model(&app.world.borrow(), 2, 3);
-        physics_engine.add_all_nodes_from_model(&app.world.borrow(), 3, 3);
+        physics_engine.add_all_nodes_from_model(&app.world.borrow(), 2, 0);
+        physics_engine.add_all_nodes_from_model(&app.world.borrow(), 3, 0);
         //physics_engine.add_all_nodes_from_model(&app.world.borrow(), 4, 3);
         physics_engine.add_all_nodes_from_model(&app.world.borrow(), 1, 0);
         physics_engine.rigid_bodies[0].set_static(false);
@@ -132,7 +138,9 @@ fn main() { unsafe {
 
 
         renderer.scene_renderer.borrow_mut().update_world_textures_all_frames(&app.world.borrow());
-        renderer.guis[0].borrow_mut().load_from_file("editor\\resources\\gui\\editor.gui");
+
+        let mut gui = renderer.guis[0].borrow_mut();
+        gui.load_from_file("editor\\resources\\gui\\editor.gui");
     }
     let player = Player::new(
         app.physics_engine.clone(),

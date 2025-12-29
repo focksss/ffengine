@@ -11,6 +11,10 @@ local gui
 	local root_node
 		local titlebar_node
 			local toggle_maximize_button_node
+			local middle_buttons_node
+				local play_pause_node
+					local play_node
+					local pause_node
 		local right_area_node
 			local scene_graph_area_node
 				local scene_graph_root_node
@@ -24,6 +28,10 @@ function Awake()
 	root_node = gui:get_root(0)
 		titlebar_node = root_node:get_child(0)
 			toggle_maximize_button_node = titlebar_node:get_child(1)
+			middle_buttons_node = titlebar_node:get_child(3)
+				play_pause_node = middle_buttons_node:get_child(0)
+					play_node = play_pause_node:get_child(0)
+					pause_node = play_pause_node:get_child(1)
 		right_area_node = root_node:get_child(1)
 			scene_graph_area_node = right_area_node:get_child(0)
 				scene_graph_root_node = scene_graph_area_node:get_child(0)
@@ -52,10 +60,12 @@ function Update()
 		not resize_called_this_tick and
 		not resize_called_last_tick and
 		(scene_viewport.width ~= scene_view_area_node.size.x or
-		 scene_viewport.height ~= scene_view_area_node.size.y + 40)
+		 scene_viewport.height ~= scene_view_area_node.size.y)
 	then
 		scene_viewport.width = scene_view_area_node.size.x
-		scene_viewport.height = scene_view_area_node.size.y + 40
+		scene_viewport.height = scene_view_area_node.size.y
+
+		scene_viewport.y = 30
 		
 		Engine.client.flags.reload_rendering_queued = true
 	end
@@ -458,6 +468,11 @@ function resize_vertical()
 	parent:set_height("Absolute", original_height + delta)
 end
 
+function toggle_running()
+	Engine.scene.running = not Engine.scene.running
+	play_node.hidden = not play_node.hidden
+	pause_node.hidden = not pause_node.hidden
+end
 function recompile() 
     Engine.client.flags.reload_rendering_queued = true
     Engine.client.flags.reload_scripts_queued = true

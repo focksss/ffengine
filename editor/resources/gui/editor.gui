@@ -149,7 +149,7 @@
       },
       "children": [
         {
-          "name": "title_bar",
+          "name": "top bar",
           "interactable_information": {
             "left_hold_actions": [
               {
@@ -176,7 +176,7 @@
           "height": {
             "type": "Absolute",
             "info": {
-              "pixels": 40.0
+              "pixels": 30.0
             }
           },
           "elements": [
@@ -223,7 +223,7 @@
               "width": {
                 "type": "Absolute",
                 "info": {
-                  "pixels": 40
+                  "pixels": 30
                 }
               },
               "height": {
@@ -277,7 +277,7 @@
               "width": {
                 "type": "Absolute",
                 "info": {
-                  "pixels": 40
+                  "pixels": 30
                 }
               },
               "height": {
@@ -325,7 +325,7 @@
               "width": {
                 "type": "Absolute",
                 "info": {
-                  "pixels": 40
+                  "pixels": 30
                 }
               },
               "height": {
@@ -345,18 +345,27 @@
               ]
             },
             {
-              "name": "reload_button_container",
+              "name": "middle buttons",
               "parent_relation": {
-                "type": "Docking",
+                "type": "Independent",
                 "info": {
-                  "mode": "Top"
+                  "relative": true,
+                  "mode": "TopLeft"
                 }
               },
               "container": {
                 "type": "Stack",
                 "info": {
-                  "horizontal": false,
-                  "alignment": "End"
+                  "horizontal": true,
+                  "packing": "Center",
+                  "stack_direction": "Normal",
+                  "alignment": "Center"
+                }
+              },
+              "width": {
+                "type": "Factor",
+                "info": {
+                  "factor": 1.0
                 }
               },
               "height": {
@@ -367,7 +376,135 @@
               },
               "children": [
                 {
-                  "name": "reload_button",
+                  "name": "play/pause button",
+                  "width": {
+                    "type": "Absolute",
+                    "info": {
+                      "pixels": 30
+                    }
+                  },
+                  "height": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "children": [
+                    {
+                      "name": "play button",
+                      "parent_relation": {
+                        "type": "Independent",
+                        "info": {
+                          "relative": true,
+                          "mode": "TopLeft"
+                        }
+                      },
+                      "interactable_information": {
+                        "hover_actions": [
+                          {
+                            "method": "color_image_hovered",
+                            "script": 0
+                          },
+                          {
+                            "method": "hover_cursor",
+                            "script": 0
+                          }
+                        ],
+                        "unhover_actions": [
+                          {
+                            "method": "color_image_unhovered",
+                            "script": 0
+                          }
+                        ],
+                        "left_up_actions": [
+                          {
+                            "method": "toggle_running",
+                            "script": 0
+                          }
+                        ]
+                      },
+                      "width": {
+                        "type": "Factor",
+                        "info": {
+                          "factor": 1.0
+                        }
+                      },
+                      "height": {
+                        "type": "Factor",
+                        "info": {
+                          "factor": 1.0
+                        }
+                      },
+                      "elements": [
+                        {
+                          "type": "Image",
+                          "info": {
+                            "uri": "editor\\resources\\gui\\images\\play.png",
+                            "additive_tint": [1.0, 1.0, 1.0, 0.0]
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "name": "pause button",
+                      "hidden": true,
+                      "parent_relation": {
+                        "type": "Independent",
+                        "info": {
+                          "relative": true,
+                          "mode": "TopLeft"
+                        }
+                      },
+                      "interactable_information": {
+                        "hover_actions": [
+                          {
+                            "method": "color_image_hovered",
+                            "script": 0
+                          },
+                          {
+                            "method": "hover_cursor",
+                            "script": 0
+                          }
+                        ],
+                        "unhover_actions": [
+                          {
+                            "method": "color_image_unhovered",
+                            "script": 0
+                          }
+                        ],
+                        "left_up_actions": [
+                          {
+                            "method": "toggle_running",
+                            "script": 0
+                          }
+                        ]
+                      },
+                      "width": {
+                        "type": "Factor",
+                        "info": {
+                          "factor": 1.0
+                        }
+                      },
+                      "height": {
+                        "type": "Factor",
+                        "info": {
+                          "factor": 1.0
+                        }
+                      },
+                      "elements": [
+                        {
+                          "type": "Image",
+                          "info": {
+                            "uri": "editor\\resources\\gui\\images\\pause.png",
+                            "additive_tint": [1.0, 1.0, 1.0, 0.0]
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "name": "reload button",
                   "interactable_information": {
                     "hover_actions": [
                       {
@@ -395,7 +532,7 @@
                   "width": {
                     "type": "Absolute",
                     "info": {
-                      "pixels": 40.0
+                      "pixels": 30
                     }
                   },
                   "height": {
@@ -442,7 +579,7 @@
               "height": {
                 "type": "Absolute",
                 "info": {
-                  "pixels": 45.0
+                  "pixels": 30.0
                 }
               },
               "elements": [
@@ -452,7 +589,7 @@
                     "text": "ffengine",
                     "color": [1.0, 1.0, 1.0, 1.0],
                     "font": 0,
-                    "font_size": 35.0,
+                    "font_size": 25.0,
                     "newline_distance": 300.0
                   }
                 }
@@ -839,7 +976,7 @@
           },
           "children": [
             {
-              "name": "hud",
+              "name": "left hud",
               "parent_relation": {
                 "type": "Independent",
                 "info": {
@@ -921,6 +1058,16 @@
                   ]
                 }
               ]
+            }
+          ],
+          "elements": [
+            {
+              "name": "replace this",
+              "type": "Quad",
+              "info": {
+                "color": [1.0, 0.4, 0.4, 1.0],
+                "corner_radius": 5.0
+              }
             }
           ]
         }

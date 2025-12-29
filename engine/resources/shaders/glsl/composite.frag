@@ -14,7 +14,7 @@ layout(push_constant) uniform constants {
 
 void main() {
     uFragColor = vec4(0.0);
-    for (int i = 0; i < ubo.count; i++) {
+    for (int i = 0; i < 1; i++) {
         vec4 sampled = texture(textures[i], uv);
         uFragColor = mix(uFragColor, sampled, sampled.a);
     }

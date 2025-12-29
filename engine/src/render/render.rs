@@ -6,7 +6,7 @@ use std::io::BufWriter;
 use std::{iter, slice};
 use std::sync::Arc;
 use crate::client::client::Client;
-use crate::gui::gui::GUI;
+use crate::gui::gui::{Element, GUI};
 use crate::math::Vector;
 use crate::scene::physics::hitboxes::hitbox::Hitbox;
 use crate::scene::physics::hitboxes::hitbox::Hitbox::OBB;
@@ -38,9 +38,6 @@ pub struct Renderer {
     pub scene_renderer: Arc<RefCell<SceneRenderer>>,
     pub guis: Vec<Arc<RefCell<GUI>>>,
 
-    pub hitbox_renderpass: Renderpass,
-    pub outline_renderpass: Renderpass,
-
     pub present_sampler: Sampler,
 }
 impl Renderer {
@@ -53,8 +50,6 @@ impl Renderer {
             scene_renderer,
             compositing_renderpass,
             present_renderpass,
-            hitbox_renderpass,
-            outline_renderpass
         ) = Renderer::create_rendering_objects(base, &world, vk::Viewport {
              width: base.surface_resolution.width as f32,
              height: base.surface_resolution.height as f32,
@@ -95,9 +90,6 @@ impl Renderer {
             guis,
             scene_renderer,
 
-            hitbox_renderpass,
-            outline_renderpass,
-
             present_sampler: base.device.create_sampler(&vk::SamplerCreateInfo {
                 mag_filter: vk::Filter::LINEAR,
                 min_filter: vk::Filter::LINEAR,
@@ -120,18 +112,6 @@ impl Renderer {
                 .map(|f| f[0].clone())
                 .collect::<Vec<Texture>>();
 
-            let hitbox_pass = renderer.hitbox_renderpass.pass.borrow();
-            let hitbox_textures = hitbox_pass.textures
-                .iter()
-                .map(|f| f[0].clone())
-                .collect::<Vec<Texture>>();
-
-            let outline_pass = renderer.outline_renderpass.pass.borrow();
-            let outline_textures = outline_pass.textures
-                .iter()
-                .map(|f| f[0].clone())
-                .collect::<Vec<Texture>>();
-
             let gui_textures = renderer.guis.iter()
                 .map(|gui| {
                     let gui_ref = gui.borrow();
@@ -143,7 +123,7 @@ impl Renderer {
                 })
                 .collect::<Vec<Vec<Texture>>>();
 
-            let mut compositing_textures = vec![scene_textures, hitbox_textures, outline_textures];
+            let mut compositing_textures = vec![scene_textures];
             compositing_textures.extend(gui_textures);
 
             renderer.set_compositing_textures(compositing_textures);
@@ -159,8 +139,6 @@ impl Renderer {
         Arc<RefCell<SceneRenderer>>,
         Renderpass,
         Renderpass,
-        Renderpass,
-        Renderpass
     ) { unsafe {
         let scene_renderer = SceneRenderer::new(&base.context, world, scene_viewport);
 
@@ -169,49 +147,6 @@ impl Renderer {
         let texture_sampler_create_info = DescriptorCreateInfo::new(context)
             .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
             .shader_stages(ShaderStageFlags::FRAGMENT);
-
-        let color_blend_attachment_states = [vk::PipelineColorBlendAttachmentState {
-            blend_enable: vk::TRUE,
-            src_color_blend_factor: vk::BlendFactor::SRC_ALPHA,
-            dst_color_blend_factor: vk::BlendFactor::ONE_MINUS_SRC_ALPHA,
-            color_blend_op: vk::BlendOp::ADD,
-            src_alpha_blend_factor: vk::BlendFactor::ONE,
-            dst_alpha_blend_factor: vk::BlendFactor::ONE_MINUS_SRC_ALPHA,
-            alpha_blend_op: vk::BlendOp::ADD,
-            color_write_mask: vk::ColorComponentFlags::RGBA,
-        }];
-        let color_blend_state = vk::PipelineColorBlendStateCreateInfo::default()
-            .logic_op(vk::LogicOp::CLEAR)
-            .attachments(&color_blend_attachment_states);
-
-        let hitbox_pass_create_info = PassCreateInfo::new(context)
-            .add_color_attachment_info(TextureCreateInfo::new(context).format(Format::R8G8B8A8_UNORM).add_usage_flag(vk::ImageUsageFlags::TRANSFER_SRC));
-        let hitbox_descriptor_set_create_info = DescriptorSetCreateInfo::new(context);
-        let hitbox_renderpass_create_info = RenderpassCreateInfo::new(context)
-            .pass_create_info(hitbox_pass_create_info)
-            .add_pipeline_create_info(PipelineCreateInfo::new()
-                .pipeline_input_assembly_state(PipelineInputAssemblyStateCreateInfo {
-                    topology: vk::PrimitiveTopology::LINE_LIST,
-                    primitive_restart_enable: vk::FALSE,
-                    ..Default::default()
-                })
-                .pipeline_rasterization_state(PipelineRasterizationStateCreateInfo {
-                    front_face: vk::FrontFace::COUNTER_CLOCKWISE,
-                    cull_mode: vk::CullModeFlags::NONE,
-                    line_width: 5.0,
-                    polygon_mode: vk::PolygonMode::FILL,
-                    ..Default::default()
-                })
-                .pipeline_color_blend_state_create_info(color_blend_state)
-                .vertex_shader_uri(String::from("hitbox_display\\hitbox.vert.spv"))
-                .fragment_shader_uri(String::from("hitbox_display\\hitbox.frag.spv")))
-            .descriptor_set_create_info(hitbox_descriptor_set_create_info)
-            .push_constant_range(vk::PushConstantRange {
-                stage_flags: ShaderStageFlags::ALL_GRAPHICS,
-                offset: 0,
-                size: size_of::<LinePushConstantSendable>() as u32,
-            });
-        let hitbox_renderpass = Renderpass::new(hitbox_renderpass_create_info);
 
         let outline_pass_create_info = PassCreateInfo::new(context)
             .add_color_attachment_info(TextureCreateInfo::new(context).format(Format::R8G8B8A8_UNORM).add_usage_flag(vk::ImageUsageFlags::TRANSFER_SRC));
@@ -224,7 +159,7 @@ impl Renderer {
                 .vertex_shader_uri(String::from("quad\\quad.vert.spv"))
                 .fragment_shader_uri(String::from("outline\\outline.frag.spv")))
             .viewport(scene_viewport)
-            .push_constant_range(vk::PushConstantRange {
+            .add_push_constant_range(vk::PushConstantRange {
                 stage_flags: ShaderStageFlags::FRAGMENT,
                 offset: 0,
                 size: size_of::<OutlineConstantSendable>() as u32,
@@ -253,7 +188,7 @@ impl Renderer {
             .add_pipeline_create_info(PipelineCreateInfo::new()
                 .vertex_shader_uri(String::from("quad\\quad.vert.spv"))
                 .fragment_shader_uri(String::from("composite.frag.spv")))
-            .push_constant_range(vk::PushConstantRange {
+            .add_push_constant_range(vk::PushConstantRange {
                 stage_flags: ShaderStageFlags::FRAGMENT,
                 offset: 0,
                 size: size_of::<usize>() as _,
@@ -282,26 +217,42 @@ impl Renderer {
             Arc::new(RefCell::new(scene_renderer)),
             Renderpass::new(compositing_renderpass_create_info),
             present_renderpass,
-            hitbox_renderpass,
-            outline_renderpass,
         )
     } }
     pub unsafe fn reload(&mut self, base: &VkBase, world: &World) { unsafe {
         self.device.device_wait_idle().unwrap();
+
         {
             let scene_renderer = &mut self.scene_renderer.borrow_mut();
             scene_renderer.destroy();
             self.compositing_renderpass.destroy();
             self.present_renderpass.destroy();
-            self.hitbox_renderpass.destroy();
-            self.outline_renderpass.destroy()
         }
-        (self.scene_renderer, self.compositing_renderpass, self.present_renderpass, self.hitbox_renderpass, self.outline_renderpass) = Renderer::create_rendering_objects(
+        (self.scene_renderer, self.compositing_renderpass, self.present_renderpass) = Renderer::create_rendering_objects(
             base,
             world,
             self.scene_renderer.borrow().viewport.borrow().clone()
         );
         let scene_renderer = &mut self.scene_renderer.borrow_mut();
+
+        self.null_tex_info = vk::DescriptorImageInfo {
+            sampler: scene_renderer.sampler.clone(),
+            image_view: scene_renderer.null_texture.image_view.clone(),
+            image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+        };
+        {
+
+            let mut gui = self.guis[0].borrow_mut();
+            let viewport_node_index = gui.nodes[gui.nodes[gui.root_node_indices[0]].children_indices[2]].element_indices[0];
+            gui.elements[viewport_node_index] = Element::Texture {
+                texture_set: scene_renderer.lighting_renderpass.pass.borrow().get_texture_set(0),
+                index: gui.image_count,
+                additive_tint: Vector::empty(),
+                multiplicative_tint: Vector::fill(1.0),
+                corner_radius: 0.0,
+                aspect_ratio: None,
+            };
+        }
 
         {
             for gui in self.guis.iter() {
@@ -309,34 +260,10 @@ impl Renderer {
             };
         }
 
-        self.null_tex_info = vk::DescriptorImageInfo {
-            sampler: scene_renderer.sampler.clone(),
-            image_view: scene_renderer.null_texture.image_view.clone(),
-            image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-        };
-
         {
             self.set_present_textures(self.compositing_renderpass.pass.borrow().textures.iter().map(|frame_textures| {
                 &frame_textures[0]
             }).collect::<Vec<&Texture>>());
-            
-            let scene_pass = scene_renderer.forward_renderpass.pass.borrow();
-            let scene_textures = scene_pass.textures
-                .iter()
-                .map(|f| f[0].clone())
-                .collect::<Vec<Texture>>();
-
-            let hitbox_pass = self.hitbox_renderpass.pass.borrow();
-            let hitbox_textures = hitbox_pass.textures
-                .iter()
-                .map(|f| f[0].clone())
-                .collect::<Vec<Texture>>();
-
-            let outline_pass = self.outline_renderpass.pass.borrow();
-            let outline_textures = outline_pass.textures
-                .iter()
-                .map(|f| f[0].clone())
-                .collect::<Vec<Texture>>();
 
             let gui_textures = self.guis.iter()
                 .map(|gui| {
@@ -349,10 +276,7 @@ impl Renderer {
                 })
                 .collect::<Vec<Vec<Texture>>>();
 
-            let mut compositing_textures = vec![scene_textures, hitbox_textures, outline_textures];
-            compositing_textures.extend(gui_textures);
-
-            self.set_compositing_textures(compositing_textures);
+            self.set_compositing_textures(gui_textures);
         }
         scene_renderer.update_world_textures_all_frames(&world);
     } }
@@ -420,18 +344,17 @@ impl Renderer {
     ) { unsafe {
         let frame_command_buffer = self.draw_command_buffers[current_frame];
 
-        for gui in self.guis.iter() {
-            gui.borrow_mut().draw(current_frame, frame_command_buffer);
-        }
-
         let mut scene = &mut scene.borrow_mut();
         scene.world.borrow_mut().update_sun(self.camera.index);
         //println!("camera data {:?}", camera);
 
         self.scene_renderer.borrow().render_world(current_frame, &scene, self.camera.index);
 
-        let camera = &scene.world.borrow().cameras[self.camera.index];
+        for gui in self.guis.iter() {
+            gui.borrow_mut().draw(current_frame, frame_command_buffer);
+        }
 
+        /*
         self.hitbox_renderpass.begin_renderpass(current_frame, frame_command_buffer, Some(present_index));
         if render_hitboxes {
             for rigid_body in physics_engine.rigid_bodies.iter() {
@@ -489,6 +412,9 @@ impl Renderer {
         self.device.cmd_end_render_pass(frame_command_buffer);
         { self.hitbox_renderpass.pass.borrow().transition_to_readable(frame_command_buffer, current_frame); }
 
+         */
+
+        /*
         self.outline_renderpass.do_renderpass(
             current_frame,
             frame_command_buffer,
@@ -511,6 +437,7 @@ impl Renderer {
             None,
             true,
         );
+         */
 
         self.compositing_renderpass.do_renderpass(
             current_frame,
@@ -531,14 +458,12 @@ impl Renderer {
     } }
 
     pub unsafe fn destroy(&mut self) { unsafe {
-        self.scene_renderer.borrow_mut().destroy();
         for gui in self.guis.iter() {
             gui.borrow_mut().destroy();
         }
+        self.scene_renderer.borrow_mut().destroy();
         self.compositing_renderpass.destroy();
         self.present_renderpass.destroy();
-        self.hitbox_renderpass.destroy();
-        self.outline_renderpass.destroy();
         self.device.destroy_sampler(self.present_sampler, None);
     } }
 }

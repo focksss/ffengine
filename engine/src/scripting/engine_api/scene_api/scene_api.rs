@@ -21,7 +21,15 @@ macro_rules! with_scene_mut {
 pub struct SceneRef;
 impl UserData for SceneRef {
     fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
-
+        fields.add_field_method_get("running", |lua, this| {
+            with_scene!(lua => scene);
+            Ok(scene.running)
+        });
+        fields.add_field_method_set("running", |lua, this, val: bool| {
+            with_scene_mut!(lua => scene);
+            scene.running = val;
+            Ok(())
+        });
     }
     fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
         methods.add_method("get_entity", |lua, this, index: usize| {

@@ -238,6 +238,94 @@ impl UserData for GUIImagePointer {
     }
 }
 
+pub struct GUITexturePointer {
+    gui_index: usize,
+    index: usize
+}
+impl UserData for GUITexturePointer {
+    fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
+        fields.add_field_method_get("additive_tint", |lua, this| {
+            with_gui!(lua, this.gui_index => gui);
+            match &gui.elements[this.index] {
+                Element::Texture { additive_tint, .. } => {
+                    Ok(additive_tint.clone())
+                }
+                _ => Err(mlua::Error::runtime("Element is not an image"))
+            }
+        });
+        fields.add_field_method_set("additive_tint", |lua, this, val: Value| {
+            with_gui_mut!(lua, this.gui_index => gui);
+            match &mut gui.elements[this.index] {
+                Element::Texture { additive_tint: quad_additive_tint, .. } => {
+                    *quad_additive_tint = Vector::from_lua(val, lua)?;
+                    Ok(())
+                }
+                _ => Err(mlua::Error::runtime("Element is not an image"))
+            }
+        });
+
+        fields.add_field_method_get("multiplicative_tint", |lua, this| {
+            with_gui!(lua, this.gui_index => gui);
+            match &gui.elements[this.index] {
+                Element::Texture { multiplicative_tint, .. } => {
+                    Ok(multiplicative_tint.clone())
+                }
+                _ => Err(mlua::Error::runtime("Element is not an image"))
+            }
+        });
+        fields.add_field_method_set("multiplicative_tint", |lua, this, val: Value| {
+            with_gui_mut!(lua, this.gui_index => gui);
+            match &mut gui.elements[this.index] {
+                Element::Texture { multiplicative_tint: quad_multiplicative_tint, .. } => {
+                    *quad_multiplicative_tint = Vector::from_lua(val, lua)?;
+                    Ok(())
+                }
+                _ => Err(mlua::Error::runtime("Element is not an image"))
+            }
+        });
+
+        fields.add_field_method_get("index", |lua, this| {
+            with_gui!(lua, this.gui_index => gui);
+            match &gui.elements[this.index] {
+                Element::Texture { index, .. } => {
+                    Ok(*index)
+                }
+                _ => Err(mlua::Error::runtime("Element is not an image"))
+            }
+        });
+        fields.add_field_method_set("index", |lua, this, val: usize| {
+            with_gui_mut!(lua, this.gui_index => gui);
+            match &mut gui.elements[this.index] {
+                Element::Texture { index, .. } => {
+                    *index = val;
+                    Ok(())
+                }
+                _ => Err(mlua::Error::runtime("Element is not an image"))
+            }
+        });
+
+        fields.add_field_method_get("corner_radius", |lua, this| {
+            with_gui!(lua, this.gui_index => gui);
+            match &gui.elements[this.index] {
+                Element::Texture { corner_radius, .. } => {
+                    Ok(*corner_radius)
+                }
+                _ => Err(mlua::Error::runtime("Element is not an image"))
+            }
+        });
+        fields.add_field_method_set("corner_radius", |lua, this, val: f32| {
+            with_gui_mut!(lua, this.gui_index => gui);
+            match &mut gui.elements[this.index] {
+                Element::Texture { corner_radius, .. } => {
+                    *corner_radius = val;
+                    Ok(())
+                }
+                _ => Err(mlua::Error::runtime("Element is not an image"))
+            }
+        });
+    }
+}
+
 pub struct GUINodePointer {
     gui_index: usize,
     index: usize
@@ -361,7 +449,13 @@ impl UserData for GUINodePointer {
                         gui_index: this.gui_index,
                         index: element_index
                     })
-                }
+                },
+                Element::Texture { .. } => {
+                    lua.create_userdata(GUITexturePointer {
+                        gui_index: this.gui_index,
+                        index: element_index
+                    })
+                },
             }
         });
         methods.add_method("get_image_at", |lua, this, val: i32| {

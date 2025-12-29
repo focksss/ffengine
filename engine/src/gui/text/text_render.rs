@@ -130,7 +130,7 @@ impl TextRenderer {
         let mut renderpass_create_info = RenderpassCreateInfo::new(context)
             .pass_create_info(pass_create_info)
             .descriptor_set_create_info(descriptor_set_create_info)
-            .push_constant_range(push_constant_range)
+            .add_push_constant_range(push_constant_range)
             .add_pipeline_create_info(PipelineCreateInfo::new()
                 .pipeline_input_assembly_state(vertex_input_assembly_state_info)
                 .pipeline_vertex_input_state(vertex_input_state_info)

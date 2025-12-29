@@ -35,7 +35,7 @@ pub struct GUI {
     pub unparented_node_indices: Vec<usize>,
 
     pub elements: Vec<Element>,
-    image_count: usize,
+    pub image_count: usize,
 
     pub interactable_node_indices: Vec<usize>,
 
@@ -301,7 +301,7 @@ impl GUI {
                 .pipeline_color_blend_state_create_info(color_blend_state)
                 .vertex_shader_uri(String::from("gui\\quad\\quad.vert.spv"))
                 .fragment_shader_uri(String::from("gui\\quad\\quad.frag.spv")))
-            .push_constant_range(vk::PushConstantRange {
+            .add_push_constant_range(vk::PushConstantRange {
                 stage_flags: ShaderStageFlags::ALL_GRAPHICS,
                 offset: 0,
                 size: size_of::<GUIQuadSendable>() as _,
@@ -1287,8 +1287,13 @@ impl GUI {
     unsafe fn update_descriptors(&self) {
         let mut image_infos: Vec<vk::DescriptorImageInfo> = Vec::with_capacity(1024);
 
+        let mut borrowed_sampler = None;
+        let mut texture_indices = Vec::new();
         for element in self.elements.iter() {
             if let Element::Image { image_view, sampler, ..} = element {
+                if borrowed_sampler.is_none() {
+                    borrowed_sampler = Some(sampler);
+                }
                 image_infos.push(vk::DescriptorImageInfo {
                     image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                     image_view: *image_view,
@@ -1296,14 +1301,31 @@ impl GUI {
                 })
             }
         }
-        let missing = 1024 - image_infos.len();
-        for _ in 0..missing {
-            image_infos.push(self.null_tex_info);
+        for (i, element) in self.elements.iter().enumerate() {
+            if let Element::Texture { .. } = element {
+                texture_indices.push(i);
+            }
         }
-        let image_infos = image_infos.as_slice().as_ptr();
 
         unsafe {
             for frame in 0..MAX_FRAMES_IN_FLIGHT {
+                let mut frame_image_infos = image_infos.clone();
+                for texture_index in texture_indices.iter() {
+                    let element = self.elements.get(*texture_index).unwrap();
+                    if let Element::Texture{ texture_set, .. } = element {
+                        frame_image_infos.push(vk::DescriptorImageInfo {
+                            image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                            image_view: texture_set[frame].device_texture.borrow().image_view.clone(),
+                            sampler: *borrowed_sampler.unwrap(),
+                        })
+                    }
+                }
+                let missing = 1024 - frame_image_infos.len();
+                for _ in 0..missing {
+                    frame_image_infos.push(self.null_tex_info);
+                }
+                let frame_image_infos = frame_image_infos.as_slice().as_ptr();
+
                 let descriptor_write = vk::WriteDescriptorSet {
                     s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
                     dst_set: self.quad_renderpass.descriptor_set.borrow().descriptor_sets[frame],
@@ -1311,7 +1333,7 @@ impl GUI {
                     dst_array_element: 0,
                     descriptor_type: DescriptorType::COMBINED_IMAGE_SAMPLER,
                     descriptor_count: 1024,
-                    p_image_info: image_infos,
+                    p_image_info: frame_image_infos,
                     ..Default::default()
                 };
                 self.context.device.update_descriptor_sets(&[descriptor_write], &[]);
@@ -1408,6 +1430,24 @@ impl GUI {
                     //     memory: memory.clone(),
                     //     sampler: sampler.clone(),
                     // }
+                },
+                Element::Texture {
+                    texture_set,
+                    index,
+                    additive_tint,
+                    multiplicative_tint,
+                    aspect_ratio,
+                    corner_radius,
+                } => {
+                    new_element_indices.push(self.elements.len());
+                    self.elements.push(Element::Texture {
+                        texture_set: texture_set.clone(),
+                        index: *index,
+                        additive_tint: *additive_tint,
+                        multiplicative_tint: *multiplicative_tint,
+                        corner_radius: *corner_radius,
+                        aspect_ratio: *aspect_ratio,
+                    })
                 }
             }
         }
@@ -2025,6 +2065,57 @@ impl GUI {
                     ));
                     device.cmd_draw(command_buffer, 6, 1, 0, 0);
                 },
+                Element::Texture {
+                    texture_set,
+                    index,
+                    additive_tint,
+                    multiplicative_tint,
+                    corner_radius,
+                    aspect_ratio,
+                    ..
+                } => {
+                    let mut scale = node.size.to_array2();
+                    if let Some(ratio) = aspect_ratio {
+                        let min = scale[0].min(scale[1]);
+                        let min_axis = if scale[0] < scale[1] { 0 } else { 1 };
+                        scale[min_axis] = min;
+                        scale[1 - min_axis] = ratio * min;
+                    }
+
+                    let quad_constants = GUIQuadSendable {
+                        additive_color: additive_tint.to_array4(),
+                        multiplicative_color: multiplicative_tint.to_array4(),
+                        resolution: [self.quad_renderpass.viewport.width as i32, self.quad_renderpass.viewport.height as i32],
+                        clip_min: node.clip_min.to_array2(),
+                        clip_max: node.clip_max.to_array2(),
+                        position: node.position.to_array2(),
+                        scale,
+                        corner_radius: *corner_radius,
+                        image: *index as i32,
+                    };
+
+                    let device = &self.context.device;
+                    device.cmd_bind_pipeline(
+                        command_buffer,
+                        vk::PipelineBindPoint::GRAPHICS,
+                        self.quad_renderpass.pipelines[0].vulkan_pipeline,
+                    );
+                    device.cmd_set_viewport(command_buffer, 0, &[self.quad_renderpass.viewport]);
+                    device.cmd_set_scissor(command_buffer, 0, &[self.quad_renderpass.scissor]);
+                    device.cmd_bind_descriptor_sets(
+                        command_buffer,
+                        vk::PipelineBindPoint::GRAPHICS,
+                        self.quad_renderpass.pipeline_layout,
+                        0,
+                        &[self.quad_renderpass.descriptor_set.borrow().descriptor_sets[current_frame]],
+                        &[],
+                    );
+                    device.cmd_push_constants(command_buffer, self.quad_renderpass.pipeline_layout, ShaderStageFlags::ALL_GRAPHICS, 0, slice::from_raw_parts(
+                        &quad_constants as *const GUIQuadSendable as *const u8,
+                        size_of::<GUIQuadSendable>(),
+                    ));
+                    device.cmd_draw(command_buffer, 6, 1, 0, 0);
+                },
                 Element::Text {
                     text_information,
                     ..
@@ -2217,6 +2308,15 @@ pub enum Element {
         sampler: vk::Sampler,
         image: vk::Image,
         memory: vk::DeviceMemory,
+    },
+    Texture {
+        texture_set: Vec<Texture>,
+        index: usize,
+
+        additive_tint: Vector,
+        multiplicative_tint: Vector,
+        corner_radius: f32,
+        aspect_ratio: Option<f32>,
     },
     Text {
         text_information: Option<TextInformation>,

@@ -44,6 +44,7 @@
 | Key                      | Type                      | Description                                                                                                             |
 |--------------------------|---------------------------|-------------------------------------------------------------------------------------------------------------------------|
 | name                     | `String`                  | Name of the node                                                                                                        |
+| hidden                   | `boolean`                 | Is hidden                                                                                                               |
 | interactable_information | `InteractableInformation` | Refer to InteractableInformation Structure                                                                              |
 | container                | `Container`               | The nodes own container type and information                                                                            |
 | parent_relation          | `ParentRelation`          | Information about how the node should act relative to its parent                                                        |

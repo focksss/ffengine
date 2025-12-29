@@ -249,7 +249,7 @@ impl Engine {
                                 scene_renderer_ref.queued_id_buffer_sample = false;
                                 let hovered = scene_renderer_ref.geometry_renderpass.pass.borrow().textures[current_frame][4].sample(
                                     controller_mut.cursor_position.x as i32,
-                                    controller_mut.cursor_position.y as i32,
+                                    controller_mut.cursor_position.y as i32 - 30,
                                     0
                                 );
                                 let pair = (hovered[0] as usize, hovered[1] as usize);

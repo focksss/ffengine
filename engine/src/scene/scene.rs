@@ -20,6 +20,8 @@ use crate::scene::world::world::{World};
 pub struct Scene {
     context: Arc<Context>,
 
+    pub running: bool,
+
     pub entities: Vec<Entity>, // will always have a root node with sun
 
     pub unupdated_entities: Vec<usize>,
@@ -44,6 +46,8 @@ impl Scene {
     pub fn new(context: &Arc<Context>, renderer: Arc<RefCell<Renderer>>, world: Arc<RefCell<World>>, physics_engine: Arc<RefCell<PhysicsEngine>>) -> Self {
         let mut scene = Self {
             context: context.clone(),
+
+            running: false,
 
             entities: Vec::new(),
             unupdated_entities: Vec::new(),
@@ -196,13 +200,15 @@ impl Scene {
 
     pub unsafe fn update_scene(&mut self, frame: usize) {
         if frame == 0 {
-            for animation in self.animation_components.iter_mut() {
-                animation.update(&mut self.entities, &mut self.transforms, &mut self.unupdated_entities)
+            if self.running {
+                for animation in self.animation_components.iter_mut() {
+                    animation.update(&mut self.entities, &mut self.transforms, &mut self.unupdated_entities)
+                }
             }
 
             let mut dirty_primitive_instance_data: Vec<Instance> = Vec::new();
             for entity_index in self.unupdated_entities.clone().iter() {
-            //for entity_index in &vec![1usize] {
+                //for entity_index in &vec![1usize] {
                 let parent_index = self.entities[*entity_index].parent;
                 let parent_transform = if *entity_index == 0 {
                     Matrix::new()
@@ -351,6 +357,14 @@ impl Scene {
                     command_buffer,
                     vk::PipelineBindPoint::GRAPHICS,
                     scene_renderer.forward_renderpass.pipelines[0].vulkan_pipeline,
+                );
+                for index in self.outlined_components.iter() {
+                    self.render_components[*index].draw(&self, scene_renderer, &command_buffer, world, *index, frustum);
+                }
+                self.context.device.cmd_bind_pipeline(
+                    command_buffer,
+                    vk::PipelineBindPoint::GRAPHICS,
+                    scene_renderer.forward_renderpass.pipelines[1].vulkan_pipeline,
                 );
                 for index in self.outlined_components.iter() {
                     self.render_components[*index].draw(&self, scene_renderer, &command_buffer, world, *index, frustum);

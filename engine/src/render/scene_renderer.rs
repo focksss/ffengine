@@ -446,10 +446,9 @@ impl SceneRenderer {
             .add_color_attachment_info(TextureCreateInfo::new(context).format(Format::R8_UNORM)
                 .width(resolution.width).height(resolution.height));
 
-        // set to window size, not the scene viewport size // TODO: DON'T DO THIS
         let lighting_pass_create_info = PassCreateInfo::new(context)
             .add_color_attachment_info(TextureCreateInfo::new(context).format(Format::R16G16B16A16_SFLOAT).add_usage_flag(vk::ImageUsageFlags::TRANSFER_SRC)
-            );
+                .width(resolution.width).height(resolution.height));
         //</editor-fold>
         //<editor-fold desc = "geometry + shadow descriptor sets"
         let sun_ubo_create_info = DescriptorCreateInfo::new(context)
@@ -760,7 +759,7 @@ impl SceneRenderer {
             .pass_create_info(geometry_pass_create_info)
             .resolution(resolution)
             .descriptor_set_create_info(geometry_descriptor_set_create_info)
-            .push_constant_range(camera_push_constant_range_vertex)
+            .add_push_constant_range(camera_push_constant_range_vertex)
             .add_pipeline_create_info(PipelineCreateInfo::new()
                 .pipeline_vertex_input_state(geometry_vertex_input_state_info)
                 .pipeline_rasterization_state(rasterization_info)
@@ -820,7 +819,7 @@ impl SceneRenderer {
             .add_pipeline_create_info(PipelineCreateInfo::new()
                 .vertex_shader_uri(String::from("quad\\quad.vert.spv"))
                 .fragment_shader_uri(String::from("bilateral_blur\\bilateral_blur.frag.spv")))
-            .push_constant_range(vk::PushConstantRange {
+            .add_push_constant_range(vk::PushConstantRange {
                 stage_flags: ShaderStageFlags::FRAGMENT,
                 offset: 0,
                 size: size_of::<BlurPassData>() as _,
@@ -836,7 +835,7 @@ impl SceneRenderer {
             .add_pipeline_create_info(PipelineCreateInfo::new()
                 .vertex_shader_uri(String::from("quad\\quad.vert.spv"))
                 .fragment_shader_uri(String::from("bilateral_blur\\bilateral_blur.frag.spv")))
-            .push_constant_range(vk::PushConstantRange {
+            .add_push_constant_range(vk::PushConstantRange {
                 stage_flags: ShaderStageFlags::FRAGMENT,
                 offset: 0,
                 size: size_of::<BlurPassData>() as _,
@@ -852,7 +851,7 @@ impl SceneRenderer {
             .add_pipeline_create_info(PipelineCreateInfo::new()
                 .vertex_shader_uri(String::from("quad\\quad.vert.spv"))
                 .fragment_shader_uri(String::from("geometry_aware_upsample.frag.spv")))
-            .push_constant_range(vk::PushConstantRange {
+            .add_push_constant_range(vk::PushConstantRange {
                 stage_flags: ShaderStageFlags::FRAGMENT,
                 offset: 0,
                 size: size_of::<DepthAwareUpsamplePassData>() as _,
@@ -863,12 +862,12 @@ impl SceneRenderer {
 
         let lighting_renderpass_create_info = { RenderpassCreateInfo::new(context)
             .pass_create_info(lighting_pass_create_info)
+            .resolution(resolution)
             .descriptor_set_create_info(lighting_descriptor_set_create_info)
             .add_pipeline_create_info(PipelineCreateInfo::new()
                 .vertex_shader_uri(String::from("quad\\quad.vert.spv"))
                 .fragment_shader_uri(String::from("lighting.frag.spv")))
-            .push_constant_range(camera_push_constant_range_fragment)
-            .viewport(viewport)
+            .add_push_constant_range(camera_push_constant_range_fragment)
         };
         let lighting_renderpass = Renderpass::new(lighting_renderpass_create_info);
 
@@ -881,6 +880,10 @@ impl SceneRenderer {
             let forward_descriptor_set_create_info = DescriptorSetCreateInfo::new(context)
                 .add_descriptor(Descriptor::new(&material_ssbo_create_info))
                 .add_descriptor(Descriptor::new(&joints_ssbo_create_info))
+                .add_descriptor(Descriptor::new(&DescriptorCreateInfo::new(context)
+                    .descriptor_type(DescriptorType::UNIFORM_BUFFER)
+                    .size(16u64)
+                    .shader_stages(ShaderStageFlags::VERTEX)))
                 .add_descriptor(Descriptor::new(&world_texture_samplers_create_info));
             let color_blend_attachment_states = [vk::PipelineColorBlendAttachmentState {
                 blend_enable: vk::TRUE,
@@ -895,16 +898,36 @@ impl SceneRenderer {
             let color_blend_state = vk::PipelineColorBlendStateCreateInfo::default()
                 .logic_op(vk::LogicOp::CLEAR)
                 .attachments(&color_blend_attachment_states);
-            let outline_stencil_state = vk::StencilOpState {
-                pass_op: vk::StencilOp::INCREMENT_AND_CLAMP,
-                depth_fail_op: vk::StencilOp::KEEP,
+            let mask_stencil_state = vk::StencilOpState {
                 compare_op: vk::CompareOp::ALWAYS,
+                pass_op: vk::StencilOp::REPLACE,
+                fail_op: vk::StencilOp::KEEP,
+                depth_fail_op: vk::StencilOp::KEEP,
                 compare_mask: 0xFF,
                 write_mask: 0xFF,
-                reference: 0,
+                reference: 1,
                 ..Default::default()
             };
-            let outline_depth_state_info = vk::PipelineDepthStencilStateCreateInfo {
+            let mask_depth_stencil_state_info = vk::PipelineDepthStencilStateCreateInfo {
+                depth_test_enable: 1,
+                depth_write_enable: 0,
+                depth_compare_op: vk::CompareOp::ALWAYS,
+                stencil_test_enable: 1,
+                front: mask_stencil_state,
+                back: mask_stencil_state,
+                ..Default::default()
+            };
+            let outline_stencil_state = vk::StencilOpState {
+                compare_op: vk::CompareOp::NOT_EQUAL,
+                pass_op: vk::StencilOp::KEEP,
+                fail_op: vk::StencilOp::KEEP,
+                depth_fail_op: vk::StencilOp::KEEP,
+                compare_mask: 0xFF,
+                write_mask: 0x00,
+                reference: 1,
+                ..Default::default()
+            };
+            let outline_depth_stencil_state_info = vk::PipelineDepthStencilStateCreateInfo {
                 depth_test_enable: 0,
                 depth_write_enable: 0,
                 depth_compare_op: vk::CompareOp::ALWAYS,
@@ -922,18 +945,32 @@ impl SceneRenderer {
                 max_depth_bounds: 1.0,
                 ..Default::default()
             };
+            let outline_rasterization_info = vk::PipelineRasterizationStateCreateInfo {
+                front_face: vk::FrontFace::COUNTER_CLOCKWISE,
+                cull_mode: vk::CullModeFlags::FRONT,
+                line_width: 1.0,
+                polygon_mode: vk::PolygonMode::FILL,
+                ..Default::default()
+            };
 
             let forward_renderpass_create_info = { RenderpassCreateInfo::new(context)
                 .pass_create_info(forward_pass_create_info)
                 .resolution(resolution)
                 .descriptor_set_create_info(forward_descriptor_set_create_info)
-                .push_constant_range(camera_push_constant_range_vertex)
+                .add_push_constant_range(camera_push_constant_range_vertex)
                 .add_pipeline_create_info(PipelineCreateInfo::new()
                     .pipeline_vertex_input_state(geometry_vertex_input_state_info)
                     .pipeline_rasterization_state(rasterization_info)
-                    .pipeline_depth_stencil_state(outline_depth_state_info)
+                    .pipeline_depth_stencil_state(mask_depth_stencil_state_info)
                     .pipeline_color_blend_state_create_info(color_blend_state)
                     .vertex_shader_uri(String::from("geometry\\position_only.vert.spv"))
+                    .fragment_shader_uri(String::from("empty.frag.spv")))
+                .add_pipeline_create_info(PipelineCreateInfo::new()
+                    .pipeline_vertex_input_state(geometry_vertex_input_state_info)
+                    .pipeline_rasterization_state(outline_rasterization_info)
+                    .pipeline_depth_stencil_state(outline_depth_stencil_state_info)
+                    .pipeline_color_blend_state_create_info(color_blend_state)
+                    .vertex_shader_uri(String::from("outline\\outline.vert.spv"))
                     .fragment_shader_uri(String::from("outline\\outline_geometry.frag.spv")))
                 .add_pipeline_create_info(PipelineCreateInfo::new()
                     .pipeline_depth_stencil_state(skybox_depth_state_info)
@@ -1005,7 +1042,7 @@ impl SceneRenderer {
         let forward_descriptor_write = vk::WriteDescriptorSet {
             s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
             dst_set: self.forward_renderpass.descriptor_set.borrow().descriptor_sets[frame],
-            dst_binding: 2,
+            dst_binding: 3,
             dst_array_element: 0,
             descriptor_type: DescriptorType::COMBINED_IMAGE_SAMPLER,
             descriptor_count: 1024,
@@ -1047,6 +1084,12 @@ impl SceneRenderer {
             num_lights: scene.world.borrow().lights.len() as u32,
         };
         copy_data_to_memory(self.lighting_renderpass.descriptor_set.borrow().descriptors[9].owned_buffers.2[current_frame], &[ubo]);
+        copy_data_to_memory(
+            self.forward_renderpass.descriptor_set.borrow().descriptors[2].owned_buffers.2[current_frame],
+            &[Vector::new2(
+                self.viewport.borrow().width, self.viewport.borrow().width,
+            )]
+        );
         let camera_constants = CameraMatrixUniformData {
             view: player_camera.view_matrix.data,
             projection: player_camera.projection_matrix.data,
@@ -1157,16 +1200,22 @@ impl SceneRenderer {
             current_frame,
             frame_command_buffer,
             Some(|| {
-                device.cmd_push_constants(frame_command_buffer, self.geometry_renderpass.pipeline_layout, ShaderStageFlags::VERTEX, 0, slice::from_raw_parts(
-                    &camera_constants as *const CameraMatrixUniformData as *const u8,
-                    size_of::<CameraMatrixUniformData>(),
-                ));
+                device.cmd_push_constants(
+                    frame_command_buffer,
+                    self.geometry_renderpass.pipeline_layout,
+                    ShaderStageFlags::VERTEX,
+                    0,
+                    slice::from_raw_parts(
+                        &camera_constants as *const CameraMatrixUniformData as *const u8,
+                        128
+                    )
+                );
             }),
             Some(|| {
                 self.context.device.cmd_bind_pipeline(
                     frame_command_buffer,
                     vk::PipelineBindPoint::GRAPHICS,
-                    self.forward_renderpass.pipelines[1].vulkan_pipeline,
+                    self.forward_renderpass.pipelines[2].vulkan_pipeline,
                 );
                 device.cmd_draw(frame_command_buffer, 36, 1, 0, 0);
 
@@ -1199,14 +1248,6 @@ impl SceneRenderer {
     } }
 }
 
-
-#[derive(Clone, Debug, Copy)]
-#[repr(C)]
-struct EquirecToCubemapUniformData {
-    view: [f32; 16],
-    call_index: i32,
-    _pad0: [f32; 3],
-}
 #[derive(Clone, Debug, Copy)]
 #[repr(C)]
 struct CameraMatrixUniformData {
