@@ -17,6 +17,9 @@
     },
     {
       "uri": "editor\\resources\\scripts\\entity_editor.lua"
+    },
+    {
+      "uri": "editor\\resources\\scripts\\rigid_body_editor.lua"
     }
   ],
   "fonts": [
@@ -119,6 +122,15 @@
       "info": {
         "color": [1.0, 1.0, 1.0, 0.2],
         "corner_radius": 5.0
+      }
+    },
+    {
+      "name": "rigidbody icon",
+      "type": "Image",
+      "info": {
+        "uri": "editor\\resources\\gui\\images\\rigidbody.png",
+        "additive_tint": [0.0, 0.0, 0.0, 0.0],
+        "multiplicative_tint": [1.0, 1.0, 1.0, 1.0]
       }
     }
   ],
@@ -3458,6 +3470,285 @@
                     "font_size": 15.0,
                     "newline_distance": 300.0
                   }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "rigid body component editor ui",
+      "container": {
+        "type": "Stack",
+        "info": {
+          "horizontal": false,
+          "spacing": 5.0,
+          "padding": {
+            "left": 0.0,
+            "right": 0.0,
+            "top": 0.0,
+            "bottom": 0.0
+          },
+          "packing": "Start",
+          "stack_direction": "Normal",
+          "alignment": "Start"
+        }
+      },
+      "width": {
+        "type": "Factor",
+        "info": {
+          "factor": 1.0
+        }
+      },
+      "height": {
+        "type": "Absolute",
+        "info": {
+          "pixels": 20.0
+        }
+      },
+      "elements": [
+        3
+      ],
+      "children": [
+        {
+          "name": "component type display",
+          "interactable_information": {
+            "hover_actions": [
+              {
+                "script": 0,
+                "method": "hover_cursor"
+              }
+            ],
+            "left_up_actions": [
+              {
+                "script": 4,
+                "method": "collapse"
+              }
+            ]
+          },
+          "container": {
+            "type": "Dock"
+          },
+          "width": {
+            "type": "Factor",
+            "info": {
+              "factor": 1.0
+            }
+          },
+          "height": {
+            "type": "Absolute",
+            "info": {
+              "pixels": 20.0
+            }
+          },
+          "elements": [
+            {
+              "type": "Quad",
+              "info": {
+                "color": [0.25, 0.25, 0.25, 0.8],
+                "corner_radius": 5.0
+              }
+            }
+          ],
+          "children": [
+            {
+              "name": "icon",
+              "parent_relation": {
+                "type": "Docking",
+                "info": {
+                  "mode": "Left"
+                }
+              },
+              "width": {
+                "type": "Absolute",
+                "info": {
+                  "pixels": 20.0
+                }
+              },
+              "height": {
+                "type": "Factor",
+                "info": {
+                  "factor": 1.0
+                }
+              },
+              "elements": [
+                11
+              ]
+            },
+            {
+              "name": "text",
+              "parent_relation": {
+                "type": "Docking",
+                "info": {
+                  "mode": "Left"
+                }
+              },
+              "width": {
+                "type": "Factor",
+                "info": {
+                  "factor": 1.0
+                }
+              },
+              "height": {
+                "type": "Factor",
+                "info": {
+                  "factor": 1.0
+                }
+              },
+              "elements": [
+                {
+                  "type": "Text",
+                  "info": {
+                    "text": "Rigidbody Editor",
+                    "color": [1.0, 1.0, 1.0, 1.0],
+                    "font": 0,
+                    "font_size": 15.0,
+                    "newline_distance": 300.0
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "static",
+          "container": {
+            "type": "Dock"
+          },
+          "width": {
+            "type": "Factor",
+            "info": {
+              "factor": 1.0
+            }
+          },
+          "height": {
+            "type": "Absolute",
+            "info": {
+              "pixels": 20.0
+            }
+          },
+          "elements": [
+            {
+              "type": "Quad",
+              "info": {
+                "color": [0.275, 0.275, 0.275, 0.8],
+                "corner_radius": 5.0
+              }
+            }
+          ],
+          "children": [
+            {
+              "name": "text",
+              "parent_relation": {
+                "type": "Docking",
+                "info": {
+                  "mode": "Left"
+                }
+              },
+              "width": {
+                "type": "Factor",
+                "info": {
+                  "factor": 1.0
+                }
+              },
+              "height": {
+                "type": "Factor",
+                "info": {
+                  "factor": 1.0
+                }
+              },
+              "elements": [
+                {
+                  "type": "Text",
+                  "info": {
+                    "text": "Static:",
+                    "color": [1.0, 1.0, 1.0, 1.0],
+                    "font": 0,
+                    "font_size": 15.0,
+                    "newline_distance": 300.0
+                  }
+                }
+              ]
+            },
+            {
+              "name": "boolean",
+              "interactable_information": {
+                "hover_actions": [
+                  {
+                    "script": 1,
+                    "method": "color_slider_hovered"
+                  }
+                ],
+                "unhover_actions": [
+                  {
+                    "script": 1,
+                    "method": "color_slider_unhovered"
+                  }
+                ]
+              },
+              "parent_relation": {
+                "type": "Docking",
+                "info": {
+                  "mode": "Right"
+                }
+              },
+              "width": {
+                "type": "Factor",
+                "info": {
+                  "factor": 0.6
+                }
+              },
+              "height": {
+                "type": "Factor",
+                "info": {
+                  "factor": 1.0
+                }
+              },
+              "elements": [
+                {
+                  "type": "Quad",
+                  "info": {
+                    "color": [0.35, 0.35, 0.35, 0.8],
+                    "corner_radius": 5.0
+                  }
+                }
+              ],
+              "children": [
+                {
+                  "name": "text",
+                  "interactable_information": {
+                    "passive_actions": [
+                      {
+                        "script": 4,
+                        "method": "update_static_display"
+                      }
+                    ]
+                  },
+                  "width": {
+                    "type": "Absolute",
+                    "info": {
+                      "pixels": 60
+                    }
+                  },
+                  "height": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "elements": [
+                    {
+                      "type": "Text",
+                      "info": {
+                        "text": "True",
+                        "color": [1.0, 1.0, 1.0, 1.0],
+                        "font": 0,
+                        "font_size": 15.0,
+                        "newline_distance": 300.0
+                      }
+                    }
+                  ]
                 }
               ]
             }

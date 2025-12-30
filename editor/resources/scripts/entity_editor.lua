@@ -1,4 +1,5 @@
 _G.selected_transform = 0
+_G.selected_rigid_body = 0
 
 local gui
 
@@ -9,6 +10,7 @@ local entity_editor_area_node
 
 local transform_editor_ui_node
 local render_component_editor_ui_node
+local rigid_body_editor_ui_node
 
 function Awake()
 
@@ -22,7 +24,8 @@ function Awake()
 
 	transform_editor_ui_node = gui:get_unparented(2)
 	render_component_editor_ui_node = gui:get_unparented(3)
-	
+	rigid_body_editor_ui_node = gui:get_unparented(4)
+
 end
 
 local queued_entity_open_from_read = 0
@@ -74,10 +77,17 @@ function open_entity_editor()
     _G.editor_node_to_render_component_map = {}
     current_used_render_component_editor_node_count = 0
 
-    --- add transform editor
     local entity = Engine.scene:get_entity(_G.node_to_entity_map[gui.ActiveNode.index])
+
+    --- add transform editor
     _G.selected_transform = entity.transform_index
 	entity_editor_root_node:add_child_index(transform_editor_ui_node.index)
+
+    --- add rigid body editor
+    if entity.rigid_body_index > -1 then
+        _G.selected_rigid_body = entity.rigid_body_index
+    	entity_editor_root_node:add_child_index(rigid_body_editor_ui_node.index)        
+    end
 
     outline_entity(entity.index)
 
@@ -118,6 +128,13 @@ function open_transform_editor()
 end
 function open_render_component_editor() 
     render_component_editor(_G.node_to_render_components_map[gui.ActiveNode.index])
+end
+function open_rigid_body_editor() 
+	_G.selected_rigid_body = _G.node_to_rigid_body_map[gui.ActiveNode.index]
+    _G.Editor.select_entity(Engine.scene:get_rigid_body(_G.selected_rigid_body).owner_index)
+
+	entity_editor_root_node:clear_children()
+	entity_editor_root_node:add_child_index(rigid_body_editor_ui_node.index)
 end
 
 function render_component_editor(component_index) 

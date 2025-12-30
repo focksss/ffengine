@@ -1,7 +1,7 @@
 use crate::engine::EngineRef;
 use std::cell::RefCell;
 use std::sync::Arc;
-use mlua::{UserData, UserDataFields, UserDataMethods};
+use mlua::{FromLua, UserData, UserDataFields, UserDataMethods, Value};
 use crate::math::Vector;
 use crate::scene::scene::Scene;
 
@@ -42,6 +42,9 @@ impl UserData for SceneRef {
         });
         methods.add_method("get_transform", |lua, this, index: usize| {
             Ok(lua.create_userdata(TransformPointer { index }))
+        });
+        methods.add_method("get_rigid_body", |lua, this, index: usize| {
+            Ok(lua.create_userdata(RigidBodyPointer { index }))
         });
 
         methods.add_method("load_model", |lua, this, parent: usize| {
@@ -111,6 +114,15 @@ impl UserData for EntityPointer {
                 table.set(i + 1, *element_index)?;
             }
             Ok(table)
+        });
+
+        fields.add_field_method_get("rigid_body_index", |lua, this| {
+            with_scene!(lua => scene);
+            return if let Some(rigid_body) = scene.entities[this.index].rigid_body {
+                Ok(rigid_body as i32)
+            } else {
+                Ok(-1)
+            }
         });
 
         fields.add_field_method_get("name", |lua, this| {
@@ -187,12 +199,66 @@ impl UserData for TransformPointer {
 }
 
 pub struct RenderComponentPointer {
-    index: usize,
+    pub index: usize,
 }
 impl UserData for RenderComponentPointer {
     fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
         fields.add_field_method_get("index", |lua, this|{
             Ok(this.index)
+        });
+    }
+}
+
+pub struct RigidBodyPointer {
+    pub index: usize,
+}
+impl UserData for RigidBodyPointer {
+    fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
+        fields.add_field_method_get("index", |lua, this|{
+            Ok(this.index)
+        });
+        fields.add_field_method_get("owner_index", |lua, this|{
+            with_scene!(lua => scene);
+            Ok(scene.rigid_body_components[this.index].owner)
+        });
+
+        fields.add_field_method_get("static", |lua, this|{
+            with_scene!(lua => scene);
+            Ok(scene.rigid_body_components[this.index].is_static)
+        });
+        fields.add_field_method_set("static", |lua, this, val: bool| {
+            with_scene_mut!(lua => scene);
+            /*
+            let hitbox = {
+                let hitbox_index = &scene.rigid_body_components[this.index].hitbox;
+                &scene.hitbox_components[*hitbox_index].hitbox
+            };
+            let rigid_body = &mut scene.rigid_body_components[this.index];
+
+            rigid_body.set_static(hitbox, val);
+            
+             */
+            Ok(())
+        });
+
+        fields.add_field_method_get("position", |lua, this| {
+            with_scene!(lua => scene);
+            Ok(scene.rigid_body_components[this.index].position)
+        });
+        fields.add_field_method_set("position", |lua, this, val: Value| {
+            with_scene_mut!(lua => scene);
+            scene.rigid_body_components[this.index].position = Vector::from_lua(val, lua)?;
+            Ok(())
+        });
+
+        fields.add_field_method_get("velocity", |lua, this| {
+            with_scene!(lua => scene);
+            Ok(scene.rigid_body_components[this.index].velocity)
+        });
+        fields.add_field_method_set("velocity", |lua, this, val: Value| {
+            with_scene_mut!(lua => scene);
+            scene.rigid_body_components[this.index].velocity = Vector::from_lua(val, lua)?;
+            Ok(())
         });
     }
 }

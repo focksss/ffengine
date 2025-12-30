@@ -190,9 +190,6 @@ impl Engine {
                         {
                             self.world.borrow_mut().update_buffers(base);
                         }
-                        {
-                            if self.client.borrow().flags.borrow().do_physics { self.physics_engine.borrow_mut().tick(delta_time, &mut self.world.borrow_mut()); }
-                        }
 
                         let current_fence = base.draw_commands_reuse_fences[current_frame];
                         {
@@ -225,7 +222,7 @@ impl Engine {
                             &[current_rendering_complete_semaphore],
                             |_device, frame_command_buffer| {
                                 {
-                                    self.scene.borrow_mut().update_scene(current_frame);
+                                    self.scene.borrow_mut().update_scene(current_frame, delta_time);
                                     let world_ref = &mut self.world.borrow_mut();
                                     world_ref.update_lights(frame_command_buffer, current_frame);
                                     world_ref.update_cameras();

@@ -1,7 +1,6 @@
 use mlua::{FromLua, UserData, UserDataFields, UserDataMethods, Value};
 use crate::math::Vector;
 use crate::scene::physics::player::PlayerPointer;
-use crate::scene::physics::rigid_body::RigidBodyPointer;
 use crate::scene::world::camera::CameraPointer;
 
 impl UserData for CameraPointer {

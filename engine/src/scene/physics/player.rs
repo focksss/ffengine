@@ -6,8 +6,8 @@ use crate::scene::physics::hitboxes::bounding_box::BoundingBox;
 use crate::scene::physics::hitboxes::convex_hull::ConvexHull;
 use crate::scene::physics::hitboxes::hitbox::Hitbox;
 use crate::scene::physics::hitboxes::sphere::Sphere;
-use crate::scene::physics::physics_engine::{PhysicsEngine, RigidBody};
-use crate::scene::physics::rigid_body::RigidBodyPointer;
+use crate::scene::physics::physics_engine::PhysicsEngine;
+use crate::scene::scene::{RigidBodyComponent, Scene};
 use crate::scene::world::world::World;
 
 #[derive(Copy, Clone, Debug)]
@@ -28,12 +28,13 @@ pub struct Player {
     pub skin_width: f32,
     pub grounded: bool,
     pub fly_speed: f32,
-    pub rigid_body_pointer: RigidBodyPointer,
+    pub rigid_body_index: usize,
     pub camera_pointer: CameraPointer,
 }
+
 impl Player {
-    pub fn new(physics_engine: Arc<RefCell<PhysicsEngine>>, world: Arc<RefCell<World>>, camera: Camera, eye_to_foot: Vector, eye_to_head: Vector, movement_mode: MovementMode, move_power: f32, jump_power: f32, skin_width: f32) -> Self {
-        let mut rigid_body = RigidBody::default();
+    pub fn new(scene: &mut Scene, world: Arc<RefCell<World>>, camera: Camera, eye_to_foot: Vector, eye_to_head: Vector, movement_mode: MovementMode, move_power: f32, jump_power: f32, skin_width: f32) -> Self {
+        let mut rigid_body = RigidBodyComponent::default();
         rigid_body.owned_by_player = true;
         let max = camera.position + eye_to_head;
         let min = camera.position + eye_to_foot;
@@ -50,7 +51,7 @@ impl Player {
         });
         */
         // /*
-        rigid_body.hitbox = Hitbox::Sphere(Sphere {
+        let hitbox = Hitbox::Sphere(Sphere {
             center: Vector::new3(0.0, -hitbox_height * 0.5 + eye_to_head.y, 0.0),
             radius,
         });
@@ -65,8 +66,10 @@ impl Player {
         rigid_body.position = camera.position;
         rigid_body.friction_coefficient = 0.0;
 
-        let rb_index = physics_engine.borrow().rigid_bodies.len();
-        physics_engine.borrow_mut().rigid_bodies.push(rigid_body);
+        scene.rigid_body_components.push(rigid_body);
+        
+        //let rb_index = physics_engine.borrow().rigid_bodies.len();
+        //physics_engine.borrow_mut().rigid_bodies.push(rigid_body);
         let cam_index = world.borrow().cameras.len();
         world.borrow_mut().add_camera(camera);
 
@@ -77,10 +80,7 @@ impl Player {
             skin_width,
             grounded: false,
             fly_speed: 1.0,
-            rigid_body_pointer: RigidBodyPointer {
-                physics_engine,
-                index: rb_index,
-            },
+            rigid_body_index: scene.rigid_body_components.len() - 1,
             camera_pointer: CameraPointer {
                 world,
                 index: cam_index

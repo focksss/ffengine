@@ -3,7 +3,7 @@ use std::sync::Arc;
 use mlua::{FromLua, Lua, UserData, UserDataFields, Value};
 use crate::math::Vector;
 use crate::scene::physics::player::{MovementMode, PlayerPointer};
-use crate::scene::physics::rigid_body::RigidBodyPointer;
+use crate::scripting::engine_api::scene_api::scene_api::RigidBodyPointer;
 use crate::scripting::lua_engine::RegisterToLua;
 
 impl RegisterToLua for MovementMode {
@@ -53,7 +53,7 @@ impl UserData for PlayerPointer {
         });
 
         fields.add_field_method_get("rigid_body", |lua, this| {
-            lua.create_userdata(this.physics_engine.borrow().players[this.index].rigid_body_pointer.clone())
+            lua.create_userdata(RigidBodyPointer { index: this.physics_engine.borrow().players[this.index].rigid_body_index })
         });
 
         fields.add_field_method_get("camera", |lua, this| {

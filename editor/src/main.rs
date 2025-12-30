@@ -83,12 +83,22 @@ fn main() { unsafe {
         */
 
         // /*
-        app.scene.borrow_mut().new_entity_from_model(0, "editor/resources/models/collisionTest/collisionTestNoWalls.gltf");
+        {
+            let scene = &mut *app.scene.borrow_mut();
 
-        app.scene.borrow_mut().new_entity_from_model(0, "editor/resources/models/demoBall/scene.gltf");
-        app.scene.borrow_mut().new_entity_from_model(0, "editor/resources/models/demoBall/scene.gltf");
-        app.scene.borrow_mut().new_entity_from_model(0, "editor/resources/models/grassblockGLTF/grassblock.gltf");
+            let ground = scene.new_entity_from_model(0, "editor/resources/models/collisionTest/collisionTestNoWalls.gltf");
 
+            let ball = scene.new_entity_from_model(0, "editor/resources/models/demoBall/scene.gltf");
+            scene.transforms[scene.entities[ball].transform].translation = Vector::new3(0.0, 5.0, 0.0);
+            scene.new_entity_from_model(0, "editor/resources/models/demoBall/scene.gltf");
+            scene.new_entity_from_model(0, "editor/resources/models/grassblockGLTF/grassblock.gltf");
+
+            scene.add_rigid_body_from_entity(ground, 0, true);
+
+            scene.add_rigid_body_from_entity(ball, 0, false);
+        }
+
+        /*
         physics_engine.add_all_nodes_from_model(&app.world.borrow(), 2, 0);
         physics_engine.add_all_nodes_from_model(&app.world.borrow(), 3, 0);
         //physics_engine.add_all_nodes_from_model(&app.world.borrow(), 4, 3);
@@ -107,7 +117,7 @@ fn main() { unsafe {
         physics_engine.rigid_bodies[2].set_mass(1.0);
         physics_engine.rigid_bodies[2].position = Vector::new3(0.5, 15.0, 0.5);
         physics_engine.rigid_bodies[2].restitution_coefficient = 1.0;
-        // */
+        */
 
         /*
         world.add_model(base, Model::new(&PathBuf::from("editor/resources/models/sphereScene/scene.gltf").to_str().unwrap()));
@@ -143,7 +153,7 @@ fn main() { unsafe {
         gui.load_from_file("editor\\resources\\gui\\editor.gui");
     }
     let player = Player::new(
-        app.physics_engine.clone(),
+        &mut *app.scene.borrow_mut(),
         app.world.clone(),
         Camera::new_perspective_rotation(
             Vector::new3(0.0, 2.0, 0.0),

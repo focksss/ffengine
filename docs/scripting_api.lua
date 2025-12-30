@@ -28,6 +28,7 @@ MovementMode = {
     ---@field get_entity fun(self:Scene, index:integer):Entity
     ---@field get_render_component fun(self:Scene, index:integer):RenderComponent
     ---@field get_transform fun(self:Scene, index:integer):Transform
+    ---@field get_rigid_body fun(self:Scene, index:integer):RigidBodyComponent
     ---@field reset_outlines fun(self:Scene):nil
     ---@field add_outlined fun(self:Scene, index:integer):nil
     ---@field load_model fun(self:Scene, parent_index:integer):nil
@@ -43,8 +44,14 @@ MovementMode = {
         ---@class RenderComponent
         ---@field index integer
 
+        ---@class RigidBodyComponent
+        ---@field index integer
+        ---@field owner_index integer
+        ---@field static boolean
+
         ---@class Entity
         ---@field transform_index integer
+        ---@field rigid_body_index integer
         ---@field children_indices integer[]
         ---@field name string
         ---@field render_component_indices integer[]

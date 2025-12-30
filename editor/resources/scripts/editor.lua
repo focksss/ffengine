@@ -138,6 +138,7 @@ end
 local expanded_entities = {}
 _G.node_to_entity_map = {}
 _G.node_to_render_components_map = {}
+_G.node_to_rigid_body_map = {}
 _G.node_to_transform_map = {}
 local darker = false
 local graph_scroll_pixels = 10
@@ -189,6 +190,7 @@ function build_graph()
 	_G.node_to_entity_map = {}
 	entity_to_node_map = {}
 	_G.node_to_render_components_map = {}
+	_G.node_to_rigid_body_map = {}
 	_G.node_to_transform_map = {}
 	if expanded_entities[0] == nil then
 		expanded_entities[0] = true
@@ -288,7 +290,9 @@ function build_graph_recursive(entity, entity_index, depth)
 	local has_children = #children > 0	
 
 	local render_components = entity.render_component_indices
+	local rigid_body_index = entity.rigid_body_index
 	local has_render_components = #render_components > 0
+	local has_rigid_body = rigid_body_index > -1
 
 	-- quad
 	local quad_index = 2
@@ -300,7 +304,7 @@ function build_graph_recursive(entity, entity_index, depth)
 		node:add_element_index(8)
 	end
 	--- expanded/collapsed visual image
-	if has_children or has_render_components then
+	if has_children or has_render_components or has_rigid_body then
 		if is_expanded then
 			button_node:add_element_index(5)
 		else
@@ -363,6 +367,48 @@ function build_graph_recursive(entity, entity_index, depth)
 		graph_height = graph_height + graph_entity_height
 		local render_components = entity.render_component_indices
 
+		--- rigid body
+		if has_rigid_body then
+			local rigid_body_node_index = get_next_graph_node_index()
+			_G.node_to_rigid_body_map[rigid_body_node_index] = rigid_body_index
+			local rigid_body_node = gui:get_node(rigid_body_node_index)
+			rigid_body_node:reset()
+			rigid_body_node:set_x("Pixels", (depth + 1) * graph_child_indent)
+			rigid_body_node:set_y("Pixels", graph_height)
+			rigid_body_node:set_width("Factor", 1.0)
+			rigid_body_node:set_height("Absolute", 20.0)
+			rigid_body_node:set_anchor_point(AnchorPoint.TopLeft)
+			rigid_body_node:add_element_index(quad_index)
+			rigid_body_node:add_hover_action("hover_cursor", 0)
+			rigid_body_node:add_left_up_action("open_rigid_body_editor", 3)
+			scene_graph_root_node:add_child_index(rigid_body_node_index)
+			--- rigid body icon
+			local rigid_body_icon_node_index = get_next_graph_node_index()
+			local rigid_body_icon_node = gui:get_node(rigid_body_icon_node_index)
+			rigid_body_icon_node:reset()
+			rigid_body_icon_node:set_x("Pixels", 0)
+			rigid_body_icon_node:set_width("Absolute", 20.0)
+			rigid_body_icon_node:set_height("Absolute", 20.0)
+			rigid_body_icon_node:add_element_index(11)
+			rigid_body_node:add_child_index(rigid_body_icon_node_index)
+			--- rigid body text node
+			local rigid_body_text_node_index = get_next_graph_node_index()
+			local rigid_body_text_node = gui:get_node(rigid_body_text_node_index)
+			rigid_body_text_node:reset()
+			rigid_body_text_node:set_x("Pixels", 20)
+			rigid_body_text_node:set_width("Factor", 1.0)
+			rigid_body_text_node:set_height("Factor", 1.0)
+			rigid_body_node:add_child_index(rigid_body_text_node_index)
+			--- rigid body text
+			local rigid_body_text_index = get_next_graph_text_index("Rigid Body")
+			local rigid_body_text = gui:get_text(rigid_body_text_index)
+			rigid_body_text.font_size = 15.0
+			rigid_body_text.auto_wrap_distance = 1000.0
+			rigid_body_text_node:add_element_index(rigid_body_text_index)
+			current_used_text_count = current_used_text_count + 1
+
+			graph_height = graph_height + graph_entity_height
+		end
 		--- render components
 		for i = 1, #render_components do
 			local render_component_index = render_components[i]
