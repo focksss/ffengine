@@ -64,6 +64,13 @@ impl UserData for Vector {
             Ok(this.rotate_by_euler(&rot))
         });
 
+        methods.add_method("quat_to_euler", |_, this, ()| {
+            Ok(this.quat_to_euler())
+        });
+        methods.add_method("euler_to_quat", |_, this, ()| {
+            Ok(this.euler_to_quat())
+        });
+
         methods.add_meta_method(MetaMethod::Add, |_, this, other: Vector| {
             Ok(*this + other)
         });

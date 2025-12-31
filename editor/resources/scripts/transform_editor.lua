@@ -4,6 +4,10 @@ function Awake()
     gui = Engine.renderer:gui(0)
 end
 
+local PI = 3.14159263
+local rad_to_deg = 180 / PI
+local deg_to_rad = PI / 180
+
 local time_since_text_update = 0
 function update_translation_x_display()
 	time_since_text_update = time_since_text_update + dt
@@ -36,7 +40,9 @@ function update_rotation_x_display()
 	time_since_text_update = time_since_text_update + dt
 
 	if time_since_text_update > 0.1 then
-        gui.ActiveNode:get_text_at(0):update_text(string.format("%.3f", Engine.scene:get_transform(_G.selected_transform).rotation.x))
+        gui.ActiveNode:get_text_at(0):update_text(string.format("%.3f", 
+            Engine.scene:get_transform(_G.selected_transform).rotation:quat_to_euler().x * rad_to_deg
+        ))
         time_since_text_update = 0
         frame_count = 0
 	end
@@ -45,7 +51,9 @@ function update_rotation_y_display()
 	time_since_text_update = time_since_text_update + dt
 
 	if time_since_text_update > 0.1 then
-        gui.ActiveNode:get_text_at(0):update_text(string.format("%.3f", Engine.scene:get_transform(_G.selected_transform).rotation.y))
+        gui.ActiveNode:get_text_at(0):update_text(string.format("%.3f", 
+            Engine.scene:get_transform(_G.selected_transform).rotation:quat_to_euler().y * rad_to_deg
+        ))
         time_since_text_update = 0
         frame_count = 0
 	end
@@ -54,7 +62,9 @@ function update_rotation_z_display()
 	time_since_text_update = time_since_text_update + dt
 
 	if time_since_text_update > 0.1 then
-        gui.ActiveNode:get_text_at(0):update_text(string.format("%.3f", Engine.scene:get_transform(_G.selected_transform).rotation.z))
+        gui.ActiveNode:get_text_at(0):update_text(string.format("%.3f", 
+            Engine.scene:get_transform(_G.selected_transform).rotation:quat_to_euler().z * rad_to_deg
+        ))
         time_since_text_update = 0
         frame_count = 0
 	end
@@ -132,7 +142,7 @@ function begin_drag()
     accum_delta = Vector.new()
     last_cursor_position = Engine.client.cursor_position
     original_translation = Engine.scene:get_transform(_G.selected_transform).translation
-    original_rotation = Engine.scene:get_transform(_G.selected_transform).rotation
+    original_rotation = Engine.scene:get_transform(_G.selected_transform).rotation:quat_to_euler() * rad_to_deg
     original_scale = Engine.scene:get_transform(_G.selected_transform).scale
 end
 function update_drag()
@@ -188,23 +198,23 @@ function update_drag()
             original_translation.z + accum_delta.x * 0.005
         )
     elseif drag_mode == "rx" then
-        transform.rotation = Vector.new3(
-            original_rotation.x + accum_delta.x * 0.005,
-            transform.rotation.y,
-            transform.rotation.z
-        )
+        transform.rotation = (Vector.new3(
+            original_rotation.x + accum_delta.x * 0.1,
+            original_rotation.y,
+            original_rotation.z
+        ) * deg_to_rad):euler_to_quat()
     elseif drag_mode == "ry" then
-        transform.rotation = Vector.new3(
-            transform.rotation.x,
-            original_rotation.y + accum_delta.x * 0.005,
-            transform.rotation.z
-        )
+        transform.rotation = (Vector.new3(
+            original_rotation.x,
+            original_rotation.y + accum_delta.x * 0.1,
+            original_rotation.z
+        ) * deg_to_rad):euler_to_quat()
     elseif drag_mode == "rz" then
-        transform.rotation = Vector.new3(
-            transform.rotation.x,
-            transform.rotation.y,
-            original_rotation.z + accum_delta.x * 0.005
-        )
+        transform.rotation = (Vector.new3(
+            original_rotation.x,
+            original_rotation.y,
+            original_rotation.z + accum_delta.x * 0.1
+        ) * deg_to_rad):euler_to_quat()
     elseif drag_mode == "sx" then
         transform.scale = Vector.new3(
             original_scale.x + accum_delta.x * 0.005,

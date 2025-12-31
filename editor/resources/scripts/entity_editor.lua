@@ -110,7 +110,12 @@ function outline_entity(index)
     local render_component_indices = entity.render_component_indices
     for i = 1, #render_component_indices do
         local render_component_index = render_component_indices[i]
-        Engine.scene:add_outlined(render_component_index);
+        Engine.scene:add_outlined_component(render_component_index);
+    end
+
+    local rigid_body_index = entity.rigid_body_index
+    if rigid_body_index > -1 then
+        Engine.scene:add_outlined_body(rigid_body_index)
     end
 
     local children_indices = entity.children_indices
@@ -140,7 +145,7 @@ end
 function render_component_editor(component_index) 
 
 	local selected_render_component = Engine.scene:get_render_component(component_index).index
-    Engine.scene:add_outlined(selected_render_component);
+    Engine.scene:add_outlined_component(selected_render_component);
 
     entity_editor_root_node:clear_children()
     

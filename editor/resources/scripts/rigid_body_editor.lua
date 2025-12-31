@@ -15,6 +15,33 @@ function update_static_display()
         time_since_text_update = 0
 	end
 end
+function update_velocity_x_display()
+    time_since_text_update = time_since_text_update + dt
+
+	if time_since_text_update > 0.1 then
+        gui.ActiveNode:get_text_at(0):update_text(string.format("%.3f", Engine.scene:get_rigid_body(_G.selected_rigid_body).velocity.x))
+        time_since_text_update = 0
+        frame_count = 0
+	end
+end
+function update_velocity_y_display()
+    time_since_text_update = time_since_text_update + dt
+
+	if time_since_text_update > 0.1 then
+        gui.ActiveNode:get_text_at(0):update_text(string.format("%.3f", Engine.scene:get_rigid_body(_G.selected_rigid_body).velocity.y))
+        time_since_text_update = 0
+        frame_count = 0
+	end
+end
+function update_velocity_z_display()
+    time_since_text_update = time_since_text_update + dt
+
+	if time_since_text_update > 0.1 then
+        gui.ActiveNode:get_text_at(0):update_text(string.format("%.3f", Engine.scene:get_rigid_body(_G.selected_rigid_body).velocity.z))
+        time_since_text_update = 0
+        frame_count = 0
+	end
+end
 
 function flip_static()
     local rigid_body = Engine.scene:get_rigid_body(_G.selected_rigid_body)

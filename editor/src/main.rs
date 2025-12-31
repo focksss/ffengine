@@ -38,7 +38,7 @@ fn main() { unsafe {
             let mut scene = app.scene.borrow_mut();
             scene.new_entity_from_model(0, "editor/resources/models/ffocks/untitled.gltf");
             let transform_index = scene.entities[1].transform;
-            scene.transforms[transform_index].scale = Vector::fill(0.01);
+            scene.transforms[transform_index].local_scale = Vector::fill(0.01);
             //app.scene.borrow_mut().new_entity_from_model(0, "C:\\Graphics\\assets\\rivals\\luna\\gltf\\luna.gltf");
             
             let anim = &mut scene.animation_components[0];
@@ -89,9 +89,14 @@ fn main() { unsafe {
             let ground = scene.new_entity_from_model(0, "editor/resources/models/collisionTest/collisionTestNoWalls.gltf");
 
             let ball = scene.new_entity_from_model(0, "editor/resources/models/demoBall/scene.gltf");
-            scene.transforms[scene.entities[ball].transform].translation = Vector::new3(0.0, 5.0, 0.0);
+
+            scene.transforms[scene.entities[ball].transform].local_translation = Vector::new3(0.0, 10.0, 0.0);
             scene.new_entity_from_model(0, "editor/resources/models/demoBall/scene.gltf");
-            scene.new_entity_from_model(0, "editor/resources/models/grassblockGLTF/grassblock.gltf");
+            let grass_block = scene.new_entity_from_model(0, "editor/resources/models/grassblockGLTF/grassblock.gltf");
+
+            let initial_update_command_buffer = base.context.begin_single_time_commands(1);
+            scene.update_scene(initial_update_command_buffer[0], 0, 0.0);
+            base.context.end_single_time_commands(initial_update_command_buffer);
 
             scene.add_rigid_body_from_entity(ground, 0, true);
 

@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::mem;
 use crate::offset_of;
 use ash::vk;
-use ash::vk::{DescriptorType, Extent2D, Format, ShaderStageFlags};
+use ash::vk::{DescriptorType, Extent2D, Format, PipelineInputAssemblyStateCreateInfo, ShaderStageFlags};
 use rand::{rng, Rng};
 use std::path::PathBuf;
 use std::slice;
@@ -51,6 +51,8 @@ pub struct SceneRenderer {
     pub nearest_sampler: vk::Sampler,
     pub ssao_kernal: [[f32; 4]; SSAO_KERNAL_SIZE],
     pub ssao_noise_texture: Texture,
+    pub hitbox_display_vertices_buffer: (vk::Buffer, vk::DeviceMemory),
+    pub hitbox_display_indices_buffer: (vk::Buffer, vk::DeviceMemory),
 }
 impl SceneRenderer {
     pub unsafe fn new(context: &Arc<Context>, world: &World, viewport: vk::Viewport) -> SceneRenderer { unsafe {
@@ -372,6 +374,40 @@ impl SceneRenderer {
         }
         //</editor-fold>
 
+        //<editor-fold desc = "hitbox vis buffers">
+        let mut indices: Vec<[u32; 2]> = Vec::new();
+        let mut vertices: Vec<[f32; 3]> = Vec::new();
+
+        //cube
+        for x in [-1.0,1.0] {
+            for y in [-1.0,1.0] {
+                for z in [-1.0,1.0] {
+                    vertices.push([x, y, z]);
+                }
+            }
+        }
+        let edges = [
+            [0, 1], [1, 3], [3, 2], [2, 0], // left face
+            [4, 5], [5, 7], [7, 6], [6, 4], // right face
+            [0, 4], [1, 5], [2, 6], [3, 7], // connecting edges
+        ];
+        for edge in edges {
+            indices.push(edge);
+        }
+        let hitbox_display_vertices_buffer = context.create_device_and_staging_buffer(
+            0,
+            &vertices,
+            vk::BufferUsageFlags::VERTEX_BUFFER,
+            true, false, true
+        ).0;
+        let hitbox_display_indices_buffer = context.create_device_and_staging_buffer(
+            0,
+            &indices,
+            vk::BufferUsageFlags::INDEX_BUFFER,
+            true, false, true
+        ).0;
+        //</editor-fold>
+
         SceneRenderer {
             context: context.clone(),
 
@@ -398,6 +434,9 @@ impl SceneRenderer {
             nearest_sampler,
             ssao_kernal,
             ssao_noise_texture,
+
+            hitbox_display_indices_buffer,
+            hitbox_display_vertices_buffer,
         }
     } }
     pub unsafe fn create_rendering_objects(
@@ -954,11 +993,33 @@ impl SceneRenderer {
                 ..Default::default()
             };
 
+            let hitbox_vertex_input_binding_descriptions = [vk::VertexInputBindingDescription {
+                    binding: 0,
+                    stride: 12,
+                    input_rate: vk::VertexInputRate::VERTEX,
+                }];
+            let hitbox_vertex_input_attribute_descriptions = [vk::VertexInputAttributeDescription {
+                    location: 0,
+                    binding: 0,
+                    format: Format::R32G32B32_SFLOAT,
+                    offset: 0,
+                }];
+            let hitbox_vertex_input_state_info = vk::PipelineVertexInputStateCreateInfo::default()
+                .vertex_attribute_descriptions(&hitbox_vertex_input_attribute_descriptions)
+                .vertex_binding_descriptions(&hitbox_vertex_input_binding_descriptions);
+            let hitbox_rasterization_info = vk::PipelineRasterizationStateCreateInfo {
+                front_face: vk::FrontFace::COUNTER_CLOCKWISE,
+                cull_mode: vk::CullModeFlags::BACK,
+                line_width: 1.0,
+                polygon_mode: vk::PolygonMode::FILL,
+                ..Default::default()
+            };
+
             let forward_renderpass_create_info = { RenderpassCreateInfo::new(context)
                 .pass_create_info(forward_pass_create_info)
                 .resolution(resolution)
                 .descriptor_set_create_info(forward_descriptor_set_create_info)
-                .add_push_constant_range(camera_push_constant_range_vertex)
+                .add_push_constant_range(camera_push_constant_range)
                 .add_pipeline_create_info(PipelineCreateInfo::new()
                     .pipeline_vertex_input_state(geometry_vertex_input_state_info)
                     .pipeline_rasterization_state(rasterization_info)
@@ -970,6 +1031,16 @@ impl SceneRenderer {
                     .pipeline_depth_stencil_state(skybox_depth_state_info)
                     .vertex_shader_uri(String::from("skybox\\skybox.vert.spv"))
                     .fragment_shader_uri(String::from("skybox\\skybox.frag.spv")))
+                .add_pipeline_create_info(PipelineCreateInfo::new()
+                    .pipeline_input_assembly_state(PipelineInputAssemblyStateCreateInfo {
+                        topology: vk::PrimitiveTopology::LINE_LIST,
+                        primitive_restart_enable: vk::FALSE,
+                        ..Default::default()
+                    })
+                    .pipeline_vertex_input_state(hitbox_vertex_input_state_info)
+                    .pipeline_rasterization_state(hitbox_rasterization_info)
+                    .vertex_shader_uri(String::from("hitbox_display\\hitbox.vert.spv"))
+                    .fragment_shader_uri(String::from("hitbox_display\\hitbox.frag.spv")))
             };
 
             Renderpass::new(forward_renderpass_create_info)
@@ -1154,7 +1225,7 @@ impl SceneRenderer {
                 ));
             }),
             Some(|| {
-                scene.draw(self, current_frame, Some(&player_camera.frustum), DrawMode::Deferred);
+                scene.draw(self, current_frame, Some(&player_camera), DrawMode::Deferred);
             }),
             None,
             true
@@ -1165,7 +1236,7 @@ impl SceneRenderer {
             frame_command_buffer,
             None::<fn()>,
             Some(|| {
-                scene.draw(self, current_frame, Some(&player_camera.frustum), DrawMode::All);
+                scene.draw(self, current_frame, None, DrawMode::All);
             }),
             None,
             true
@@ -1220,8 +1291,8 @@ impl SceneRenderer {
             Some(|| {
                 device.cmd_push_constants(
                     frame_command_buffer,
-                    self.geometry_renderpass.pipeline_layout,
-                    ShaderStageFlags::VERTEX,
+                    self.opaque_forward_renderpass.pipeline_layout,
+                    ShaderStageFlags::ALL_GRAPHICS,
                     0,
                     slice::from_raw_parts(
                         &camera_constants as *const CameraMatrixUniformData as *const u8,
@@ -1237,8 +1308,9 @@ impl SceneRenderer {
                 );
                 device.cmd_draw(frame_command_buffer, 36, 1, 0, 0);
 
-                scene.draw(self, current_frame, Some(&player_camera.frustum), DrawMode::Forward);
-                scene.draw(self, current_frame, Some(&player_camera.frustum), DrawMode::Outlined);
+                scene.draw(self, current_frame, Some(&player_camera), DrawMode::Forward);
+                scene.draw(self, current_frame, Some(&player_camera), DrawMode::Outlined);
+                scene.draw(self, current_frame, Some(&player_camera), DrawMode::Hitboxes);
             }),
             None,
             false
@@ -1289,14 +1361,19 @@ impl SceneRenderer {
         self.context.device.destroy_sampler(self.null_tex_sampler, None);
 
         self.null_texture.destroy(&self.context);
+
+        self.context.device.destroy_buffer(self.hitbox_display_indices_buffer.0, None);
+        self.context.device.destroy_buffer(self.hitbox_display_vertices_buffer.0, None);
+        self.context.device.free_memory(self.hitbox_display_indices_buffer.1, None);
+        self.context.device.free_memory(self.hitbox_display_vertices_buffer.1, None);
     } }
 }
 
 #[derive(Clone, Debug, Copy)]
 #[repr(C)]
-struct CameraMatrixUniformData {
-    view: [f32; 16],
-    projection: [f32; 16],
+pub(crate) struct CameraMatrixUniformData {
+    pub(crate) view: [f32; 16],
+    pub(crate) projection: [f32; 16],
 }
 #[derive(Clone, Debug, Copy)]
 #[repr(C)]

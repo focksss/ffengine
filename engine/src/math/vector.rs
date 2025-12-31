@@ -144,10 +144,35 @@ impl Vector {
             cr * cp * cy + sr * sp * sy
         )
     }
+    pub fn quat_to_euler(&self) -> Vector {
+        let qx = self.x;
+        let qy = self.y;
+        let qz = self.z;
+        let qw = self.w;
+
+        let sinr_cosp = 2.0 * (qw * qx + qy * qz);
+        let cosr_cosp = 1.0 - 2.0 * (qx * qx + qy * qy);
+        let roll = sinr_cosp.atan2(cosr_cosp);
+
+        let sinp = 2.0 * (qw * qy - qz * qx);
+        let pitch = if sinp.abs() >= 1.0 {
+            sinp.signum() * std::f32::consts::FRAC_PI_2
+        } else {
+            sinp.asin()
+        };
+
+        let siny_cosp = 2.0 * (qw * qz + qx * qy);
+        let cosy_cosp = 1.0 - 2.0 * (qy * qy + qz * qz);
+        let yaw = siny_cosp.atan2(cosy_cosp);
+
+        Vector::new3(roll, pitch, yaw)
+    }
 
     pub fn conjugate(&self) -> Vector {
         Vector::new4(-self.x, -self.y, -self.z, self.w)
     }
+
+    pub fn inverse_quat(&self) -> Vector { self.conjugate() / self.dot4(self) }
 
     pub fn unitize_w(mut self) -> Self {
         self.w = 1.0;

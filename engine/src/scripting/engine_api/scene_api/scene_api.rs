@@ -63,11 +63,17 @@ impl UserData for SceneRef {
         methods.add_method("reset_outlines", |lua, this, ()| {
             with_scene_mut!(lua => scene);
             scene.outlined_components.clear();
+            scene.outlined_bodies.clear();
             Ok(())
         });
-        methods.add_method("add_outlined", |lua, this, index: usize| {
+        methods.add_method("add_outlined_component", |lua, this, index: usize| {
             with_scene_mut!(lua => scene);
             scene.outlined_components.push(index);
+            Ok(())
+        });
+        methods.add_method("add_outlined_body", |lua, this, index: usize| {
+            with_scene_mut!(lua => scene);
+            scene.outlined_bodies.push(index);
             Ok(())
         });
     }
@@ -163,15 +169,15 @@ impl UserData for TransformPointer {
 
         fields.add_field_method_get("translation", |lua, this|{
             with_scene!(lua => scene);
-            Ok(scene.transforms[this.index].translation)
+            Ok(scene.transforms[this.index].local_translation)
         });
         fields.add_field_method_get("rotation", |lua, this|{
             with_scene!(lua => scene);
-            Ok(scene.transforms[this.index].rotation)
+            Ok(scene.transforms[this.index].local_rotation)
         });
         fields.add_field_method_get("scale", |lua, this|{
             with_scene!(lua => scene);
-            Ok(scene.transforms[this.index].scale)
+            Ok(scene.transforms[this.index].local_scale)
         });
 
         fields.add_field_method_set("translation", |lua, this, vector: Vector|{
@@ -179,21 +185,21 @@ impl UserData for TransformPointer {
             // one level of the hierarchy up, for safety and to make this work properly for editing transforms of render components (non-entity components)
             let owner = scene.entities[scene.transforms[this.index].owner].parent;
             scene.unupdated_entities.push(owner);
-            Ok(scene.transforms[this.index].translation = vector)
+            Ok(scene.transforms[this.index].local_translation = vector)
         });
         fields.add_field_method_set("rotation", |lua, this, vector: Vector|{
             with_scene_mut!(lua => scene);
             // one level of the hierarchy up, for safety and to make this work properly for editing transforms of render components (non-entity components)
             let owner = scene.entities[scene.transforms[this.index].owner].parent;
             scene.unupdated_entities.push(owner);
-            Ok(scene.transforms[this.index].rotation = vector)
+            Ok(scene.transforms[this.index].local_rotation = vector)
         });
         fields.add_field_method_set("scale", |lua, this, vector: Vector|{
             with_scene_mut!(lua => scene);
             // one level of the hierarchy up, for safety and to make this work properly for editing transforms of render components (non-entity components)
             let owner = scene.entities[scene.transforms[this.index].owner].parent;
             scene.unupdated_entities.push(owner);
-            Ok(scene.transforms[this.index].scale = vector)
+            Ok(scene.transforms[this.index].local_scale = vector)
         });
     }
 }
@@ -234,21 +240,14 @@ impl UserData for RigidBodyPointer {
             let hitbox = unsafe {
                 &*(&scene.hitbox_components[hitbox_index].hitbox as *const _)
             };
-
+            let transforms = unsafe {
+                &*(&scene.transforms as *const _)
+            };
+            
             let rigid_body = &mut scene.rigid_body_components[this.index];
 
-            rigid_body.set_static(hitbox, val);
-            
-            Ok(())
-        });
+            rigid_body.set_static(hitbox, transforms, val);
 
-        fields.add_field_method_get("position", |lua, this| {
-            with_scene!(lua => scene);
-            Ok(scene.rigid_body_components[this.index].position)
-        });
-        fields.add_field_method_set("position", |lua, this, val: Value| {
-            with_scene_mut!(lua => scene);
-            scene.rigid_body_components[this.index].position = Vector::from_lua(val, lua)?;
             Ok(())
         });
 

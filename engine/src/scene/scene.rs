@@ -1,23 +1,25 @@
 use std::cell::RefCell;
 use std::ops::Add;
+use std::slice;
 use std::sync::Arc;
 use std::time::SystemTime;
 use ash::{vk, Device};
-use ash::vk::CommandBuffer;
+use ash::vk::{CommandBuffer, ShaderStageFlags};
 use crate::engine::get_command_buffer;
 use crate::math::matrix::Matrix;
 use crate::math::Vector;
 use crate::render::render::{Renderer, MAX_FRAMES_IN_FLIGHT};
-use crate::render::scene_renderer::SceneRenderer;
+use crate::render::scene_renderer::{CameraMatrixUniformData, SceneRenderer};
 use crate::render::vulkan_base::{copy_buffer_synchronous, copy_data_to_memory, Context, VkBase};
 use crate::scene::physics::hitboxes::bounding_box::BoundingBox;
 use crate::scene::physics::hitboxes::capsule::Capsule;
 use crate::scene::physics::hitboxes::convex_hull::ConvexHull;
 use crate::scene::physics::hitboxes::hitbox::{Hitbox, HitboxType};
+use crate::scene::physics::hitboxes::hitbox::HitboxType::OBB;
 use crate::scene::physics::hitboxes::mesh::MeshCollider;
 use crate::scene::physics::hitboxes::sphere::Sphere;
 use crate::scene::physics::physics_engine::{AxisType, ContactInformation, ContactPoint, PhysicsEngine};
-use crate::scene::world::camera::Frustum;
+use crate::scene::world::camera::{Camera, Frustum};
 use crate::scene::world::world::{World};
 
 
@@ -44,6 +46,7 @@ pub struct Scene {
     pub light_components: Vec<LightComponent>,
 
     pub outlined_components: Vec<usize>,
+    pub outlined_bodies: Vec<usize>,
 
     pub renderer: Arc<RefCell<Renderer>>,
     pub world: Arc<RefCell<World>>,
@@ -69,6 +72,7 @@ impl Scene {
             camera_components: Vec::new(),
             light_components: Vec::new(),
             outlined_components: Vec::new(),
+            outlined_bodies: Vec::new(),
             renderer,
             world,
             physics_engine,
@@ -159,18 +163,18 @@ impl Scene {
             let node_transform_index = self.transforms.len();
             self.transforms.push(Transform {
                 owner: node_entity_index,
-                translation: node.translation,
-                rotation: node.rotation,
-                scale: node.scale,
+                local_translation: node.translation,
+                local_rotation: node.rotation,
+                local_scale: node.scale,
                 ..Default::default()
             });
 
             let node_anim_transform_index = self.transforms.len();
             self.transforms.push(Transform {
                 owner: node_entity_index,
-                translation: node.translation,
-                rotation: node.rotation,
-                scale: node.scale,
+                local_translation: node.translation,
+                local_rotation: node.rotation,
+                local_scale: node.scale,
                 ..Default::default()
             });
 
@@ -228,8 +232,6 @@ impl Scene {
             let mut body = RigidBodyComponent::default();
             body.owner = entity_index;
             body.hitbox = self.hitbox_components.len();
-            body.position = transform * Vector::new4(0.0, 0.0, 0.0, 1.0);
-            body.orientation = transform.extract_quaternion();
             body.stored_hitbox_scale = scale;
 
             self.rigid_body_components.push(body);
@@ -252,8 +254,8 @@ impl Scene {
                 _ => unreachable!()
             }});
 
-            body.set_static(&self.hitbox_components[body.hitbox].hitbox, is_static);
-            body.set_mass(&self.hitbox_components[body.hitbox].hitbox, 1.0);
+            body.set_static(&self.hitbox_components[body.hitbox].hitbox, &self.transforms, is_static);
+            body.set_mass(&self.hitbox_components[body.hitbox].hitbox, &self.transforms, 1.0);
         }
         for child_index in entity.children_indices.clone() {
             self.add_rigid_body_from_entity(child_index, hitbox_type, is_static);
@@ -267,11 +269,12 @@ impl Scene {
             if body.is_static {
                 continue;
             } else {
-                body.apply_impulse(gravity * delta_time * body.mass, body.get_center_of_mass_world_space());
+                body.apply_impulse(gravity * delta_time * body.mass, body.get_center_of_mass_world_space(&self.transforms), &self.transforms);
             }
         }
         // collision detection
         let num_bodies = self.rigid_body_components.len();
+        //println!("Number of bodies: {}", num_bodies);
         let mut contacts = Vec::new();
         for i in 0..num_bodies {
             for j in i + 1..num_bodies {
@@ -283,7 +286,7 @@ impl Scene {
                     continue;
                 }
 
-                if let Some(contact) = body_a.will_collide_with(&self.hitbox_components, body_b, delta_time) {
+                if let Some(contact) = body_a.will_collide_with(&self.hitbox_components, body_b, delta_time, &self.transforms) {
                     if !contact.contact_points.is_empty() {
                         contacts.push((contact, (i, j)));
                     }
@@ -300,7 +303,7 @@ impl Scene {
 
             for body in &mut self.rigid_body_components {
                 if !body.is_static {
-                    body.update(dt);
+                    body.update(dt, &mut self.transforms, &self.entities);
                 }
             }
 
@@ -319,13 +322,13 @@ impl Scene {
             let im_a = body_a.inv_mass; let im_b = body_b.inv_mass;
             let s_im = im_a + im_b;
             let restitution = body_a.restitution_coefficient * body_b.restitution_coefficient;
-            let inv_inertia_a = body_a.get_inverse_inertia_tensor_world_space();
-            let inv_inertia_b = body_b.get_inverse_inertia_tensor_world_space();
+            let inv_inertia_a = body_a.get_inverse_inertia_tensor_world_space(&self.transforms);
+            let inv_inertia_b = body_b.get_inverse_inertia_tensor_world_space(&self.transforms);
 
             let pt_on_a = collision.contact_points[0].point_on_a;
             let pt_on_b = collision.contact_points[0].point_on_b;
-            let ra = pt_on_a - body_a.get_center_of_mass_world_space();
-            let rb = pt_on_b - body_b.get_center_of_mass_world_space();
+            let ra = pt_on_a - body_a.get_center_of_mass_world_space(&self.transforms);
+            let rb = pt_on_b - body_b.get_center_of_mass_world_space(&self.transforms);
 
             let angular_j_a = (inv_inertia_a * ra.cross(&normal)).cross(&ra);
             let angular_j_b = (inv_inertia_b * rb.cross(&normal)).cross(&rb);
@@ -337,8 +340,8 @@ impl Scene {
             let v_diff = vel_a - vel_b;
 
             let j = normal * (1.0 + restitution) * v_diff.dot3(&normal) / (s_im + angular_factor);
-            body_a.apply_impulse(-j, pt_on_a);
-            body_b.apply_impulse(j, pt_on_b);
+            body_a.apply_impulse(-j, pt_on_a, &self.transforms);
+            body_b.apply_impulse(j, pt_on_b, &self.transforms);
 
             let friction = body_a.friction_coefficient * body_b.friction_coefficient;
             let velocity_normal = normal * normal.dot3(&v_diff);
@@ -352,39 +355,38 @@ impl Scene {
             let mass_reduc = 1.0 / (s_im + inv_inertia);
             let friction_impulse = velocity_tangent * mass_reduc * friction;
 
-            body_a.apply_impulse(-friction_impulse, pt_on_a);
-            body_b.apply_impulse(friction_impulse, pt_on_b);
+            body_a.apply_impulse(-friction_impulse, pt_on_a, &self.transforms);
+            body_b.apply_impulse(friction_impulse, pt_on_b, &self.transforms);
 
-            if collision.time_of_impact == 0.0 {
-                let t_a = im_a / s_im;
-                let t_b = im_b / s_im;
-
-                let ds = pt_on_b - pt_on_a;
-                body_a.position += ds * t_a;
-                body_b.position -= ds * t_b;
-            }
+            // if collision.time_of_impact == 0.0 {
+            //     let t_a = im_a / s_im;
+            //     let t_b = im_b / s_im;
+            //
+            //     let ds = pt_on_b - pt_on_a;
+            //     body_a.position += ds * t_a;
+            //     body_b.position -= ds * t_b;
+            // }
             accum_time += dt;
         }
         // apply velocity
         for body in &mut self.rigid_body_components {
             if !body.is_static {
-                body.update(delta_time - accum_time);
+                body.update(delta_time - accum_time, &mut self.transforms, &self.entities);
                 let entity_index = body.owner;
-                let transform = &mut self.transforms[self.entities[entity_index].transform];
-                transform.translation = body.position;
-                transform.rotation = body.orientation;
                 self.unupdated_entities.push(entity_index);
             }
         }
     }
-    pub unsafe fn update_scene(&mut self, frame: usize, delta_time: f32) {
+
+    pub unsafe fn update_scene(&mut self, command_buffer: CommandBuffer, frame: usize, delta_time: f32) {
+        if self.running {
+            self.update_physics_objects(delta_time);
+        }
         if frame == 0 {
             if self.running {
                 for animation in self.animation_components.iter_mut() {
                     animation.update(&mut self.entities, &mut self.transforms, &mut self.unupdated_entities)
                 }
-
-                self.update_physics_objects(delta_time);
             }
 
             let mut dirty_primitive_instance_data: Vec<Instance> = Vec::new();
@@ -392,13 +394,13 @@ impl Scene {
                 //for entity_index in &vec![1usize] {
                 let parent_index = self.entities[*entity_index].parent;
                 let parent_transform = if *entity_index == 0 {
-                    Matrix::new()
+                    0
                 } else {
-                    self.transforms[self.entities[parent_index].transform].world.clone()
+                    self.entities[parent_index].transform
                 };
                 self.update_entity(
                     frame,
-                    &parent_transform,
+                    parent_transform,
                     *entity_index,
                     &mut dirty_primitive_instance_data
                 )
@@ -435,7 +437,6 @@ impl Scene {
 
                 copy_data_to_memory(world.joints_staging_buffer.2, &joints);
 
-                let command_buffer = get_command_buffer();
                 if !copy_regions.is_empty() {
                     for frame in 0..MAX_FRAMES_IN_FLIGHT {
                         copy_buffer_synchronous(
@@ -456,100 +457,174 @@ impl Scene {
     pub fn update_entity(
         &mut self,
         frame: usize,
-        parent_world_transform: &Matrix,
+        parent_transform: usize,
         entity_index: usize,
         dirty_primitive_instance_data: &mut Vec<Instance>
     ) {
-        let entity = &self.entities[entity_index];
-        let entity_local_transform = {
-            let entity_transform_component = &mut self.transforms[entity.transform];
-            entity_transform_component.update_matrix();
-            &entity_transform_component.matrix
-        };
+        let (transform, children_indices) = {
+            let entity = &self.entities[entity_index];
 
-        let entity_world_transform = if entity.animated_transform.1 {
-            let animated_transform = &mut self.transforms[entity.animated_transform.0];
-            animated_transform.update_matrix();
-            parent_world_transform * animated_transform.matrix
-        } else {
-            parent_world_transform * entity_local_transform
-        };
-        self.transforms[entity.transform].world = entity_world_transform;
+            let entity_world_transform = if entity.transform == parent_transform {
+                let entity_transform = &mut self.transforms[entity.transform];
 
-        for (i, render_object_index) in entity.render_objects.iter().enumerate() {
-            let render_component = &self.render_components[*render_object_index];
+                entity_transform.update_local_matrix();
 
-            self.transforms[render_component.transform].update_matrix();
+                entity_transform.local
+            } else {
+                if entity.animated_transform.1 {
+                    let [parent_transform, entity_transform, animated_transform] = self.transforms
+                        .get_disjoint_mut(
+                            [parent_transform, entity.transform, entity.animated_transform.0]
+                        ).unwrap();
 
-            let render_component_transform = &mut self.transforms[render_component.transform];
-            render_component_transform.world = entity_world_transform * render_component_transform.matrix;
+                    animated_transform.update_local_matrix();
+                    entity_transform.update_world_matrix(parent_transform, Some(animated_transform));
 
-            self.dirty_render_components.push(*render_object_index);
-            dirty_primitive_instance_data.push(
-                Instance {
-                    matrix: render_component_transform.world.data,
-                    indices: [
-                        render_component.material_index as i32,
-                        render_component.skin_index.map_or(-1, |i| i),
-                        entity_index as i32,
-                        i as i32
-                    ]
+                    entity_transform.world
+                } else {
+                    let [parent_transform, entity_transform] = self.transforms
+                        .get_disjoint_mut(
+                            [parent_transform, entity.transform]
+                        ).unwrap();
+
+                    entity_transform.update_local_matrix();
+                    entity_transform.update_world_matrix(parent_transform, None);
+
+                    entity_transform.world
                 }
-            );
-        }
+            };
 
-        for child in entity.children_indices.clone().iter() {
-            self.update_entity(frame, &entity_world_transform, *child, dirty_primitive_instance_data)
+            for (i, render_object_index) in entity.render_objects.iter().enumerate() {
+                let render_component = &self.render_components[*render_object_index];
+
+                self.transforms[render_component.transform].update_local_matrix();
+
+                let render_component_transform = &mut self.transforms[render_component.transform];
+                render_component_transform.world = entity_world_transform * render_component_transform.local;
+
+                self.dirty_render_components.push(*render_object_index);
+                dirty_primitive_instance_data.push(
+                    Instance {
+                        matrix: entity_world_transform.data,
+                        indices: [
+                            render_component.material_index as i32,
+                            render_component.skin_index.map_or(-1, |i| i),
+                            entity_index as i32,
+                            i as i32
+                        ]
+                    }
+                );
+            }
+
+            (entity.transform, entity.children_indices.clone())
+        };
+
+        for child in children_indices {
+            self.update_entity(frame, transform, child, dirty_primitive_instance_data)
         }
     }
 
-    pub unsafe fn draw(&self, scene_renderer: &SceneRenderer, frame: usize, frustum: Option<&Frustum>, draw_mode: DrawMode) {
+    pub unsafe fn draw(&self, scene_renderer: &SceneRenderer, frame: usize, camera: Option<&Camera>, draw_mode: DrawMode) {
         let command_buffer = get_command_buffer();
         let world = &self.world.borrow();
         unsafe {
-            self.context.device.cmd_bind_vertex_buffers(
-                command_buffer,
-                1,
-                &[world.instance_buffers[frame].0],
-                &[0],
-            );
-            self.context.device.cmd_bind_vertex_buffers(
-                command_buffer,
-                0,
-                &[world.vertex_buffer.0],
-                &[0],
-            );
-            self.context.device.cmd_bind_index_buffer(
-                command_buffer,
-                world.index_buffer.0,
-                0,
-                vk::IndexType::UINT32,
-            );
-
-            let (do_deferred, do_forward, do_outline) = match draw_mode {
-                DrawMode::Deferred => (true, false, false),
-                DrawMode::Forward => (false, true, false),
-                DrawMode::All => (true, true, false),
-                DrawMode::Outlined => (false, false, true),
+            let (do_deferred, do_forward, do_outline, do_hitboxes) = match draw_mode {
+                DrawMode::Deferred => (true, false, false, false),
+                DrawMode::Forward => (false, true, false, false),
+                DrawMode::All => (true, true, false, false),
+                DrawMode::Outlined => (false, false, true, false),
+                DrawMode::Hitboxes => (false, false, false, true),
             };
 
-            if do_outline {
+            if do_hitboxes {
+                self.context.device.cmd_bind_vertex_buffers(
+                    command_buffer,
+                    0,
+                    &[scene_renderer.hitbox_display_vertices_buffer.0],
+                    &[0],
+                );
+                self.context.device.cmd_bind_index_buffer(
+                    command_buffer,
+                    scene_renderer.hitbox_display_indices_buffer.0,
+                    0,
+                    vk::IndexType::UINT32,
+                );
+
                 self.context.device.cmd_bind_pipeline(
                     command_buffer,
                     vk::PipelineBindPoint::GRAPHICS,
-                    scene_renderer.opaque_forward_renderpass.pipelines[0].vulkan_pipeline,
+                    scene_renderer.opaque_forward_renderpass.pipelines[2].vulkan_pipeline,
                 );
-                for index in self.outlined_components.iter() {
-                    self.render_components[*index].draw(&self, scene_renderer, &command_buffer, world, *index, frustum);
+                let view_projection = camera.unwrap().projection_matrix * camera.unwrap().view_matrix;
+                for rigid_body_index in self.outlined_bodies.iter() {
+                    let rigid_body = &self.rigid_body_components[*rigid_body_index];
+                    let transform = &self.transforms[self.entities[rigid_body.owner].transform];
+                    let hitbox = &self.hitbox_components[rigid_body.hitbox].hitbox;
+                    let (index_count, first_index, model_matrix) = match hitbox {
+                        Hitbox::OBB(obb, ..) => {
+                            (24, 0,
+                             Matrix::new_translation_vec3(&(transform.world_translation + obb.center)) *
+                             Matrix::new_rotate_quaternion_vec4(&transform.world_rotation) *
+                             Matrix::new_scale_vec3(&(obb.half_extents))
+                            )
+                        }
+                        _ => (0, 0, Matrix::new())
+                    };
+
+                    self.context.device.cmd_push_constants(
+                        command_buffer,
+                        scene_renderer.opaque_forward_renderpass.pipeline_layout,
+                        ShaderStageFlags::ALL_GRAPHICS,
+                        0,
+                        slice::from_raw_parts(
+                            &CameraMatrixUniformData {
+                                view: (view_projection * model_matrix).data,
+                                projection: [0.5, 0.7, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+                            } as *const CameraMatrixUniformData as *const u8,
+                            128
+                        )
+                    );
+
+                    self.context.device.cmd_draw_indexed(command_buffer, index_count, 1, first_index, 0 ,0);
                 }
             } else {
-                if do_deferred {
-                    for (i, render_component) in self.render_components.iter().enumerate() {
-                        render_component.draw(&self, scene_renderer, &command_buffer, world, i, frustum);
-                    }
-                }
-                if do_forward {
+                self.context.device.cmd_bind_vertex_buffers(
+                    command_buffer,
+                    1,
+                    &[world.instance_buffers[frame].0],
+                    &[0],
+                );
+                self.context.device.cmd_bind_vertex_buffers(
+                    command_buffer,
+                    0,
+                    &[world.vertex_buffer.0],
+                    &[0],
+                );
+                self.context.device.cmd_bind_index_buffer(
+                    command_buffer,
+                    world.index_buffer.0,
+                    0,
+                    vk::IndexType::UINT32,
+                );
 
+                if do_outline {
+                    self.context.device.cmd_bind_pipeline(
+                        command_buffer,
+                        vk::PipelineBindPoint::GRAPHICS,
+                        scene_renderer.opaque_forward_renderpass.pipelines[0].vulkan_pipeline,
+                    );
+                    for index in self.outlined_components.iter() {
+                        self.render_components[*index].draw(&self, scene_renderer, &command_buffer, world, *index, camera);
+                    }
+                } else {
+                    if do_deferred {
+                        for (i, render_component) in self.render_components.iter().enumerate() {
+                            render_component.draw(&self, scene_renderer, &command_buffer, world, i, camera);
+                        }
+                    }
+                    if do_forward {
+
+                    }
                 }
             }
         }
@@ -559,7 +634,8 @@ pub enum DrawMode {
     Deferred,
     Forward,
     All,
-    Outlined
+    Outlined,
+    Hitboxes,
 }
 
 pub struct Entity {
@@ -599,21 +675,42 @@ pub struct Transform {
     is_identity: bool,
     pub owner: usize,
 
-    pub translation: Vector,
-    pub rotation: Vector,
-    pub scale: Vector,
+    pub local_translation: Vector,
+    pub local_rotation: Vector,
+    pub local_scale: Vector,
 
-    matrix: Matrix,
+    local: Matrix,
+
+    pub world_translation: Vector,
+    pub world_rotation: Vector,
+    pub world_scale: Vector,
 
     world: Matrix
 }
 impl Transform {
-    fn update_matrix(&mut self) {
-        let rotate = Matrix::new_rotate_quaternion_vec4(&self.rotation);
-        let scale = Matrix::new_scale_vec3(&self.scale);
-        let translate = Matrix::new_translation_vec3(&self.translation);
+    fn update_local_matrix(&mut self) {
+        let rotate = Matrix::new_rotate_quaternion_vec4(&self.local_rotation);
+        let scale = Matrix::new_scale_vec3(&self.local_scale);
+        let translate = Matrix::new_translation_vec3(&self.local_translation);
 
-        self.matrix = translate * rotate * scale;
+        self.local = translate * rotate * scale;
+    }
+    fn update_world_matrix(&mut self, parent_transform: &Transform, animated_transform: Option<&Transform>) {
+        if let Some(animated) = animated_transform {
+            self.world_scale = parent_transform.world_scale * animated.local_scale;
+            self.world_rotation = parent_transform.world_rotation.combine(&animated.local_rotation);
+            self.world_translation = parent_transform.world_translation +
+                (animated.local_translation * parent_transform.world_scale)
+                    .rotate_by_quat(&parent_transform.world_rotation);
+            self.world = parent_transform.world * animated.local;
+        } else {
+            self.world_scale = parent_transform.world_scale * self.local_scale;
+            self.world_rotation = parent_transform.world_rotation.combine(&self.local_rotation);
+            self.world_translation = parent_transform.world_translation +
+                (self.local_translation * parent_transform.world_scale)
+                    .rotate_by_quat(&parent_transform.world_rotation);
+            self.world = parent_transform.world * self.local;
+        }
     }
 }
 impl Default for Transform {
@@ -622,11 +719,15 @@ impl Default for Transform {
             owner: 0,
             is_identity: true,
 
-            translation: Vector::new(),
-            rotation: Vector::new(),
-            scale: Vector::fill(1.0),
+            local_translation: Vector::new(),
+            local_rotation: Vector::new(),
+            local_scale: Vector::fill(1.0),
 
-            matrix: Matrix::new(),
+            local: Matrix::new(),
+
+            world_translation: Vector::new(),
+            world_rotation: Vector::new(),
+            world_scale: Vector::fill(1.0),
 
             world: Matrix::new(),
         }
@@ -705,11 +806,11 @@ impl AnimationComponent {
             let animated_transform = &mut transforms[entity.animated_transform.0];
 
             if channel.2.eq("translation") {
-                animated_transform.translation = new_vector
+                animated_transform.local_translation = new_vector
             } else if channel.2.eq("rotation") {
-                animated_transform.rotation = new_vector
+                animated_transform.local_rotation = new_vector
             } else if channel.2.eq("scale") {
-                animated_transform.scale = new_vector
+                animated_transform.local_scale = new_vector
             } else {
                 panic!("Illogical animation channel target! Should be translation, rotation or scale");
             }
@@ -733,6 +834,7 @@ impl SkinComponent {
 }
 pub struct RigidBodyComponent {
     pub owner: usize,
+    pub transform: usize,
     pub owned_by_player: bool,
 
     pub hitbox: usize,
@@ -745,9 +847,7 @@ pub struct RigidBodyComponent {
     pub force: Vector,
     pub torque: Vector,
 
-    pub position: Vector,
     pub velocity: Vector,
-    pub orientation: Vector, // quaternion
     pub angular_velocity: Vector,
     center_of_mass: Vector,
 
@@ -757,12 +857,12 @@ pub struct RigidBodyComponent {
     stored_hitbox_scale: Vector,
 }
 impl RigidBodyComponent {
-    pub fn set_mass(&mut self, hitbox: &Hitbox, mass: f32) {
+    pub fn set_mass(&mut self, hitbox: &Hitbox, transforms: &Vec<Transform>, mass: f32) {
         self.mass = mass;
         self.inv_mass = 1.0 / mass;
-        self.update_shape_properties(hitbox);
+        self.update_shape_properties(hitbox, transforms);
     }
-    pub fn set_static(&mut self, hitbox: &Hitbox, is_static: bool) {
+    pub fn set_static(&mut self, hitbox: &Hitbox, transforms: &Vec<Transform>, is_static: bool) {
         self.is_static = is_static;
         if is_static {
             self.inv_mass = 0.0;
@@ -770,10 +870,10 @@ impl RigidBodyComponent {
         } else {
             self.inv_mass = 1.0 / self.mass;
         }
-        self.update_shape_properties(hitbox);
+        self.update_shape_properties(hitbox, transforms);
     }
 
-    pub fn update_shape_properties(&mut self, hitbox: &Hitbox) {
+    pub fn update_shape_properties(&mut self, hitbox: &Hitbox, transforms: &Vec<Transform>) {
         match &hitbox {
             Hitbox::OBB(obb, _) => {
                 let a = obb.half_extents.x * 2.0;
@@ -827,48 +927,69 @@ impl RigidBodyComponent {
         }
         self.inv_inertia_tensor = self.inertia_tensor.inverse3().mul_float_into3(self.inv_mass);
     }
-    pub fn get_inverse_inertia_tensor_world_space(&self) -> Matrix {
-        let rot = Matrix::new_rotate_quaternion_vec4(&self.orientation);
+    pub fn get_inverse_inertia_tensor_world_space(&self, transforms: &Vec<Transform>) -> Matrix {
+        let transform = &transforms[self.transform];
+        let rot = Matrix::new_rotate_quaternion_vec4(&transform.world_rotation);
         rot * self.inv_inertia_tensor * rot.transpose3()
     }
-    pub fn get_center_of_mass_world_space(&self) -> Vector {
-        self.position + Matrix::new_rotate_quaternion_vec4(&self.orientation) * self.center_of_mass
+    pub fn get_center_of_mass_world_space(&self, transforms: &Vec<Transform>) -> Vector {
+        let transform = &transforms[self.transform];
+        transform.world_translation + self.center_of_mass.rotate_by_quat(&transform.world_rotation)
     }
 
-    pub fn update(&mut self, delta_time: f32) {
-        self.position += self.velocity * delta_time;
+    pub fn update(&mut self, delta_time: f32, transforms: &mut Vec<Transform>, entities: &Vec<Entity>) {
+        if self.is_static { return }
 
-        let c = self.get_center_of_mass_world_space();
-        let c_to_pos = self.position - c;
+        let c = self.get_center_of_mass_world_space(transforms);
 
-        let rot = Matrix::new_rotate_quaternion_vec4(&self.orientation);
+        let [self_transform, parent_transform] = transforms.get_disjoint_mut([self.transform, entities[self.owner].transform]).unwrap();
+
+        let original_world_pos = self_transform.world_translation;
+
+        let dx = self.velocity * delta_time;
+        self_transform.local_translation += linear_displacement_to_local(dx, parent_transform);
+
+        let rot = Matrix::new_rotate_quaternion_vec4(&self_transform.world_rotation);
         let inertia_world = rot * self.inertia_tensor * rot.transpose3();
         let inv_inertia_world = rot * self.inv_inertia_tensor * rot.transpose3();
         let torque = self.angular_velocity.cross(&(inertia_world * self.angular_velocity));
         let alpha = inv_inertia_world * torque;
         self.angular_velocity += alpha * delta_time;
 
-        let d_theta = self.angular_velocity * delta_time;
-        let dq = Vector::axis_angle_quat(&d_theta, d_theta.magnitude3());
-        self.orientation = dq.combine(&self.orientation).normalize4();
+        let angle = self.angular_velocity.magnitude3() * delta_time;
+        let dq_world = if angle > 0.0 {
+            Vector::axis_angle_quat(
+                &(self.angular_velocity / self.angular_velocity.magnitude3()),
+                angle,
+            )
+        } else {
+            Vector::new()
+        };
+        let dq = angular_displacement_to_local(dq_world, parent_transform);
 
-        self.position = c + Matrix::new_rotate_quaternion_vec4(&dq) * c_to_pos;
+        self_transform.local_rotation = dq.combine(&self_transform.local_rotation).normalize4();
+
+        let c_to_pos = original_world_pos - c;
+        let rotated_offset = Matrix::new_rotate_quaternion_vec4(&dq_world) * c_to_pos;
+        let new_world_pos = c + dx + rotated_offset;
+
+        self_transform.local_translation = world_position_to_local(new_world_pos, parent_transform);
     }
 
-    pub fn apply_impulse(&mut self, impulse: Vector, point: Vector) {
+    pub fn apply_impulse(&mut self, impulse: Vector, point: Vector, transforms: &Vec<Transform>) {
         if self.inv_mass == 0.0 { return }
 
         self.velocity += impulse * self.inv_mass;
 
-        let c = self.get_center_of_mass_world_space();
+        let c = self.get_center_of_mass_world_space(transforms);
         let r = point - c;
         let dl = r.cross(&impulse);
         if self.owned_by_player { return }
-        self.apply_angular_impulse(dl);
+        self.apply_angular_impulse(dl, transforms);
     }
-    pub fn apply_angular_impulse(&mut self, impulse: Vector) {
+    pub fn apply_angular_impulse(&mut self, impulse: Vector, transforms: &Vec<Transform>) {
         if self.inv_mass == 0.0 { return }
-        self.angular_velocity += self.get_inverse_inertia_tensor_world_space() * impulse;
+        self.angular_velocity += self.get_inverse_inertia_tensor_world_space(transforms) * impulse;
 
         const MAX_ANGULAR_SPEED: f32 = 30.0;
         if self.angular_velocity.magnitude3() > MAX_ANGULAR_SPEED {
@@ -876,15 +997,21 @@ impl RigidBodyComponent {
         }
     }
 
-    pub fn will_collide_with(&mut self, hitbox_components: &Vec<HitboxComponent>, other: &mut RigidBodyComponent, dt: f32) -> Option<ContactInformation> {
+    pub fn will_collide_with(
+        &mut self,
+        hitbox_components: &Vec<HitboxComponent>,
+        other: &mut RigidBodyComponent,
+        dt: f32,
+        transforms: &Vec<Transform>
+    ) -> Option<ContactInformation> {
         let self_hitbox = &hitbox_components[self.hitbox].hitbox;
         let other_hitbox = &hitbox_components[other.hitbox].hitbox;
         let other_type = other_hitbox.get_type();
 
         match other_type {
-            HitboxType::SPHERE => self.intersects_sphere(self_hitbox, other_hitbox, other, dt),
-            HitboxType::OBB => self.intersects_obb(self_hitbox, other_hitbox, other, dt),
-            HitboxType::CONVEX => self.intersects_convex_hull(self_hitbox, other_hitbox, other, dt),
+            HitboxType::SPHERE => self.intersects_sphere(self_hitbox, other_hitbox, other, dt, transforms),
+            HitboxType::OBB => self.intersects_obb(self_hitbox, other_hitbox, other, dt, transforms),
+            HitboxType::CONVEX => self.intersects_convex_hull(self_hitbox, other_hitbox, other, dt, transforms),
             _ => { panic!("intersection not implemented") }
         }
     }
@@ -894,15 +1021,18 @@ impl RigidBodyComponent {
         self_hitbox: &Hitbox,
         other_hitbox: &Hitbox,
         other: &mut RigidBodyComponent,
-        dt: f32
+        dt: f32,
+        transforms: &Vec<Transform>
     ) -> Option<ContactInformation> {
         if let Hitbox::Sphere(sphere) = other_hitbox {
+            let self_transform = &transforms[self.transform];
+            let other_transform = &transforms[other.transform];
             return match self_hitbox {
                 Hitbox::OBB(obb, _) => {
-                    let obb_position = self.position;
-                    let sphere_position = other.position;
-                    let obb_orientation = self.orientation;
-                    let sphere_orientation = other.orientation;
+                    let obb_position = self_transform.world_translation;
+                    let sphere_position = other_transform.world_translation;
+                    let obb_orientation = self_transform.world_rotation;
+                    let sphere_orientation = other_transform.world_rotation;
                     let rot = Matrix::new_rotate_quaternion_vec4(&obb_orientation);
 
                     let sphere_center = sphere.center.rotate_by_quat(&sphere_orientation) + sphere_position;
@@ -1010,8 +1140,8 @@ impl RigidBodyComponent {
                     })
                 }
                 Hitbox::Sphere(a) => {
-                    let p_a = a.center.rotate_by_quat(&self.orientation) + self.position;
-                    let p_b = sphere.center.rotate_by_quat(&other.orientation) + other.position;
+                    let p_a = a.center.rotate_by_quat(&self_transform.world_rotation) + self_transform.world_translation;
+                    let p_b = sphere.center.rotate_by_quat(&other_transform.world_rotation) + other_transform.world_translation;
 
                     if let Some((point, time_of_impact)) = {
                         let relative_vel = self.velocity - other.velocity;
@@ -1059,15 +1189,21 @@ impl RigidBodyComponent {
                         }, toi))
                     } {
                         // there will be a collision
+                        /*
                         self.update(time_of_impact);
                         other.update(time_of_impact);
 
-                        let normal = (self.position - other.position).normalize3();
+                         */
 
+                        let normal = (self_transform.world_translation - other_transform.world_translation).normalize3();
+
+                        /*
                         self.update(-time_of_impact);
                         other.update(-time_of_impact);
 
-                        let ab = other.position - self.position;
+                         */
+
+                        let ab = other_transform.world_translation - self_transform.world_translation;
                         let r = ab.magnitude3() - (a.radius + sphere.radius);
 
                         Some(ContactInformation {
@@ -1089,18 +1225,26 @@ impl RigidBodyComponent {
         self_hitbox: &Hitbox,
         other_hitbox: &Hitbox,
         other: &mut RigidBodyComponent,
-        dt: f32
+        dt: f32,
+        transforms: &Vec<Transform>
     ) -> Option<ContactInformation> {
         if let Hitbox::OBB(obb, _) = other_hitbox {
+            let self_transform = &transforms[self.transform];
+            let other_transform = &transforms[other.transform];
             return match self_hitbox {
                 Hitbox::OBB(this_obb, _) => {
                     let (a, b) = (this_obb, obb);
 
-                    let a_center = a.center.rotate_by_quat(&self.orientation) + self.position;
-                    let b_center = b.center.rotate_by_quat(&other.orientation) + other.position;
+                    let self_orientation = self_transform.world_rotation;
+                    let self_position = self_transform.world_translation;
+                    let other_orientation = other_transform.world_rotation;
+                    let other_position = other_transform.world_translation;
 
-                    let a_quat = self.orientation;
-                    let b_quat = other.orientation;
+                    let a_center = a.center.rotate_by_quat(&self_orientation) + self_position;
+                    let b_center = b.center.rotate_by_quat(&other_orientation) + other_position;
+
+                    let a_quat = self_orientation;
+                    let b_quat = other_orientation;
 
                     let a_axes = [
                         Vector::new3(1.0, 0.0, 0.0).rotate_by_quat(&a_quat),
@@ -1181,7 +1325,7 @@ impl RigidBodyComponent {
                     })
                 }
                 Hitbox::Sphere(_) => {
-                    if let Some(contact) = other.intersects_sphere(other_hitbox, self_hitbox, self, dt) {
+                    if let Some(contact) = other.intersects_sphere(other_hitbox, self_hitbox, self, dt, transforms) {
                         Some(contact.flip())
                     } else { None }
                 }
@@ -1195,7 +1339,8 @@ impl RigidBodyComponent {
         self_hitbox: &Hitbox,
         other_hitbox: &Hitbox,
         other: &mut RigidBodyComponent,
-        dt: f32
+        dt: f32,
+        transforms: &Vec<Transform>
     ) -> Option<ContactInformation> {
         // TODO
         None
@@ -1206,6 +1351,7 @@ impl Default for RigidBodyComponent {
         Self {
             owned_by_player: false,
             owner: 0,
+            transform: 0,
             hitbox: 0,
             is_static: true,
             restitution_coefficient: 0.5,
@@ -1214,9 +1360,7 @@ impl Default for RigidBodyComponent {
             inv_mass: 0.0,
             force: Default::default(),
             torque: Default::default(),
-            position: Default::default(),
             velocity: Default::default(),
-            orientation: Vector::new(),
             angular_velocity: Default::default(),
             center_of_mass: Vector::new(),
             inertia_tensor: Matrix::new(),
@@ -1244,20 +1388,20 @@ impl RenderComponent {
         command_buffer: &CommandBuffer,
         world: &World,
         index: usize,
-        frustum: Option<&Frustum>
+        camera: Option<&Camera>
     ) {
         let mut all_points_outside_of_same_plane = false;
 
         let primitive = &world.meshes[self.mesh_primitive_index.0].primitives[self.mesh_primitive_index.1];
 
-        if frustum.is_some() {
+        if camera.is_some() {
             for plane_idx in 0..6 {
                 let mut all_outside_this_plane = true;
 
                 for corner in primitive.corners.iter() {
                     let world_pos = scene.transforms[self.transform].world * Vector::new4(corner.x, corner.y, corner.z, 1.0);
 
-                    if frustum.unwrap().planes[plane_idx].test_point_within(&world_pos) {
+                    if camera.unwrap().frustum.planes[plane_idx].test_point_within(&world_pos) {
                         all_outside_this_plane = false;
                         break;
                     }
@@ -1268,7 +1412,7 @@ impl RenderComponent {
                 }
             }
         }
-        if !all_points_outside_of_same_plane || frustum.is_none() {
+        if !all_points_outside_of_same_plane || camera.is_none() {
             unsafe {
                 scene.context.device.cmd_draw_indexed(
                     *command_buffer,
@@ -1309,6 +1453,16 @@ impl Instance {
 }
 
 
+pub fn world_position_to_local(world_pos: Vector, parent: &Transform) -> Vector {
+    ((world_pos - parent.world_translation) / parent.world_scale)
+        .rotate_by_quat(&parent.world_rotation.inverse_quat())
+}
+pub fn linear_displacement_to_local(dx: Vector, parent: &Transform) -> Vector {
+    (dx / parent.world_scale).rotate_by_quat(&parent.world_rotation.inverse_quat())
+}
+pub fn angular_displacement_to_local(dq: Vector, parent: &Transform) -> Vector {
+    parent.world_rotation.inverse_quat().combine(&dq.combine(&parent.world_rotation))
+}
 
 fn test_axis(
     axis: &Vector,

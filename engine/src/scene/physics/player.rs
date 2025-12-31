@@ -63,7 +63,6 @@ impl Player {
              radius,
         });
         */
-        rigid_body.position = camera.position;
         rigid_body.friction_coefficient = 0.0;
 
         scene.rigid_body_components.push(rigid_body);

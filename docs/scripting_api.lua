@@ -30,7 +30,8 @@ MovementMode = {
     ---@field get_transform fun(self:Scene, index:integer):Transform
     ---@field get_rigid_body fun(self:Scene, index:integer):RigidBodyComponent
     ---@field reset_outlines fun(self:Scene):nil
-    ---@field add_outlined fun(self:Scene, index:integer):nil
+    ---@field add_outlined_component fun(self:Scene, index:integer):nil
+    ---@field add_outlined_body fun(self:Scene, index:integer):nil
     ---@field load_model fun(self:Scene, parent_index:integer):nil
     ---@field running boolean
     
@@ -48,6 +49,7 @@ MovementMode = {
         ---@field index integer
         ---@field owner_index integer
         ---@field static boolean
+        ---@field velocity Vector
 
         ---@class Entity
         ---@field transform_index integer
@@ -211,6 +213,8 @@ MovementMode = {
 ---@field new fun():Vector
 ---@field normalize3 fun(self:Vector):Vector
 ---@field rotate_by_euler fun(self:Vector, rot:Vector):Vector
+---@field quat_to_euler fun(self:Vector):Vector
+---@field euler_to_quat fun(self:Vector):Vector
 
 Vector = Vector
 

@@ -222,7 +222,7 @@ impl Engine {
                             &[current_rendering_complete_semaphore],
                             |_device, frame_command_buffer| {
                                 {
-                                    self.scene.borrow_mut().update_scene(current_frame, delta_time);
+                                    self.scene.borrow_mut().update_scene(frame_command_buffer, current_frame, delta_time);
                                     let world_ref = &mut self.world.borrow_mut();
                                     world_ref.update_lights(frame_command_buffer, current_frame);
                                     world_ref.update_cameras();
