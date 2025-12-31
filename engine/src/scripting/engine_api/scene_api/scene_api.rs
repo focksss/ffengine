@@ -228,16 +228,17 @@ impl UserData for RigidBodyPointer {
         });
         fields.add_field_method_set("static", |lua, this, val: bool| {
             with_scene_mut!(lua => scene);
-            /*
-            let hitbox = {
-                let hitbox_index = &scene.rigid_body_components[this.index].hitbox;
-                &scene.hitbox_components[*hitbox_index].hitbox
+
+            let hitbox_index = scene.rigid_body_components[this.index].hitbox;
+
+            let hitbox = unsafe {
+                &*(&scene.hitbox_components[hitbox_index].hitbox as *const _)
             };
+
             let rigid_body = &mut scene.rigid_body_components[this.index];
 
             rigid_body.set_static(hitbox, val);
             
-             */
             Ok(())
         });
 

@@ -35,7 +35,9 @@ pub struct SceneRenderer {
 
     pub geometry_renderpass: Renderpass,
     pub shadow_renderpass: Renderpass,
-    pub forward_renderpass: Renderpass,
+    pub opaque_forward_renderpass: Renderpass,
+
+    pub outline_renderpass: Renderpass,
 
     pub ssao_pre_downsample_renderpass: Renderpass,
     pub ssao_renderpass: Renderpass,
@@ -91,6 +93,7 @@ impl SceneRenderer {
             ssao_blur_vertical_renderpass,
             ssao_upsample_renderpass,
             lighting_renderpass,
+            outline_renderpass,
         ) = SceneRenderer::create_rendering_objects(context, &null_texture, &null_tex_sampler, world, viewport);
 
         //<editor-fold desc = "ssao sampling setup">
@@ -349,6 +352,23 @@ impl SceneRenderer {
             }).collect();
             context.device.update_descriptor_sets(&descriptor_writes, &[]);
             //</editor-fold>
+            //<editor-fold desc = "outline">
+            let image_infos = [
+                vk::DescriptorImageInfo {
+                    sampler,
+                    image_view: geometry_renderpass.pass.borrow().textures[current_frame][5].device_texture.borrow().stencil_image_view.unwrap(),
+                    image_layout: vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
+                }, // geometry stencil
+            ];
+            let descriptor_writes: Vec<vk::WriteDescriptorSet> = image_infos.iter().enumerate().map(|(i, info)| {
+                vk::WriteDescriptorSet::default()
+                    .dst_set(outline_renderpass.descriptor_set.borrow().descriptor_sets[current_frame])
+                    .dst_binding(i as u32)
+                    .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
+                    .image_info(slice::from_ref(info))
+            }).collect();
+            context.device.update_descriptor_sets(&descriptor_writes, &[]);
+            //</editor-fold>
         }
         //</editor-fold>
 
@@ -364,7 +384,7 @@ impl SceneRenderer {
             null_tex_sampler,
 
             geometry_renderpass,
-            forward_renderpass,
+            opaque_forward_renderpass: forward_renderpass,
             shadow_renderpass,
             ssao_pre_downsample_renderpass,
             ssao_renderpass,
@@ -372,6 +392,7 @@ impl SceneRenderer {
             ssao_blur_vertical_renderpass,
             ssao_upsample_renderpass,
             lighting_renderpass,
+            outline_renderpass,
 
             sampler,
             nearest_sampler,
@@ -395,6 +416,7 @@ impl SceneRenderer {
         Renderpass, // ssao blur vertical renderpass
         Renderpass, // ssao upsample renderpass
         Renderpass, // lighting pass
+        Renderpass, // outline pass
     ) { unsafe {
         let resolution = Extent2D { width: viewport.width as u32, height: viewport.height as u32 };
         let image_infos: Vec<vk::DescriptorImageInfo> = vec![vk::DescriptorImageInfo {
@@ -543,6 +565,11 @@ impl SceneRenderer {
         };
         let camera_push_constant_range_fragment = vk::PushConstantRange {
             stage_flags: ShaderStageFlags::FRAGMENT,
+            offset: 0,
+            size: size_of::<CameraMatrixUniformData>() as _,
+        };
+        let camera_push_constant_range = vk::PushConstantRange {
+            stage_flags: ShaderStageFlags::ALL_GRAPHICS,
             offset: 0,
             size: size_of::<CameraMatrixUniformData>() as _,
         };
@@ -909,31 +936,12 @@ impl SceneRenderer {
                 ..Default::default()
             };
             let mask_depth_stencil_state_info = vk::PipelineDepthStencilStateCreateInfo {
-                depth_test_enable: 1,
+                depth_test_enable: 0,
                 depth_write_enable: 0,
                 depth_compare_op: vk::CompareOp::ALWAYS,
                 stencil_test_enable: 1,
                 front: mask_stencil_state,
                 back: mask_stencil_state,
-                ..Default::default()
-            };
-            let outline_stencil_state = vk::StencilOpState {
-                compare_op: vk::CompareOp::NOT_EQUAL,
-                pass_op: vk::StencilOp::KEEP,
-                fail_op: vk::StencilOp::KEEP,
-                depth_fail_op: vk::StencilOp::KEEP,
-                compare_mask: 0xFF,
-                write_mask: 0x00,
-                reference: 1,
-                ..Default::default()
-            };
-            let outline_depth_stencil_state_info = vk::PipelineDepthStencilStateCreateInfo {
-                depth_test_enable: 0,
-                depth_write_enable: 0,
-                depth_compare_op: vk::CompareOp::ALWAYS,
-                stencil_test_enable: 1,
-                front: outline_stencil_state,
-                back: outline_stencil_state,
                 ..Default::default()
             };
             let skybox_depth_state_info = vk::PipelineDepthStencilStateCreateInfo {
@@ -943,13 +951,6 @@ impl SceneRenderer {
                 front: noop_stencil_state,
                 back: noop_stencil_state,
                 max_depth_bounds: 1.0,
-                ..Default::default()
-            };
-            let outline_rasterization_info = vk::PipelineRasterizationStateCreateInfo {
-                front_face: vk::FrontFace::COUNTER_CLOCKWISE,
-                cull_mode: vk::CullModeFlags::FRONT,
-                line_width: 1.0,
-                polygon_mode: vk::PolygonMode::FILL,
                 ..Default::default()
             };
 
@@ -966,19 +967,35 @@ impl SceneRenderer {
                     .vertex_shader_uri(String::from("geometry\\position_only.vert.spv"))
                     .fragment_shader_uri(String::from("empty.frag.spv")))
                 .add_pipeline_create_info(PipelineCreateInfo::new()
-                    .pipeline_vertex_input_state(geometry_vertex_input_state_info)
-                    .pipeline_rasterization_state(outline_rasterization_info)
-                    .pipeline_depth_stencil_state(outline_depth_stencil_state_info)
-                    .pipeline_color_blend_state_create_info(color_blend_state)
-                    .vertex_shader_uri(String::from("outline\\outline.vert.spv"))
-                    .fragment_shader_uri(String::from("outline\\outline_geometry.frag.spv")))
-                .add_pipeline_create_info(PipelineCreateInfo::new()
                     .pipeline_depth_stencil_state(skybox_depth_state_info)
                     .vertex_shader_uri(String::from("skybox\\skybox.vert.spv"))
                     .fragment_shader_uri(String::from("skybox\\skybox.frag.spv")))
             };
 
             Renderpass::new(forward_renderpass_create_info)
+        };
+
+        let outline_renderpass = {
+            let light_pass = lighting_renderpass.pass.borrow();
+
+            let pass_create_info = PassCreateInfo::new(context)
+                .grab_attachment(&light_pass, 0, vk::AttachmentLoadOp::LOAD, vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
+            let descriptor_set_create_info = DescriptorSetCreateInfo::new(context)
+                .add_descriptor(Descriptor::new(&texture_sampler_create_info));
+
+            let renderpass_create_info = RenderpassCreateInfo::new(context)
+                .pass_create_info(pass_create_info)
+                .resolution(resolution)
+                .descriptor_set_create_info(descriptor_set_create_info)
+                .add_push_constant_range(vk::PushConstantRange {
+                    stage_flags: ShaderStageFlags::FRAGMENT,
+                    offset: 0,
+                    size: size_of::<OutlineConstantSendable>() as _,
+                })
+                .add_pipeline_create_info(PipelineCreateInfo::new()
+                    .vertex_shader_uri(String::from("quad\\quad.vert.spv"))
+                    .fragment_shader_uri(String::from("outline\\outline.frag.spv")));
+            Renderpass::new(renderpass_create_info)
         };
 
         (
@@ -991,6 +1008,7 @@ impl SceneRenderer {
             ssao_blur_vertical_renderpass,
             ssao_upsample_renderpass,
             lighting_renderpass,
+            outline_renderpass,
         )
     } }
     pub fn update_world_textures_all_frames(&self, world: &World) {
@@ -1041,7 +1059,7 @@ impl SceneRenderer {
         };
         let forward_descriptor_write = vk::WriteDescriptorSet {
             s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
-            dst_set: self.forward_renderpass.descriptor_set.borrow().descriptor_sets[frame],
+            dst_set: self.opaque_forward_renderpass.descriptor_set.borrow().descriptor_sets[frame],
             dst_binding: 3,
             dst_array_element: 0,
             descriptor_type: DescriptorType::COMBINED_IMAGE_SAMPLER,
@@ -1085,7 +1103,7 @@ impl SceneRenderer {
         };
         copy_data_to_memory(self.lighting_renderpass.descriptor_set.borrow().descriptors[9].owned_buffers.2[current_frame], &[ubo]);
         copy_data_to_memory(
-            self.forward_renderpass.descriptor_set.borrow().descriptors[2].owned_buffers.2[current_frame],
+            self.opaque_forward_renderpass.descriptor_set.borrow().descriptors[2].owned_buffers.2[current_frame],
             &[Vector::new2(
                 self.viewport.borrow().width, self.viewport.borrow().width,
             )]
@@ -1196,7 +1214,7 @@ impl SceneRenderer {
             false,
         );
 
-        self.forward_renderpass.do_renderpass(
+        self.opaque_forward_renderpass.do_renderpass(
             current_frame,
             frame_command_buffer,
             Some(|| {
@@ -1215,7 +1233,7 @@ impl SceneRenderer {
                 self.context.device.cmd_bind_pipeline(
                     frame_command_buffer,
                     vk::PipelineBindPoint::GRAPHICS,
-                    self.forward_renderpass.pipelines[2].vulkan_pipeline,
+                    self.opaque_forward_renderpass.pipelines[1].vulkan_pipeline,
                 );
                 device.cmd_draw(frame_command_buffer, 36, 1, 0, 0);
 
@@ -1223,13 +1241,38 @@ impl SceneRenderer {
                 scene.draw(self, current_frame, Some(&player_camera.frustum), DrawMode::Outlined);
             }),
             None,
-            true
+            false
         );
+        self.opaque_forward_renderpass.pass.borrow().transition_output_to_readable(frame_command_buffer, current_frame, 1);
+
+        self.outline_renderpass.do_renderpass(
+            current_frame,
+            frame_command_buffer,
+            Some(|| {
+                device.cmd_push_constants(
+                    frame_command_buffer,
+                    self.outline_renderpass.pipeline_layout,
+                    ShaderStageFlags::FRAGMENT,
+                    0,
+                    slice::from_raw_parts(
+                        &OutlineConstantSendable {
+                            color: [0.93, 0.72, 0.0, 1.0],
+                            thickness: 5.0,
+                            _pad: [0.0; 3]
+                        } as *const OutlineConstantSendable as *const u8,
+                        size_of::<OutlineConstantSendable>(),
+                    )
+                )
+            }),
+            None::<fn()>,
+            None,
+            true
+        )
     } }
 
     pub unsafe fn destroy(&mut self) { unsafe {
         self.geometry_renderpass.destroy();
-        self.forward_renderpass.destroy();
+        self.opaque_forward_renderpass.destroy();
         self.shadow_renderpass.destroy();
         self.ssao_pre_downsample_renderpass.destroy();
         self.ssao_renderpass.destroy();
@@ -1237,6 +1280,7 @@ impl SceneRenderer {
         self.ssao_blur_vertical_renderpass.destroy();
         self.ssao_upsample_renderpass.destroy();
         self.lighting_renderpass.destroy();
+        self.outline_renderpass.destroy();
 
         self.ssao_noise_texture.destroy();
 
@@ -1291,7 +1335,14 @@ struct DepthAwareUpsamplePassData {
     sharpness: f32, // edge sharpness multiplier (e.g., 8.0)
     infinite_reverse_depth: i32
 }
+#[derive(Clone, Debug, Copy)]
+#[repr(C)]
+pub struct OutlineConstantSendable {
+    color: [f32; 4],
 
+    thickness: f32,
+    _pad: [f32; 3],
+}
 /*
         let equirectangular_to_cubemap_pass_create_info = PassCreateInfo::new(context)
         .add_color_attachment_info(TextureCreateInfo::new(context).format(Format::R16G16B16A16_SFLOAT)

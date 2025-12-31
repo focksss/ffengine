@@ -106,7 +106,7 @@ impl Renderer {
             }).collect::<Vec<&Texture>>());
 
             let scene_renderer_ref = renderer.scene_renderer.borrow();
-            let scene_pass = scene_renderer_ref.forward_renderpass.pass.borrow();
+            let scene_pass = scene_renderer_ref.opaque_forward_renderpass.pass.borrow();
             let scene_textures = scene_pass.textures
                 .iter()
                 .map(|f| f[0].clone())
@@ -144,28 +144,6 @@ impl Renderer {
 
         let context = &base.context;
 
-        let texture_sampler_create_info = DescriptorCreateInfo::new(context)
-            .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
-            .shader_stages(ShaderStageFlags::FRAGMENT);
-
-        let outline_pass_create_info = PassCreateInfo::new(context)
-            .add_color_attachment_info(TextureCreateInfo::new(context).format(Format::R8G8B8A8_UNORM).add_usage_flag(vk::ImageUsageFlags::TRANSFER_SRC));
-        let outline_descriptor_set_create_info = DescriptorSetCreateInfo::new(context)
-            .add_descriptor(Descriptor::new(&texture_sampler_create_info));
-        let outline_renderpass_create_info = RenderpassCreateInfo::new(context)
-            .pass_create_info(outline_pass_create_info)
-            .descriptor_set_create_info(outline_descriptor_set_create_info)
-            .add_pipeline_create_info(PipelineCreateInfo::new()
-                .vertex_shader_uri(String::from("quad\\quad.vert.spv"))
-                .fragment_shader_uri(String::from("outline\\outline.frag.spv")))
-            .viewport(scene_viewport)
-            .add_push_constant_range(vk::PushConstantRange {
-                stage_flags: ShaderStageFlags::FRAGMENT,
-                offset: 0,
-                size: size_of::<OutlineConstantSendable>() as u32,
-            });
-        let outline_renderpass = Renderpass::new(outline_renderpass_create_info);
-
         let present_renderpass = Renderpass::new_present_renderpass(base);
 
         let composite_layers_descriptor_create_info = DescriptorCreateInfo::new(context)
@@ -194,24 +172,6 @@ impl Renderer {
                 size: size_of::<usize>() as _,
             })
         };
-
-        for frame in 0..MAX_FRAMES_IN_FLIGHT {
-            let image_infos = [
-                vk::DescriptorImageInfo {
-                    sampler: scene_renderer.nearest_sampler,
-                    image_view: scene_renderer.geometry_renderpass.pass.borrow().textures[frame][5].device_texture.borrow().stencil_image_view.unwrap(),
-                    image_layout: vk::ImageLayout::STENCIL_READ_ONLY_OPTIMAL,
-                } // id buffer
-            ];
-            let outline_descriptor_writes: Vec<vk::WriteDescriptorSet> = image_infos.iter().enumerate().map(|(i, info)| {
-                vk::WriteDescriptorSet::default()
-                    .dst_set(outline_renderpass.descriptor_set.borrow().descriptor_sets[frame])
-                    .dst_binding(i as u32)
-                    .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
-                    .image_info(slice::from_ref(info))
-            }).collect();
-            base.device.update_descriptor_sets(&outline_descriptor_writes, &[]);
-        }
 
         (
             Arc::new(RefCell::new(scene_renderer)),
@@ -665,12 +625,6 @@ pub struct LinePushConstantSendable {
     a: [f32; 4],
     b: [f32; 4],
     color: [f32; 4],
-}
-pub struct OutlineConstantSendable {
-    color: [f32; 4],
-
-    thickness: f32,
-    _pad: [f32; 3],
 }
 //TODO REMOVE THIS GRAPHICS CRIME AND REPLACE WITH VERTEX BUFFERS FOR HITBOXES
 // LOOKING AT THIS MAKES ME WANT TO DIE AND I WROTE IT

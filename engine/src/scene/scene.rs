@@ -20,9 +20,11 @@ use crate::scene::physics::physics_engine::{AxisType, ContactInformation, Contac
 use crate::scene::world::camera::Frustum;
 use crate::scene::world::world::{World};
 
-//TODO handle ALL updates + rendering from here (call to World + PhysicsEngine)
-//TODO change World structure to have a single flat list of Primitives. Store Meshes here, Meshes have child primitives, and are RenderComponents.
-//TODO refactor scene structure to allow multiple components of each type
+
+//TODO
+// - EVERYTHING is contained by an entity and is a type of component, including gui elements and rendering pipelines
+
+
 pub struct Scene {
     context: Arc<Context>,
 
@@ -230,6 +232,9 @@ impl Scene {
             body.orientation = transform.extract_quaternion();
             body.stored_hitbox_scale = scale;
 
+            self.rigid_body_components.push(body);
+            let body = &mut self.rigid_body_components[entity.rigid_body.unwrap()];
+
             self.hitbox_components.push(HitboxComponent { hitbox: match hitbox_type {
                 0 => {
                     let bounds = BoundingBox {
@@ -367,7 +372,6 @@ impl Scene {
                 let entity_index = body.owner;
                 let transform = &mut self.transforms[self.entities[entity_index].transform];
                 transform.translation = body.position;
-                println!("{:?}", body.position);
                 transform.rotation = body.orientation;
                 self.unupdated_entities.push(entity_index);
             }
@@ -533,15 +537,7 @@ impl Scene {
                 self.context.device.cmd_bind_pipeline(
                     command_buffer,
                     vk::PipelineBindPoint::GRAPHICS,
-                    scene_renderer.forward_renderpass.pipelines[0].vulkan_pipeline,
-                );
-                for index in self.outlined_components.iter() {
-                    self.render_components[*index].draw(&self, scene_renderer, &command_buffer, world, *index, frustum);
-                }
-                self.context.device.cmd_bind_pipeline(
-                    command_buffer,
-                    vk::PipelineBindPoint::GRAPHICS,
-                    scene_renderer.forward_renderpass.pipelines[1].vulkan_pipeline,
+                    scene_renderer.opaque_forward_renderpass.pipelines[0].vulkan_pipeline,
                 );
                 for index in self.outlined_components.iter() {
                     self.render_components[*index].draw(&self, scene_renderer, &command_buffer, world, *index, frustum);

@@ -16,6 +16,11 @@ function update_static_display()
 	end
 end
 
+function flip_static()
+    local rigid_body = Engine.scene:get_rigid_body(_G.selected_rigid_body)
+    rigid_body.static = not rigid_body.static
+end
+
 local collapsed = true
 function collapse()
     if not collapsed then

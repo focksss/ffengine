@@ -732,54 +732,57 @@ impl Pass {
 
     pub unsafe fn transition_to_readable(&self, command_buffer: vk::CommandBuffer, frame: usize) { unsafe {
         for tex_idx in 0..self.textures[frame].len() {
-            let tex = &self.textures[frame][tex_idx];
-            let (old_layout, new_layout, src_access_mask, aspect_mask, stage) = if tex.is_depth {
-                (
-                    vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-                    vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
-                    vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE,
-                    if tex.has_stencil { ImageAspectFlags::DEPTH | ImageAspectFlags::STENCIL } else { ImageAspectFlags::DEPTH },
-                    vk::PipelineStageFlags::LATE_FRAGMENT_TESTS,
-                )
-            } else {
-                (
-                    vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-                    vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                    vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
-                    ImageAspectFlags::COLOR,
-                    vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-                )
-            };
-
-            let barrier = vk::ImageMemoryBarrier {
-                s_type: vk::StructureType::IMAGE_MEMORY_BARRIER,
-                old_layout,
-                new_layout,
-                src_access_mask,
-                dst_access_mask: vk::AccessFlags::SHADER_READ,
-                src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
-                dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
-                image: tex.device_texture.borrow().image,
-                subresource_range: ImageSubresourceRange {
-                    aspect_mask,
-                    base_mip_level: 0,
-                    level_count: 1,
-                    base_array_layer: 0,
-                    layer_count: tex.array_layers,
-                },
-                ..Default::default()
-            };
-
-            self.context.device.cmd_pipeline_barrier(
-                command_buffer,
-                stage,
-                vk::PipelineStageFlags::FRAGMENT_SHADER,
-                vk::DependencyFlags::empty(),
-                &[],
-                &[],
-                &[barrier],
-            );
+            self.transition_output_to_readable(command_buffer, frame, tex_idx);
         }
+    } }
+    pub unsafe fn transition_output_to_readable(&self, command_buffer: vk::CommandBuffer, frame: usize, output_index: usize) { unsafe {
+        let tex = &self.textures[frame][output_index];
+        let (old_layout, new_layout, src_access_mask, aspect_mask, stage) = if tex.is_depth {
+            (
+                vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
+                vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE,
+                if tex.has_stencil { ImageAspectFlags::DEPTH | ImageAspectFlags::STENCIL } else { ImageAspectFlags::DEPTH },
+                vk::PipelineStageFlags::LATE_FRAGMENT_TESTS,
+            )
+        } else {
+            (
+                vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
+                ImageAspectFlags::COLOR,
+                vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+            )
+        };
+
+        let barrier = vk::ImageMemoryBarrier {
+            s_type: vk::StructureType::IMAGE_MEMORY_BARRIER,
+            old_layout,
+            new_layout,
+            src_access_mask,
+            dst_access_mask: vk::AccessFlags::SHADER_READ,
+            src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+            dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+            image: tex.device_texture.borrow().image,
+            subresource_range: ImageSubresourceRange {
+                aspect_mask,
+                base_mip_level: 0,
+                level_count: 1,
+                base_array_layer: 0,
+                layer_count: tex.array_layers,
+            },
+            ..Default::default()
+        };
+
+        self.context.device.cmd_pipeline_barrier(
+            command_buffer,
+            stage,
+            vk::PipelineStageFlags::FRAGMENT_SHADER,
+            vk::DependencyFlags::empty(),
+            &[],
+            &[],
+            &[barrier],
+        );
     } }
 
     pub unsafe fn destroy(&mut self) { unsafe {

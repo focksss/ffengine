@@ -3685,6 +3685,12 @@
                     "script": 1,
                     "method": "color_slider_unhovered"
                   }
+                ],
+                "left_up_actions": [
+                  {
+                    "method": "flip_static",
+                    "script": 4
+                  }
                 ]
               },
               "parent_relation": {
@@ -3694,9 +3700,9 @@
                 }
               },
               "width": {
-                "type": "Factor",
+                "type": "Absolute",
                 "info": {
-                  "factor": 0.6
+                  "pixels": 60
                 }
               },
               "height": {
@@ -3720,15 +3726,21 @@
                   "interactable_information": {
                     "passive_actions": [
                       {
-                        "script": 4,
-                        "method": "update_static_display"
+                        "method": "update_static_display",
+                        "script": 4
                       }
                     ]
                   },
-                  "width": {
-                    "type": "Absolute",
+                  "parent_relation": {
+                    "type": "Independent",
                     "info": {
-                      "pixels": 60
+                      "relative": true
+                    }
+                  },
+                  "width": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
                     }
                   },
                   "height": {
