@@ -90,15 +90,15 @@ fn main() { unsafe {
 
             let ball = scene.new_entity_from_model(0, "editor/resources/models/demoBall/scene.gltf");
 
-            scene.transforms[scene.entities[ball].transform].local_translation = Vector::new3(0.0, 10.0, 0.0);
-            scene.new_entity_from_model(0, "editor/resources/models/demoBall/scene.gltf");
-            let grass_block = scene.new_entity_from_model(0, "editor/resources/models/grassblockGLTF/grassblock.gltf");
+            scene.transforms[scene.entities[ball].transform].local_translation = Vector::new3(-0.5, 10.0, 0.0);
+            let ball2 = scene.new_entity_from_model(0, "editor/resources/models/demoBall/scene.gltf");
+            // let grass_block = scene.new_entity_from_model(0, "editor/resources/models/grassblockGLTF/grassblock.gltf");
 
             let initial_update_command_buffer = base.context.begin_single_time_commands(1);
             scene.update_scene(initial_update_command_buffer[0], 0, 0.0);
             base.context.end_single_time_commands(initial_update_command_buffer);
 
-            scene.add_rigid_body_from_entity(ground, 0, true);
+            scene.add_rigid_body_from_entity(ball2, 0, true);
 
             scene.add_rigid_body_from_entity(ball, 0, false);
         }

@@ -231,6 +231,7 @@ impl Scene {
 
             let mut body = RigidBodyComponent::default();
             body.owner = entity_index;
+            body.transform = entity.transform;
             body.hitbox = self.hitbox_components.len();
             body.stored_hitbox_scale = scale;
 
@@ -266,112 +267,82 @@ impl Scene {
         let gravity = Vector::new3(0.0, -9.8, 0.0);
         // apply gravity
         for body in &mut self.rigid_body_components {
-            if body.is_static {
-                continue;
-            } else {
+            if !body.is_static {
                 body.apply_impulse(gravity * delta_time * body.mass, body.get_center_of_mass_world_space(&self.transforms), &self.transforms);
             }
         }
         // collision detection
-        let num_bodies = self.rigid_body_components.len();
-        //println!("Number of bodies: {}", num_bodies);
-        let mut contacts = Vec::new();
-        for i in 0..num_bodies {
-            for j in i + 1..num_bodies {
-                let (a, b) = self.rigid_body_components.split_at_mut(j);
-                let body_a = &mut a[i];
-                let body_b = &mut b[0];
-
-                if body_a.is_static && body_b.is_static {
+        for i in 0..self.rigid_body_components.len() {
+            let (a, b) = self.rigid_body_components.split_at_mut(i + 1);
+            let body_a = &mut a[i];
+            for body_b in b {
+                if (body_a.is_static && body_b.is_static) || body_a.owned_by_player || body_b.owned_by_player {
                     continue;
                 }
+                if let Some(collision) = body_a.will_collide_with(&self.hitbox_components, body_b, 0.0, &self.transforms) {
+                    if collision.contact_points.is_empty() { continue; }
+                    let normal = collision.normal;
+                    println!("contact normal: {:?}", normal);
+                    let depth = collision.time_of_impact;
+                    let im_a = body_a.inv_mass; let im_b = body_b.inv_mass;
+                    let s_im = im_a + im_b;
+                    let restitution = body_a.restitution_coefficient * body_b.restitution_coefficient;
+                    let inv_inertia_a = body_a.get_inverse_inertia_tensor_world_space(&self.transforms);
+                    let inv_inertia_b = body_b.get_inverse_inertia_tensor_world_space(&self.transforms);
 
-                if let Some(contact) = body_a.will_collide_with(&self.hitbox_components, body_b, delta_time, &self.transforms) {
-                    if !contact.contact_points.is_empty() {
-                        contacts.push((contact, (i, j)));
+                    let pt_on_a = collision.contact_points[0].point_on_a;
+                    let pt_on_b = collision.contact_points[0].point_on_b;
+                    let ra = pt_on_a - body_a.get_center_of_mass_world_space(&self.transforms);
+                    let rb = pt_on_b - body_b.get_center_of_mass_world_space(&self.transforms);
+
+                    let angular_j_a = (inv_inertia_a * ra.cross(&normal)).cross(&ra);
+                    let angular_j_b = (inv_inertia_b * rb.cross(&normal)).cross(&rb);
+                    let angular_factor = (angular_j_a + angular_j_b).dot3(&normal);
+
+                    let vel_a = body_a.velocity + body_a.angular_velocity.cross(&ra);
+                    let vel_b = body_b.velocity + body_b.angular_velocity.cross(&rb);
+
+                    let v_diff = vel_a - vel_b;
+
+                    let j = normal * (1.0 + restitution) * v_diff.dot3(&normal) / (s_im + angular_factor);
+                    body_a.apply_impulse(-j, pt_on_a, &mut self.transforms);
+                    body_b.apply_impulse(j, pt_on_b, &mut self.transforms);
+
+                    let friction = body_a.friction_coefficient * body_b.friction_coefficient;
+                    let velocity_normal = normal * normal.dot3(&v_diff);
+                    let velocity_tangent = v_diff - velocity_normal;
+
+                    let relative_tangent_vel = velocity_tangent.normalize3();
+                    let inertia_a = (inv_inertia_a * ra.cross(&relative_tangent_vel)).cross(&ra);
+                    let inertia_b = (inv_inertia_b * rb.cross(&relative_tangent_vel)).cross(&rb);
+                    let inv_inertia = (inertia_a + inertia_b).dot3(&relative_tangent_vel);
+
+                    let mass_reduc = 1.0 / (s_im + inv_inertia);
+                    let friction_impulse = velocity_tangent * mass_reduc * friction;
+
+                    body_a.apply_impulse(-friction_impulse, pt_on_a, &self.transforms);
+                    body_b.apply_impulse(friction_impulse, pt_on_b, &self.transforms);
+
+                    let t_a = im_a / s_im;
+                    let t_b = im_b / s_im;
+
+                    let ds = normal * depth;
+
+                    {
+                        let a_transform = &mut self.transforms[body_a.transform];
+                        a_transform.local_translation -= ds * t_a;
+                    }
+                    {
+                        let b_transform = &mut self.transforms[body_b.transform];
+                        b_transform.local_translation += ds * t_b;
                     }
                 }
             }
         }
-        contacts.sort_by(|a, b| a.0.time_of_impact.partial_cmp(&b.0.time_of_impact).unwrap());
-        let mut accum_time = 0.0;
-        for contact in &contacts {
-            let (i, j) = contact.1;
-
-            let collision = &contact.0;
-            let dt = collision.time_of_impact - accum_time;
-
-            for body in &mut self.rigid_body_components {
-                if !body.is_static {
-                    body.update(dt, &mut self.transforms, &self.entities);
-                }
-            }
-
-            let (first_idx, second_idx) = if i < j { (i, j) } else { (j, i) };
-            let (left, right) = self.rigid_body_components.split_at_mut(second_idx);
-            let body_a = &mut left[first_idx];
-            let body_b = &mut right[0];
-
-
-            let normal = collision.normal;
-            let deepest = collision.contact_points.iter().max_by(
-                |a_point, b_point|
-                    a_point.penetration.partial_cmp(&b_point.penetration).unwrap()
-            ).unwrap();
-            let depth = deepest.penetration;
-            let im_a = body_a.inv_mass; let im_b = body_b.inv_mass;
-            let s_im = im_a + im_b;
-            let restitution = body_a.restitution_coefficient * body_b.restitution_coefficient;
-            let inv_inertia_a = body_a.get_inverse_inertia_tensor_world_space(&self.transforms);
-            let inv_inertia_b = body_b.get_inverse_inertia_tensor_world_space(&self.transforms);
-
-            let pt_on_a = collision.contact_points[0].point_on_a;
-            let pt_on_b = collision.contact_points[0].point_on_b;
-            let ra = pt_on_a - body_a.get_center_of_mass_world_space(&self.transforms);
-            let rb = pt_on_b - body_b.get_center_of_mass_world_space(&self.transforms);
-
-            let angular_j_a = (inv_inertia_a * ra.cross(&normal)).cross(&ra);
-            let angular_j_b = (inv_inertia_b * rb.cross(&normal)).cross(&rb);
-            let angular_factor = (angular_j_a + angular_j_b).dot3(&normal);
-
-            let vel_a = body_a.velocity + body_a.angular_velocity.cross(&ra);
-            let vel_b = body_b.velocity + body_b.angular_velocity.cross(&rb);
-
-            let v_diff = vel_a - vel_b;
-
-            let j = normal * (1.0 + restitution) * v_diff.dot3(&normal) / (s_im + angular_factor);
-            body_a.apply_impulse(-j, pt_on_a, &self.transforms);
-            body_b.apply_impulse(j, pt_on_b, &self.transforms);
-
-            let friction = body_a.friction_coefficient * body_b.friction_coefficient;
-            let velocity_normal = normal * normal.dot3(&v_diff);
-            let velocity_tangent = v_diff - velocity_normal;
-
-            let relative_tangent_vel = velocity_tangent.normalize3();
-            let inertia_a = (inv_inertia_a * ra.cross(&relative_tangent_vel)).cross(&ra);
-            let inertia_b = (inv_inertia_b * rb.cross(&relative_tangent_vel)).cross(&rb);
-            let inv_inertia = (inertia_a + inertia_b).dot3(&relative_tangent_vel);
-
-            let mass_reduc = 1.0 / (s_im + inv_inertia);
-            let friction_impulse = velocity_tangent * mass_reduc * friction;
-
-            body_a.apply_impulse(-friction_impulse, pt_on_a, &self.transforms);
-            body_b.apply_impulse(friction_impulse, pt_on_b, &self.transforms);
-
-            // if collision.time_of_impact == 0.0 {
-            //     let t_a = im_a / s_im;
-            //     let t_b = im_b / s_im;
-            //
-            //     let ds = pt_on_b - pt_on_a;
-            //     body_a.position += ds * t_a;
-            //     body_b.position -= ds * t_b;
-            // }
-            accum_time += dt;
-        }
         // apply velocity
         for body in &mut self.rigid_body_components {
             if !body.is_static {
-                body.update(delta_time - accum_time, &mut self.transforms, &self.entities);
+                body.update(delta_time, &mut self.transforms, &self.entities);
                 let entity_index = body.owner;
                 self.unupdated_entities.push(entity_index);
             }
@@ -689,6 +660,7 @@ pub struct Transform {
 }
 impl Transform {
     fn update_local_matrix(&mut self) {
+        if self.local_rotation.magnitude4_sq() == 0.0 { self.local_rotation.w = 1.0 }
         let rotate = Matrix::new_rotate_quaternion_vec4(&self.local_rotation);
         let scale = Matrix::new_scale_vec3(&self.local_scale);
         let translate = Matrix::new_translation_vec3(&self.local_translation);
@@ -942,38 +914,28 @@ impl RigidBodyComponent {
 
         let c = self.get_center_of_mass_world_space(transforms);
 
-        let [self_transform, parent_transform] = transforms.get_disjoint_mut([self.transform, entities[self.owner].transform]).unwrap();
+        let [self_transform, parent_transform] = transforms.get_disjoint_mut([self.transform, entities[entities[self.owner].parent].transform]).unwrap();
 
-        let original_world_pos = self_transform.world_translation;
+        let self_position = &self_transform.world_translation;
+        let self_orientation = &self_transform.world_rotation;
 
         let dx = self.velocity * delta_time;
-        self_transform.local_translation += linear_displacement_to_local(dx, parent_transform);
 
-        let rot = Matrix::new_rotate_quaternion_vec4(&self_transform.world_rotation);
+        let c_to_pos = self_position + dx - c;
+
+        let rot = Matrix::new_rotate_quaternion_vec4(&self_orientation);
         let inertia_world = rot * self.inertia_tensor * rot.transpose3();
         let inv_inertia_world = rot * self.inv_inertia_tensor * rot.transpose3();
         let torque = self.angular_velocity.cross(&(inertia_world * self.angular_velocity));
         let alpha = inv_inertia_world * torque;
         self.angular_velocity += alpha * delta_time;
 
-        let angle = self.angular_velocity.magnitude3() * delta_time;
-        let dq_world = if angle > 0.0 {
-            Vector::axis_angle_quat(
-                &(self.angular_velocity / self.angular_velocity.magnitude3()),
-                angle,
-            )
-        } else {
-            Vector::new()
-        };
-        let dq = angular_displacement_to_local(dq_world, parent_transform);
+        let d_theta = self.angular_velocity * delta_time;
+        let dq = Vector::axis_angle_quat(&d_theta, d_theta.magnitude3());
 
-        self_transform.local_rotation = dq.combine(&self_transform.local_rotation).normalize4();
+        self_transform.local_rotation = parent_transform.world_rotation.inverse_quat().combine(&dq.combine(&self_orientation).normalize4()).normalize4();
 
-        let c_to_pos = original_world_pos - c;
-        let rotated_offset = Matrix::new_rotate_quaternion_vec4(&dq_world) * c_to_pos;
-        let new_world_pos = c + dx + rotated_offset;
-
-        self_transform.local_translation = world_position_to_local(new_world_pos, parent_transform);
+        self_transform.local_translation = parent_transform.world.inverse4() * (c + Matrix::new_rotate_quaternion_vec4(&dq) * c_to_pos).with('w', 1.0);
     }
 
     pub fn apply_impulse(&mut self, impulse: Vector, point: Vector, transforms: &Vec<Transform>) {
@@ -1310,18 +1272,18 @@ impl RigidBodyComponent {
                         }
                     }
 
-                    if collision_normal.dot4(&t) < 0.0 {
+                    if collision_normal.dot3(&t) < 0.0 {
                         collision_normal = -collision_normal;
                     }
 
                     Some(ContactInformation {
                         contact_points: vec![ContactPoint {
-                            point_on_a: a_center + collision_normal * (1.0 - min_penetration),
-                            point_on_b: b_center - collision_normal * (1.0 - min_penetration),
+                            point_on_a: a_center + t.normalize3() * a.half_extents.magnitude3(),
+                            point_on_b: b_center - t.normalize3() * b.half_extents.magnitude3(),
                             penetration: min_penetration
                         }],
                         normal: collision_normal,
-                        time_of_impact: 0.0,
+                        time_of_impact: min_penetration,
                     })
                 }
                 Hitbox::Sphere(_) => {
