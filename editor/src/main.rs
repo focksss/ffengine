@@ -87,6 +87,7 @@ fn main() { unsafe {
             let scene = &mut *app.scene.borrow_mut();
 
             let ground = scene.new_entity_from_model(0, "editor/resources/models/collisionTest/collisionTestNoWalls.gltf");
+            //let ground = scene.new_entity_from_model(0, "editor/resources/models/sphereScene/scene.gltf");
 
             let ball = scene.new_entity_from_model(0, "editor/resources/models/demoBall/scene.gltf");
 
@@ -98,9 +99,9 @@ fn main() { unsafe {
             scene.update_scene(initial_update_command_buffer[0], 0, 0.0);
             base.context.end_single_time_commands(initial_update_command_buffer);
 
-            scene.add_rigid_body_from_entity(ball2, 0, true);
+            scene.add_rigid_body_from_entity(ground, 0, true);
 
-            scene.add_rigid_body_from_entity(ball, 0, false);
+            scene.add_rigid_body_from_entity(ball, 3, false);
         }
 
         /*

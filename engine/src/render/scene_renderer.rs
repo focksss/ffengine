@@ -1,4 +1,6 @@
 use std::cell::RefCell;
+use std::collections::HashMap;
+use std::f32::consts::PI;
 use std::mem;
 use crate::offset_of;
 use ash::vk;
@@ -51,8 +53,9 @@ pub struct SceneRenderer {
     pub nearest_sampler: vk::Sampler,
     pub ssao_kernal: [[f32; 4]; SSAO_KERNAL_SIZE],
     pub ssao_noise_texture: Texture,
-    pub hitbox_display_vertices_buffer: (vk::Buffer, vk::DeviceMemory),
-    pub hitbox_display_indices_buffer: (vk::Buffer, vk::DeviceMemory),
+    pub editor_primitives_vertices_buffer: (vk::Buffer, vk::DeviceMemory),
+    pub editor_primitives_indices_buffer: (vk::Buffer, vk::DeviceMemory),
+    pub editor_primitives_index_info: Vec<(u32, u32)>,
 }
 impl SceneRenderer {
     pub unsafe fn new(context: &Arc<Context>, world: &World, viewport: vk::Viewport) -> SceneRenderer { unsafe {
@@ -374,11 +377,14 @@ impl SceneRenderer {
         }
         //</editor-fold>
 
-        //<editor-fold desc = "hitbox vis buffers">
+        //<editor-fold desc = "editor primitive buffers">
         let mut indices: Vec<[u32; 2]> = Vec::new();
         let mut vertices: Vec<[f32; 3]> = Vec::new();
+        let mut editor_primitives_index_info = Vec::new();
 
         //cube
+        let mut info = (0, indices.len() as u32 * 2);
+
         for x in [-1.0,1.0] {
             for y in [-1.0,1.0] {
                 for z in [-1.0,1.0] {
@@ -394,13 +400,40 @@ impl SceneRenderer {
         for edge in edges {
             indices.push(edge);
         }
-        let hitbox_display_vertices_buffer = context.create_device_and_staging_buffer(
+        info.0 = indices.len() as u32 * 2 - info.1;
+        editor_primitives_index_info.push(info);
+
+        //sphere
+        let mut info = (0, indices.len() as u32 * 2);
+        let sphere_base_vertex = vertices.len() as u32;
+
+        let res = 50;
+        for i in 0..res {
+            let theta = 2.0 * PI * i as f32 / res as f32;
+            vertices.push([theta.cos(), 0.0, theta.sin()]);
+            vertices.push([theta.cos(), theta.sin(), 0.0]);
+            vertices.push([0.0, theta.cos(), theta.sin()]);
+            if i > 0 {
+                indices.push([vertices.len() as u32 - 6, vertices.len() as u32 - 3]);
+                indices.push([vertices.len() as u32 - 5, vertices.len() as u32 - 2]);
+                indices.push([vertices.len() as u32 - 4, vertices.len() as u32 - 1]);
+            }
+        }
+        let last = sphere_base_vertex + (res as u32 - 1) * 3;
+        indices.push([sphere_base_vertex + 0, last + 0]);
+        indices.push([sphere_base_vertex + 1, last + 1]);
+        indices.push([sphere_base_vertex + 2, last + 2]);
+
+        info.0 = indices.len() as u32 * 2 - info.1;
+        editor_primitives_index_info.push(info);
+
+        let editor_primitives_vertices_buffer = context.create_device_and_staging_buffer(
             0,
             &vertices,
             vk::BufferUsageFlags::VERTEX_BUFFER,
             true, false, true
         ).0;
-        let hitbox_display_indices_buffer = context.create_device_and_staging_buffer(
+        let editor_primitives_indices_buffer = context.create_device_and_staging_buffer(
             0,
             &indices,
             vk::BufferUsageFlags::INDEX_BUFFER,
@@ -435,8 +468,9 @@ impl SceneRenderer {
             ssao_kernal,
             ssao_noise_texture,
 
-            hitbox_display_indices_buffer,
-            hitbox_display_vertices_buffer,
+            editor_primitives_indices_buffer,
+            editor_primitives_vertices_buffer,
+            editor_primitives_index_info,
         }
     } }
     pub unsafe fn create_rendering_objects(
@@ -1362,10 +1396,10 @@ impl SceneRenderer {
 
         self.null_texture.destroy(&self.context);
 
-        self.context.device.destroy_buffer(self.hitbox_display_indices_buffer.0, None);
-        self.context.device.destroy_buffer(self.hitbox_display_vertices_buffer.0, None);
-        self.context.device.free_memory(self.hitbox_display_indices_buffer.1, None);
-        self.context.device.free_memory(self.hitbox_display_vertices_buffer.1, None);
+        self.context.device.destroy_buffer(self.editor_primitives_indices_buffer.0, None);
+        self.context.device.destroy_buffer(self.editor_primitives_vertices_buffer.0, None);
+        self.context.device.free_memory(self.editor_primitives_indices_buffer.1, None);
+        self.context.device.free_memory(self.editor_primitives_vertices_buffer.1, None);
     } }
 }
 

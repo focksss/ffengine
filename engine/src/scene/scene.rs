@@ -282,9 +282,10 @@ impl Scene {
                 if let Some(collision) = body_a.will_collide_with(&self.hitbox_components, body_b, 0.0, &self.transforms) {
                     if collision.contact_points.is_empty() { continue; }
                     let normal = collision.normal;
-                    println!("contact normal: {:?}", normal);
                     let depth = collision.time_of_impact;
-                    let im_a = body_a.inv_mass; let im_b = body_b.inv_mass;
+
+                    let im_a = body_a.inv_mass;
+                    let im_b = body_b.inv_mass;
                     let s_im = im_a + im_b;
                     let restitution = body_a.restitution_coefficient * body_b.restitution_coefficient;
                     let inv_inertia_a = body_a.get_inverse_inertia_tensor_world_space(&self.transforms);
@@ -328,13 +329,13 @@ impl Scene {
 
                     let ds = normal * depth;
 
-                    {
+                    if !body_a.is_static {
                         let a_transform = &mut self.transforms[body_a.transform];
-                        a_transform.local_translation -= ds * t_a;
+                        a_transform.world_translation -= ds * t_a;
                     }
-                    {
+                    if !body_b.is_static {
                         let b_transform = &mut self.transforms[body_b.transform];
-                        b_transform.local_translation += ds * t_b;
+                        b_transform.world_translation += ds * t_b;
                     }
                 }
             }
@@ -511,12 +512,12 @@ impl Scene {
                 self.context.device.cmd_bind_vertex_buffers(
                     command_buffer,
                     0,
-                    &[scene_renderer.hitbox_display_vertices_buffer.0],
+                    &[scene_renderer.editor_primitives_vertices_buffer.0],
                     &[0],
                 );
                 self.context.device.cmd_bind_index_buffer(
                     command_buffer,
-                    scene_renderer.hitbox_display_indices_buffer.0,
+                    scene_renderer.editor_primitives_indices_buffer.0,
                     0,
                     vk::IndexType::UINT32,
                 );
@@ -531,15 +532,22 @@ impl Scene {
                     let rigid_body = &self.rigid_body_components[*rigid_body_index];
                     let transform = &self.transforms[self.entities[rigid_body.owner].transform];
                     let hitbox = &self.hitbox_components[rigid_body.hitbox].hitbox;
-                    let (index_count, first_index, model_matrix) = match hitbox {
+                    let ((index_count, first_index), model_matrix) = match hitbox {
                         Hitbox::OBB(obb, ..) => {
-                            (24, 0,
-                             Matrix::new_translation_vec3(&(transform.world_translation + obb.center)) *
+                            (scene_renderer.editor_primitives_index_info[0],
+                             Matrix::new_translation_vec3(&(transform.world_translation + obb.center.rotate_by_quat(&transform.world_rotation))) *
                              Matrix::new_rotate_quaternion_vec4(&transform.world_rotation) *
                              Matrix::new_scale_vec3(&(obb.half_extents))
                             )
-                        }
-                        _ => (0, 0, Matrix::new())
+                        },
+                        Hitbox::Sphere(sphere, ..) => {
+                            (scene_renderer.editor_primitives_index_info[1],
+                             Matrix::new_translation_vec3(&(transform.world_translation + sphere.center.rotate_by_quat(&transform.world_rotation))) *
+                                 Matrix::new_rotate_quaternion_vec4(&transform.world_rotation) *
+                                 Matrix::new_scale_vec3(&Vector::fill(sphere.radius))
+                            )
+                        },
+                        _ => ((0, 0), Matrix::new())
                     };
 
                     self.context.device.cmd_push_constants(
@@ -683,6 +691,13 @@ impl Transform {
                     .rotate_by_quat(&parent_transform.world_rotation);
             self.world = parent_transform.world * self.local;
         }
+    }
+
+    fn local_to_world_position(&self, position: Vector) -> Vector {
+        self.world_translation + (position / self.world_scale).rotate_by_quat(&self.world_rotation.inverse_quat())
+    }
+    fn world_to_local_position(&self, position: Vector) -> Vector {
+        ((position - self.world_translation) / self.world_scale).rotate_by_quat(&self.world_rotation.inverse_quat())
     }
 }
 impl Default for Transform {
@@ -942,6 +957,7 @@ impl RigidBodyComponent {
         if self.inv_mass == 0.0 { return }
 
         self.velocity += impulse * self.inv_mass;
+        println!("{:?}", impulse * self.inv_mass);
 
         let c = self.get_center_of_mass_world_space(transforms);
         let r = point - c;
@@ -1009,7 +1025,7 @@ impl RigidBodyComponent {
                     let delta = sphere_center - obb_center;
                     let local_sphere_center = Vector::new3(delta.dot3(&axes[0]), delta.dot3(&axes[1]), delta.dot3(&axes[2]));
 
-                    let closest_local = local_sphere_center.clamp3(&(-obb.half_extents), &obb.half_extents);
+                    let closest_local = local_sphere_center.clamp3(&(-1.0 * obb.half_extents), &obb.half_extents);
                     let closest_world = obb_center + (axes[0] * closest_local.x) + (axes[1] * closest_local.y) + (axes[2] * closest_local.z);
 
                     let diff = sphere_center - closest_world;
@@ -1098,13 +1114,13 @@ impl RigidBodyComponent {
                     Some(ContactInformation {
                         contact_points,
                         normal,
-                        time_of_impact: 0.0
+                        time_of_impact: penetration,
                     })
                 }
                 Hitbox::Sphere(a) => {
                     let p_a = a.center.rotate_by_quat(&self_transform.world_rotation) + self_transform.world_translation;
                     let p_b = sphere.center.rotate_by_quat(&other_transform.world_rotation) + other_transform.world_translation;
-
+/*
                     if let Some((point, time_of_impact)) = {
                         let relative_vel = self.velocity - other.velocity;
 
@@ -1176,6 +1192,28 @@ impl RigidBodyComponent {
                     } else {
                         None
                     }
+
+ */
+                    let d = p_b - p_a;
+                    let d_m = d.magnitude3();
+                    let n = if d_m > 1e-6 { d / d_m } else { Vector::new3(0.0, 1.0, 0.0) };
+
+                    if d_m > a.radius + sphere.radius { return None }
+
+                    let point_on_a = p_a + n * a.radius;
+                    let point_on_b = p_b - n * sphere.radius;
+
+                    let penetration = a.radius + sphere.radius - d_m;
+
+                    Some(ContactInformation {
+                        contact_points: vec![ContactPoint {
+                            point_on_a,
+                            point_on_b,
+                            penetration,
+                        }],
+                        normal: n,
+                        time_of_impact: penetration,
+                    })
                 }
                 _ => { None }
             }

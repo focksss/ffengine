@@ -131,11 +131,21 @@ function open_transform_editor()
 	entity_editor_root_node:clear_children()
 	entity_editor_root_node:add_child_index(transform_editor_ui_node.index)
 end
-function open_render_component_editor() 
-    render_component_editor(_G.node_to_render_components_map[gui.ActiveNode.index])
+function open_render_component_editor()
+    Engine.scene:reset_outlines()
+
+    local render_component_index = _G.node_to_render_components_map[gui.ActiveNode.index]
+    Engine.scene:add_outlined_component(render_component_index);
+    
+    render_component_editor(render_component_index)
 end
 function open_rigid_body_editor() 
-	_G.selected_rigid_body = _G.node_to_rigid_body_map[gui.ActiveNode.index]
+    Engine.scene:reset_outlines()
+
+    local body_index = _G.node_to_rigid_body_map[gui.ActiveNode.index]
+    Engine.scene:add_outlined_body(body_index)
+
+	_G.selected_rigid_body = body_index
     _G.Editor.select_entity(Engine.scene:get_rigid_body(_G.selected_rigid_body).owner_index)
 
 	entity_editor_root_node:clear_children()
