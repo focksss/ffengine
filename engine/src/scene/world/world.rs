@@ -280,15 +280,14 @@ impl World {
 
         index
     }
-    pub unsafe fn update_buffers(&mut self, base: &VkBase) { unsafe {
+    pub unsafe fn update_buffers(&mut self, base: &VkBase, command_buffer: CommandBuffer) { unsafe {
         if self.buffers_need_update {
             self.buffers_need_update = false;
 
             self.construct_textures(base);
 
-            let command_buffers = self.context.begin_single_time_commands(1);
             self.context.update_buffer_through_staging(
-                &command_buffers[0],
+                &command_buffer,
                 &self.vertex_buffer,
                 &self.vertex_staging_buffer,
                 &self.new_vertices,
@@ -296,7 +295,7 @@ impl World {
                 true
             );
             self.context.update_buffer_through_staging(
-                &command_buffers[0],
+                &command_buffer,
                 &self.index_buffer,
                 &self.index_staging_buffer,
                 &self.new_indices,
@@ -305,7 +304,7 @@ impl World {
             );
             for frame in 0..self.material_buffers.len() {
                 self.context.update_buffer_through_staging(
-                    &command_buffers[0],
+                    &command_buffer,
                     &self.material_buffers[frame],
                     &self.material_staging_buffer,
                     &self.new_materials,
@@ -314,7 +313,7 @@ impl World {
                 );
                 if self.new_joints.len() > 0 {
                     self.context.update_buffer_through_staging(
-                        &command_buffers[0],
+                        &command_buffer,
                         &self.joints_buffers[frame],
                         &self.joints_staging_buffer,
                         &self.new_joints,
@@ -332,8 +331,6 @@ impl World {
             self.new_vertices.clear();
             self.new_joints.clear();
             self.new_materials.clear();
-
-            self.context.end_single_time_commands(command_buffers);
         }
     } }
     pub unsafe fn add_light(&mut self, base: &VkBase, light: Light) { unsafe {
@@ -1190,7 +1187,7 @@ impl ModelContainer {
                 None
             };
 
-            let mut rotation = Vector::empty();
+            let mut rotation = Vector::new();
             if let JsonValue::Array(ref rotation_json) = node["rotation"] {
                 if rotation_json.len() >= 4 {
                     rotation = Vector::new4(

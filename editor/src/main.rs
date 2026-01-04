@@ -30,12 +30,22 @@ fn main() { unsafe {
             outer_cutoff: 0.0,
         });
 
-        app.world.borrow_mut().add_texture("editor/resources/citrus_orchard_road_puresky_4k.hdr", false);
+        app.world.borrow_mut().add_texture("editor/resources/models/collisionTest/textures/checker_2x2.png", false);
+        // app.world.borrow_mut().add_texture("editor/resources/citrus_orchard_road_puresky_4k.hdr", false);
 
 
 
         {
             let mut scene = app.scene.borrow_mut();
+
+            for entity in &scene.entities {
+                let transform = &scene.transforms[entity.transform];
+                if transform.local_rotation.magnitude4_sq() < 0.001 {
+                    println!("(pre) THIS MF: {}", entity.name)
+                }
+            }
+            println!("");
+
             scene.new_entity_from_model(0, "editor/resources/models/ffocks/untitled.gltf");
             let transform_index = scene.entities[1].transform;
             scene.transforms[transform_index].local_scale = Vector::fill(0.01);
@@ -86,8 +96,8 @@ fn main() { unsafe {
         {
             let scene = &mut *app.scene.borrow_mut();
 
-            let ground = scene.new_entity_from_model(0, "editor/resources/models/collisionTest/collisionTestNoWalls.gltf");
-            //let ground = scene.new_entity_from_model(0, "editor/resources/models/sphereScene/scene.gltf");
+            //let ground = scene.new_entity_from_model(0, "editor/resources/models/collisionTest/collisionTestNoWalls.gltf");
+            let ground = scene.new_entity_from_model(0, "editor/resources/models/sphereScene/scene.gltf");
 
             let ball = scene.new_entity_from_model(0, "editor/resources/models/demoBall/scene.gltf");
 
@@ -96,10 +106,10 @@ fn main() { unsafe {
             // let grass_block = scene.new_entity_from_model(0, "editor/resources/models/grassblockGLTF/grassblock.gltf");
 
             let initial_update_command_buffer = base.context.begin_single_time_commands(1);
-            scene.update_scene(initial_update_command_buffer[0], 0, 0.0);
+            scene.update_scene(initial_update_command_buffer[0], 0, 0.0, false);
             base.context.end_single_time_commands(initial_update_command_buffer);
 
-            scene.add_rigid_body_from_entity(ground, 0, true);
+            scene.add_rigid_body_from_entity(ground, 3, true);
 
             scene.add_rigid_body_from_entity(ball, 3, false);
         }

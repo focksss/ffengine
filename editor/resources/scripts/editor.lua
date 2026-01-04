@@ -519,6 +519,11 @@ function toggle_running()
 	play_node.hidden = not play_node.hidden
 	pause_node.hidden = not pause_node.hidden
 end
+function step()
+	if not Engine.scene.running then
+		Engine.scene:step(100 / 1000)		
+	end
+end
 function recompile() 
     Engine.client.flags.reload_rendering_queued = true
     Engine.client.flags.reload_scripts_queued = true

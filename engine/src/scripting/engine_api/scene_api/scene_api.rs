@@ -1,4 +1,4 @@
-use crate::engine::EngineRef;
+use crate::engine::{get_command_buffer, EngineRef};
 use std::cell::RefCell;
 use std::sync::Arc;
 use mlua::{FromLua, UserData, UserDataFields, UserDataMethods, Value};
@@ -56,6 +56,14 @@ impl UserData for SceneRef {
             if let Some(file) = file {
                 scene.new_entity_from_model(parent, file.to_str().unwrap());
             }
+
+            Ok(())
+        });
+
+        methods.add_method("step", |lua, this, dt: f32| unsafe {
+            with_scene_mut!(lua => scene);
+
+            scene.update_scene(get_command_buffer(), 0, dt, true);
 
             Ok(())
         });

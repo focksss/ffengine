@@ -516,6 +516,54 @@
                   ]
                 },
                 {
+                  "name": "step button",
+                  "interactable_information": {
+                    "hover_actions": [
+                      {
+                        "method": "color_image_hovered",
+                        "script": 0
+                      },
+                      {
+                        "method": "hover_cursor",
+                        "script": 0
+                      }
+                    ],
+                    "unhover_actions": [
+                      {
+                        "method": "color_image_unhovered",
+                        "script": 0
+                      }
+                    ],
+                    "left_up_actions": [
+                      {
+                        "method": "step",
+                        "script": 0
+                      }
+                    ]
+                  },
+                  "width": {
+                    "type": "Absolute",
+                    "info": {
+                      "pixels": 30
+                    }
+                  },
+                  "height": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "elements": [
+                    {
+                      "type": "Image",
+                      "info": {
+                        "uri": "editor\\resources\\gui\\images\\step.png",
+                        "additive_tint": [1.0, 1.0, 1.0, 0.0]
+                      }
+                    }
+                  ]
+                },
+                {
                   "name": "reload button",
                   "interactable_information": {
                     "hover_actions": [

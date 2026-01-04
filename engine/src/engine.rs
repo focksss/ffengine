@@ -187,9 +187,6 @@ impl Engine {
                         for gui in self.renderer.borrow_mut().guis.iter() {
                             gui.borrow_mut().initialize_new_texts();
                         }
-                        {
-                            self.world.borrow_mut().update_buffers(base);
-                        }
 
                         let current_fence = base.draw_commands_reuse_fences[current_frame];
                         {
@@ -222,7 +219,8 @@ impl Engine {
                             &[current_rendering_complete_semaphore],
                             |_device, frame_command_buffer| {
                                 {
-                                    self.scene.borrow_mut().update_scene(frame_command_buffer, current_frame, delta_time);
+                                    self.world.borrow_mut().update_buffers(base, frame_command_buffer);
+                                    self.scene.borrow_mut().update_scene(frame_command_buffer, current_frame, delta_time, false);
                                     let world_ref = &mut self.world.borrow_mut();
                                     world_ref.update_lights(frame_command_buffer, current_frame);
                                     world_ref.update_cameras();

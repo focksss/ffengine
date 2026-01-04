@@ -34,6 +34,7 @@ MovementMode = {
     ---@field add_outlined_body fun(self:Scene, index:integer):nil
     ---@field load_model fun(self:Scene, parent_index:integer):nil
     ---@field running boolean
+    ---@field step fun(self:Scene, dt:number):nil
     
         ---@class Transform
         ---@field translation Vector
