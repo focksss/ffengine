@@ -300,7 +300,7 @@ impl Scene {
                         collision_constraints.push(CollisionConstraint {
                             body_a: i,
                             body_b: j,
-                            penetration: depth * 0.1,
+                            penetration: depth,
                             normal,
                             pt_on_a,
                             pt_on_b,
@@ -319,7 +319,9 @@ impl Scene {
         }
         for body in &mut self.rigid_body_components {
             if !body.is_static {
-                body.update(&mut self.transforms);
+                let owner = &self.entities[body.owner];
+                let parent = &self.entities[owner.parent];
+                body.update(&mut self.transforms, parent.transform);
                 let entity_index = body.owner;
                 self.unupdated_entities.push(entity_index);
             }
@@ -756,15 +758,15 @@ impl Transform {
     fn local_to_world_position(&self, position: Vector) -> Vector {
         self.world_translation + (position * self.world_scale).rotate_by_quat(&self.world_rotation)
     }
-    fn world_to_local_position(&self, position: Vector) -> Vector {
-        ((position - self.world_translation).rotate_by_quat(&self.world_rotation.inverse_quat())) / self.world_scale
+    fn world_to_local_position(&self, position: Vector, parent: &Transform) -> Vector {
+        ((position - parent.world_translation) / parent.world_scale).rotate_by_quat(&parent.world_rotation.inverse_quat())
     }
 
     fn local_to_world_rotation(&self, rotation: Vector) -> Vector {
         self.world_rotation * rotation
     }
-    fn world_to_local_rotation(&self, rotation: Vector) -> Vector {
-        self.world_rotation.inverse_quat() * rotation
+    fn world_to_local_rotation(&self, rotation: Vector, parent: &Transform) -> Vector {
+        parent.world_rotation.inverse_quat().combine(&rotation)
     }
 }
 impl Default for Transform {
@@ -998,7 +1000,7 @@ impl RigidBodyComponent {
 
         let inv_rot = Matrix::new_rotate_quaternion_vec4(&self.q_f.inverse_quat());
         let rn = if let Some(position) = position {
-            inv_rot * (position - self.x_f).cross(normal).with('w', 0.0)
+            inv_rot * ((position - self.x_f).cross(normal).with('w', 0.0))
         } else {
             inv_rot * normal.with('w', 0.0)
         };
@@ -1026,11 +1028,8 @@ impl RigidBodyComponent {
         self.velocity += g * dt;
         self.x_f += self.velocity * dt;
 
-
-        let omega_q = self.angular_velocity.with('w', 0.0);
-        let dq = omega_q.combine(&self.q_i);
-
-        self.q_f += dq * (0.5 * dt);
+        self.differential_rotation = self.angular_velocity.with('w', 0.0).combine(&self.q_f);
+        self.q_f += self.differential_rotation * (0.5 * dt);
         self.q_f = self.q_f.normalize4();
     }
     pub fn update_velocity(&mut self, dt: f32) {
@@ -1039,16 +1038,16 @@ impl RigidBodyComponent {
         self.velocity = (self.x_f - self.x_i) / dt;
 
         self.differential_rotation = self.q_f.combine(&self.q_i.inverse_quat());
-        self.angular_velocity = self.differential_rotation * 2.0 / dt;
+        self.angular_velocity = self.differential_rotation.with('w', 0.0) * 2.0 / dt;
         if self.differential_rotation.w < 0.0 { self.angular_velocity = -self.angular_velocity }
     }
-    pub fn update(&mut self, transforms: &mut Vec<Transform>) {
+    pub fn update(&mut self, transforms: &mut Vec<Transform>, parent_transform: usize) {
         if self.is_static { return }
 
-        let transform = &mut transforms[self.transform];
+        let [transform, parent_transform] = transforms.get_disjoint_mut([self.transform, parent_transform]).unwrap();
 
-        transform.local_translation = transform.world_to_local_position(self.x_f);
-        transform.local_rotation = transform.world_to_local_rotation(self.q_f);
+        transform.local_translation = transform.world_to_local_position(self.x_f, parent_transform);
+        transform.local_rotation = transform.world_to_local_rotation(self.q_f, parent_transform);
     }
     pub fn apply_correction(
         &mut self,
@@ -1081,17 +1080,19 @@ impl RigidBodyComponent {
 
             let inv_inertia = Vector::new3(body.inv_inertia_tensor.data[0], body.inv_inertia_tensor.data[5], body.inv_inertia_tensor.data[10]);
             let d_angular_vel = ((position - body.x_f)
-                .cross(correction).with('w', 0.0)
-                    .rotate_by_quat(&body.q_f.inverse_quat())
-                        * inv_inertia)
-                            .rotate_by_quat(&body.q_f.inverse_quat());
+                .cross(correction)
+                .with('w', 0.0)
+                .rotate_by_quat(&body.q_f.inverse_quat())
+                * inv_inertia)
+                .with('w', 0.0)
+                .rotate_by_quat(&body.q_f);
             body.differential_rotation = d_angular_vel.with('w', 0.0).combine(&body.q_f);
             body.q_f += (0.5 * body.differential_rotation).normalize4();
         };
 
-        correct(self, &n, &pos_a);
+        correct(self, &-n, &pos_a);
         if let Some(body_b) = body_b {
-            correct(body_b, &-n, &pos_b);
+            correct(body_b, &n, &pos_b);
         }
         lambda * correction / dt / dt
     }
@@ -1123,6 +1124,104 @@ impl RigidBodyComponent {
     ) -> Option<ContactInformation> {
         if let Hitbox::Sphere(sphere) = other_hitbox {
             return match self_hitbox {
+                Hitbox::Sphere(a) => {
+                    let p_a = a.center.rotate_by_quat(&self.q_f) + self.x_f;
+                    let p_b = sphere.center.rotate_by_quat(&other.q_f) + other.x_f;
+                    /*
+                                        if let Some((point, time_of_impact)) = {
+                                            let relative_vel = self.velocity - other.velocity;
+
+                                            let end_pt_a = p_a + relative_vel * dt;
+                                            let dir = end_pt_a - p_a;
+
+                                            let mut t0 = 0.0;
+                                            let mut t1 = 0.0;
+                                            if dir.magnitude3() < 0.001 {
+                                                let ab = p_b - p_a;
+                                                let radius = a.radius + sphere.radius + 0.001;
+                                                if ab.magnitude3() > radius {
+                                                    return None
+                                                }
+                                            } else if let Some((i_t0, i_t1)) = Sphere::ray_sphere(&p_a, &dir, &p_b, a.radius + sphere.radius) {
+                                                t0 = i_t0;
+                                                t1 = i_t1;
+                                            } else {
+                                                return None
+                                            }
+
+                                            // convert 0-1 to 0-dt
+                                            t0 *= dt;
+                                            t1 *= dt;
+
+                                            // collision happened in past
+                                            if t1 < 0.0 { return None }
+
+                                            let toi = if t0 < 0.0 { 0.0 } else { t0 };
+
+                                            // collision happens past dt
+                                            if toi > dt { return None }
+
+                                            let new_pos_a = p_a + self.velocity * toi;
+                                            let new_pos_b = p_b + other.velocity * toi;
+
+                                            let ab = (new_pos_b - new_pos_a).normalize3();
+
+                                            Some((ContactPoint {
+                                                point_on_a: new_pos_a + ab * a.radius,
+                                                point_on_b: new_pos_b - ab * sphere.radius,
+
+                                                penetration: 0.0,
+                                            }, toi))
+                                        } {
+                                            // there will be a collision
+                                            /*
+                                            self.update(time_of_impact);
+                                            other.update(time_of_impact);
+
+                                             */
+
+                                            let normal = (self_transform.world_translation - other_transform.world_translation).normalize3();
+
+                                            /*
+                                            self.update(-time_of_impact);
+                                            other.update(-time_of_impact);
+
+                                             */
+
+                                            let ab = other_transform.world_translation - self_transform.world_translation;
+                                            let r = ab.magnitude3() - (a.radius + sphere.radius);
+
+                                            Some(ContactInformation {
+                                                contact_points: vec![point],
+                                                time_of_impact,
+                                                normal,
+                                            })
+                                        } else {
+                                            None
+                                        }
+
+                     */
+                    let d = p_b - p_a;
+                    let d_m = d.magnitude3();
+                    let n = if d_m > 1e-6 { d / d_m } else { Vector::new3(0.0, 1.0, 0.0) };
+
+                    if d_m > a.radius + sphere.radius { return None }
+
+                    let point_on_a = p_a + n * a.radius;
+                    let point_on_b = p_b - n * sphere.radius;
+
+                    let penetration = a.radius + sphere.radius - d_m;
+
+                    Some(ContactInformation {
+                        contact_points: vec![ContactPoint {
+                            point_on_a,
+                            point_on_b,
+                            penetration,
+                        }],
+                        normal: n,
+                        time_of_impact: penetration,
+                    })
+                }
                 Hitbox::OBB(obb, _) => {
                     let rot = Matrix::new_rotate_quaternion_vec4(&self.q_f);
 
@@ -1227,104 +1326,6 @@ impl RigidBodyComponent {
                     Some(ContactInformation {
                         contact_points,
                         normal,
-                        time_of_impact: penetration,
-                    })
-                }
-                Hitbox::Sphere(a) => {
-                    let p_a = a.center.rotate_by_quat(&self.q_f) + self.x_f;
-                    let p_b = sphere.center.rotate_by_quat(&other.q_f) + other.x_f;
-/*
-                    if let Some((point, time_of_impact)) = {
-                        let relative_vel = self.velocity - other.velocity;
-
-                        let end_pt_a = p_a + relative_vel * dt;
-                        let dir = end_pt_a - p_a;
-
-                        let mut t0 = 0.0;
-                        let mut t1 = 0.0;
-                        if dir.magnitude3() < 0.001 {
-                            let ab = p_b - p_a;
-                            let radius = a.radius + sphere.radius + 0.001;
-                            if ab.magnitude3() > radius {
-                                return None
-                            }
-                        } else if let Some((i_t0, i_t1)) = Sphere::ray_sphere(&p_a, &dir, &p_b, a.radius + sphere.radius) {
-                            t0 = i_t0;
-                            t1 = i_t1;
-                        } else {
-                            return None
-                        }
-
-                        // convert 0-1 to 0-dt
-                        t0 *= dt;
-                        t1 *= dt;
-
-                        // collision happened in past
-                        if t1 < 0.0 { return None }
-
-                        let toi = if t0 < 0.0 { 0.0 } else { t0 };
-
-                        // collision happens past dt
-                        if toi > dt { return None }
-
-                        let new_pos_a = p_a + self.velocity * toi;
-                        let new_pos_b = p_b + other.velocity * toi;
-
-                        let ab = (new_pos_b - new_pos_a).normalize3();
-
-                        Some((ContactPoint {
-                            point_on_a: new_pos_a + ab * a.radius,
-                            point_on_b: new_pos_b - ab * sphere.radius,
-
-                            penetration: 0.0,
-                        }, toi))
-                    } {
-                        // there will be a collision
-                        /*
-                        self.update(time_of_impact);
-                        other.update(time_of_impact);
-
-                         */
-
-                        let normal = (self_transform.world_translation - other_transform.world_translation).normalize3();
-
-                        /*
-                        self.update(-time_of_impact);
-                        other.update(-time_of_impact);
-
-                         */
-
-                        let ab = other_transform.world_translation - self_transform.world_translation;
-                        let r = ab.magnitude3() - (a.radius + sphere.radius);
-
-                        Some(ContactInformation {
-                            contact_points: vec![point],
-                            time_of_impact,
-                            normal,
-                        })
-                    } else {
-                        None
-                    }
-
- */
-                    let d = p_b - p_a;
-                    let d_m = d.magnitude3();
-                    let n = if d_m > 1e-6 { d / d_m } else { Vector::new3(0.0, 1.0, 0.0) };
-
-                    if d_m > a.radius + sphere.radius { return None }
-
-                    let point_on_a = p_a + n * a.radius;
-                    let point_on_b = p_b - n * sphere.radius;
-
-                    let penetration = a.radius + sphere.radius - d_m;
-
-                    Some(ContactInformation {
-                        contact_points: vec![ContactPoint {
-                            point_on_a,
-                            point_on_b,
-                            penetration,
-                        }],
-                        normal: n,
                         time_of_impact: penetration,
                     })
                 }

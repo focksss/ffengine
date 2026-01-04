@@ -101,7 +101,7 @@ fn main() { unsafe {
 
             let ball = scene.new_entity_from_model(0, "editor/resources/models/demoBall/scene.gltf");
 
-            scene.transforms[scene.entities[ball].transform].local_translation = Vector::new3(-0.5, 10.0, 0.0);
+            scene.transforms[scene.entities[ball].transform].local_translation = Vector::new3(-0.5, 10.0, -0.5);
             let ball2 = scene.new_entity_from_model(0, "editor/resources/models/demoBall/scene.gltf");
             // let grass_block = scene.new_entity_from_model(0, "editor/resources/models/grassblockGLTF/grassblock.gltf");
 
