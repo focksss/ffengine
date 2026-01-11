@@ -1160,8 +1160,14 @@ impl VkBase {
             };
             instance.get_physical_device_features2(pdevice, &mut supported_features2);
 
+            let mut dynamic_rendering_features = vk::PhysicalDeviceDynamicRenderingFeatures {
+                dynamic_rendering: vk::TRUE,
+                ..Default::default()
+            };
+
             let device_create_info = vk::DeviceCreateInfo::default()
                 .push_next(&mut descriptor_indexing_features)
+                .push_next(&mut dynamic_rendering_features)
                 .queue_create_infos(std::slice::from_ref(&queue_info))
                 .enabled_extension_names(&device_extension_names_raw)
                 .enabled_features(&features);

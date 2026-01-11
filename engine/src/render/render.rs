@@ -1,5 +1,5 @@
 use ash::vk;
-use ash::vk::{DescriptorType, DeviceSize, Format, ImageAspectFlags, ImageSubresourceRange, MemoryPropertyFlags, PipelineInputAssemblyStateCreateInfo, PipelineRasterizationStateCreateInfo, Sampler, ShaderStageFlags};
+use ash::vk::{DescriptorType, DeviceSize, Format, ImageAspectFlags, ImageLayout, ImageSubresourceRange, MemoryPropertyFlags, PipelineInputAssemblyStateCreateInfo, PipelineRasterizationStateCreateInfo, Sampler, ShaderStageFlags};
 use std::cell::RefCell;
 use std::fs::File;
 use std::io::BufWriter;
@@ -14,7 +14,7 @@ use crate::scene::physics::hitboxes::hitbox::Hitbox::Sphere;
 use crate::scene::physics::hitboxes::mesh::Bvh;
 use crate::scene::physics::physics_engine::PhysicsEngine;
 use crate::scene::physics::player::Player;
-use crate::render::render_helper::{Descriptor, DescriptorCreateInfo, DescriptorSetCreateInfo, PassCreateInfo, PipelineCreateInfo, Renderpass, RenderpassCreateInfo, Texture, TextureCreateInfo};
+use crate::render::render_helper::{Descriptor, DescriptorCreateInfo, DescriptorSetCreateInfo, PassCreateInfo, PipelineCreateInfo, Renderpass, RenderpassCreateInfo, Texture, TextureCreateInfo, Transition};
 use crate::render::scene_renderer::SceneRenderer;
 use crate::render::vulkan_base::{compile_shaders, copy_data_to_memory, find_memorytype_index, VkBase};
 use crate::scene::scene::Scene;
@@ -410,11 +410,23 @@ impl Renderer {
             }),
             None::<fn()>,
             None,
-            true
+            Transition::ALL
+        );
+        self.present_renderpass.pass.borrow().transition(
+            frame_command_buffer,
+            current_frame,
+            Some((ImageLayout::UNDEFINED, ImageLayout::COLOR_ATTACHMENT_OPTIMAL, vk::AccessFlags::empty())),
+            None,
         );
         self.present_renderpass.begin_renderpass(current_frame, frame_command_buffer, Some(present_index));
         self.device.cmd_draw(frame_command_buffer, 6, 1, 0, 0);
-        self.device.cmd_end_render_pass(frame_command_buffer);
+        self.device.cmd_end_rendering(frame_command_buffer);
+        self.present_renderpass.pass.borrow().transition(
+            frame_command_buffer,
+            current_frame,
+            Some((ImageLayout::COLOR_ATTACHMENT_OPTIMAL, ImageLayout::PRESENT_SRC_KHR, vk::AccessFlags::COLOR_ATTACHMENT_WRITE)),
+            None,
+        );
     } }
 
     pub unsafe fn destroy(&mut self) { unsafe {

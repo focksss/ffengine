@@ -4,7 +4,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use ash::vk;
-use ash::vk::{CommandBuffer, DescriptorType, Format, Handle, ShaderStageFlags};
+use ash::vk::{CommandBuffer, DescriptorType, Format, Handle, ImageLayout, ShaderStageFlags};
 use json::JsonValue;
 use winit::event::MouseButton;
 use winit::keyboard::{Key, PhysicalKey, SmolStr};
@@ -1926,11 +1926,13 @@ impl GUI {
         self.layout();
         let mut interactable_action_parameter_sets = Vec::new();
 
-        self.context.device.cmd_begin_render_pass(
+        self.pass.borrow().transition(
             command_buffer,
-            &self.pass.borrow().get_pass_begin_info(current_frame, None, self.text_renderer.renderpass.scissor),
-            vk::SubpassContents::INLINE,
+            current_frame,
+            Some((ImageLayout::UNDEFINED, ImageLayout::COLOR_ATTACHMENT_OPTIMAL, vk::AccessFlags::COLOR_ATTACHMENT_READ)),
+            Some((ImageLayout::UNDEFINED, ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL, vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_READ)),
         );
+        self.pass.borrow().begin(command_buffer, current_frame, &self.text_renderer.renderpass.scissor);
 
         for node_index in &self.root_node_indices {
             self.draw_node(
@@ -1941,8 +1943,13 @@ impl GUI {
             );
         }
 
-        self.context.device.cmd_end_render_pass(command_buffer);
-        self.pass.borrow().transition_to_readable(command_buffer, current_frame);
+        self.context.device.cmd_end_rendering(command_buffer);
+        self.pass.borrow().transition(
+            command_buffer,
+            current_frame,
+            Some((ImageLayout::COLOR_ATTACHMENT_OPTIMAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL, vk::AccessFlags::COLOR_ATTACHMENT_WRITE)),
+            Some((ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL, ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL, vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE)),
+        );
 
         let mut can_trigger_left_click_event = true;
         let mut can_trigger_right_click_event = true;

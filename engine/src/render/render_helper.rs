@@ -4,12 +4,22 @@ use std::io::{BufWriter, Cursor};
 use std::sync::Arc;
 use ash::{vk, Device, Instance};
 use ash::util::read_spv;
-use ash::vk::{Buffer, ClearColorValue, ClearDepthStencilValue, ClearValue, DescriptorBindingFlags, DescriptorImageInfo, DescriptorPool, DescriptorPoolCreateFlags, DescriptorPoolSize, DescriptorSetLayout, DescriptorSetLayoutCreateFlags, DescriptorType, DeviceMemory, DeviceSize, DynamicState, Extent3D, Format, GraphicsPipelineCreateInfo, ImageAspectFlags, ImageSubresourceRange, ImageUsageFlags, ImageView, MemoryPropertyFlags, Offset2D, PhysicalDevice, PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo, PipelineDepthStencilStateCreateInfo, PipelineInputAssemblyStateCreateInfo, PipelineMultisampleStateCreateInfo, PipelineRasterizationStateCreateInfo, PipelineShaderStageCreateInfo, PipelineTessellationStateCreateInfo, PipelineVertexInputStateCreateInfo, PushConstantRange, SampleCountFlags, ShaderModule, ShaderModuleCreateInfo, ShaderStageFlags, StencilOpState};
+use ash::vk::{Buffer, ClearColorValue, ClearDepthStencilValue, ClearValue, DescriptorBindingFlags, DescriptorImageInfo, DescriptorPool, DescriptorPoolCreateFlags, DescriptorPoolSize, DescriptorSetLayout, DescriptorSetLayoutCreateFlags, DescriptorType, DeviceMemory, DeviceSize, DynamicState, Extent3D, Format, GraphicsPipelineCreateInfo, ImageAspectFlags, ImageLayout, ImageSubresourceRange, ImageUsageFlags, ImageView, MemoryPropertyFlags, Offset2D, PhysicalDevice, PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo, PipelineDepthStencilStateCreateInfo, PipelineInputAssemblyStateCreateInfo, PipelineMultisampleStateCreateInfo, PipelineRasterizationStateCreateInfo, PipelineShaderStageCreateInfo, PipelineTessellationStateCreateInfo, PipelineVertexInputStateCreateInfo, PushConstantRange, SampleCountFlags, ShaderModule, ShaderModuleCreateInfo, ShaderStageFlags, StencilOpState};
+use bitflags::bitflags;
 use crate::engine::get_command_buffer;
 use crate::render::render::MAX_FRAMES_IN_FLIGHT;
 use crate::render::vulkan_base::{find_memorytype_index, load_file, Context, VkBase};
 
 const SHADER_PATH: &str = "engine\\resources\\shaders\\spv\\";
+
+bitflags! {
+    pub struct Transition: u32 {
+        const NONE = 0;
+        const START = 0b0001;
+        const END   = 0b0010;
+        const ALL   = Self::START.bits() | Self::END.bits();
+    }
+}
 
 pub struct Renderpass {
     context: Arc<Context>,
@@ -66,12 +76,26 @@ impl Renderpass {
             shader.generate_shader_stage_create_infos()
         }).collect::<Vec<Vec<PipelineShaderStageCreateInfo>>>();
 
-        let pipeline_create_infos = create_info
-            .pipeline_create_infos
-            .iter().enumerate()
-            .map(|(i, info)| {
+        let stencil_format = match pass.borrow().depth_format.unwrap_or(Format::UNDEFINED) {
+            Format::D32_SFLOAT_S8_UINT => Format::D32_SFLOAT_S8_UINT,
+            _ => Format::UNDEFINED
+        };
+        let mut rendering_infos: Vec<vk::PipelineRenderingCreateInfo> = (0..create_info.pipeline_create_infos.len())
+            .map(|_| vk::PipelineRenderingCreateInfo {
+                color_attachment_count: pass.borrow().color_formats.len() as u32,
+                p_color_attachment_formats: pass.borrow().color_formats.as_ptr(),
+                depth_attachment_format: pass.borrow().depth_format.unwrap_or(Format::UNDEFINED),
+                stencil_attachment_format: stencil_format,
+                ..Default::default()
+            })
+            .collect();
+        let pipeline_create_infos = rendering_infos
+            .iter_mut()
+            .zip(create_info.pipeline_create_infos.iter())
+            .zip(shader_stage_create_infos.iter())
+            .map(|((rendering_info, info), stages)| {
                 GraphicsPipelineCreateInfo::default()
-                    .stages(&shader_stage_create_infos[i])
+                    .stages(stages)
                     .vertex_input_state(&info.pipeline_vertex_input_state_create_info)
                     .input_assembly_state(&info.pipeline_input_assembly_state_create_info)
                     .tessellation_state(&info.pipeline_tess_state_create_info)
@@ -82,8 +106,10 @@ impl Renderpass {
                     .color_blend_state(&info.pipeline_color_blend_state_create_info)
                     .dynamic_state(&dynamic_state_info)
                     .layout(pipeline_layout)
-                    .render_pass(pass.borrow().renderpass)
-            }).collect::<Vec<GraphicsPipelineCreateInfo>>();
+                    .push_next(rendering_info)
+            })
+            .collect::<Vec<GraphicsPipelineCreateInfo>>();
+
         let vulkan_pipelines = context.device.create_graphics_pipelines(
             vk::PipelineCache::null(),
             &pipeline_create_infos,
@@ -154,12 +180,22 @@ impl Renderpass {
             shader.generate_shader_stage_create_infos()
         }).collect::<Vec<Vec<PipelineShaderStageCreateInfo>>>();
 
-        let pipeline_create_infos = create_info
-            .pipeline_create_infos
-            .iter().enumerate()
-            .map(|(i, info)| {
+        let mut rendering_infos: Vec<vk::PipelineRenderingCreateInfo> = (0..create_info.pipeline_create_infos.len())
+            .map(|_| vk::PipelineRenderingCreateInfo {
+                color_attachment_count: pass.color_formats.len() as u32,
+                p_color_attachment_formats: pass.color_formats.as_ptr(),
+                depth_attachment_format: pass.depth_format.unwrap_or(Format::UNDEFINED),
+                stencil_attachment_format: Format::UNDEFINED,
+                ..Default::default()
+            })
+            .collect();
+        let pipeline_create_infos = rendering_infos
+            .iter_mut()
+            .zip(create_info.pipeline_create_infos.iter())
+            .zip(shader_stage_create_infos.iter())
+            .map(|((rendering_info, info), stages)| {
                 GraphicsPipelineCreateInfo::default()
-                    .stages(&shader_stage_create_infos[i])
+                    .stages(stages)
                     .vertex_input_state(&info.pipeline_vertex_input_state_create_info)
                     .input_assembly_state(&info.pipeline_input_assembly_state_create_info)
                     .tessellation_state(&info.pipeline_tess_state_create_info)
@@ -170,8 +206,10 @@ impl Renderpass {
                     .color_blend_state(&info.pipeline_color_blend_state_create_info)
                     .dynamic_state(&dynamic_state_info)
                     .layout(pipeline_layout)
-                    .render_pass(pass.renderpass)
-            }).collect::<Vec<GraphicsPipelineCreateInfo>>();
+                    .push_next(rendering_info)
+            })
+            .collect::<Vec<GraphicsPipelineCreateInfo>>();
+
         let vulkan_pipelines = context.device.create_graphics_pipelines(
             vk::PipelineCache::null(),
             &pipeline_create_infos,
@@ -207,26 +245,40 @@ impl Renderpass {
         push_constant_action: Option<F1>,
         draw_action: Option<F2>,
         framebuffer_index: Option<usize>,
-        do_transition: bool,
+        transition: Transition,
     ) { unsafe {
+        if transition.contains(Transition::START) {
+            self.pass.borrow().transition(
+                command_buffer,
+                current_frame,
+                Some((ImageLayout::UNDEFINED, ImageLayout::COLOR_ATTACHMENT_OPTIMAL, vk::AccessFlags::COLOR_ATTACHMENT_READ)),
+                Some((ImageLayout::UNDEFINED, ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL, vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_READ)),
+            )
+        }
+
         let device = &self.context.device;
         self.begin_renderpass(current_frame, command_buffer, framebuffer_index);
         if let Some(push_constant_action) = push_constant_action { push_constant_action() };
         if let Some(draw_action) = draw_action { draw_action() } else {
             device.cmd_draw(command_buffer, 6, 1, 0, 0);
         };
-        device.cmd_end_render_pass(command_buffer);
-        if do_transition {
-            self.pass.borrow().transition_to_readable(command_buffer, current_frame);
+
+        device.cmd_end_rendering(command_buffer);
+
+        if transition.contains(Transition::END) {
+            self.pass.borrow().transition(
+                command_buffer,
+                current_frame,
+                Some((ImageLayout::COLOR_ATTACHMENT_OPTIMAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL, vk::AccessFlags::COLOR_ATTACHMENT_WRITE)),
+                Some((ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL, ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL, vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE)),
+            )
         }
     } }
     pub unsafe fn begin_renderpass(&self, current_frame: usize, command_buffer: vk::CommandBuffer, framebuffer_index: Option<usize>) { unsafe {
         let device = &self.context.device;
-        device.cmd_begin_render_pass(
-            command_buffer,
-            &self.pass.borrow().get_pass_begin_info(current_frame, framebuffer_index, self.scissor),
-            vk::SubpassContents::INLINE,
-        );
+
+        &self.pass.borrow().begin(command_buffer, current_frame, &self.scissor);
+
         device.cmd_bind_pipeline(
             command_buffer,
             vk::PipelineBindPoint::GRAPHICS,
@@ -484,11 +536,14 @@ impl<'a> PipelineCreateInfo<'a> {
 
 pub struct Pass {
     context: Arc<Context>,
+    present_image_data: Option<Vec<(vk::Image, ImageView)>>,
 
-    pub renderpass: vk::RenderPass,
     pub textures: Vec<Vec<Texture>>,
-    pub framebuffers: Vec<vk::Framebuffer>,
     pub clear_values: Vec<ClearValue>,
+
+    pub color_formats: Vec<Format>,
+    pub depth_format: Option<Format>,
+    pub stencil_format: Option<Format>,
 
     pub destroyed: bool,
 }
@@ -496,223 +551,140 @@ impl Pass {
     pub unsafe fn new(create_info: PassCreateInfo) -> Self { unsafe {
         let mut textures = Vec::new();
         let context = create_info.context.clone();
-        let mut has_cubemap = false;
-        let has_depth = create_info.depth_attachment_create_info.is_some();
+        let mut color_formats = Vec::new();
+        let mut depth_format = None;
+        let mut stencil_format = None;
         for frame in 0..create_info.frames_in_flight {
             let mut frame_textures = Vec::new();
             for texture in 0..create_info.color_attachment_create_infos.len() {
                 let create_info = &create_info.color_attachment_create_infos[texture][frame];
-                if create_info.is_cubemap { has_cubemap = true };
                 frame_textures.push(Texture::new(create_info));
+                if frame == 0 {
+                    color_formats.push(create_info.format);
+                }
             }
-            if has_depth { frame_textures.push(Texture::new(&create_info.depth_attachment_create_info.as_ref().unwrap()[frame])) };
+            if let Some(depth_create_info) = create_info.depth_attachment_create_info.as_ref() {
+                frame_textures.push(Texture::new(&depth_create_info[frame]));
+                if frame == 0 {
+                    depth_format = Some(depth_create_info[0].format);
+                    if depth_create_info[0].has_stencil {
+                        stencil_format = Some(depth_create_info[0].format);
+                    }
+                }
+            }
             textures.push(frame_textures);
         }
 
-        let mut attachments_vec = Vec::new();
-        let mut color_attachment_refs_vec = Vec::new();
-        let mut depth_attachment_index = None;
-        for (i, texture) in textures[0].iter().enumerate() {
-                attachments_vec.push(
-                    vk::AttachmentDescription {
-                        format: texture.format,
-                        samples: texture.samples,
-                        load_op: texture.load_op,
-                        store_op: vk::AttachmentStoreOp::STORE,
-                        stencil_load_op: vk::AttachmentLoadOp::CLEAR,
-                        stencil_store_op: vk::AttachmentStoreOp::STORE,
-                        initial_layout: texture.initial_layout,
-                        final_layout: if texture.is_depth { vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL } else { vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL },
-                        ..Default::default()
-                    }
-                );
-                if !texture.is_depth {
-                    color_attachment_refs_vec.push(vk::AttachmentReference {
-                        attachment: i as u32,
-                        layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-                    })
-                } else {
-                    depth_attachment_index = Some(i as u32);
-                }
-            }
-
-        let attachments = attachments_vec.as_slice();
-        let color_attachment_refs = color_attachment_refs_vec.as_slice();
-        let depth_attachment_ref = if has_depth { Some(vk::AttachmentReference {
-            attachment: depth_attachment_index.unwrap(),
-            layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-        }) } else { None };
-
-        let dependencies = [vk::SubpassDependency {
-            src_subpass: vk::SUBPASS_EXTERNAL,
-            src_stage_mask: vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-            dst_access_mask: vk::AccessFlags::COLOR_ATTACHMENT_READ | vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
-            dst_stage_mask: vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-            ..Default::default()
-        }];
-
-        let mut subpass = vk::SubpassDescription::default()
-            .color_attachments(&color_attachment_refs)
-            .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS);
-        let depth_ref = depth_attachment_ref.unwrap_or_default();
-        if has_depth {
-            subpass = subpass.depth_stencil_attachment(&depth_ref);
-        }
-
-        let mut renderpass_create_info = vk::RenderPassCreateInfo::default()
-            .attachments(&attachments)
-            .subpasses(std::slice::from_ref(&subpass))
-            .dependencies(&dependencies);
-        let cubemap_view_mask: u32 = 0b0011_1111; // 6 views
-        let mut cubemap_multiview_info = vk::RenderPassMultiviewCreateInfo::default()
-            .view_masks(std::slice::from_ref(&cubemap_view_mask))
-            .correlation_masks(std::slice::from_ref(&cubemap_view_mask));
-        if has_cubemap {
-            renderpass_create_info = renderpass_create_info.push_next(&mut cubemap_multiview_info);
-        }
-
-        let renderpass = context
-            .device
-            .create_render_pass(&renderpass_create_info, None)
-            .unwrap();
-
-        let resolution_info = &create_info
-            .depth_attachment_create_info.as_ref()
-            .unwrap_or_else(|| &create_info.color_attachment_create_infos[0])[0];
-        let width = resolution_info.width;
-        let height = resolution_info.height;
-        let array_layers = if has_cubemap { 1 } else { resolution_info.array_layers };
-
-        let clear_values;
-        let framebuffers: Vec<vk::Framebuffer> = {
-            clear_values = textures[0].iter().map(|texture| {texture.clear_value}).collect();
-            let framebuffers = (0..create_info.frames_in_flight)
-                .map(|i| {
-                    let framebuffer_attachments_vec: Vec<ImageView> = textures[i].iter().map(|texture| { texture.device_texture.borrow().image_view }).collect();
-                    let framebuffer_attachments = framebuffer_attachments_vec.as_slice();
-
-                    let framebuffer_create_info = vk::FramebufferCreateInfo::default()
-                        .render_pass(renderpass)
-                        .attachments(&framebuffer_attachments)
-                        .width(width)
-                        .height(height)
-                        .layers(array_layers);
-
-                    let fb = context
-                        .device
-                        .create_framebuffer(&framebuffer_create_info, None)
-                        .expect("Failed to create framebuffer");
-                    //println!("Created framebuffer[{}]: 0x{:x}", i, fb.as_raw());
-                    fb
-                })
-                .collect();
-            framebuffers
-        };
+        let clear_values = textures[0].iter().map(|texture| {texture.clear_value}).collect();
 
         Self {
             context,
+            present_image_data: None,
 
-            renderpass,
             textures,
-            framebuffers,
             clear_values,
+
+            color_formats,
+            depth_format,
+            stencil_format,
 
             destroyed: false
         }
     } }
     pub unsafe fn new_present_pass(base: &VkBase) -> Self { unsafe {
         let context = &base.context;
-        let mut textures = Vec::new();
 
-        let mut attachments_vec = Vec::new();
-        let mut color_attachment_refs_vec = Vec::new();
-
-        attachments_vec.push(vk::AttachmentDescription {
-            format: context.surface_format.format,
-            samples: SampleCountFlags::TYPE_1,
-            load_op: vk::AttachmentLoadOp::CLEAR,
-            store_op: vk::AttachmentStoreOp::STORE,
-            initial_layout: vk::ImageLayout::UNDEFINED,
-            final_layout: vk::ImageLayout::PRESENT_SRC_KHR,
-            ..Default::default()
-        });
-        color_attachment_refs_vec.push(vk::AttachmentReference {
-            attachment: 0,
-            layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-        });
-
-        let attachments = attachments_vec.as_slice();
-        let color_attachment_refs = color_attachment_refs_vec.as_slice();
-
-        let dependencies = [vk::SubpassDependency {
-            src_subpass: vk::SUBPASS_EXTERNAL,
-            src_stage_mask: vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-            dst_access_mask: vk::AccessFlags::COLOR_ATTACHMENT_READ | vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
-            dst_stage_mask: vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-            ..Default::default()
-        }];
-
-        let subpass = vk::SubpassDescription::default()
-            .color_attachments(&color_attachment_refs)
-            .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS);
-
-        let renderpass_create_info = vk::RenderPassCreateInfo::default()
-            .attachments(&attachments)
-            .subpasses(std::slice::from_ref(&subpass))
-            .dependencies(&dependencies);
-
-        let renderpass = context
-            .device
-            .create_render_pass(&renderpass_create_info, None)
-            .unwrap();
-
-        let mut width = context.window.inner_size().width;
-        let mut height = context.window.inner_size().height;
-        let mut array_layers= 1;
-
-        let clear_values;
-        let framebuffers: Vec<vk::Framebuffer> = {
-            clear_values = vec![
+        let clear_values = vec![
                 ClearValue {
                     color: ClearColorValue {
                         float32: [0.0, 0.0, 0.0, 0.0],
                     },
                 },
             ];
-            let present_framebuffers: Vec<vk::Framebuffer> = base
-                .present_image_views
-                .iter()
-                .map(|&present_image_view| {
-                    let framebuffer_attachments = [present_image_view];
-                    let framebuffer_create_info = vk::FramebufferCreateInfo::default()
-                        .render_pass(renderpass)
-                        .attachments(&framebuffer_attachments)
-                        .width(context.window.inner_size().width)
-                        .height(context.window.inner_size().height)
-                        .layers(1);
-                    let fb = base
-                        .device
-                        .create_framebuffer(&framebuffer_create_info, None)
-                        .expect("Failed to create framebuffer");
-                    //println!("Created present framebuffer: 0x{:x}", fb.as_raw());
-                    fb
-                })
-                .collect();
 
-            present_framebuffers
-        };
+        let mut present_image_data = Vec::new();
+        for i in 0..MAX_FRAMES_IN_FLIGHT {
+            present_image_data.push((base.present_images[i], base.present_image_views[i]))
+        }
 
         Self {
             context: context.clone(),
+            present_image_data: Some(present_image_data),
 
-            renderpass,
-            textures,
-            framebuffers,
+            textures: Vec::new(),
             clear_values,
+
+            color_formats: vec![context.surface_format.format],
+            depth_format: None,
+            stencil_format: None,
 
             destroyed: false
         }
     } }
+
+    pub unsafe fn begin(&self, command_buffer: vk::CommandBuffer, frame: usize, scissor: &vk::Rect2D) {
+        let mut colors = Vec::new();
+        let mut depth = None;
+        let mut stencil = None;
+
+        if let Some(present_image_data) = &self.present_image_data {
+            colors.push(vk::RenderingAttachmentInfo {
+                s_type: vk::StructureType::RENDERING_ATTACHMENT_INFO,
+                p_next: std::ptr::null(),
+                image_view: present_image_data[frame].1,
+                image_layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                load_op: vk::AttachmentLoadOp::CLEAR,
+                store_op: vk::AttachmentStoreOp::STORE,
+                resolve_mode: vk::ResolveModeFlags::NONE,
+                ..Default::default()
+            });
+        } else {
+            for tex in &self.textures[frame] {
+                if tex.is_depth {
+                    depth = Some(vk::RenderingAttachmentInfo {
+                        s_type: vk::StructureType::RENDERING_ATTACHMENT_INFO,
+                        p_next: std::ptr::null(),
+                        image_view: tex.device_texture.borrow().image_view,
+                        image_layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                        load_op: tex.load_op,
+                        store_op: vk::AttachmentStoreOp::STORE,
+                        clear_value: tex.clear_value,
+                        ..Default::default()
+                    });
+                    if tex.has_stencil {
+                        stencil = depth.clone();
+                    }
+                } else {
+                    colors.push(vk::RenderingAttachmentInfo {
+                        s_type: vk::StructureType::RENDERING_ATTACHMENT_INFO,
+                        p_next: std::ptr::null(),
+                        image_view: tex.device_texture.borrow().image_view,
+                        image_layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                        load_op: tex.load_op,
+                        store_op: vk::AttachmentStoreOp::STORE,
+                        clear_value: tex.clear_value,
+                        resolve_mode: vk::ResolveModeFlags::NONE,
+                        ..Default::default()
+                    });
+                }
+            }
+        }
+
+        let mut info = vk::RenderingInfo {
+            render_area: scissor.clone(),
+            layer_count: 1,
+            color_attachment_count: colors.len() as u32,
+            p_color_attachments: colors.as_ptr(),
+            ..Default::default()
+        };
+        if depth.is_some() {
+            info = info.depth_attachment(&depth.as_ref().unwrap());
+        }
+        if stencil.is_some() {
+            info = info.stencil_attachment(&stencil.as_ref().unwrap());
+        }
+        unsafe { self.context.device.cmd_begin_rendering(command_buffer, &info); }
+    }
 
     pub fn get_texture_set(&self, index: usize) -> Vec<Texture> {
         let mut textures = Vec::new();
@@ -722,38 +694,67 @@ impl Pass {
         textures
     }
 
-    pub fn get_pass_begin_info(&self, current_frame: usize, framebuffer_index: Option<usize>, scissor: vk::Rect2D) -> vk::RenderPassBeginInfo {
-        vk::RenderPassBeginInfo::default()
-            .render_pass(self.renderpass)
-            .framebuffer(self.framebuffers[framebuffer_index.unwrap_or(current_frame)])
-            .render_area(scissor)
-            .clear_values(&self.clear_values)
-    }
-
-    pub unsafe fn transition_to_readable(&self, command_buffer: vk::CommandBuffer, frame: usize) { unsafe {
-        for tex_idx in 0..self.textures[frame].len() {
-            self.transition_output_to_readable(command_buffer, frame, tex_idx);
-        }
-    } }
-    pub unsafe fn transition_output_to_readable(&self, command_buffer: vk::CommandBuffer, frame: usize, output_index: usize) { unsafe {
-        let tex = &self.textures[frame][output_index];
-        let (old_layout, new_layout, src_access_mask, aspect_mask, stage) = if tex.is_depth {
-            (
-                vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-                vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
-                vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE,
-                if tex.has_stencil { ImageAspectFlags::DEPTH | ImageAspectFlags::STENCIL } else { ImageAspectFlags::DEPTH },
-                vk::PipelineStageFlags::LATE_FRAGMENT_TESTS,
-            )
-        } else {
-            (
-                vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-                vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
+    pub unsafe fn transition(
+        &self,
+        command_buffer: vk::CommandBuffer,
+        frame: usize,
+        color_old_new_access: Option<(vk::ImageLayout, vk::ImageLayout, vk::AccessFlags)>,
+        depth_old_new_access: Option<(vk::ImageLayout, vk::ImageLayout, vk::AccessFlags)>,
+    ) { unsafe {
+        if let Some(present_image_data) = &self.present_image_data {
+            let info = color_old_new_access.unwrap();
+            let barrier_data = (
+                info.0,
+                info.1,
+                info.2,
                 ImageAspectFlags::COLOR,
                 vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-            )
-        };
+            );
+            self.transition_output(command_buffer, present_image_data[frame].0, 1, barrier_data);
+        } else {
+            for tex_idx in 0..self.textures[frame].len() {
+                let tex = &self.textures[frame][tex_idx];
+                if tex.is_depth {
+                    if let Some(info) = depth_old_new_access {
+                        let barrier_data = (
+                            info.0,
+                            info.1,
+                            info.2,
+                            if tex.has_stencil { ImageAspectFlags::DEPTH | ImageAspectFlags::STENCIL } else { ImageAspectFlags::DEPTH },
+                            vk::PipelineStageFlags::LATE_FRAGMENT_TESTS,
+                        );
+                        self.transition_output(command_buffer, tex.device_texture.borrow().image, tex.array_layers, barrier_data);
+                    }
+                } else {
+                    if let Some(info) = color_old_new_access {
+                        let barrier_data = (
+                            info.0,
+                            info.1,
+                            info.2,
+                            ImageAspectFlags::COLOR,
+                            vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+                        );
+                        self.transition_output(command_buffer, tex.device_texture.borrow().image, tex.array_layers, barrier_data);
+                    }
+                }
+            }
+        }
+    } }
+    pub unsafe fn transition_output(
+        &self,
+        command_buffer: vk::CommandBuffer,
+        image: vk::Image,
+        layer_count: u32,
+        info: (ImageLayout, ImageLayout, vk::AccessFlags, ImageAspectFlags, vk::PipelineStageFlags),
+    ) { unsafe {
+        let (old_layout, new_layout, src_access_mask, aspect_mask, stage) =
+        (
+            info.0,
+            info.1,
+            info.2,
+            info.3,
+            info.4,
+        );
 
         let barrier = vk::ImageMemoryBarrier {
             s_type: vk::StructureType::IMAGE_MEMORY_BARRIER,
@@ -763,13 +764,13 @@ impl Pass {
             dst_access_mask: vk::AccessFlags::SHADER_READ,
             src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
             dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
-            image: tex.device_texture.borrow().image,
+            image,
             subresource_range: ImageSubresourceRange {
                 aspect_mask,
                 base_mip_level: 0,
                 level_count: 1,
                 base_array_layer: 0,
-                layer_count: tex.array_layers,
+                layer_count,
             },
             ..Default::default()
         };
@@ -787,15 +788,11 @@ impl Pass {
 
     pub unsafe fn destroy(&mut self) { unsafe {
         if !self.destroyed {
-            for framebuffer in &self.framebuffers {
-                self.context.device.destroy_framebuffer(*framebuffer, None);
-            }
             for frame_textures in &mut self.textures {
                 for texture in frame_textures {
                     texture.destroy();
                 }
             }
-            self.context.device.destroy_render_pass(self.renderpass, None);
             self.destroyed = true;
         }
     }}
@@ -877,7 +874,6 @@ pub struct Texture {
 impl Texture {
     pub unsafe fn new(create_info: &TextureCreateInfo) -> Self { unsafe {
         if let Some(preexisting) = &create_info.preexisting {
-            println!("{}, {}", preexisting.resolution.width, preexisting.resolution.height);
             let mut new = preexisting.clone();
             new.load_op = create_info.load_op;
             new.initial_layout = create_info.initial_layout;
@@ -1432,6 +1428,7 @@ impl TextureCreateInfo {
     }
     pub fn base_on_preexisting(mut self, preexisting: &Texture) -> Self {
         self.preexisting = Some(preexisting.clone());
+        self.format = preexisting.format;
         self
     }
     pub fn initial_layout(mut self, initial_layout: vk::ImageLayout) -> Self {

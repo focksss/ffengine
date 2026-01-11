@@ -4,7 +4,7 @@ use std::f32::consts::PI;
 use std::mem;
 use crate::offset_of;
 use ash::vk;
-use ash::vk::{DescriptorType, Extent2D, Format, PipelineInputAssemblyStateCreateInfo, ShaderStageFlags};
+use ash::vk::{DescriptorType, Extent2D, Format, ImageLayout, PipelineInputAssemblyStateCreateInfo, ShaderStageFlags};
 use rand::{rng, Rng};
 use std::path::PathBuf;
 use std::slice;
@@ -12,7 +12,7 @@ use std::sync::Arc;
 use crate::math::matrix::Matrix;
 use crate::math::Vector;
 use crate::render::render::MAX_FRAMES_IN_FLIGHT;
-use crate::render::render_helper::{Descriptor, DescriptorCreateInfo, DescriptorSetCreateInfo, DeviceTexture, PassCreateInfo, PipelineCreateInfo, Renderpass, RenderpassCreateInfo, Texture, TextureCreateInfo};
+use crate::render::render_helper::{Descriptor, DescriptorCreateInfo, DescriptorSetCreateInfo, DeviceTexture, PassCreateInfo, PipelineCreateInfo, Renderpass, RenderpassCreateInfo, Texture, TextureCreateInfo, Transition};
 use crate::render::vulkan_base::{copy_data_to_memory, Context, VkBase};
 use crate::scene::scene::{DrawMode, Instance, Scene};
 use crate::scene::world::camera::Camera;
@@ -20,7 +20,7 @@ use crate::scene::world::world::{World, SunSendable, Vertex};
 
 const SSAO_KERNAL_SIZE: usize = 16;
 const SSAO_RESOLUTION_MULTIPLIER: f32 = 0.5;
-pub const SHADOW_RES: u32 = 4096;
+pub const SHADOW_RES: u32 = 2048;
 
 
 //TODO() FIX SSAO UPSAMPLING
@@ -1009,8 +1009,8 @@ impl SceneRenderer {
                 ..Default::default()
             };
             let mask_depth_stencil_state_info = vk::PipelineDepthStencilStateCreateInfo {
-                depth_test_enable: 0,
-                depth_write_enable: 0,
+                depth_test_enable: 1,
+                depth_write_enable: 1,
                 depth_compare_op: vk::CompareOp::ALWAYS,
                 stencil_test_enable: 1,
                 front: mask_stencil_state,
@@ -1262,7 +1262,7 @@ impl SceneRenderer {
                 scene.draw(self, current_frame, Some(&player_camera), DrawMode::Deferred);
             }),
             None,
-            true
+            Transition::ALL
         );
 
         self.shadow_renderpass.do_renderpass(
@@ -1273,7 +1273,7 @@ impl SceneRenderer {
                 scene.draw(self, current_frame, None, DrawMode::All);
             }),
             None,
-            true
+            Transition::ALL
         );
 
         self.ssao_pre_downsample_renderpass.do_renderpass(
@@ -1282,27 +1282,27 @@ impl SceneRenderer {
             None::<fn()>,
             None::<fn()>,
             None,
-            true
+            Transition::ALL
         );
-        self.ssao_renderpass.do_renderpass(current_frame, frame_command_buffer, None::<fn()>, None::<fn()>, None, true);
+        self.ssao_renderpass.do_renderpass(current_frame, frame_command_buffer, None::<fn()>, None::<fn()>, None, Transition::ALL);
         self.ssao_blur_horizontal_renderpass.do_renderpass(current_frame, frame_command_buffer, Some(|| {
             device.cmd_push_constants(frame_command_buffer, self.ssao_blur_horizontal_renderpass.pipeline_layout, ShaderStageFlags::FRAGMENT, 0, slice::from_raw_parts(
                 &ssao_blur_constants_horizontal as *const BlurPassData as *const u8,
                 size_of::<BlurPassData>(),
             ));
-        }), None::<fn()>, None, true);
+        }), None::<fn()>, None, Transition::ALL);
         self.ssao_blur_vertical_renderpass.do_renderpass(current_frame, frame_command_buffer, Some(|| {
             device.cmd_push_constants(frame_command_buffer, self.ssao_blur_vertical_renderpass.pipeline_layout, ShaderStageFlags::FRAGMENT, 0, slice::from_raw_parts(
                 &ssao_blur_constants_vertical as *const BlurPassData as *const u8,
                 size_of::<BlurPassData>(),
             ));
-        }), None::<fn()>, None, true);
+        }), None::<fn()>, None, Transition::ALL);
         self.ssao_upsample_renderpass.do_renderpass(current_frame, frame_command_buffer, Some(|| {
             device.cmd_push_constants(frame_command_buffer, self.ssao_upsample_renderpass.pipeline_layout, ShaderStageFlags::FRAGMENT, 0, slice::from_raw_parts(
                 &ssao_upsample_constants as *const DepthAwareUpsamplePassData as *const u8,
                 size_of::<DepthAwareUpsamplePassData>(),
             ));
-        }), None::<fn()>, None, true);
+        }), None::<fn()>, None, Transition::ALL);
 
 
         self.lighting_renderpass.do_renderpass(
@@ -1316,9 +1316,15 @@ impl SceneRenderer {
         }),
             None::<fn()>,
             None,
-            false,
+            Transition::START,
         );
 
+        self.geometry_renderpass.pass.borrow().transition(
+            frame_command_buffer,
+            current_frame,
+            None,
+            Some((ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL, ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL, vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_READ)),
+        );
         self.opaque_forward_renderpass.do_renderpass(
             current_frame,
             frame_command_buffer,
@@ -1347,9 +1353,14 @@ impl SceneRenderer {
                 scene.draw(self, current_frame, Some(&player_camera), DrawMode::Hitboxes);
             }),
             None,
-            false
+            Transition::NONE
         );
-        self.opaque_forward_renderpass.pass.borrow().transition_output_to_readable(frame_command_buffer, current_frame, 1);
+        self.geometry_renderpass.pass.borrow().transition(
+            frame_command_buffer,
+            current_frame,
+            None,
+            Some((ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL, ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL, vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE)),
+        );
 
         self.outline_renderpass.do_renderpass(
             current_frame,
@@ -1372,8 +1383,8 @@ impl SceneRenderer {
             }),
             None::<fn()>,
             None,
-            true
-        )
+            Transition::END
+        );
     } }
 
     pub unsafe fn destroy(&mut self) { unsafe {
