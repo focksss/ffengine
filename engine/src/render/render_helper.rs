@@ -10,7 +10,7 @@ use crate::engine::get_command_buffer;
 use crate::render::render::MAX_FRAMES_IN_FLIGHT;
 use crate::render::vulkan_base::{find_memorytype_index, load_file, Context, VkBase};
 
-const SHADER_PATH: &str = "engine\\resources\\shaders\\spv\\";
+pub const SHADER_PATH: &str = "engine\\resources\\shaders\\spv\\";
 
 bitflags! {
     pub struct Transition: u32 {
@@ -710,7 +710,7 @@ impl Pass {
                 ImageAspectFlags::COLOR,
                 vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
             );
-            self.transition_output(command_buffer, present_image_data[frame].0, 1, barrier_data);
+            transition_output(&self.context, command_buffer, present_image_data[frame].0, 1, barrier_data);
         } else {
             for tex_idx in 0..self.textures[frame].len() {
                 let tex = &self.textures[frame][tex_idx];
@@ -723,7 +723,7 @@ impl Pass {
                             if tex.has_stencil { ImageAspectFlags::DEPTH | ImageAspectFlags::STENCIL } else { ImageAspectFlags::DEPTH },
                             vk::PipelineStageFlags::LATE_FRAGMENT_TESTS,
                         );
-                        self.transition_output(command_buffer, tex.device_texture.borrow().image, tex.array_layers, barrier_data);
+                        transition_output(&self.context, command_buffer, tex.device_texture.borrow().image, tex.array_layers, barrier_data);
                     }
                 } else {
                     if let Some(info) = color_old_new_access {
@@ -734,56 +734,11 @@ impl Pass {
                             ImageAspectFlags::COLOR,
                             vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
                         );
-                        self.transition_output(command_buffer, tex.device_texture.borrow().image, tex.array_layers, barrier_data);
+                        transition_output(&self.context, command_buffer, tex.device_texture.borrow().image, tex.array_layers, barrier_data);
                     }
                 }
             }
         }
-    } }
-    pub unsafe fn transition_output(
-        &self,
-        command_buffer: vk::CommandBuffer,
-        image: vk::Image,
-        layer_count: u32,
-        info: (ImageLayout, ImageLayout, vk::AccessFlags, ImageAspectFlags, vk::PipelineStageFlags),
-    ) { unsafe {
-        let (old_layout, new_layout, src_access_mask, aspect_mask, stage) =
-        (
-            info.0,
-            info.1,
-            info.2,
-            info.3,
-            info.4,
-        );
-
-        let barrier = vk::ImageMemoryBarrier {
-            s_type: vk::StructureType::IMAGE_MEMORY_BARRIER,
-            old_layout,
-            new_layout,
-            src_access_mask,
-            dst_access_mask: vk::AccessFlags::SHADER_READ,
-            src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
-            dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
-            image,
-            subresource_range: ImageSubresourceRange {
-                aspect_mask,
-                base_mip_level: 0,
-                level_count: 1,
-                base_array_layer: 0,
-                layer_count,
-            },
-            ..Default::default()
-        };
-
-        self.context.device.cmd_pipeline_barrier(
-            command_buffer,
-            stage,
-            vk::PipelineStageFlags::FRAGMENT_SHADER,
-            vk::DependencyFlags::empty(),
-            &[],
-            &[],
-            &[barrier],
-        );
     } }
 
     pub unsafe fn destroy(&mut self) { unsafe {
@@ -1308,6 +1263,53 @@ impl Texture {
         }
     }
 }
+
+pub unsafe fn transition_output(
+    context: &Arc<Context>,
+    command_buffer: vk::CommandBuffer,
+    image: vk::Image,
+    layer_count: u32,
+    info: (ImageLayout, ImageLayout, vk::AccessFlags, ImageAspectFlags, vk::PipelineStageFlags),
+) { unsafe {
+    let (old_layout, new_layout, src_access_mask, aspect_mask, stage) =
+        (
+            info.0,
+            info.1,
+            info.2,
+            info.3,
+            info.4,
+        );
+
+    let barrier = vk::ImageMemoryBarrier {
+        s_type: vk::StructureType::IMAGE_MEMORY_BARRIER,
+        old_layout,
+        new_layout,
+        src_access_mask,
+        dst_access_mask: vk::AccessFlags::SHADER_READ,
+        src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+        dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+        image,
+        subresource_range: ImageSubresourceRange {
+            aspect_mask,
+            base_mip_level: 0,
+            level_count: 1,
+            base_array_layer: 0,
+            layer_count,
+        },
+        ..Default::default()
+    };
+
+    context.device.cmd_pipeline_barrier(
+        command_buffer,
+        stage,
+        vk::PipelineStageFlags::FRAGMENT_SHADER,
+        vk::DependencyFlags::empty(),
+        &[],
+        &[],
+        &[barrier],
+    );
+} }
+
 #[derive(Clone)]
 pub struct DeviceTexture {
     pub image: vk::Image,
@@ -1698,6 +1700,21 @@ impl Descriptor {
                     owned_buffers: (Vec::new(), Vec::new(), Vec::new()),
                     buffer_refs: create_info.buffers.clone().unwrap(),
                     image_infos: None,
+                    binding_flags: create_info.binding_flags,
+                }
+            },
+            DescriptorType::STORAGE_IMAGE => {
+                Descriptor {
+                    context: context.clone(),
+                    descriptor_type: DescriptorType::STORAGE_IMAGE,
+                    shader_stages: create_info.shader_stages,
+                    is_dynamic: create_info.dynamic,
+                    offset: Some(create_info.offset),
+                    range: Some(create_info.range),
+                    descriptor_count: 1,
+                    owned_buffers: (Vec::new(), Vec::new(), Vec::new()),
+                    buffer_refs: Vec::new(),
+                    image_infos: create_info.image_infos.as_ref().map_or(None, |i| Some(i.as_ptr())),
                     binding_flags: create_info.binding_flags,
                 }
             }

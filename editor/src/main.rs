@@ -30,8 +30,8 @@ fn main() { unsafe {
             outer_cutoff: 0.0,
         });
 
-        //app.world.borrow_mut().add_texture("editor/resources/models/collisionTest/textures/checker_2x2.png", false);
-        app.world.borrow_mut().add_texture("editor/resources/citrus_orchard_road_puresky_4k.hdr", false);
+        app.world.borrow_mut().add_texture("editor/resources/models/collisionTest/textures/checker_2x2.png", false);
+        //app.world.borrow_mut().add_texture("editor/resources/citrus_orchard_road_puresky_4k.hdr", false);
 
 
 

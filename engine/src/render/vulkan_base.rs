@@ -1599,7 +1599,7 @@ pub fn compile_shaders(base_dir: &str) -> io::Result<()> {
     {
         let path = entry.path();
         if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
-            if ext == "vert" || ext == "frag" || ext == "geom" {
+            if ext == "vert" || ext == "frag" || ext == "geom" || ext == "comp" {
                 let spv_path_str = path
                     .to_string_lossy()
                     .replace("shaders\\glsl", "shaders\\spv")

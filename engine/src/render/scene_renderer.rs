@@ -1,19 +1,21 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::f32::consts::PI;
+use std::io::Cursor;
 use std::mem;
 use crate::offset_of;
 use ash::vk;
-use ash::vk::{DescriptorType, Extent2D, Format, ImageLayout, PipelineInputAssemblyStateCreateInfo, ShaderStageFlags};
+use ash::vk::{DescriptorType, Extent2D, Format, Handle, ImageAspectFlags, ImageLayout, PipelineInputAssemblyStateCreateInfo, ShaderStageFlags};
 use rand::{rng, Rng};
 use std::path::PathBuf;
 use std::slice;
 use std::sync::Arc;
+use ash::util::read_spv;
 use crate::math::matrix::Matrix;
 use crate::math::Vector;
 use crate::render::render::MAX_FRAMES_IN_FLIGHT;
-use crate::render::render_helper::{Descriptor, DescriptorCreateInfo, DescriptorSetCreateInfo, DeviceTexture, PassCreateInfo, PipelineCreateInfo, Renderpass, RenderpassCreateInfo, Texture, TextureCreateInfo, Transition};
-use crate::render::vulkan_base::{copy_data_to_memory, Context, VkBase};
+use crate::render::render_helper::{transition_output, Descriptor, DescriptorCreateInfo, DescriptorSet, DescriptorSetCreateInfo, DeviceTexture, PassCreateInfo, PipelineCreateInfo, Renderpass, RenderpassCreateInfo, Shader, Texture, TextureCreateInfo, Transition, SHADER_PATH};
+use crate::render::vulkan_base::{copy_data_to_memory, load_file, Context, VkBase};
 use crate::scene::scene::{DrawMode, Instance, Scene};
 use crate::scene::world::camera::Camera;
 use crate::scene::world::world::{World, SunSendable, Vertex};
@@ -40,6 +42,7 @@ pub struct SceneRenderer {
     pub opaque_forward_renderpass: Renderpass,
 
     pub outline_renderpass: Renderpass,
+    pub cloud_renderpass: Renderpass,
 
     pub ssao_pre_downsample_renderpass: Renderpass,
     pub ssao_renderpass: Renderpass,
@@ -51,11 +54,15 @@ pub struct SceneRenderer {
 
     pub sampler: vk::Sampler,
     pub nearest_sampler: vk::Sampler,
+    pub repeat_sampler: vk::Sampler,
     pub ssao_kernal: [[f32; 4]; SSAO_KERNAL_SIZE],
     pub ssao_noise_texture: Texture,
     pub editor_primitives_vertices_buffer: (vk::Buffer, vk::DeviceMemory),
     pub editor_primitives_indices_buffer: (vk::Buffer, vk::DeviceMemory),
     pub editor_primitives_index_info: Vec<(u32, u32)>,
+
+    pub cloud_tex_high: Texture,
+    pub cloud_tex_low: Texture,
 }
 impl SceneRenderer {
     pub unsafe fn new(context: &Arc<Context>, world: &World, viewport: vk::Viewport) -> SceneRenderer { unsafe {
@@ -99,6 +106,7 @@ impl SceneRenderer {
             ssao_upsample_renderpass,
             lighting_renderpass,
             outline_renderpass,
+            cloud_renderpass,
         ) = SceneRenderer::create_rendering_objects(context, &null_texture, &null_tex_sampler, world, viewport);
 
         //<editor-fold desc = "ssao sampling setup">
@@ -171,6 +179,31 @@ impl SceneRenderer {
         context.device.destroy_buffer(staging_buffer, None);
         context.device.free_memory(staging_buffer_memory, None);
         //</editor-fold>
+
+        //<editor-fold desc = "cloud noise setup">
+        let cloud_noise_high_tex_info = TextureCreateInfo::new(context)
+            .width(128)
+            .height(128)
+            .depth(128)
+            .format(Format::R16G16B16A16_SFLOAT)
+            .usage_flags(
+                vk::ImageUsageFlags::SAMPLED |
+                vk::ImageUsageFlags::STORAGE
+            );
+        let cloud_tex_high = Texture::new(&cloud_noise_high_tex_info);
+        let cloud_noise_low_tex_info = TextureCreateInfo::new(context)
+            .width(32)
+            .height(32)
+            .depth(32)
+            .format(Format::R16G16B16A16_SFLOAT)
+            .usage_flags(
+                vk::ImageUsageFlags::SAMPLED |
+                vk::ImageUsageFlags::STORAGE
+            );
+        let cloud_tex_low = Texture::new(&cloud_noise_low_tex_info);
+        generate_cloud_noise(context, &cloud_tex_high, &cloud_tex_low);
+        //</editor-fold>
+
         //<editor-fold desc = "descriptor updates">
         let sampler = context.device.create_sampler(&vk::SamplerCreateInfo {
             mag_filter: vk::Filter::LINEAR,
@@ -179,6 +212,14 @@ impl SceneRenderer {
             address_mode_v: vk::SamplerAddressMode::CLAMP_TO_BORDER,
             address_mode_w: vk::SamplerAddressMode::CLAMP_TO_BORDER,
             border_color: vk::BorderColor::FLOAT_OPAQUE_WHITE,
+            ..Default::default()
+        }, None).unwrap();
+        let repeat_sampler = context.device.create_sampler(&vk::SamplerCreateInfo {
+            mag_filter: vk::Filter::LINEAR,
+            min_filter: vk::Filter::LINEAR,
+            address_mode_u: vk::SamplerAddressMode::REPEAT,
+            address_mode_v: vk::SamplerAddressMode::REPEAT,
+            address_mode_w: vk::SamplerAddressMode::REPEAT,
             ..Default::default()
         }, None).unwrap();
         let nearest_sampler = context.device.create_sampler(&vk::SamplerCreateInfo {
@@ -374,6 +415,33 @@ impl SceneRenderer {
             }).collect();
             context.device.update_descriptor_sets(&descriptor_writes, &[]);
             //</editor-fold>
+            //<editor-fold desc = "cloud">
+            let image_infos = [
+                vk::DescriptorImageInfo {
+                    sampler,
+                    image_view: geometry_renderpass.pass.borrow().textures[current_frame][5].device_texture.borrow().image_view,
+                    image_layout: ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
+                }, // geometry depth
+                vk::DescriptorImageInfo {
+                    sampler: repeat_sampler,
+                    image_view: cloud_tex_high.device_texture.borrow().image_view,
+                    image_layout: ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                }, // cloud high
+                vk::DescriptorImageInfo {
+                    sampler: repeat_sampler,
+                    image_view: cloud_tex_low.device_texture.borrow().image_view,
+                    image_layout: ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                }, // cloud low
+            ];
+            let descriptor_writes: Vec<vk::WriteDescriptorSet> = image_infos.iter().enumerate().map(|(i, info)| {
+                vk::WriteDescriptorSet::default()
+                    .dst_set(cloud_renderpass.descriptor_set.borrow().descriptor_sets[current_frame])
+                    .dst_binding(i as u32)
+                    .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
+                    .image_info(slice::from_ref(info))
+            }).collect();
+            context.device.update_descriptor_sets(&descriptor_writes, &[]);
+            //</editor-fold>
         }
         //</editor-fold>
 
@@ -462,9 +530,15 @@ impl SceneRenderer {
             ssao_upsample_renderpass,
             lighting_renderpass,
             outline_renderpass,
+            cloud_renderpass,
+
+            cloud_tex_high,
+            cloud_tex_low,
 
             sampler,
             nearest_sampler,
+            repeat_sampler,
+
             ssao_kernal,
             ssao_noise_texture,
 
@@ -490,6 +564,7 @@ impl SceneRenderer {
         Renderpass, // ssao upsample renderpass
         Renderpass, // lighting pass
         Renderpass, // outline pass
+        Renderpass, // cloud pass
     ) { unsafe {
         let resolution = Extent2D { width: viewport.width as u32, height: viewport.height as u32 };
         let image_infos: Vec<vk::DescriptorImageInfo> = vec![vk::DescriptorImageInfo {
@@ -1103,6 +1178,46 @@ impl SceneRenderer {
             Renderpass::new(renderpass_create_info)
         };
 
+        let cloud_renderpass = {
+            let light_pass = lighting_renderpass.pass.borrow();
+
+            let pass_create_info = PassCreateInfo::new(context)
+                .grab_attachment(&light_pass, 0, vk::AttachmentLoadOp::LOAD, vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
+            let descriptor_set_create_info = DescriptorSetCreateInfo::new(context)
+                .add_descriptor(Descriptor::new(&texture_sampler_create_info))
+                .add_descriptor(Descriptor::new(&texture_sampler_create_info))
+                .add_descriptor(Descriptor::new(&texture_sampler_create_info));
+
+            let color_blend_attachment_states = [vk::PipelineColorBlendAttachmentState {
+                blend_enable: vk::TRUE,
+                src_color_blend_factor: vk::BlendFactor::SRC_ALPHA,
+                dst_color_blend_factor: vk::BlendFactor::ONE_MINUS_SRC_ALPHA,
+                color_blend_op: vk::BlendOp::ADD,
+                src_alpha_blend_factor: vk::BlendFactor::ONE,
+                dst_alpha_blend_factor: vk::BlendFactor::ONE_MINUS_SRC_ALPHA,
+                alpha_blend_op: vk::BlendOp::ADD,
+                color_write_mask: vk::ColorComponentFlags::RGBA,
+            }];
+            let color_blend_state = vk::PipelineColorBlendStateCreateInfo::default()
+                .logic_op(vk::LogicOp::CLEAR)
+                .attachments(&color_blend_attachment_states);
+
+            let renderpass_create_info = RenderpassCreateInfo::new(context)
+                .pass_create_info(pass_create_info)
+                .resolution(resolution)
+                .descriptor_set_create_info(descriptor_set_create_info)
+                .add_push_constant_range(vk::PushConstantRange {
+                    stage_flags: ShaderStageFlags::FRAGMENT,
+                    offset: 0,
+                    size: size_of::<CameraMatrixUniformData>() as _,
+                })
+                .add_pipeline_create_info(PipelineCreateInfo::new()
+                    .pipeline_color_blend_state_create_info(color_blend_state)
+                    .vertex_shader_uri(String::from("quad\\quad.vert.spv"))
+                    .fragment_shader_uri(String::from("cloud\\cloud.frag.spv")));
+            Renderpass::new(renderpass_create_info)
+        };
+
         (
             geometry_renderpass,
             forward_renderpass,
@@ -1114,6 +1229,7 @@ impl SceneRenderer {
             ssao_upsample_renderpass,
             lighting_renderpass,
             outline_renderpass,
+            cloud_renderpass
         )
     } }
     pub fn update_world_textures_all_frames(&self, world: &World) {
@@ -1362,6 +1478,20 @@ impl SceneRenderer {
             Some((ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL, ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL, vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE)),
         );
 
+        self.cloud_renderpass.do_renderpass(
+            current_frame,
+            frame_command_buffer,
+            Some(|| {
+                device.cmd_push_constants(frame_command_buffer, self.cloud_renderpass.pipeline_layout, ShaderStageFlags::FRAGMENT, 0, slice::from_raw_parts(
+                    &camera_constants as *const CameraMatrixUniformData as *const u8,
+                    size_of::<CameraMatrixUniformData>(),
+                ))
+            }),
+            None::<fn()>,
+            None,
+            Transition::NONE
+        );
+
         self.outline_renderpass.do_renderpass(
             current_frame,
             frame_command_buffer,
@@ -1398,12 +1528,16 @@ impl SceneRenderer {
         self.ssao_upsample_renderpass.destroy();
         self.lighting_renderpass.destroy();
         self.outline_renderpass.destroy();
+        self.cloud_renderpass.destroy();
 
         self.ssao_noise_texture.destroy();
+        self.cloud_tex_low.destroy();
+        self.cloud_tex_high.destroy();
 
         self.context.device.destroy_sampler(self.sampler, None);
         self.context.device.destroy_sampler(self.nearest_sampler, None);
         self.context.device.destroy_sampler(self.null_tex_sampler, None);
+        self.context.device.destroy_sampler(self.repeat_sampler, None);
 
         self.null_texture.destroy(&self.context);
 
@@ -1413,6 +1547,140 @@ impl SceneRenderer {
         self.context.device.free_memory(self.editor_primitives_vertices_buffer.1, None);
     } }
 }
+unsafe fn generate_cloud_noise(context: &Arc<Context>, high: &Texture, low: &Texture) { unsafe {
+    let command_buffers = context.begin_single_time_commands(1);
+    //<editor-fold desc = "transition in">
+    let barrier_info = (
+        ImageLayout::UNDEFINED,
+        ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+        vk::AccessFlags::COLOR_ATTACHMENT_READ,
+        ImageAspectFlags::COLOR,
+        vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+    );
+    transition_output(
+        context,
+        command_buffers[0],
+        high.device_texture.borrow().image,
+        1,
+        barrier_info
+    );
+    transition_output(
+        context,
+        command_buffers[0],
+        low.device_texture.borrow().image,
+        1,
+        barrier_info
+    );
+    //</editor-fold>
+    //<editor-fold desc = "descriptors">
+    let descriptor_create_info = DescriptorCreateInfo::new(context)
+        .descriptor_type(DescriptorType::STORAGE_IMAGE)
+        .shader_stages(ShaderStageFlags::COMPUTE);
+    let descriptor_set_create_info = DescriptorSetCreateInfo::new(context)
+        .frames_in_flight(1)
+        .add_descriptor(Descriptor::new(&descriptor_create_info))
+        .add_descriptor(Descriptor::new(&descriptor_create_info));
+    let mut descriptor_set = DescriptorSet::new(descriptor_set_create_info);
+
+    let image_infos = [
+        vk::DescriptorImageInfo {
+            sampler: vk::Sampler::null(),
+            image_view: high.device_texture.borrow().image_view,
+            image_layout: ImageLayout::GENERAL,
+        }, // cloud high
+        vk::DescriptorImageInfo {
+            sampler: vk::Sampler::null(),
+            image_view: low.device_texture.borrow().image_view,
+            image_layout: ImageLayout::GENERAL,
+        }, // cloud low
+    ];
+    let descriptor_writes: Vec<vk::WriteDescriptorSet> = image_infos.iter().enumerate().map(|(i, info)| {
+        vk::WriteDescriptorSet::default()
+            .dst_set(descriptor_set.descriptor_sets[0])
+            .dst_binding(i as u32)
+            .descriptor_type(DescriptorType::STORAGE_IMAGE)
+            .image_info(slice::from_ref(info))
+    }).collect();
+    context.device.update_descriptor_sets(&descriptor_writes, &[]);
+    //</editor-fold>
+    //<editor-fold desc = "pipeline">
+    let pipeline_layout_create_info = vk::PipelineLayoutCreateInfo {
+        s_type: vk::StructureType::PIPELINE_LAYOUT_CREATE_INFO,
+        set_layout_count: 1,
+        p_set_layouts: &descriptor_set.descriptor_set_layout,
+        ..Default::default()
+    };
+    let pipeline_layout = context.device.create_pipeline_layout(&pipeline_layout_create_info, None).unwrap();
+    let mut spv_file = Cursor::new(load_file(&(SHADER_PATH.to_owned() + "\\cloud\\noise.comp.spv")).unwrap());
+    let code = read_spv(&mut spv_file).expect("Failed to read compute shader spv file");
+    let shader_info = vk::ShaderModuleCreateInfo::default().code(&code);
+    let shader_module = context
+        .device
+        .create_shader_module(&shader_info, None)
+        .expect("Compute shader module error");
+    let shader_entry_name = c"main";
+    let shader_stage_create_info = vk::PipelineShaderStageCreateInfo {
+        module: shader_module,
+        p_name: shader_entry_name.as_ptr(),
+        stage: ShaderStageFlags::COMPUTE,
+        ..Default::default()
+    };
+    let compute_pipeline_create_info = vk::ComputePipelineCreateInfo {
+        s_type: vk::StructureType::COMPUTE_PIPELINE_CREATE_INFO,
+        stage: shader_stage_create_info,
+        layout: pipeline_layout,
+        ..Default::default()
+    };
+    let compute_pipeline = context.device.create_compute_pipelines(
+        vk::PipelineCache::null(),
+        &[compute_pipeline_create_info],
+        None
+    ).unwrap()[0];
+    //</editor-fold>
+    //<editor-fold desc = "compute">
+    context.device.cmd_bind_pipeline(command_buffers[0], vk::PipelineBindPoint::COMPUTE, compute_pipeline);
+    context.device.cmd_bind_descriptor_sets(
+        command_buffers[0],
+        vk::PipelineBindPoint::COMPUTE,
+        pipeline_layout,
+        0,
+        &descriptor_set.descriptor_sets,
+        &[],
+    );
+    let sub_divs = 4;
+    context.device.cmd_dispatch(command_buffers[0], 128 / sub_divs, 128 / sub_divs, 128 / sub_divs);
+    //</editor-fold>
+    //<editor-fold desc = "transition out">
+    let barrier_info = (
+        ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+        ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+        vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
+        ImageAspectFlags::COLOR,
+        vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+    );
+    transition_output(
+        context,
+        command_buffers[0],
+        high.device_texture.borrow().image,
+        1,
+        barrier_info
+    );
+    transition_output(
+        context,
+        command_buffers[0],
+        low.device_texture.borrow().image,
+        1,
+        barrier_info
+    );
+    //</editor-fold>
+
+    context.end_single_time_commands(command_buffers);
+
+    descriptor_set.destroy();
+    context.device.destroy_pipeline_layout(pipeline_layout, None);
+    context.device.destroy_shader_module(shader_module, None);
+    context.device.destroy_pipeline(compute_pipeline, None);
+} }
 
 #[derive(Clone, Debug, Copy)]
 #[repr(C)]

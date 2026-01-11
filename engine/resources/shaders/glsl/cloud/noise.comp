@@ -1,0 +1,16 @@
+#version 460
+
+layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
+
+layout(set = 0, binding = 0) uniform writeonly image3D high;
+layout(set = 0, binding = 1) uniform writeonly image3D low;
+
+void main() {
+    ivec3 coord = ivec3(gl_GlobalInvocationID.xyz);
+
+    vec3 uvw = vec3(coord) / vec3(128 - 1);
+
+    vec4 color = vec4(uvw, 1.0);
+
+    imageStore(high, coord, color);
+}
