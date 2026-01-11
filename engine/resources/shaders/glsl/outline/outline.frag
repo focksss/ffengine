@@ -26,7 +26,14 @@ void main() {
             float angle = (float(i) / float(num_samples)) * 6.28318530718;
             vec2 offset = vec2(cos(angle), sin(angle)) * max_distance * texel_size;
 
-            if (texture(stencil_buffer, uv + offset).r == 1u) {
+            vec2 sample_uv = uv + offset;
+
+            if (sample_uv.x < 0.0 || sample_uv.x > 1.0 ||
+            sample_uv.y < 0.0 || sample_uv.y > 1.0) {
+                continue;
+            }
+
+            if (texture(stencil_buffer, sample_uv).r == 1u) {
                 is_edge = true;
                 break;
             }

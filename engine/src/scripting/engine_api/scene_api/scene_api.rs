@@ -268,5 +268,15 @@ impl UserData for RigidBodyPointer {
             scene.rigid_body_components[this.index].velocity = Vector::from_lua(val, lua)?;
             Ok(())
         });
+
+        fields.add_field_method_get("angular_velocity", |lua, this| {
+            with_scene!(lua => scene);
+            Ok(scene.rigid_body_components[this.index].angular_velocity)
+        });
+        fields.add_field_method_set("angular_velocity", |lua, this, val: Value| {
+            with_scene_mut!(lua => scene);
+            scene.rigid_body_components[this.index].angular_velocity = Vector::from_lua(val, lua)?;
+            Ok(())
+        });
     }
 }

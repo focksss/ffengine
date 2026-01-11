@@ -134,6 +134,7 @@ end
 function import_model_as_child() 
 	local entity_index = _G.node_to_entity_map[gui.ActiveNode.index]
 	Engine.scene:load_model(entity_index)
+	build_graph()
 end
 local expanded_entities = {}
 _G.node_to_entity_map = {}

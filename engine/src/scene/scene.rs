@@ -439,7 +439,7 @@ impl Scene {
                     parent_transform,
                     *entity_index,
                     &mut dirty_primitive_instance_data
-                )
+                );
             }
             self.unupdated_entities.clear();
 
@@ -550,6 +550,11 @@ impl Scene {
                         ]
                     }
                 );
+            }
+
+            if let Some(body_index) = entity.rigid_body {
+                let body = &mut self.rigid_body_components[body_index];
+                body.initialize(&mut self.transforms);
             }
 
             (entity.transform, entity.children_indices.clone())

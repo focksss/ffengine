@@ -4222,6 +4222,415 @@
               ]
             }
           ]
+        },
+        {
+          "name": "angular velocity container",
+          "container": {
+            "type": "Dock"
+          },
+          "width": {
+            "type": "Factor",
+            "info": {
+              "factor": 1.0
+            }
+          },
+          "height": {
+            "type": "Absolute",
+            "info": {
+              "pixels": 20.0
+            }
+          },
+          "children": [
+            {
+              "name": "angular velocity",
+              "container": {
+                "type": "Dock"
+              },
+              "parent_relation": {
+                "type": "Docking",
+                "info": {
+                  "mode": "Top"
+                }
+              },
+              "width": {
+                "type": "Factor",
+                "info": {
+                  "factor": 1.0
+                }
+              },
+              "height": {
+                "type": "Absolute",
+                "info": {
+                  "pixels": 20.0
+                }
+              },
+              "elements": [
+                {
+                  "type": "Quad",
+                  "info": {
+                    "color": [0.275, 0.275, 0.275, 0.8],
+                    "corner_radius": 5.0
+                  }
+                }
+              ],
+              "children": [
+                {
+                  "name": "values",
+                  "container": {
+                    "type": "Stack",
+                    "info": {
+                      "horizontal": true,
+                      "spacing": 0.0,
+                      "padding": {
+                        "left": 0.0,
+                        "right": 0.0,
+                        "top": 0.0,
+                        "bottom": 0.0
+                      },
+                      "packing": "End",
+                      "stack_direction": "Normal",
+                      "alignment": "Center"
+                    }
+                  },
+                  "parent_relation": {
+                    "type": "Docking",
+                    "info": {
+                      "mode": "Right"
+                    }
+                  },
+                  "width": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 0.8
+                    }
+                  },
+                  "height": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "children": [
+                    {
+                      "name": "x text",
+                      "width": {
+                        "type": "Absolute",
+                        "info": {
+                          "pixels": 20
+                        }
+                      },
+                      "height": {
+                        "type": "Factor",
+                        "info": {
+                          "factor": 1.0
+                        }
+                      },
+                      "elements": [
+                        {
+                          "type": "Text",
+                          "info": {
+                            "text": "X:",
+                            "color": [1.0, 1.0, 1.0, 1.0],
+                            "font": 0,
+                            "font_size": 15.0,
+                            "newline_distance": 300.0
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "name": "x value",
+                      "width": {
+                        "type": "Factor",
+                        "info": {
+                          "factor": 0.25
+                        }
+                      },
+                      "height": {
+                        "type": "Factor",
+                        "info": {
+                          "factor": 1.0
+                        }
+                      },
+                      "elements": [
+                        {
+                          "type": "Quad",
+                          "info": {
+                            "color": [0.35, 0.35, 0.35, 0.8],
+                            "corner_radius": 5.0
+                          }
+                        }
+                      ],
+                      "children": [
+                        {
+                          "name": "text",
+                          "parent_relation": {
+                            "type": "Independent",
+                            "info": {
+                              "relative": true
+                            }
+                          },
+                          "interactable_information": {
+                            "passive_actions": [
+                              {
+                                "script": 4,
+                                "method": "update_angular_velocity_x_display"
+                              }
+                            ]
+                          },
+                          "width": {
+                            "type": "Absolute",
+                            "info": {
+                              "pixels": 60
+                            }
+                          },
+                          "height": {
+                            "type": "Factor",
+                            "info": {
+                              "factor": 1.0
+                            }
+                          },
+                          "elements": [
+                            {
+                              "type": "Text",
+                              "info": {
+                                "text": "XXX.XXX",
+                                "color": [1.0, 1.0, 1.0, 1.0],
+                                "font": 0,
+                                "font_size": 15.0,
+                                "newline_distance": 300.0
+                              }
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "name": "y text",
+                      "width": {
+                        "type": "Absolute",
+                        "info": {
+                          "pixels": 20
+                        }
+                      },
+                      "height": {
+                        "type": "Factor",
+                        "info": {
+                          "factor": 1.0
+                        }
+                      },
+                      "elements": [
+                        {
+                          "type": "Text",
+                          "info": {
+                            "text": "Y:",
+                            "color": [1.0, 1.0, 1.0, 1.0],
+                            "font": 0,
+                            "font_size": 15.0,
+                            "newline_distance": 300.0
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "name": "y value",
+                      "width": {
+                        "type": "Factor",
+                        "info": {
+                          "factor": 0.25
+                        }
+                      },
+                      "height": {
+                        "type": "Factor",
+                        "info": {
+                          "factor": 1.0
+                        }
+                      },
+                      "elements": [
+                        {
+                          "type": "Quad",
+                          "info": {
+                            "color": [0.35, 0.35, 0.35, 0.8],
+                            "corner_radius": 5.0
+                          }
+                        }
+                      ],
+                      "children": [
+                        {
+                          "name": "text",
+                          "parent_relation": {
+                            "type": "Independent",
+                            "info": {
+                              "relative": true
+                            }
+                          },
+                          "interactable_information": {
+                            "passive_actions": [
+                              {
+                                "script": 4,
+                                "method": "update_angular_velocity_y_display"
+                              }
+                            ]
+                          },
+                          "width": {
+                            "type": "Absolute",
+                            "info": {
+                              "pixels": 60
+                            }
+                          },
+                          "height": {
+                            "type": "Factor",
+                            "info": {
+                              "factor": 1.0
+                            }
+                          },
+                          "elements": [
+                            {
+                              "type": "Text",
+                              "info": {
+                                "text": "XXX.XXX",
+                                "color": [1.0, 1.0, 1.0, 1.0],
+                                "font": 0,
+                                "font_size": 15.0,
+                                "newline_distance": 300.0
+                              }
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "name": "z text",
+                      "width": {
+                        "type": "Absolute",
+                        "info": {
+                          "pixels": 20
+                        }
+                      },
+                      "height": {
+                        "type": "Factor",
+                        "info": {
+                          "factor": 1.0
+                        }
+                      },
+                      "elements": [
+                        {
+                          "type": "Text",
+                          "info": {
+                            "text": "Z:",
+                            "color": [1.0, 1.0, 1.0, 1.0],
+                            "font": 0,
+                            "font_size": 15.0,
+                            "newline_distance": 300.0
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "name": "z value",
+                      "width": {
+                        "type": "Factor",
+                        "info": {
+                          "factor": 0.25
+                        }
+                      },
+                      "height": {
+                        "type": "Factor",
+                        "info": {
+                          "factor": 1.0
+                        }
+                      },
+                      "elements": [
+                        {
+                          "type": "Quad",
+                          "info": {
+                            "color": [0.35, 0.35, 0.35, 0.8],
+                            "corner_radius": 5.0
+                          }
+                        }
+                      ],
+                      "children": [
+                        {
+                          "name": "text",
+                          "parent_relation": {
+                            "type": "Independent",
+                            "info": {
+                              "relative": true
+                            }
+                          },
+                          "interactable_information": {
+                            "passive_actions": [
+                              {
+                                "script": 4,
+                                "method": "update_angular_velocity_z_display"
+                              }
+                            ]
+                          },
+                          "width": {
+                            "type": "Absolute",
+                            "info": {
+                              "pixels": 60
+                            }
+                          },
+                          "height": {
+                            "type": "Factor",
+                            "info": {
+                              "factor": 1.0
+                            }
+                          },
+                          "elements": [
+                            {
+                              "type": "Text",
+                              "info": {
+                                "text": "XXX.XXX",
+                                "color": [1.0, 1.0, 1.0, 1.0],
+                                "font": 0,
+                                "font_size": 15.0,
+                                "newline_distance": 300.0
+                              }
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "name": "text",
+                  "parent_relation": {
+                    "type": "Docking",
+                    "info": {
+                      "mode": "Right"
+                    }
+                  },
+                  "width": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "height": {
+                    "type": "Factor",
+                    "info": {
+                      "factor": 1.0
+                    }
+                  },
+                  "elements": [
+                    {
+                      "type": "Text",
+                      "info": {
+                        "text": "Angular Velocity:",
+                        "color": [1.0, 1.0, 1.0, 1.0],
+                        "font": 0,
+                        "font_size": 15.0,
+                        "newline_distance": 300.0
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
         }
       ]
     }

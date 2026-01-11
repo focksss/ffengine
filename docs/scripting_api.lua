@@ -51,6 +51,7 @@ MovementMode = {
         ---@field owner_index integer
         ---@field static boolean
         ---@field velocity Vector
+        ---@field angular_velocity Vector
 
         ---@class Entity
         ---@field transform_index integer
