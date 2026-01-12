@@ -1548,10 +1548,16 @@ impl SceneRenderer {
     } }
 }
 unsafe fn generate_cloud_noise(context: &Arc<Context>, high: &Texture, low: &Texture) { unsafe {
-    let worley_a = Vector::new4(3.0, 7.0, 11.0, 0.65);
+    let shape_1 = Vector::new4(3.0, 7.0, 11.0, 0.65);
+    let shape_2 = Vector::new4(9.0, 15.0, 23.0, 0.33);
+    let shape_3 = Vector::new4(13.0, 28.0, 42.0, 0.58);
+    let shape_4 = Vector::new4(20.0, 31.0, 45.0, 0.75);
 
     let mut info = Vec::new();
-    info.push(worley_a);
+    info.push(shape_1);
+    info.push(shape_2);
+    info.push(shape_3);
+    info.push(shape_4);
 
     let command_buffers = context.begin_single_time_commands(1);
     //<editor-fold desc = "transition in">
@@ -1585,7 +1591,7 @@ unsafe fn generate_cloud_noise(context: &Arc<Context>, high: &Texture, low: &Tex
     let ubo_create_info = DescriptorCreateInfo::new(context)
         .descriptor_type(DescriptorType::UNIFORM_BUFFER)
         .shader_stages(ShaderStageFlags::COMPUTE)
-        .size((size_of::<Vector>() * 1) as u64);
+        .size((size_of::<Vector>() * info.len()) as u64);
 
     let descriptor_set_create_info = DescriptorSetCreateInfo::new(context)
         .frames_in_flight(1)

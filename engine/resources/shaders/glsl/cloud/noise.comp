@@ -40,7 +40,10 @@ ivec3(1,-1,0)
 };
 
 layout(set = 0, binding = 2) uniform WorleyInfo {
-    vec4 worley_1;
+    vec4 high_r;
+    vec4 high_g;
+    vec4 high_b;
+    vec4 high_a;
 };
 
 uint hash_u32(uint x) {
@@ -89,23 +92,29 @@ float worley(vec3 uvw, int cells_per_axis, uint start_index) {
     return sqrt(min_sqr_dist);
 }
 
-const int CELLS_PER_AXIS = 10;
+float layer(vec4 info, vec3 uvw) {
+    float persistence = info.w;
+    float a = worley(uvw, int(info.x), int(info.x));
+    float b = worley(uvw, int(info.y), int(info.y));
+    float c = worley(uvw, int(info.z), int(info.z));
+
+    float noise_sum = a + (b * persistence) + (c * persistence * persistence);
+    float max = 1.0 + (persistence) + (persistence * persistence);
+
+    return noise_sum /= max;
+}
 
 void main() {
     ivec3 coord = ivec3(gl_GlobalInvocationID.xyz);
     vec3 uvw = vec3(coord) / vec3(128);
 
-    float persistence = worley_1.w;
-    float a = worley(uvw, int(worley_1.x), int(worley_1.x));
-    float b = worley(uvw, int(worley_1.y), int(worley_1.y));
-    float c = worley(uvw, int(worley_1.z), int(worley_1.z));
+    vec4 high_color = vec4(
+        layer(high_r, uvw),
+        layer(high_g, uvw),
+        layer(high_b, uvw),
+        layer(high_a, uvw)
+    );
 
-    float noise_sum = a + (b * persistence) + (c * persistence * persistence);
-    float max = 1.0 + (persistence) + (persistence * persistence);
-
-    // keep inside range [0,1] as will be clamped in texture
-    noise_sum /= max;
-
-    imageStore(high, coord, vec4(vec3(1.0 - noise_sum), 1.0));
+    imageStore(high, coord, high_color);
 }
 

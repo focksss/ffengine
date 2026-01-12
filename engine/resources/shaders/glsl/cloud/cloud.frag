@@ -13,9 +13,9 @@ layout(push_constant) uniform push_constants {
     mat4 projection;
 } constants;
 
-const float MIN = 200.0;
-const float MAX = 250.0;
-const float RANGE = 10000.0;
+const float MIN = 100.0;
+const float MAX = 400.0;
+const float RANGE = 100000.0;
 const int STEPS = 20;
 const bool FOLLOW = false;
 
@@ -86,8 +86,8 @@ void main() {
 
             if (sample_depth(p) < geometry_depth) { break; }
 
-            vec4 sampled = texture(high, p * 0.0005);
-            float density = max(0.0, sampled.r - 0.5);
+            vec4 sampled = texture(high, p * 0.00025);
+            float density = max(0.0, sampled.r - 0.4);
             accum_density += density;
 
             t += step_size;
