@@ -192,9 +192,9 @@ impl SceneRenderer {
             );
         let cloud_tex_high = Texture::new(&cloud_noise_high_tex_info);
         let cloud_noise_low_tex_info = TextureCreateInfo::new(context)
-            .width(32)
-            .height(32)
-            .depth(32)
+            .width(64)
+            .height(64)
+            .depth(64)
             .format(Format::R16G16B16A16_SFLOAT)
             .usage_flags(
                 vk::ImageUsageFlags::SAMPLED |
@@ -1683,7 +1683,7 @@ unsafe fn generate_cloud_noise(context: &Arc<Context>, high: &Texture, low: &Tex
         &detail_noise_info as *const NoiseInfo as *const u8,
         size_of::<NoiseInfo>(),
     ));
-    context.device.cmd_dispatch(command_buffers[0], 32 / sub_divs, 32 / sub_divs, 32 / sub_divs);
+    context.device.cmd_dispatch(command_buffers[0], 64 / sub_divs, 64 / sub_divs, 64 / sub_divs);
 
     //</editor-fold>
     //<editor-fold desc = "transition out">
