@@ -39,12 +39,14 @@ ivec3(1,0,0),
 ivec3(1,-1,0)
 };
 
-layout(set = 0, binding = 2) uniform WorleyInfo {
-    vec4 high_r;
-    vec4 high_g;
-    vec4 high_b;
-    vec4 high_a;
-};
+layout(push_constant) uniform push_constants {
+    vec4 r;
+    vec4 g;
+    vec4 b;
+    vec4 a;
+    vec4 seeds;
+    int is_high;
+} constants;
 
 uint hash_u32(uint x) {
     x ^= x >> 16;
@@ -67,7 +69,7 @@ vec3 hash3(uvec3 cell, uint seed) {
     return vec3(h) * (1.0 / 4294967296.0);
 }
 
-float worley(vec3 uvw, int cells_per_axis, uint start_index) {
+float worley(vec3 uvw, int cells_per_axis, uint seed) {
     vec3 position = uvw * float(cells_per_axis);
     ivec3 cell_indices = ivec3(floor(position));
     vec3 cell_offset = fract(position);
@@ -83,7 +85,7 @@ float worley(vec3 uvw, int cells_per_axis, uint start_index) {
         wrapped_neighbor_indices.y * cells_per_axis +
         wrapped_neighbor_indices.z * cells_per_axis * cells_per_axis;
 
-        vec3 neighbor_offset = hash3(uvec3(wrapped_neighbor_indices), 1);
+        vec3 neighbor_offset = hash3(uvec3(wrapped_neighbor_indices), seed);
         vec3 neighbor_position = vec3(neighbor_indices) + neighbor_offset;
 
         vec3 delta = neighbor_position - position;
@@ -92,11 +94,11 @@ float worley(vec3 uvw, int cells_per_axis, uint start_index) {
     return sqrt(min_sqr_dist);
 }
 
-float layer(vec4 info, vec3 uvw) {
+float layer(vec4 info, vec3 uvw, int seed) {
     float persistence = info.w;
-    float a = worley(uvw, int(info.x), int(info.x));
-    float b = worley(uvw, int(info.y), int(info.y));
-    float c = worley(uvw, int(info.z), int(info.z));
+    float a = worley(uvw, int(info.x), 3 * seed + 0);
+    float b = worley(uvw, int(info.y), 3 * seed + 1);
+    float c = worley(uvw, int(info.z), 3 * seed + 2);
 
     float noise_sum = a + (b * persistence) + (c * persistence * persistence);
     float max = 1.0 + (persistence) + (persistence * persistence);
@@ -106,15 +108,23 @@ float layer(vec4 info, vec3 uvw) {
 
 void main() {
     ivec3 coord = ivec3(gl_GlobalInvocationID.xyz);
-    vec3 uvw = vec3(coord) / vec3(128);
+    vec3 uvw = vec3(coord) / imageSize(low);
 
-    vec4 high_color = vec4(
-        layer(high_r, uvw),
-        layer(high_g, uvw),
-        layer(high_b, uvw),
-        layer(high_a, uvw)
+    if (constants.is_high == 1) {
+        uvw = vec3(coord) / imageSize(high);
+    }
+
+    vec4 color = vec4(
+        layer(constants.r, uvw, int(constants.seeds.r)),
+        layer(constants.g, uvw, int(constants.seeds.g)),
+        layer(constants.b, uvw, int(constants.seeds.b)),
+        layer(constants.a, uvw, int(constants.seeds.a))
     );
 
-    imageStore(high, coord, high_color);
+    if (constants.is_high == 1) {
+        imageStore(high, coord, 1.0 - color);
+    } else {
+        imageStore(low, coord, 1.0 - color);
+    }
 }
 

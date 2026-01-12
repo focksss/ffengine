@@ -1548,16 +1548,22 @@ impl SceneRenderer {
     } }
 }
 unsafe fn generate_cloud_noise(context: &Arc<Context>, high: &Texture, low: &Texture) { unsafe {
-    let shape_1 = Vector::new4(3.0, 7.0, 11.0, 0.65);
-    let shape_2 = Vector::new4(9.0, 15.0, 23.0, 0.33);
-    let shape_3 = Vector::new4(13.0, 28.0, 42.0, 0.58);
-    let shape_4 = Vector::new4(20.0, 31.0, 45.0, 0.75);
-
-    let mut info = Vec::new();
-    info.push(shape_1);
-    info.push(shape_2);
-    info.push(shape_3);
-    info.push(shape_4);
+    let shape_noise_info = NoiseInfo {
+        r: [3.0, 7.0, 11.0, 0.65],
+        g: [9.0, 15.0, 23.0, 0.33],
+        b: [13.0, 28.0, 42.0, 0.58],
+        a: [20.0, 31.0, 45.0, 0.75],
+        seeds: [1.0, 2.0, 3.0, 4.0],
+        high: 1,
+    };
+    let detail_noise_info = NoiseInfo {
+        r: [8.0, 18.0, 20.0, 0.76],
+        g: [13.0, 24.0, 28.0, 0.5],
+        b: [20.0, 28.0, 32.0, 0.5],
+        a: [24.0, 30.0, 34.0, 0.5],
+        seeds: [5.0, 6.0, 7.0, 8.0],
+        high: 0,
+    };
 
     let command_buffers = context.begin_single_time_commands(1);
     //<editor-fold desc = "transition in">
@@ -1588,19 +1594,11 @@ unsafe fn generate_cloud_noise(context: &Arc<Context>, high: &Texture, low: &Tex
         .descriptor_type(DescriptorType::STORAGE_IMAGE)
         .shader_stages(ShaderStageFlags::COMPUTE);
 
-    let ubo_create_info = DescriptorCreateInfo::new(context)
-        .descriptor_type(DescriptorType::UNIFORM_BUFFER)
-        .shader_stages(ShaderStageFlags::COMPUTE)
-        .size((size_of::<Vector>() * info.len()) as u64);
-
     let descriptor_set_create_info = DescriptorSetCreateInfo::new(context)
         .frames_in_flight(1)
         .add_descriptor(Descriptor::new(&descriptor_create_info))
-        .add_descriptor(Descriptor::new(&descriptor_create_info))
-        .add_descriptor(Descriptor::new(&ubo_create_info));
+        .add_descriptor(Descriptor::new(&descriptor_create_info));
     let mut descriptor_set = DescriptorSet::new(descriptor_set_create_info);
-
-    copy_data_to_memory(descriptor_set.descriptors[2].owned_buffers.2[0], &info);
 
     let image_infos = [
         vk::DescriptorImageInfo {
@@ -1628,6 +1626,12 @@ unsafe fn generate_cloud_noise(context: &Arc<Context>, high: &Texture, low: &Tex
         s_type: vk::StructureType::PIPELINE_LAYOUT_CREATE_INFO,
         set_layout_count: 1,
         p_set_layouts: &descriptor_set.descriptor_set_layout,
+        push_constant_range_count: 1,
+        p_push_constant_ranges: &vk::PushConstantRange {
+            stage_flags: ShaderStageFlags::COMPUTE,
+            offset: 0,
+            size: size_of::<NoiseInfo>() as u32,
+        },
         ..Default::default()
     };
     let pipeline_layout = context.device.create_pipeline_layout(&pipeline_layout_create_info, None).unwrap();
@@ -1668,7 +1672,19 @@ unsafe fn generate_cloud_noise(context: &Arc<Context>, high: &Texture, low: &Tex
         &[],
     );
     let sub_divs = 4;
+
+    context.device.cmd_push_constants(command_buffers[0], pipeline_layout, ShaderStageFlags::COMPUTE, 0, slice::from_raw_parts(
+        &shape_noise_info as *const NoiseInfo as *const u8,
+        size_of::<NoiseInfo>(),
+    ));
     context.device.cmd_dispatch(command_buffers[0], 128 / sub_divs, 128 / sub_divs, 128 / sub_divs);
+
+    context.device.cmd_push_constants(command_buffers[0], pipeline_layout, ShaderStageFlags::COMPUTE, 0, slice::from_raw_parts(
+        &detail_noise_info as *const NoiseInfo as *const u8,
+        size_of::<NoiseInfo>(),
+    ));
+    context.device.cmd_dispatch(command_buffers[0], 32 / sub_divs, 32 / sub_divs, 32 / sub_divs);
+
     //</editor-fold>
     //<editor-fold desc = "transition out">
     let barrier_info = (
@@ -1755,9 +1771,13 @@ pub struct OutlineConstantSendable {
 }
 #[derive(Clone, Debug, Copy)]
 #[repr(C)]
-struct PointData {
-    point: [f32; 3],
-    _pad: u32,
+struct NoiseInfo {
+    r: [f32; 4],
+    g: [f32; 4],
+    b: [f32; 4],
+    a: [f32; 4],
+    seeds: [f32; 4],
+    high: i32,
 }
 /*
         let equirectangular_to_cubemap_pass_create_info = PassCreateInfo::new(context)
