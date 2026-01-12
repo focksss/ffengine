@@ -1565,8 +1565,9 @@ impl DescriptorSet {
                         Some(buffer_infos.len() - 1)
                     }
                     DescriptorType::STORAGE_BUFFER => {
+                        let buffer = if info.2.buffer_refs.len() > 0 {info.2.buffer_refs[i]} else {info.2.owned_buffers.0[i]};
                         buffer_infos.push(vk::DescriptorBufferInfo {
-                            buffer: info.2.buffer_refs[i],
+                            buffer,
                             offset: info.2.offset.unwrap(),
                             range: info.2.range.unwrap(),
                         });
@@ -1689,6 +1690,31 @@ impl Descriptor {
                 }
             }
             DescriptorType::STORAGE_BUFFER => {
+                let (owned_buffers, buffer_refs) = if create_info.buffers.is_some() {
+                    ((Vec::new(), Vec::new(), Vec::new()), create_info.buffers.as_ref().unwrap().clone())
+                } else {
+                    let mut uniform_buffers = Vec::new();
+                    let mut uniform_buffers_memory = Vec::new();
+                    let mut uniform_buffers_mapped = Vec::new();
+                    for i in 0..create_info.frames_in_flight {
+                        uniform_buffers.push(Buffer::null());
+                        uniform_buffers_memory.push(DeviceMemory::null());
+                        context.create_buffer(
+                            create_info.size.expect("DescriptorCreateInfo of type UNIFORM_BUFFER does not contain buffer size"),
+                            vk::BufferUsageFlags::STORAGE_BUFFER,
+                            create_info.memory_property_flags,
+                            &mut uniform_buffers[i],
+                            &mut uniform_buffers_memory[i],
+                        );
+                        uniform_buffers_mapped.push(context.device.map_memory(
+                            uniform_buffers_memory[i],
+                            0,
+                            create_info.size.expect("DescriptorCreateInfo of type UNIFORM_BUFFER does not contain buffer size"),
+                            vk::MemoryMapFlags::empty()
+                        ).expect("failed to map uniform buffer"));
+                    }
+                    ((uniform_buffers, uniform_buffers_memory, uniform_buffers_mapped), Vec::new())
+                };
                 Descriptor {
                     context: context.clone(),
                     descriptor_type: DescriptorType::STORAGE_BUFFER,
@@ -1697,8 +1723,8 @@ impl Descriptor {
                     offset: Some(create_info.offset),
                     range: Some(create_info.range),
                     descriptor_count: 1,
-                    owned_buffers: (Vec::new(), Vec::new(), Vec::new()),
-                    buffer_refs: create_info.buffers.clone().unwrap(),
+                    owned_buffers,
+                    buffer_refs,
                     image_infos: None,
                     binding_flags: create_info.binding_flags,
                 }

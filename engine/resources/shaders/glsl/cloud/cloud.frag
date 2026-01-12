@@ -13,10 +13,10 @@ layout(push_constant) uniform push_constants {
     mat4 projection;
 } constants;
 
-const float MIN = 10.0;
-const float MAX = 20.0;
-const float RANGE = 5.0;
-const int STEPS = 50;
+const float MIN = 200.0;
+const float MAX = 250.0;
+const float RANGE = 10000.0;
+const int STEPS = 20;
 const bool FOLLOW = false;
 
 bool intersect(
@@ -69,10 +69,13 @@ void main() {
 
     vec3 entrance = o + t_min * d;
 
-    float sample_depth = sample_depth(entrance);
+    float entrance_depth = sample_depth(entrance);
 
-    bool hit_cloud = sample_depth > texture(depth, uv).r;
+    float geometry_depth = texture(depth, uv).r;
+
+    bool hit_cloud = entrance_depth > geometry_depth;
     if (hit_cloud) {
+        // color = texture(high, entrance * 0.05); return;
         float travel_distance = t_max - t_min;
 
         float step_size = travel_distance / float(STEPS);
@@ -81,15 +84,16 @@ void main() {
         while (t < travel_distance) {
             vec3 p = entrance + t * d;
 
-            float base = texture(high, p * 0.0005).r;
-            float detail = texture(low, p * 0.02).r;
-            accum_density += base * mix(1.0, detail, 0.4);
+            if (sample_depth(p) < geometry_depth) { break; }
+
+            vec4 sampled = texture(high, p * 0.0005);
+            float density = max(0.0, sampled.r - 0.5);
+            accum_density += density;
 
             t += step_size;
         }
-
-        color = vec4(vec3(travel_distance / 100.0), 0.8);
-//        color = vec4(vec3(0.3, 0.3, 1.0) * exp(-travel_distance), 0.8);
+        float transmittance = 1.0 - exp(-accum_density);
+        color = vec4(1.0) * transmittance;
     } else {
         discard;
     }

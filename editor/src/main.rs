@@ -96,8 +96,8 @@ fn main() { unsafe {
         {
             let scene = &mut *app.scene.borrow_mut();
 
-            //let ground = scene.new_entity_from_model(0, "editor/resources/models/collisionTest/collisionTestNoWalls.gltf");
-            let ground = scene.new_entity_from_model(0, "editor/resources/models/sphereScene/scene.gltf");
+            let ground = scene.new_entity_from_model(0, "editor/resources/models/collisionTest/collisionTestNoWalls.gltf");
+            //let ground = scene.new_entity_from_model(0, "editor/resources/models/sphereScene/scene.gltf");
 
             let ball = scene.new_entity_from_model(0, "editor/resources/models/demoBall/scene.gltf");
 

@@ -5,12 +5,107 @@ layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
 layout(set = 0, binding = 0) uniform writeonly image3D high;
 layout(set = 0, binding = 1) uniform writeonly image3D low;
 
+const ivec3 offsets[] =
+{
+ivec3(0,0,0),
+
+ivec3(0,0,1),
+ivec3(-1,1,1),
+ivec3(-1,0,1),
+ivec3(-1,-1,1),
+ivec3(0,1,1),
+ivec3(0,-1,1),
+ivec3(1,1,1),
+ivec3(1,0,1),
+ivec3(1,-1,1),
+
+ivec3(0,0,-1),
+ivec3(-1,1,-1),
+ivec3(-1,0,-1),
+ivec3(-1,-1,-1),
+ivec3(0,1,-1),
+ivec3(0,-1,-1),
+ivec3(1,1,-1),
+ivec3(1,0,-1),
+ivec3(1,-1,-1),
+
+ivec3(-1,1,0),
+ivec3(-1,0,0),
+ivec3(-1,-1,0),
+ivec3(0,1,0),
+ivec3(0,-1,0),
+ivec3(1,1,0),
+ivec3(1,0,0),
+ivec3(1,-1,0)
+};
+
+layout(set = 0, binding = 2) uniform WorleyInfo {
+    vec4 worley_1;
+};
+
+uint hash_u32(uint x) {
+    x ^= x >> 16;
+    x *= 0x7feb352d;
+    x ^= x >> 15;
+    x *= 0x846ca68b;
+    x ^= x >> 16;
+    return x;
+}
+uvec3 hash_uvec3(uvec3 v) {
+    v = v * 1664525u + 1013904223u;
+    v.x += v.y * v.z;
+    v.y += v.z * v.x;
+    v.z += v.x * v.y;
+    v ^= v >> 16;
+    return v;
+}
+vec3 hash3(uvec3 cell, uint seed) {
+    uvec3 h = hash_uvec3(cell ^ uvec3(seed));
+    return vec3(h) * (1.0 / 4294967296.0);
+}
+
+float worley(vec3 uvw, int cells_per_axis, uint start_index) {
+    vec3 position = uvw * float(cells_per_axis);
+    ivec3 cell_indices = ivec3(floor(position));
+    vec3 cell_offset = fract(position);
+
+    float min_sqr_dist = 1.0;
+
+    for (int i = 0; i < 27; i++) {
+        ivec3 neighbor_indices = (cell_indices + offsets[i]);
+        ivec3 wrapped_neighbor_indices = ((cell_indices + offsets[i]) % cells_per_axis + cells_per_axis) % cells_per_axis;
+
+        int neighbor_point_index =
+        wrapped_neighbor_indices.x +
+        wrapped_neighbor_indices.y * cells_per_axis +
+        wrapped_neighbor_indices.z * cells_per_axis * cells_per_axis;
+
+        vec3 neighbor_offset = hash3(uvec3(wrapped_neighbor_indices), 1);
+        vec3 neighbor_position = vec3(neighbor_indices) + neighbor_offset;
+
+        vec3 delta = neighbor_position - position;
+        min_sqr_dist = min(min_sqr_dist, dot(delta, delta));
+    }
+    return sqrt(min_sqr_dist);
+}
+
+const int CELLS_PER_AXIS = 10;
+
 void main() {
     ivec3 coord = ivec3(gl_GlobalInvocationID.xyz);
+    vec3 uvw = vec3(coord) / vec3(128);
 
-    vec3 uvw = vec3(coord) / vec3(128 - 1);
+    float persistence = worley_1.w;
+    float a = worley(uvw, int(worley_1.x), int(worley_1.x));
+    float b = worley(uvw, int(worley_1.y), int(worley_1.y));
+    float c = worley(uvw, int(worley_1.z), int(worley_1.z));
 
-    vec4 color = vec4(uvw, 1.0);
+    float noise_sum = a + (b * persistence) + (c * persistence * persistence);
+    float max = 1.0 + (persistence) + (persistence * persistence);
 
-    imageStore(high, coord, color);
+    // keep inside range [0,1] as will be clamped in texture
+    noise_sum /= max;
+
+    imageStore(high, coord, vec4(vec3(1.0 - noise_sum), 1.0));
 }
+

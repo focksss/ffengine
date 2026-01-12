@@ -1548,11 +1548,16 @@ impl SceneRenderer {
     } }
 }
 unsafe fn generate_cloud_noise(context: &Arc<Context>, high: &Texture, low: &Texture) { unsafe {
+    let worley_a = Vector::new4(3.0, 7.0, 11.0, 0.65);
+
+    let mut info = Vec::new();
+    info.push(worley_a);
+
     let command_buffers = context.begin_single_time_commands(1);
     //<editor-fold desc = "transition in">
     let barrier_info = (
         ImageLayout::UNDEFINED,
-        ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+        ImageLayout::GENERAL,
         vk::AccessFlags::COLOR_ATTACHMENT_READ,
         ImageAspectFlags::COLOR,
         vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
@@ -1576,11 +1581,20 @@ unsafe fn generate_cloud_noise(context: &Arc<Context>, high: &Texture, low: &Tex
     let descriptor_create_info = DescriptorCreateInfo::new(context)
         .descriptor_type(DescriptorType::STORAGE_IMAGE)
         .shader_stages(ShaderStageFlags::COMPUTE);
+
+    let ubo_create_info = DescriptorCreateInfo::new(context)
+        .descriptor_type(DescriptorType::UNIFORM_BUFFER)
+        .shader_stages(ShaderStageFlags::COMPUTE)
+        .size((size_of::<Vector>() * 1) as u64);
+
     let descriptor_set_create_info = DescriptorSetCreateInfo::new(context)
         .frames_in_flight(1)
         .add_descriptor(Descriptor::new(&descriptor_create_info))
-        .add_descriptor(Descriptor::new(&descriptor_create_info));
+        .add_descriptor(Descriptor::new(&descriptor_create_info))
+        .add_descriptor(Descriptor::new(&ubo_create_info));
     let mut descriptor_set = DescriptorSet::new(descriptor_set_create_info);
+
+    copy_data_to_memory(descriptor_set.descriptors[2].owned_buffers.2[0], &info);
 
     let image_infos = [
         vk::DescriptorImageInfo {
@@ -1652,7 +1666,7 @@ unsafe fn generate_cloud_noise(context: &Arc<Context>, high: &Texture, low: &Tex
     //</editor-fold>
     //<editor-fold desc = "transition out">
     let barrier_info = (
-        ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+        ImageLayout::GENERAL,
         ImageLayout::SHADER_READ_ONLY_OPTIMAL,
         vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
         ImageAspectFlags::COLOR,
@@ -1732,6 +1746,12 @@ pub struct OutlineConstantSendable {
 
     thickness: f32,
     _pad: [f32; 3],
+}
+#[derive(Clone, Debug, Copy)]
+#[repr(C)]
+struct PointData {
+    point: [f32; 3],
+    _pad: u32,
 }
 /*
         let equirectangular_to_cubemap_pass_create_info = PassCreateInfo::new(context)
