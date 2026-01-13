@@ -3,6 +3,9 @@
 layout(set = 0, binding = 0) uniform sampler2D depth;
 layout(set = 0, binding = 1) uniform sampler3D high;
 layout(set = 0, binding = 2) uniform sampler3D low;
+layout(set = 0, binding = 3) uniform SunUBO {
+    float time;
+};
 
 layout (location = 0) in vec2 uv;
 
@@ -20,11 +23,14 @@ const int STEPS = 9;
 const bool FOLLOW = false;
 const float SHAPING_SCALE = 0.0003;
 const float DETAILING_SCALE = 0.003;
-const float DENSITY_OFFSET = -0.5;
+const float DENSITY_OFFSET = -0.47;
 const float DENSITY_MULTIPLIER = 5.0;
 const float DETAIL_WEIGHT = 0.7;
 const float DARKNESS_THRESHOLD = 0.5;
 
+const vec3 WIND = vec3(0.002, 0.0, 0.005);
+const float SHAPE_SPEED = 1.0;
+const float DETAIL_SPEED = -4.0;
 const vec3 SUN_DIR = vec3(-1.0, -2.0, -1.0);
 
 bool intersect(
@@ -60,13 +66,13 @@ float sample_density(vec3 p) {
     float sample_height = (p.y - MIN) / (MAX - MIN);
     // https://www.desmos.com/calculator/rqxctltcfe
     float gradient = smoothstep(0.0, 0.2, sample_height) * smoothstep(1.0, 0.3, sample_height);
-    vec4 shaping_sample = texture(high, p * SHAPING_SCALE);
+    vec4 shaping_sample = texture(high, p * SHAPING_SCALE + time * WIND * SHAPE_SPEED);
     vec4 shape_weights = shaping_sample / dot(shaping_sample, vec4(1.0));
     float shaping = dot(shaping_sample, shape_weights) * gradient;
     float shape_density = shaping + DENSITY_OFFSET;
 
     if (shape_density > 0.0) {
-        vec4 detailing_sample = texture(low, p * DETAILING_SCALE);
+        vec4 detailing_sample = texture(low, p * DETAILING_SCALE + time * WIND * SHAPE_SPEED);
         vec3 detailing_weights = detailing_sample.xyz / dot(detailing_sample.xyz, vec3(1.0));
         float detailing = dot(detailing_sample.xyz, detailing_weights);
 

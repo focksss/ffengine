@@ -9,7 +9,8 @@ use ash::vk::{DescriptorType, Extent2D, Format, Handle, ImageAspectFlags, ImageL
 use rand::{rng, Rng};
 use std::path::PathBuf;
 use std::slice;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use ash::util::read_spv;
 use crate::math::matrix::Matrix;
 use crate::math::Vector;
@@ -24,6 +25,10 @@ const SSAO_KERNAL_SIZE: usize = 16;
 const SSAO_RESOLUTION_MULTIPLIER: f32 = 0.5;
 pub const SHADOW_RES: u32 = 2048;
 
+static APP_START: LazyLock<Instant> = LazyLock::new(Instant::now);
+fn get_runtime_s() -> f32 {
+    APP_START.elapsed().as_secs_f32()
+}
 
 //TODO() FIX SSAO UPSAMPLING
 pub struct SceneRenderer {
@@ -1181,12 +1186,18 @@ impl SceneRenderer {
         let cloud_renderpass = {
             let light_pass = lighting_renderpass.pass.borrow();
 
+            let ubo_create_info = DescriptorCreateInfo::new(context)
+                .descriptor_type(DescriptorType::UNIFORM_BUFFER)
+                .shader_stages(ShaderStageFlags::FRAGMENT)
+                .size(size_of::<CloudInfo>() as u64);
+
             let pass_create_info = PassCreateInfo::new(context)
                 .grab_attachment(&light_pass, 0, vk::AttachmentLoadOp::LOAD, vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
             let descriptor_set_create_info = DescriptorSetCreateInfo::new(context)
                 .add_descriptor(Descriptor::new(&texture_sampler_create_info))
                 .add_descriptor(Descriptor::new(&texture_sampler_create_info))
-                .add_descriptor(Descriptor::new(&texture_sampler_create_info));
+                .add_descriptor(Descriptor::new(&texture_sampler_create_info))
+                .add_descriptor(Descriptor::new(&ubo_create_info));
 
             let color_blend_attachment_states = [vk::PipelineColorBlendAttachmentState {
                 blend_enable: vk::TRUE,
@@ -1329,6 +1340,10 @@ impl SceneRenderer {
                 self.viewport.borrow().width, self.viewport.borrow().width,
             )]
         );
+        let ubo = CloudInfo {
+            t: get_runtime_s(),
+        };
+        copy_data_to_memory(self.cloud_renderpass.descriptor_set.borrow().descriptors[3].owned_buffers.2[current_frame], &[ubo]);
         let camera_constants = CameraMatrixUniformData {
             view: player_camera.view_matrix.data,
             projection: player_camera.projection_matrix.data,
@@ -1778,6 +1793,11 @@ struct NoiseInfo {
     a: [f32; 4],
     seeds: [f32; 4],
     high: i32,
+}
+#[derive(Clone, Debug, Copy)]
+#[repr(C)]
+struct CloudInfo {
+    t: f32,
 }
 /*
         let equirectangular_to_cubemap_pass_create_info = PassCreateInfo::new(context)
