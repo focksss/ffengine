@@ -21,9 +21,9 @@ use crate::scene::scene::{Instance, Scene};
 use crate::scene::world::camera::{Camera, Frustum};
 
 // SHOULD DETECT MATH VS COLOR DATA TEXTURES, LOAD COLOR AS SRGB, MATH AS UNORM
-const MAX_VERTICES: u64 = 3 * 10u64.pow(6); // 7 for bistro
-const MAX_INDICES: u64 = 4 * 10u64.pow(5); // 6 for bistro
-pub const MAX_INSTANCES: u64 = 10u64 * 10u64.pow(4); // 5 for bistro
+const MAX_VERTICES: u64 = 3 * 10u64.pow(7); // 7 for bistro
+const MAX_INDICES: u64 = 4 * 10u64.pow(6); // 6 for bistro
+pub const MAX_INSTANCES: u64 = 10u64 * 10u64.pow(5); // 5 for bistro
 const MAX_MATERIALS: u64 = 10u64 * 10u64.pow(4);
 const MAX_JOINTS: u64 = 10u64 * 10u64.pow(4);
 const MAX_LIGHTS: u64 = 10u64 * 10u64.pow(3);

@@ -13,18 +13,19 @@ layout(push_constant) uniform push_constants {
     mat4 projection;
 } constants;
 
-const float MIN = 50.0;
-const float MAX = 150.0;
-const float RANGE = 1000.0;
-const int STEPS = 8;
+const float MIN = 100.0;
+const float MAX = 300.0;
+const float RANGE = 3000.0;
+const int STEPS = 9;
 const bool FOLLOW = false;
-const float SHAPING_SCALE = 0.00125;
-const float DETAILING_SCALE = 0.05;
+const float SHAPING_SCALE = 0.0003;
+const float DETAILING_SCALE = 0.003;
 const float DENSITY_OFFSET = -0.5;
 const float DENSITY_MULTIPLIER = 5.0;
-const float DETAIL_WEIGHT = 0.5;
+const float DETAIL_WEIGHT = 0.7;
+const float DARKNESS_THRESHOLD = 0.5;
 
-const vec3 SUN_DIR = vec3(-1.0);
+const vec3 SUN_DIR = vec3(-1.0, -2.0, -1.0);
 
 bool intersect(
     vec3 o,
@@ -57,7 +58,7 @@ float saturate(float v) {
 
 float sample_density(vec3 p) {
     float sample_height = (p.y - MIN) / (MAX - MIN);
-    //https://www.desmos.com/calculator/rqxctltcfe
+    // https://www.desmos.com/calculator/rqxctltcfe
     float gradient = smoothstep(0.0, 0.2, sample_height) * smoothstep(1.0, 0.3, sample_height);
     vec4 shaping_sample = texture(high, p * SHAPING_SCALE);
     vec4 shape_weights = shaping_sample / dot(shaping_sample, vec4(1.0));
@@ -91,7 +92,7 @@ float phase(float a) {
 
 float lightmarch(vec3 p, vec3 cloud_min, vec3 cloud_max) {
 
-    vec3 d = normalize(SUN_DIR);
+    vec3 d = -normalize(SUN_DIR);
     float t_min = 0.0;
     float t_max = 0.0;
     intersect(p, d, cloud_min, cloud_max, t_min, t_max);
@@ -103,11 +104,10 @@ float lightmarch(vec3 p, vec3 cloud_min, vec3 cloud_max) {
     float accum_density = 0.0;
     for (int i = 0; i < STEPS; i++) {
         accum_density += max(0.0, sample_density(sample_p) * step_size);
-        p += d * step_size;
+        sample_p += d * step_size;
     }
 
-    float darkness_threshold = 0.2;
-    return darkness_threshold + exp(-accum_density) * (1.0 - darkness_threshold);
+    return DARKNESS_THRESHOLD + exp(-accum_density) * (1.0 - DARKNESS_THRESHOLD);
 }
 
 void main() {
@@ -147,7 +147,7 @@ void main() {
     vec3 energy = vec3(0.0);
     if (do_march) {
         vec3 entrance = o + t_min * d;
-        float step_size = 0.5;
+        float step_size = (MAX - MIN) * 0.01;
         float t = 0.0;
         while (t < travel_distance) {
             vec3 p = entrance + t * d;
