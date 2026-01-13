@@ -13,11 +13,18 @@ layout(push_constant) uniform push_constants {
     mat4 projection;
 } constants;
 
-const float MIN = -20.0;
-const float MAX = 4000.0;
-const float RANGE = 100000.0;
-const int STEPS = 20;
+const float MIN = 50.0;
+const float MAX = 150.0;
+const float RANGE = 100.0;
+const int STEPS = 8;
 const bool FOLLOW = false;
+const float SHAPING_SCALE = 0.00125;
+const float DETAILING_SCALE = 0.05;
+const float DENSITY_OFFSET = -0.5;
+const float DENSITY_MULTIPLIER = 5.0;
+const float DETAIL_WEIGHT = 0.3;
+
+const vec3 SUN_DIR = vec3(-1.0);
 
 bool intersect(
     vec3 o,
@@ -41,10 +48,66 @@ bool intersect(
     return t_max >= t_min;
 }
 
-float sample_depth(vec3 p) {
-    vec4 view_pos = constants.view * vec4(p, 1.0);
-    vec4 proj_pos = constants.projection * view_pos;
-    return proj_pos.z / proj_pos.w;
+float remap(float v, float min_old, float max_old, float min_new, float max_new) {
+    return min_new + (v - min_old) * (max_new - min_new) / (max_old - min_old);
+}
+float saturate(float v) {
+    return clamp(v, 0.0, 1.0);
+}
+
+float sample_density(vec3 p) {
+    float sample_height = (p.y - MIN) / (MAX - MIN);
+    //https://www.desmos.com/calculator/rqxctltcfe
+    float gradient = smoothstep(0.0, 0.2, sample_height) * smoothstep(1.0, 0.3, sample_height);
+    vec4 shaping_sample = texture(high, p * SHAPING_SCALE);
+    vec4 shape_weights = shaping_sample / dot(shaping_sample, vec4(1.0));
+    float shaping = dot(shaping_sample, shape_weights) * gradient;
+    float shape_density = shaping + DENSITY_OFFSET;
+
+    if (shape_density > 0.0) {
+        vec4 detailing_sample = texture(low, p * DETAILING_SCALE);
+        vec3 detailing_weights = detailing_sample.xyz / dot(detailing_sample.xyz, vec3(1.0));
+        float detailing = dot(detailing_sample.xyz, detailing_weights);
+
+        float erosion = (1.0 - shaping) * (1.0 - shaping) * (1.0 - shaping);
+        float density = shape_density - (1.0 - detailing) * erosion * DETAIL_WEIGHT;
+        return density * DENSITY_MULTIPLIER;
+    }
+    return 0;
+}
+
+float henyey_greenstein(float a, float g) {
+    float g2 = g*g;
+    return (1.0 - g2) / (4.0 * 3.1415 * pow(1.0 + g2 - 2.0 * g * a, 1.5));
+}
+float phase(float a) {
+    // forward scatter, back scatter, base brightness, phase factor
+    vec4 factors = vec4(0.83, 0.3, 0.8, 0.15);
+
+    float blend = 0.5;
+    float henyey_greenstein_blend = henyey_greenstein(a, factors.x) * (1.0 - blend) + henyey_greenstein(a, -factors.y) * blend;
+    return factors.z + henyey_greenstein_blend * factors.w;
+}
+
+float lightmarch(vec3 p, vec3 cloud_min, vec3 cloud_max) {
+
+    vec3 d = normalize(SUN_DIR);
+    float t_min = 0.0;
+    float t_max = 0.0;
+    intersect(p, d, cloud_min, cloud_max, t_min, t_max);
+
+    float distance_within = t_max - t_min;
+    float step_size = distance_within / STEPS;
+    vec3 sample_p = p + 0.5 * d * step_size;
+
+    float accum_density = 0.0;
+    for (int i = 0; i < STEPS; i++) {
+        accum_density += max(0.0, sample_density(sample_p) * step_size);
+        p += d * step_size;
+    }
+
+    float darkness_threshold = 0.2;
+    return darkness_threshold + exp(-accum_density) * (1.0 - darkness_threshold);
 }
 
 void main() {
@@ -64,37 +127,59 @@ void main() {
 
     float t_min = 0.0;
     float t_max = 0.0;
-    bool ray_hit = intersect(o, d, cloud_min, cloud_max, t_min, t_max);
-    if (!ray_hit) { discard; }
-
-    vec3 entrance = o + t_min * d;
-
-    float entrance_depth = sample_depth(entrance);
+    bool do_march = intersect(o, d, cloud_min, cloud_max, t_min, t_max);
 
     float geometry_depth = texture(depth, uv).r;
+    vec4 geometry_ndc = vec4(ndc, geometry_depth, 1.0);
+    vec4 view_pos = inverse_projection * geometry_ndc;
+    view_pos /= view_pos.w;
+    vec3 geometry_p = (inverse_view * vec4(view_pos.xyz, 1.0)).xyz;
+    float t_geometry = dot(geometry_p - o, d);
 
-    bool hit_cloud = entrance_depth > geometry_depth;
-    if (hit_cloud) {
-        // color = texture(high, entrance * 0.05); return;
-        float travel_distance = t_max - t_min;
+    if (t_min > t_geometry) do_march = false;
 
-        float step_size = travel_distance / float(STEPS);
+    float cos_theta = dot(d, -normalize(SUN_DIR));
+    float phase = phase(cos_theta);
+
+    float travel_distance = min(t_max, t_geometry) - t_min;
+
+    float transmittance = 1.0;
+    vec3 energy = vec3(0.0);
+    if (do_march) {
+        vec3 entrance = o + t_min * d;
+        float step_size = 0.5;
         float t = 0.0;
-        float accum_density = 0.0;
         while (t < travel_distance) {
             vec3 p = entrance + t * d;
 
-            if (sample_depth(p) < geometry_depth) { break; }
+            float density = sample_density(p);
+            if (density > 0.0) {
 
-            vec4 sampled = mix(texture(high, p * 0.00025), texture(low, p * 0.05), 0.1);
-            float density = max(0.0, sampled.r - 0.4);
-            accum_density += density;
+                float sample_energy = lightmarch(p, cloud_min, cloud_max);
+                energy += density * step_size * transmittance * sample_energy * phase;
+                transmittance *= exp(-density * step_size);
+
+                if (transmittance < 0.01) break;
+            }
 
             t += step_size;
+            step_size *= 1.01;
         }
-        float transmittance = 1.0 - exp(-accum_density);
-        color = vec4(1.0) * transmittance;
-    } else {
-        discard;
     }
+
+    float fog = 1.0 - exp(-max(0.0, t_geometry) * 0.001);
+
+    vec3 cloud_col = energy;
+    vec3 sky_fog = vec3(0.2, 0.2, 0.8) * fog;
+
+    float alpha = (1.0 - fog) * transmittance;
+
+    vec3 overlay = sky_fog * transmittance + cloud_col;
+
+    float eye_focus = pow(saturate(cos_theta), 1.3);
+    float sun = saturate(henyey_greenstein(eye_focus, 0.9995)) * transmittance;
+
+    overlay = overlay * (1.0 - sun) + vec3(0.95, 0.95, 0.8) * sun;
+
+    color = vec4(overlay, 1.0 - alpha);
 }
