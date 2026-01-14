@@ -85,9 +85,6 @@ impl Matrix {
     }
     pub fn inverse4(&self) -> Matrix {
         let det = self.determinant4();
-        if det.abs() < f32::EPSILON {
-            panic!("Matrix is not invertible (determinant is zero)");
-        }
 
         let adjugate = self.adjugate4();
         let mut result = Matrix::new_empty();

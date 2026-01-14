@@ -16,21 +16,29 @@ layout(push_constant) uniform push_constants {
     mat4 projection;
 } constants;
 
-const float MIN = 100.0;
-const float MAX = 300.0;
+const float MIN = 150.0;
+const float MAX = 450.0;
 const float RANGE = 3000.0;
 const int STEPS = 9;
-const bool FOLLOW = false;
+const bool FOLLOW = true;
 const float SHAPING_SCALE = 0.0003;
 const float DETAILING_SCALE = 0.003;
-const float DENSITY_OFFSET = -0.47;
-const float DENSITY_MULTIPLIER = 5.0;
-const float DETAIL_WEIGHT = 0.7;
+const float DENSITY_OFFSET = -0.2;
+const float DENSITY_MULTIPLIER = 1.0;
+const float DETAIL_WEIGHT = 5.5;
 const float DARKNESS_THRESHOLD = 0.5;
+// each component influences decreasing scales
+const vec4 SHAPE_WEIGHTS = vec4(2.1, 1.64, 3.18, 4.24);
+const vec4 DETAIL_WEIGHTS = vec4(1.5, 2.0, 1.5, 1.0);
+
+// proportional to "powder sugar" effect
+const float ABSORPTION_TOWARDS_SUN = 1.5;
+// proportional to raincloud effect
+const float ABSORPTION_THROUGH_CLOUD = 1.1;
 
 const vec3 WIND = vec3(0.002, 0.0, 0.005);
 const float SHAPE_SPEED = 1.0;
-const float DETAIL_SPEED = -4.0;
+const float DETAIL_SPEED = -1.0;
 const vec3 SUN_DIR = vec3(-1.0, -2.0, -1.0);
 
 bool intersect(
@@ -67,13 +75,13 @@ float sample_density(vec3 p) {
     // https://www.desmos.com/calculator/rqxctltcfe
     float gradient = smoothstep(0.0, 0.2, sample_height) * smoothstep(1.0, 0.3, sample_height);
     vec4 shaping_sample = texture(high, p * SHAPING_SCALE + time * WIND * SHAPE_SPEED);
-    vec4 shape_weights = shaping_sample / dot(shaping_sample, vec4(1.0));
+    vec4 shape_weights = SHAPE_WEIGHTS / dot(SHAPE_WEIGHTS, vec4(1.0));
     float shaping = dot(shaping_sample, shape_weights) * gradient;
     float shape_density = shaping + DENSITY_OFFSET;
 
     if (shape_density > 0.0) {
-        vec4 detailing_sample = texture(low, p * DETAILING_SCALE + time * WIND * SHAPE_SPEED);
-        vec3 detailing_weights = detailing_sample.xyz / dot(detailing_sample.xyz, vec3(1.0));
+        vec4 detailing_sample = texture(low, p * DETAILING_SCALE + time * WIND * DETAIL_SPEED);
+        vec3 detailing_weights = DETAIL_WEIGHTS.xyz / dot(DETAIL_WEIGHTS.xyz, vec3(1.0));
         float detailing = dot(detailing_sample.xyz, detailing_weights);
 
         float erosion = (1.0 - shaping) * (1.0 - shaping) * (1.0 - shaping);
@@ -113,7 +121,7 @@ float lightmarch(vec3 p, vec3 cloud_min, vec3 cloud_max) {
         sample_p += d * step_size;
     }
 
-    return DARKNESS_THRESHOLD + exp(-accum_density) * (1.0 - DARKNESS_THRESHOLD);
+    return DARKNESS_THRESHOLD + exp(-accum_density * ABSORPTION_TOWARDS_SUN) * (1.0 - DARKNESS_THRESHOLD);
 }
 
 void main() {
@@ -163,7 +171,7 @@ void main() {
 
                 float sample_energy = lightmarch(p, cloud_min, cloud_max);
                 energy += density * step_size * transmittance * sample_energy * phase;
-                transmittance *= exp(-density * step_size);
+                transmittance *= exp(-density * step_size * ABSORPTION_THROUGH_CLOUD);
 
                 if (transmittance < 0.01) break;
             }
@@ -174,7 +182,7 @@ void main() {
     }
 
     float fog = 1.0 - exp(-max(0.0, t_geometry) * 0.001);
-    vec3 sky_fog = vec3(0.2, 0.2, 0.8) * fog;
+    vec3 sky_fog = vec3(1.0) * fog;
 
     vec3 cloud_col = energy;
 
