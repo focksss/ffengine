@@ -25,14 +25,14 @@ const float SHAPING_SCALE = 0.0003;
 const float DETAILING_SCALE = 0.003;
 const float DENSITY_OFFSET = -0.2;
 const float DENSITY_MULTIPLIER = 1.0;
-const float DETAIL_WEIGHT = 5.5;
+const float DETAIL_WEIGHT = 4.5;
 const float DARKNESS_THRESHOLD = 0.5;
 // each component influences decreasing scales
-const vec4 SHAPE_WEIGHTS = vec4(2.1, 1.64, 3.18, 4.24);
-const vec4 DETAIL_WEIGHTS = vec4(1.5, 2.0, 1.5, 1.0);
+const vec4 SHAPE_WEIGHTS = vec4(6.1, 1.64, 3.18, 4.24);
+const vec3 DETAIL_WEIGHTS = vec3(1.5, 2.0, 1.5);
 
 // proportional to "powder sugar" effect
-const float ABSORPTION_TOWARDS_SUN = 1.5;
+const float ABSORPTION_TOWARDS_SUN = 0.7;
 // proportional to raincloud effect
 const float ABSORPTION_THROUGH_CLOUD = 1.1;
 
@@ -81,7 +81,7 @@ float sample_density(vec3 p) {
 
     if (shape_density > 0.0) {
         vec4 detailing_sample = texture(low, p * DETAILING_SCALE + time * WIND * DETAIL_SPEED);
-        vec3 detailing_weights = DETAIL_WEIGHTS.xyz / dot(DETAIL_WEIGHTS.xyz, vec3(1.0));
+        vec3 detailing_weights = DETAIL_WEIGHTS / dot(DETAIL_WEIGHTS, vec3(1.0));
         float detailing = dot(detailing_sample.xyz, detailing_weights);
 
         float erosion = (1.0 - shaping) * (1.0 - shaping) * (1.0 - shaping);
@@ -97,7 +97,7 @@ float henyey_greenstein(float a, float g) {
 }
 float phase(float a) {
     // forward scatter, back scatter, base brightness, phase factor
-    vec4 factors = vec4(0.83, 0.3, 0.8, 0.15);
+    vec4 factors = vec4(0.83, 0.4, 0.8, 0.15);
 
     float blend = 0.5;
     float henyey_greenstein_blend = henyey_greenstein(a, factors.x) * (1.0 - blend) + henyey_greenstein(a, -factors.y) * blend;
@@ -144,6 +144,7 @@ void main() {
     bool do_march = intersect(o, d, cloud_min, cloud_max, t_min, t_max);
 
     float geometry_depth = texture(depth, uv).r;
+    bool sky_hit = (geometry_depth == 0.0);
     vec4 geometry_ndc = vec4(ndc, geometry_depth, 1.0);
     vec4 view_pos = inverse_projection * geometry_ndc;
     view_pos /= view_pos.w;
@@ -186,19 +187,18 @@ void main() {
 
     vec3 cloud_col = energy;
 
-    float alpha = (1.0 - fog) * transmittance;
-
-    if (geometry_depth == 0.0) {
-        alpha = 0.0;
-    }
-
-    vec3 overlay = sky_fog * transmittance + cloud_col;
-
     vec3 sun_col = 5.0 * vec3(0.95, 0.95, 0.8);
     float eye_focus = pow(saturate(cos_theta), 1.3);
     float sun = saturate(henyey_greenstein(eye_focus, 0.9995)) * transmittance;
 
-    overlay = overlay * (1.0 - sun) + sun_col * sun;
+    vec3 overlay = sky_fog * transmittance + cloud_col;
+    if (sky_hit) overlay = overlay * (1.0 - sun) + sun_col * sun;
 
-    color = vec4(overlay, 1.0 - alpha);
+    // https://sebh.github.io/publications/egsr2020.pdf
+
+    if (sky_hit) {
+        color = vec4(mix(vec3(0.8, 0.8, 0.9) + sun * sun_col, cloud_col * (1.0 - sun) + sun_col * sun, 1.0 - transmittance), 1.0);
+    } else {
+        color = vec4(overlay, 1.0 - (1.0 - fog) * transmittance);
+    }
 }

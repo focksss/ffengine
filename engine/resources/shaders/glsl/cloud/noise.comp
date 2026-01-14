@@ -45,8 +45,8 @@ layout(push_constant) uniform push_constants {
     vec4 b;
     vec4 a;
     vec4 seeds;
-    int is_high;
-} constants;
+    int mode;
+};
 
 uint hash_u32(uint x) {
     x ^= x >> 16;
@@ -94,6 +94,61 @@ float worley(vec3 uvw, int cells_per_axis, uint seed) {
     return sqrt(min_sqr_dist);
 }
 
+float fade(float t) {
+    return t * t * t * (t * (t * 6.0 - 15.0) + 10.0);
+}
+vec3 gradient(ivec3 cell, int cells_per_axis, uint seed) {
+    ivec3 wrapped = ((cell % cells_per_axis) + cells_per_axis) % cells_per_axis;
+    vec3 g = hash3(uvec3(wrapped), seed) * 2.0 - 1.0;
+    return normalize(g);
+}
+float perlin(vec3 uvw, int cells_per_axis, uint seed) {
+    vec3 p = uvw * float(cells_per_axis);
+    ivec3 cell = ivec3(floor(p));
+    vec3 f = fract(p);
+
+    vec3 u = vec3(
+        fade(f.x),
+        fade(f.y),
+        fade(f.z)
+    );
+
+    float n000 = dot(gradient(cell + ivec3(0,0,0), cells_per_axis, seed), f - vec3(0,0,0));
+    float n100 = dot(gradient(cell + ivec3(1,0,0), cells_per_axis, seed), f - vec3(1,0,0));
+    float n010 = dot(gradient(cell + ivec3(0,1,0), cells_per_axis, seed), f - vec3(0,1,0));
+    float n110 = dot(gradient(cell + ivec3(1,1,0), cells_per_axis, seed), f - vec3(1,1,0));
+
+    float n001 = dot(gradient(cell + ivec3(0,0,1), cells_per_axis, seed), f - vec3(0,0,1));
+    float n101 = dot(gradient(cell + ivec3(1,0,1), cells_per_axis, seed), f - vec3(1,0,1));
+    float n011 = dot(gradient(cell + ivec3(0,1,1), cells_per_axis, seed), f - vec3(0,1,1));
+    float n111 = dot(gradient(cell + ivec3(1,1,1), cells_per_axis, seed), f - vec3(1,1,1));
+
+    float nx00 = mix(n000, n100, u.x);
+    float nx10 = mix(n010, n110, u.x);
+    float nx01 = mix(n001, n101, u.x);
+    float nx11 = mix(n011, n111, u.x);
+
+    float nxy0 = mix(nx00, nx10, u.y);
+    float nxy1 = mix(nx01, nx11, u.y);
+
+    float nxyz = mix(nxy0, nxy1, u.z);
+
+    // remap from roughly [-1,1] to [0,1]
+    return nxyz * 0.5 + 0.5;
+}
+float perlin_octaves(vec3 uvw, int cells_per_axis, uint seed, uint octaves, float base_frequency) {
+    float fbm = 0.0;
+    float amp = 1.0;
+    float freq = base_frequency;
+
+    for (int i = 0; i < octaves; i++) {
+        fbm += amp * perlin(uvw * freq, cells_per_axis, seed + i);
+        freq *= 2.0;
+        amp *= 0.5;
+    }
+    return fbm;
+}
+
 float layer(vec4 info, vec3 uvw, int seed) {
     float persistence = info.w;
     float a = worley(uvw, int(info.x), 3 * seed + 0);
@@ -110,20 +165,26 @@ void main() {
     ivec3 coord = ivec3(gl_GlobalInvocationID.xyz);
     vec3 uvw = vec3(coord) / imageSize(low);
 
-    if (constants.is_high == 1) {
+    if (mode == 1) {
         uvw = vec3(coord) / imageSize(high);
-    }
 
-    vec4 color = vec4(
-        layer(constants.r, uvw, int(constants.seeds.r)),
-        layer(constants.g, uvw, int(constants.seeds.g)),
-        layer(constants.b, uvw, int(constants.seeds.b)),
-        layer(constants.a, uvw, int(constants.seeds.a))
-    );
+        vec4 color = vec4(
+            layer(r, uvw, int(seeds.r)),
+//            perlin_octaves(uvw, int(r.x), int(seeds.r), int(r.y), r.z),
+            layer(g, uvw, int(seeds.g)),
+            layer(b, uvw, int(seeds.b)),
+            layer(a, uvw, int(seeds.a))
+        );
 
-    if (constants.is_high == 1) {
         imageStore(high, coord, 1.0 - color);
     } else {
+        vec4 color = vec4(
+            layer(r, uvw, int(seeds.r)),
+            layer(g, uvw, int(seeds.g)),
+            layer(b, uvw, int(seeds.b)),
+            layer(a, uvw, int(seeds.a))
+        );
+
         imageStore(low, coord, 1.0 - color);
     }
 }

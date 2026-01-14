@@ -66,8 +66,9 @@ pub struct SceneRenderer {
     pub editor_primitives_indices_buffer: (vk::Buffer, vk::DeviceMemory),
     pub editor_primitives_index_info: Vec<(u32, u32)>,
 
-    pub cloud_tex_high: Texture,
-    pub cloud_tex_low: Texture,
+    pub cloud_weather_map: Texture,
+    pub cloud_shaping: Texture,
+    pub cloud_detailing: Texture,
 }
 impl SceneRenderer {
     pub unsafe fn new(context: &Arc<Context>, world: &World, viewport: vk::Viewport) -> SceneRenderer { unsafe {
@@ -186,7 +187,16 @@ impl SceneRenderer {
         //</editor-fold>
 
         //<editor-fold desc = "cloud noise setup">
-        let cloud_noise_high_tex_info = TextureCreateInfo::new(context)
+        let cloud_weather_map_info = TextureCreateInfo::new(context)
+            .width(512)
+            .height(512)
+            .format(Format::R16G16B16A16_SFLOAT)
+            .usage_flags(
+                vk::ImageUsageFlags::SAMPLED |
+                vk::ImageUsageFlags::STORAGE
+            );
+        let cloud_weather_map = Texture::new(&cloud_weather_map_info);
+        let cloud_shaping_info = TextureCreateInfo::new(context)
             .width(128)
             .height(128)
             .depth(128)
@@ -195,8 +205,8 @@ impl SceneRenderer {
                 vk::ImageUsageFlags::SAMPLED |
                 vk::ImageUsageFlags::STORAGE
             );
-        let cloud_tex_high = Texture::new(&cloud_noise_high_tex_info);
-        let cloud_noise_low_tex_info = TextureCreateInfo::new(context)
+        let cloud_shaping = Texture::new(&cloud_shaping_info);
+        let cloud_detailing_info = TextureCreateInfo::new(context)
             .width(64)
             .height(64)
             .depth(64)
@@ -205,8 +215,8 @@ impl SceneRenderer {
                 vk::ImageUsageFlags::SAMPLED |
                 vk::ImageUsageFlags::STORAGE
             );
-        let cloud_tex_low = Texture::new(&cloud_noise_low_tex_info);
-        generate_cloud_noise(context, &cloud_tex_high, &cloud_tex_low);
+        let cloud_detailing = Texture::new(&cloud_detailing_info);
+        generate_cloud_noise(context, &cloud_shaping, &cloud_detailing);
         //</editor-fold>
 
         //<editor-fold desc = "descriptor updates">
@@ -429,14 +439,14 @@ impl SceneRenderer {
                 }, // geometry depth
                 vk::DescriptorImageInfo {
                     sampler: repeat_sampler,
-                    image_view: cloud_tex_high.device_texture.borrow().image_view,
+                    image_view: cloud_shaping.device_texture.borrow().image_view,
                     image_layout: ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                }, // cloud high
+                }, // cloud shaping
                 vk::DescriptorImageInfo {
                     sampler: repeat_sampler,
-                    image_view: cloud_tex_low.device_texture.borrow().image_view,
+                    image_view: cloud_detailing.device_texture.borrow().image_view,
                     image_layout: ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                }, // cloud low
+                }, // cloud detailing
             ];
             let descriptor_writes: Vec<vk::WriteDescriptorSet> = image_infos.iter().enumerate().map(|(i, info)| {
                 vk::WriteDescriptorSet::default()
@@ -537,8 +547,9 @@ impl SceneRenderer {
             outline_renderpass,
             cloud_renderpass,
 
-            cloud_tex_high,
-            cloud_tex_low,
+            cloud_shaping,
+            cloud_detailing,
+            cloud_weather_map,
 
             sampler,
             nearest_sampler,
@@ -1546,8 +1557,9 @@ impl SceneRenderer {
         self.cloud_renderpass.destroy();
 
         self.ssao_noise_texture.destroy();
-        self.cloud_tex_low.destroy();
-        self.cloud_tex_high.destroy();
+        self.cloud_detailing.destroy();
+        self.cloud_shaping.destroy();
+        self.cloud_weather_map.destroy();
 
         self.context.device.destroy_sampler(self.sampler, None);
         self.context.device.destroy_sampler(self.nearest_sampler, None);
@@ -1565,11 +1577,12 @@ impl SceneRenderer {
 unsafe fn generate_cloud_noise(context: &Arc<Context>, high: &Texture, low: &Texture) { unsafe {
     let shape_noise_info = NoiseInfo {
         r: [3.0, 7.0, 11.0, 0.65],
+        //r: [12.0, 3.0, 1.0, 0.0],
         g: [9.0, 15.0, 23.0, 0.33],
         b: [13.0, 28.0, 42.0, 0.58],
         a: [20.0, 31.0, 45.0, 0.75],
         seeds: [1.0, 2.0, 3.0, 4.0],
-        high: 1,
+        mode: 1,
     };
     let detail_noise_info = NoiseInfo {
         r: [8.0, 18.0, 20.0, 0.76],
@@ -1577,7 +1590,7 @@ unsafe fn generate_cloud_noise(context: &Arc<Context>, high: &Texture, low: &Tex
         b: [20.0, 28.0, 32.0, 0.5],
         a: [24.0, 30.0, 34.0, 0.5],
         seeds: [5.0, 6.0, 7.0, 8.0],
-        high: 0,
+        mode: 0,
     };
 
     let command_buffers = context.begin_single_time_commands(1);
@@ -1792,7 +1805,7 @@ struct NoiseInfo {
     b: [f32; 4],
     a: [f32; 4],
     seeds: [f32; 4],
-    high: i32,
+    mode: i32,
 }
 #[derive(Clone, Debug, Copy)]
 #[repr(C)]
