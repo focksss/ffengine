@@ -1,0 +1,357 @@
+#version 460
+
+layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
+
+layout(set = 0, binding = 0) uniform writeonly image3D cloud_shaping;
+layout(set = 0, binding = 1) uniform writeonly image3D cloud_detailing;
+layout(set = 0, binding = 2) uniform writeonly image2D cloud_weather_map;
+layout(set = 0, binding = 3) uniform writeonly image2D atmosphere_transmittance_lut;
+layout(set = 0, binding = 4) uniform writeonly image2D atmosphere_multiscatter_lut;
+layout(set = 0, binding = 5) uniform sampler2D atmosphere_transmittance_lut_computed;
+
+const ivec3 offsets[] =
+{
+    ivec3(0,0,0),
+    ivec3(0,0,1),
+    ivec3(-1,1,1),
+    ivec3(-1,0,1),
+    ivec3(-1,-1,1),
+    ivec3(0,1,1),
+    ivec3(0,-1,1),
+    ivec3(1,1,1),
+    ivec3(1,0,1),
+    ivec3(1,-1,1),
+    ivec3(0,0,-1),
+    ivec3(-1,1,-1),
+    ivec3(-1,0,-1),
+    ivec3(-1,-1,-1),
+    ivec3(0,1,-1),
+    ivec3(0,-1,-1),
+    ivec3(1,1,-1),
+    ivec3(1,0,-1),
+    ivec3(1,-1,-1),
+    ivec3(-1,1,0),
+    ivec3(-1,0,0),
+    ivec3(-1,-1,0),
+    ivec3(0,1,0),
+    ivec3(0,-1,0),
+    ivec3(1,1,0),
+    ivec3(1,0,0),
+    ivec3(1,-1,0)
+};
+
+layout(push_constant) uniform push_constants {
+    vec4 r;
+    vec4 g;
+    vec4 b;
+    vec4 a;
+    vec4 seeds;
+    int mode;
+};
+
+uint hash_u32(uint x) {
+    x ^= x >> 16;
+    x *= 0x7feb352d;
+    x ^= x >> 15;
+    x *= 0x846ca68b;
+    x ^= x >> 16;
+    return x;
+}
+uvec3 hash_uvec3(uvec3 v) {
+    v = v * 1664525u + 1013904223u;
+    v.x += v.y * v.z;
+    v.y += v.z * v.x;
+    v.z += v.x * v.y;
+    v ^= v >> 16;
+    return v;
+}
+vec3 hash3(uvec3 cell, uint seed) {
+    uvec3 h = hash_uvec3(cell ^ uvec3(seed));
+    return vec3(h) * (1.0 / 4294967296.0);
+}
+
+float worley(vec3 uvw, int cells_per_axis, uint seed) {
+    vec3 position = uvw * float(cells_per_axis);
+    ivec3 cell_indices = ivec3(floor(position));
+    vec3 cell_offset = fract(position);
+
+    float min_sqr_dist = 1.0;
+
+    for (int i = 0; i < 27; i++) {
+        ivec3 neighbor_indices = (cell_indices + offsets[i]);
+        ivec3 wrapped_neighbor_indices = ((cell_indices + offsets[i]) % cells_per_axis + cells_per_axis) % cells_per_axis;
+
+        int neighbor_point_index =
+        wrapped_neighbor_indices.x +
+        wrapped_neighbor_indices.y * cells_per_axis +
+        wrapped_neighbor_indices.z * cells_per_axis * cells_per_axis;
+
+        vec3 neighbor_offset = hash3(uvec3(wrapped_neighbor_indices), seed);
+        vec3 neighbor_position = vec3(neighbor_indices) + neighbor_offset;
+
+        vec3 delta = neighbor_position - position;
+        min_sqr_dist = min(min_sqr_dist, dot(delta, delta));
+    }
+    return sqrt(min_sqr_dist);
+}
+float layer_worley(vec4 info, vec3 uvw, int seed) {
+    float persistence = info.w;
+    float a = worley(uvw, int(info.x), 3 * seed + 0);
+    float b = worley(uvw, int(info.y), 3 * seed + 1);
+    float c = worley(uvw, int(info.z), 3 * seed + 2);
+
+    float noise_sum = a + (b * persistence) + (c * persistence * persistence);
+    float max = 1.0 + (persistence) + (persistence * persistence);
+
+    return noise_sum /= max;
+}
+float fade(float t) {
+    return t * t * t * (t * (t * 6.0 - 15.0) + 10.0);
+}
+vec3 gradient(ivec3 cell, int cells_per_axis, uint seed) {
+    ivec3 wrapped = ((cell % cells_per_axis) + cells_per_axis) % cells_per_axis;
+    vec3 g = hash3(uvec3(wrapped), seed) * 2.0 - 1.0;
+    return normalize(g);
+}
+float perlin(vec3 uvw, int cells_per_axis, uint seed) {
+    vec3 p = uvw * float(cells_per_axis);
+    ivec3 cell = ivec3(floor(p));
+    vec3 f = fract(p);
+
+    vec3 u = vec3(
+        fade(f.x),
+        fade(f.y),
+        fade(f.z)
+    );
+
+    float n000 = dot(gradient(cell + ivec3(0,0,0), cells_per_axis, seed), f - vec3(0,0,0));
+    float n100 = dot(gradient(cell + ivec3(1,0,0), cells_per_axis, seed), f - vec3(1,0,0));
+    float n010 = dot(gradient(cell + ivec3(0,1,0), cells_per_axis, seed), f - vec3(0,1,0));
+    float n110 = dot(gradient(cell + ivec3(1,1,0), cells_per_axis, seed), f - vec3(1,1,0));
+
+    float n001 = dot(gradient(cell + ivec3(0,0,1), cells_per_axis, seed), f - vec3(0,0,1));
+    float n101 = dot(gradient(cell + ivec3(1,0,1), cells_per_axis, seed), f - vec3(1,0,1));
+    float n011 = dot(gradient(cell + ivec3(0,1,1), cells_per_axis, seed), f - vec3(0,1,1));
+    float n111 = dot(gradient(cell + ivec3(1,1,1), cells_per_axis, seed), f - vec3(1,1,1));
+
+    float nx00 = mix(n000, n100, u.x);
+    float nx10 = mix(n010, n110, u.x);
+    float nx01 = mix(n001, n101, u.x);
+    float nx11 = mix(n011, n111, u.x);
+
+    float nxy0 = mix(nx00, nx10, u.y);
+    float nxy1 = mix(nx01, nx11, u.y);
+
+    float nxyz = mix(nxy0, nxy1, u.z);
+
+    // remap from roughly [-1,1] to [0,1]
+    return nxyz * 0.5 + 0.5;
+}
+float perlin_octaves(vec3 uvw, int cells_per_axis, uint seed, uint octaves, float base_frequency) {
+    float fbm = 0.0;
+    float amp = 1.0;
+    float freq = base_frequency;
+
+    for (int i = 0; i < octaves; i++) {
+        fbm += amp * perlin(uvw * freq, cells_per_axis, seed + i);
+        freq *= 2.0;
+        amp *= 0.5;
+    }
+    return fbm;
+}
+
+
+// atmosphere constants
+const int TRANSMITTANCE_STEPS = 20;
+const int MULTISCATTER_STEPS = 20;
+const int SPHERE_SAMPLES = 64;
+const float PLANET_RADIUS = 6371e3;
+const float ATMOSPHERE_RADIUS = 6471e3;
+const vec3 PLANET_CENTER = vec3(0.0, -PLANET_RADIUS, 0.0);
+// air molecule scattering, stronger at blue wavelengths
+const vec3 RAYLEIGH_SCATTERING = vec3(5.8e-6, 13.5e-6, 33.1e-6);
+const float RAYLEIGH_SCALE_HEIGHT = 8000.0;
+// particulate scattering, wavelength independent
+const vec3 MIE_SCATTERING = vec3(21e-6);
+const float MIE_SCALE_HEIGHT = 1200.0;
+const float MIE_G = 0.76; // anisotropy
+const vec3 SUN_INTENSITY = vec3(20.0);
+const int ATMOSPHERE_IN_SCATTERING_STEPS = 8;
+const int ATMOSPHERE_OPTICAL_DEPTH_STEPS = 8;
+vec2 atmosphere_density(vec3 p) {
+    float height = length(p - PLANET_CENTER) - PLANET_RADIUS;
+    height = max(0.0, height);
+
+    float rayleigh = exp(-height / RAYLEIGH_SCALE_HEIGHT);
+    float mie = exp(-height / MIE_SCALE_HEIGHT);
+
+    return vec2(rayleigh, mie);
+}
+bool intersect_sphere(vec3 o, vec3 d, vec3 center, float radius, out float t0, out float t1) {
+    vec3 oc = o - center;
+    float b = dot(oc, d);
+    float c = dot(oc, oc) - radius * radius;
+    float discriminant = b * b - c;
+
+    if (discriminant < 0.0) return false;
+
+    float sqrt_disc = sqrt(discriminant);
+    t0 = -b - sqrt_disc;
+    t1 = -b + sqrt_disc;
+
+    return t1 >= 0.0;
+}
+vec3 transmittance(float height, float cos_view_zenith) {
+    vec3 p = PLANET_CENTER + vec3(0, height, 0);
+
+    vec3 up = normalize(p - PLANET_CENTER);
+    vec3 view_dir = normalize(up * cos_view_zenith + vec3(1, 0, 0) * sqrt(max(0.0, 1.0 - cos_view_zenith * cos_view_zenith)));
+
+    float t_min, t_max;
+    if (!intersect_sphere(p, view_dir, PLANET_CENTER, ATMOSPHERE_RADIUS, t_min, t_max)) {
+        return vec3(1.0);
+    }
+
+    float t_ground_min, t_ground_max;
+    bool hit_ground = intersect_sphere(p, view_dir, PLANET_CENTER, PLANET_RADIUS, t_ground_min, t_ground_max);
+
+    if (hit_ground && t_ground_min > 0.0) {
+        t_max = t_ground_min;
+    }
+
+    float step_size = t_max / float(TRANSMITTANCE_STEPS);
+    vec3 sample_pos = p + view_dir * step_size * 0.5;
+
+    vec2 optical_depth = vec2(0.0);
+
+    for (int i = 0; i < TRANSMITTANCE_STEPS; i++) {
+        vec2 density = atmosphere_density(sample_pos);
+        optical_depth += density * step_size;
+        sample_pos += view_dir * step_size;
+    }
+
+    return exp(-(RAYLEIGH_SCATTERING * optical_depth.x + MIE_SCATTERING * optical_depth.y));
+}
+vec2 transmittance_lut_uv(float height, float cos_view_zenith) {
+    float u = clamp((cos_view_zenith + 0.15) / 1.15, 0.0, 1.0);
+    float v = clamp((height - PLANET_RADIUS) / (ATMOSPHERE_RADIUS - PLANET_RADIUS), 0.0, 1.0);
+    return vec2(u, v);
+}
+vec3 transmittance(vec3 pos, vec3 sun_dir) {
+    float height = length(pos - PLANET_CENTER);
+    float cos_view_zenith = dot(normalize(pos - PLANET_CENTER), sun_dir);
+    vec2 uv = transmittance_lut_uv(height, cos_view_zenith);
+    return texture(atmosphere_transmittance_lut_computed, uv).rgb;
+}
+vec3 sample_sphere(float u, float v) {
+    // uniform dist
+    float z = 1.0 - 2.0 * u;
+    float r = sqrt(max(0.0, 1.0 - z * z));
+    float phi = 2.0 * 3.14159263 * v;
+    return vec3(r * cos(phi), z, r * sin(phi));
+}
+vec3 multiscatter(float height, float cos_sun_zenith) {
+    vec3 o = PLANET_CENTER + vec3(0, height, 0);
+    vec3 up = normalize(o - PLANET_CENTER);
+    vec3 sun_dir = normalize(up * cos_sun_zenith + vec3(1, 0, 0) * sqrt(max(0.0, 1.0 - cos_sun_zenith * cos_sun_zenith)));
+
+    vec3 multiscatter = vec3(0.0);
+
+    for (int i = 0; i < SPHERE_SAMPLES; i++) {
+        float u = float(i) / float(SPHERE_SAMPLES);
+        float v = fract(u * 1.618033988749895); // gr = better distribution apparently?
+        vec3 d = sample_sphere(u, v);
+
+        float t_min, t_max;
+        if (!intersect_sphere(o, d, PLANET_CENTER, ATMOSPHERE_RADIUS, t_min, t_max)) {
+            continue;
+        }
+
+        float t_ground_min, t_ground_max;
+        bool hit_ground = intersect_sphere(o, d, PLANET_CENTER, PLANET_RADIUS, t_ground_min, t_ground_max);
+
+        if (hit_ground && t_ground_min > 0.0) {
+            t_max = t_ground_min;
+        }
+
+        float step_size = t_max / float(MULTISCATTER_STEPS);
+        vec3 p = o + d * step_size * 0.5;
+
+        for (int j = 0; j < MULTISCATTER_STEPS; j++) {
+            vec2 density = atmosphere_density(p);
+
+            vec3 transmittance_sun = transmittance(p, sun_dir);
+
+            vec3 scattering = (RAYLEIGH_SCATTERING * density.x + MIE_SCATTERING * density.y) * transmittance_sun * step_size;
+            multiscatter += scattering;
+
+            p += d * step_size;
+        }
+    }
+
+    multiscatter /= float(SPHERE_SAMPLES);
+    multiscatter *= 4.0 * 3.14159263; // sphere integral
+
+    return multiscatter;
+}
+
+void main() {
+    ivec3 coord = ivec3(gl_GlobalInvocationID.xyz);
+
+    if (mode == 1) {
+        vec3 uvw = vec3(coord) / imageSize(cloud_shaping);
+
+        vec4 color = vec4(
+            layer_worley(r, uvw, int(seeds.r)),
+            layer_worley(g, uvw, int(seeds.g)),
+            layer_worley(b, uvw, int(seeds.b)),
+            layer_worley(a, uvw, int(seeds.a))
+        );
+
+        imageStore(cloud_shaping, coord, 1.0 - color);
+    } else if (mode == 0) {
+        vec3 uvw = vec3(coord) / imageSize(cloud_detailing);
+
+        vec4 color = vec4(
+            layer_worley(r, uvw, int(seeds.r)),
+            layer_worley(g, uvw, int(seeds.g)),
+            layer_worley(b, uvw, int(seeds.b)),
+            layer_worley(a, uvw, int(seeds.a))
+        );
+
+        imageStore(cloud_detailing, coord, 1.0 - color);
+    } else if (mode == 2) {
+        vec2 uv = vec2(coord) / imageSize(cloud_weather_map).xy;
+
+        vec4 color = vec4(
+            perlin_octaves(vec3(uv, 0.0), int(r.x), int(seeds.r), int(r.y), r.z),
+            layer_worley(g, vec3(uv, 0.0), int(seeds.g)),
+            layer_worley(b, vec3(uv, 0.0), int(seeds.b)),
+            layer_worley(a, vec3(uv, 0.0), int(seeds.a))
+        );
+
+        imageStore(cloud_detailing, coord, 1.0 - color);
+    } else if (mode == 3) {
+        vec2 uv = vec2(coord) / imageSize(atmosphere_transmittance_lut).xy;
+
+        // remap for sub-horizon
+        float cos_view_zenith = uv.x * 1.15 - 0.15;
+
+        float height = PLANET_RADIUS + uv.y * (ATMOSPHERE_RADIUS - -PLANET_RADIUS);
+
+        vec3 sample_transmittance = transmittance(height, cos_view_zenith);
+        imageStore(atmosphere_transmittance_lut, coord.xy, vec4(sample_transmittance, 1.0));
+    }  else if (mode == 4) {
+        vec2 uv = vec2(coord) / imageSize(atmosphere_multiscatter_lut).xy;
+
+        float cos_view_zenith = uv.x * 1.15 - 0.15;
+
+        float cos_sun_zenith = uv.x * 2.0 - 1.0;
+
+        float height = PLANET_RADIUS + uv.y * (ATMOSPHERE_RADIUS - PLANET_RADIUS);
+
+        vec3 sample_multiscatter = multiscatter(height, cos_sun_zenith);
+
+        imageStore(atmosphere_multiscatter_lut, coord.xy, vec4(sample_multiscatter, 1.0));
+    }
+}

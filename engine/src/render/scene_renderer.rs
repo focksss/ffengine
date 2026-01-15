@@ -26,7 +26,7 @@ const SSAO_RESOLUTION_MULTIPLIER: f32 = 0.5;
 pub const SHADOW_RES: u32 = 2048;
 
 static APP_START: LazyLock<Instant> = LazyLock::new(Instant::now);
-fn get_runtime_s() -> f32 {
+pub fn get_runtime_s() -> f32 {
     APP_START.elapsed().as_secs_f32()
 }
 
@@ -47,7 +47,7 @@ pub struct SceneRenderer {
     pub opaque_forward_renderpass: Renderpass,
 
     pub outline_renderpass: Renderpass,
-    pub cloud_renderpass: Renderpass,
+    pub sky_renderpass: Renderpass,
 
     pub ssao_pre_downsample_renderpass: Renderpass,
     pub ssao_renderpass: Renderpass,
@@ -69,6 +69,8 @@ pub struct SceneRenderer {
     pub cloud_weather_map: Texture,
     pub cloud_shaping: Texture,
     pub cloud_detailing: Texture,
+    pub atmosphere_transmittance_lut: Texture,
+    pub atmosphere_multiscatter_lut: Texture,
 }
 impl SceneRenderer {
     pub unsafe fn new(context: &Arc<Context>, world: &World, viewport: vk::Viewport) -> SceneRenderer { unsafe {
@@ -216,7 +218,32 @@ impl SceneRenderer {
                 vk::ImageUsageFlags::STORAGE
             );
         let cloud_detailing = Texture::new(&cloud_detailing_info);
-        generate_cloud_noise(context, &cloud_shaping, &cloud_detailing);
+        let atmosphere_transmittance_lut_info = TextureCreateInfo::new(context)
+            .width(256)
+            .height(256)
+            .format(Format::R16G16B16A16_SFLOAT)
+            .usage_flags(
+                vk::ImageUsageFlags::SAMPLED |
+                    vk::ImageUsageFlags::STORAGE
+            );
+        let atmosphere_transmittance_lut = Texture::new(&atmosphere_transmittance_lut_info);
+        let atmosphere_multiscatter_lut_info = TextureCreateInfo::new(context)
+            .width(256)
+            .height(256)
+            .format(Format::R16G16B16A16_SFLOAT)
+            .usage_flags(
+                vk::ImageUsageFlags::SAMPLED |
+                    vk::ImageUsageFlags::STORAGE
+            );
+        let atmosphere_multiscatter_lut = Texture::new(&atmosphere_multiscatter_lut_info);
+        generate_cloud_noise(
+            context,
+            &cloud_shaping,
+            &cloud_detailing,
+            &cloud_weather_map,
+            &atmosphere_transmittance_lut,
+            &atmosphere_multiscatter_lut,
+        );
         //</editor-fold>
 
         //<editor-fold desc = "descriptor updates">
@@ -430,7 +457,7 @@ impl SceneRenderer {
             }).collect();
             context.device.update_descriptor_sets(&descriptor_writes, &[]);
             //</editor-fold>
-            //<editor-fold desc = "cloud">
+            //<editor-fold desc = "sky">
             let image_infos = [
                 vk::DescriptorImageInfo {
                     sampler,
@@ -446,7 +473,22 @@ impl SceneRenderer {
                     sampler: repeat_sampler,
                     image_view: cloud_detailing.device_texture.borrow().image_view,
                     image_layout: ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                }, // cloud weather map
+                vk::DescriptorImageInfo {
+                    sampler: repeat_sampler,
+                    image_view: cloud_weather_map.device_texture.borrow().image_view,
+                    image_layout: ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                 }, // cloud detailing
+                vk::DescriptorImageInfo {
+                    sampler: repeat_sampler,
+                    image_view: atmosphere_transmittance_lut.device_texture.borrow().image_view,
+                    image_layout: ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                }, // atmosphere transmittance lut
+                vk::DescriptorImageInfo {
+                    sampler: repeat_sampler,
+                    image_view: atmosphere_multiscatter_lut.device_texture.borrow().image_view,
+                    image_layout: ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                }, // atmosphere multiscatter lut
             ];
             let descriptor_writes: Vec<vk::WriteDescriptorSet> = image_infos.iter().enumerate().map(|(i, info)| {
                 vk::WriteDescriptorSet::default()
@@ -545,11 +587,13 @@ impl SceneRenderer {
             ssao_upsample_renderpass,
             lighting_renderpass,
             outline_renderpass,
-            cloud_renderpass,
+            sky_renderpass: cloud_renderpass,
 
             cloud_shaping,
             cloud_detailing,
             cloud_weather_map,
+            atmosphere_transmittance_lut,
+            atmosphere_multiscatter_lut,
 
             sampler,
             nearest_sampler,
@@ -1200,11 +1244,14 @@ impl SceneRenderer {
             let ubo_create_info = DescriptorCreateInfo::new(context)
                 .descriptor_type(DescriptorType::UNIFORM_BUFFER)
                 .shader_stages(ShaderStageFlags::FRAGMENT)
-                .size(size_of::<CloudInfo>() as u64);
+                .size(size_of::<SkyInfo>() as u64);
 
             let pass_create_info = PassCreateInfo::new(context)
                 .grab_attachment(&light_pass, 0, vk::AttachmentLoadOp::LOAD, vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
             let descriptor_set_create_info = DescriptorSetCreateInfo::new(context)
+                .add_descriptor(Descriptor::new(&texture_sampler_create_info))
+                .add_descriptor(Descriptor::new(&texture_sampler_create_info))
+                .add_descriptor(Descriptor::new(&texture_sampler_create_info))
                 .add_descriptor(Descriptor::new(&texture_sampler_create_info))
                 .add_descriptor(Descriptor::new(&texture_sampler_create_info))
                 .add_descriptor(Descriptor::new(&texture_sampler_create_info))
@@ -1236,7 +1283,7 @@ impl SceneRenderer {
                 .add_pipeline_create_info(PipelineCreateInfo::new()
                     .pipeline_color_blend_state_create_info(color_blend_state)
                     .vertex_shader_uri(String::from("quad\\quad.vert.spv"))
-                    .fragment_shader_uri(String::from("cloud\\cloud.frag.spv")));
+                    .fragment_shader_uri(String::from("sky\\sky.frag.spv")));
             Renderpass::new(renderpass_create_info)
         };
 
@@ -1324,12 +1371,12 @@ impl SceneRenderer {
 
         let frame_command_buffer = self.context.draw_command_buffers[current_frame];
 
-        let ubo = scene.world.borrow().sun.to_sendable();
+        let sun_sendable = scene.world.borrow().sun.to_sendable();
         
         let player_camera = &scene.world.borrow().cameras[player_camera_index];
         
-        copy_data_to_memory(self.lighting_renderpass.descriptor_set.borrow().descriptors[10].owned_buffers.2[current_frame], &[ubo]);
-        copy_data_to_memory(self.shadow_renderpass.descriptor_set.borrow().descriptors[2].owned_buffers.2[current_frame], &[ubo]);
+        copy_data_to_memory(self.lighting_renderpass.descriptor_set.borrow().descriptors[10].owned_buffers.2[current_frame], &[sun_sendable]);
+        copy_data_to_memory(self.shadow_renderpass.descriptor_set.borrow().descriptors[2].owned_buffers.2[current_frame], &[sun_sendable]);
         let ubo = SSAOPassUniformData {
             samples: self.ssao_kernal,
             projection: player_camera.projection_matrix.data,
@@ -1351,10 +1398,12 @@ impl SceneRenderer {
                 self.viewport.borrow().width, self.viewport.borrow().width,
             )]
         );
-        let ubo = CloudInfo {
+        let ubo = SkyInfo {
+            sun_direction: Vector::from_array(&sun_sendable.vector).normalize3().to_array3(),
+            _pad: 0.0,
             t: get_runtime_s(),
         };
-        copy_data_to_memory(self.cloud_renderpass.descriptor_set.borrow().descriptors[3].owned_buffers.2[current_frame], &[ubo]);
+        copy_data_to_memory(self.sky_renderpass.descriptor_set.borrow().descriptors[6].owned_buffers.2[current_frame], &[ubo]);
         let camera_constants = CameraMatrixUniformData {
             view: player_camera.view_matrix.data,
             projection: player_camera.projection_matrix.data,
@@ -1504,11 +1553,11 @@ impl SceneRenderer {
             Some((ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL, ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL, vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE)),
         );
 
-        self.cloud_renderpass.do_renderpass(
+        self.sky_renderpass.do_renderpass(
             current_frame,
             frame_command_buffer,
             Some(|| {
-                device.cmd_push_constants(frame_command_buffer, self.cloud_renderpass.pipeline_layout, ShaderStageFlags::FRAGMENT, 0, slice::from_raw_parts(
+                device.cmd_push_constants(frame_command_buffer, self.sky_renderpass.pipeline_layout, ShaderStageFlags::FRAGMENT, 0, slice::from_raw_parts(
                     &camera_constants as *const CameraMatrixUniformData as *const u8,
                     size_of::<CameraMatrixUniformData>(),
                 ))
@@ -1554,12 +1603,13 @@ impl SceneRenderer {
         self.ssao_upsample_renderpass.destroy();
         self.lighting_renderpass.destroy();
         self.outline_renderpass.destroy();
-        self.cloud_renderpass.destroy();
+        self.sky_renderpass.destroy();
 
         self.ssao_noise_texture.destroy();
         self.cloud_detailing.destroy();
         self.cloud_shaping.destroy();
         self.cloud_weather_map.destroy();
+        self.atmosphere_transmittance_lut.destroy();
 
         self.context.device.destroy_sampler(self.sampler, None);
         self.context.device.destroy_sampler(self.nearest_sampler, None);
@@ -1574,7 +1624,14 @@ impl SceneRenderer {
         self.context.device.free_memory(self.editor_primitives_vertices_buffer.1, None);
     } }
 }
-unsafe fn generate_cloud_noise(context: &Arc<Context>, high: &Texture, low: &Texture) { unsafe {
+unsafe fn generate_cloud_noise(
+    context: &Arc<Context>,
+    cloud_shaping: &Texture,
+    cloud_detailing: &Texture,
+    cloud_weather_map: &Texture,
+    atmosphere_transmittance_lut: &Texture,
+    atmosphere_multiscatter_lut: &Texture,
+) { unsafe {
     let shape_noise_info = NoiseInfo {
         r: [3.0, 7.0, 11.0, 0.65],
         //r: [12.0, 3.0, 1.0, 0.0],
@@ -1592,6 +1649,30 @@ unsafe fn generate_cloud_noise(context: &Arc<Context>, high: &Texture, low: &Tex
         seeds: [5.0, 6.0, 7.0, 8.0],
         mode: 0,
     };
+    let weather_map_info = NoiseInfo {
+        r: [8.0, 18.0, 20.0, 0.76],
+        g: [13.0, 24.0, 28.0, 0.5],
+        b: [20.0, 28.0, 32.0, 0.5],
+        a: [24.0, 30.0, 34.0, 0.5],
+        seeds: [5.0, 6.0, 7.0, 8.0],
+        mode: 0,
+    };
+    let atmosphere_transmittance_lut_info = NoiseInfo {
+        r: [0.0; 4],
+        g: [0.0; 4],
+        b: [0.0; 4],
+        a: [0.0; 4],
+        seeds: [0.0; 4],
+        mode: 3,
+    };
+    let atmosphere_multiscatter_lut_info = NoiseInfo {
+        r: [0.0; 4],
+        g: [0.0; 4],
+        b: [0.0; 4],
+        a: [0.0; 4],
+        seeds: [0.0; 4],
+        mode: 4,
+    };
 
     let command_buffers = context.begin_single_time_commands(1);
     //<editor-fold desc = "transition in">
@@ -1605,40 +1686,95 @@ unsafe fn generate_cloud_noise(context: &Arc<Context>, high: &Texture, low: &Tex
     transition_output(
         context,
         command_buffers[0],
-        high.device_texture.borrow().image,
+        cloud_shaping.device_texture.borrow().image,
         1,
         barrier_info
     );
     transition_output(
         context,
         command_buffers[0],
-        low.device_texture.borrow().image,
+        cloud_detailing.device_texture.borrow().image,
         1,
         barrier_info
+    );
+    transition_output(
+        context,
+        command_buffers[0],
+        cloud_weather_map.device_texture.borrow().image,
+        1,
+        barrier_info
+    );
+    transition_output(
+        context,
+        command_buffers[0],
+        atmosphere_transmittance_lut.device_texture.borrow().image,
+        1,
+        barrier_info
+    );
+    transition_output(
+        context,
+        command_buffers[0],
+        atmosphere_multiscatter_lut.device_texture.borrow().image,
+        1,
+        barrier_info
+    );
+    let barrier_info = (
+        ImageLayout::GENERAL,
+        ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+        vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
+        ImageAspectFlags::COLOR,
+        vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
     );
     //</editor-fold>
     //<editor-fold desc = "descriptors">
     let descriptor_create_info = DescriptorCreateInfo::new(context)
         .descriptor_type(DescriptorType::STORAGE_IMAGE)
         .shader_stages(ShaderStageFlags::COMPUTE);
+    let descriptor_create_info2 = DescriptorCreateInfo::new(context)
+        .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
+        .shader_stages(ShaderStageFlags::COMPUTE);
 
     let descriptor_set_create_info = DescriptorSetCreateInfo::new(context)
         .frames_in_flight(1)
         .add_descriptor(Descriptor::new(&descriptor_create_info))
-        .add_descriptor(Descriptor::new(&descriptor_create_info));
+        .add_descriptor(Descriptor::new(&descriptor_create_info))
+        .add_descriptor(Descriptor::new(&descriptor_create_info))
+        .add_descriptor(Descriptor::new(&descriptor_create_info))
+        .add_descriptor(Descriptor::new(&descriptor_create_info))
+        .add_descriptor(Descriptor::new(&descriptor_create_info2));
     let mut descriptor_set = DescriptorSet::new(descriptor_set_create_info);
 
     let image_infos = [
         vk::DescriptorImageInfo {
             sampler: vk::Sampler::null(),
-            image_view: high.device_texture.borrow().image_view,
+            image_view: cloud_shaping.device_texture.borrow().image_view,
             image_layout: ImageLayout::GENERAL,
         }, // cloud high
         vk::DescriptorImageInfo {
             sampler: vk::Sampler::null(),
-            image_view: low.device_texture.borrow().image_view,
+            image_view: cloud_detailing.device_texture.borrow().image_view,
             image_layout: ImageLayout::GENERAL,
         }, // cloud low
+        vk::DescriptorImageInfo {
+            sampler: vk::Sampler::null(),
+            image_view: cloud_weather_map.device_texture.borrow().image_view,
+            image_layout: ImageLayout::GENERAL,
+        }, // cloud weather map
+        vk::DescriptorImageInfo {
+            sampler: vk::Sampler::null(),
+            image_view: atmosphere_transmittance_lut.device_texture.borrow().image_view,
+            image_layout: ImageLayout::GENERAL,
+        }, // atmosphere transmittance lut
+        vk::DescriptorImageInfo {
+            sampler: vk::Sampler::null(),
+            image_view: atmosphere_transmittance_lut.device_texture.borrow().image_view,
+            image_layout: ImageLayout::GENERAL,
+        }, // atmosphere multiscatter lut
+        vk::DescriptorImageInfo {
+            sampler: vk::Sampler::null(),
+            image_view: atmosphere_transmittance_lut.device_texture.borrow().image_view,
+            image_layout: ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+        }, // atmosphere transmittance lut sample
     ];
     let descriptor_writes: Vec<vk::WriteDescriptorSet> = image_infos.iter().enumerate().map(|(i, info)| {
         vk::WriteDescriptorSet::default()
@@ -1663,7 +1799,7 @@ unsafe fn generate_cloud_noise(context: &Arc<Context>, high: &Texture, low: &Tex
         ..Default::default()
     };
     let pipeline_layout = context.device.create_pipeline_layout(&pipeline_layout_create_info, None).unwrap();
-    let mut spv_file = Cursor::new(load_file(&(SHADER_PATH.to_owned() + "\\cloud\\noise.comp.spv")).unwrap());
+    let mut spv_file = Cursor::new(load_file(&(SHADER_PATH.to_owned() + "\\sky\\precompute.comp.spv")).unwrap());
     let code = read_spv(&mut spv_file).expect("Failed to read compute shader spv file");
     let shader_info = vk::ShaderModuleCreateInfo::default().code(&code);
     let shader_module = context
@@ -1713,6 +1849,30 @@ unsafe fn generate_cloud_noise(context: &Arc<Context>, high: &Texture, low: &Tex
     ));
     context.device.cmd_dispatch(command_buffers[0], 64 / sub_divs, 64 / sub_divs, 64 / sub_divs);
 
+    context.device.cmd_push_constants(command_buffers[0], pipeline_layout, ShaderStageFlags::COMPUTE, 0, slice::from_raw_parts(
+        &weather_map_info as *const NoiseInfo as *const u8,
+        size_of::<NoiseInfo>(),
+    ));
+    context.device.cmd_dispatch(command_buffers[0], 512 / sub_divs, 512 / sub_divs, 1);
+
+    context.device.cmd_push_constants(command_buffers[0], pipeline_layout, ShaderStageFlags::COMPUTE, 0, slice::from_raw_parts(
+        &atmosphere_transmittance_lut_info as *const NoiseInfo as *const u8,
+        size_of::<NoiseInfo>(),
+    ));
+    context.device.cmd_dispatch(command_buffers[0], 256 / sub_divs, 256 / sub_divs, 1);
+    transition_output(
+        context,
+        command_buffers[0],
+        atmosphere_transmittance_lut.device_texture.borrow().image,
+        1,
+        barrier_info
+    );
+
+    context.device.cmd_push_constants(command_buffers[0], pipeline_layout, ShaderStageFlags::COMPUTE, 0, slice::from_raw_parts(
+        &atmosphere_multiscatter_lut_info as *const NoiseInfo as *const u8,
+        size_of::<NoiseInfo>(),
+    ));
+    context.device.cmd_dispatch(command_buffers[0], 256 / sub_divs, 256 / sub_divs, 1);
     //</editor-fold>
     //<editor-fold desc = "transition out">
     let barrier_info = (
@@ -1725,14 +1885,28 @@ unsafe fn generate_cloud_noise(context: &Arc<Context>, high: &Texture, low: &Tex
     transition_output(
         context,
         command_buffers[0],
-        high.device_texture.borrow().image,
+        cloud_shaping.device_texture.borrow().image,
         1,
         barrier_info
     );
     transition_output(
         context,
         command_buffers[0],
-        low.device_texture.borrow().image,
+        cloud_detailing.device_texture.borrow().image,
+        1,
+        barrier_info
+    );
+    transition_output(
+        context,
+        command_buffers[0],
+        cloud_weather_map.device_texture.borrow().image,
+        1,
+        barrier_info
+    );
+    transition_output(
+        context,
+        command_buffers[0],
+        atmosphere_multiscatter_lut.device_texture.borrow().image,
         1,
         barrier_info
     );
@@ -1809,7 +1983,9 @@ struct NoiseInfo {
 }
 #[derive(Clone, Debug, Copy)]
 #[repr(C)]
-struct CloudInfo {
+struct SkyInfo {
+    sun_direction: [f32; 3],
+    _pad: f32,
     t: f32,
 }
 /*

@@ -13,6 +13,7 @@
       <w>lerp</w>
       <w>memorytype</w>
       <w>msdf</w>
+      <w>multiscatter</w>
       <w>ortho</w>
       <w>pdevice</w>
       <w>quat</w>
