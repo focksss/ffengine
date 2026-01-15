@@ -220,7 +220,7 @@ impl SceneRenderer {
         let cloud_detailing = Texture::new(&cloud_detailing_info);
         let atmosphere_transmittance_lut_info = TextureCreateInfo::new(context)
             .width(256)
-            .height(256)
+            .height(64)
             .format(Format::R16G16B16A16_SFLOAT)
             .usage_flags(
                 vk::ImageUsageFlags::SAMPLED |
@@ -228,22 +228,14 @@ impl SceneRenderer {
             );
         let atmosphere_transmittance_lut = Texture::new(&atmosphere_transmittance_lut_info);
         let atmosphere_multiscatter_lut_info = TextureCreateInfo::new(context)
-            .width(256)
-            .height(256)
+            .width(32)
+            .height(32)
             .format(Format::R16G16B16A16_SFLOAT)
             .usage_flags(
                 vk::ImageUsageFlags::SAMPLED |
                     vk::ImageUsageFlags::STORAGE
             );
         let atmosphere_multiscatter_lut = Texture::new(&atmosphere_multiscatter_lut_info);
-        generate_cloud_noise(
-            context,
-            &cloud_shaping,
-            &cloud_detailing,
-            &cloud_weather_map,
-            &atmosphere_transmittance_lut,
-            &atmosphere_multiscatter_lut,
-        );
         //</editor-fold>
 
         //<editor-fold desc = "descriptor updates">
@@ -501,6 +493,15 @@ impl SceneRenderer {
             //</editor-fold>
         }
         //</editor-fold>
+        generate_sky_textures(
+            context,
+            &cloud_shaping,
+            &cloud_detailing,
+            &cloud_weather_map,
+            &atmosphere_transmittance_lut,
+            &atmosphere_multiscatter_lut,
+            &repeat_sampler,
+        );
 
         //<editor-fold desc = "editor primitive buffers">
         let mut indices: Vec<[u32; 2]> = Vec::new();
@@ -1610,6 +1611,7 @@ impl SceneRenderer {
         self.cloud_shaping.destroy();
         self.cloud_weather_map.destroy();
         self.atmosphere_transmittance_lut.destroy();
+        self.atmosphere_multiscatter_lut.destroy();
 
         self.context.device.destroy_sampler(self.sampler, None);
         self.context.device.destroy_sampler(self.nearest_sampler, None);
@@ -1624,13 +1626,14 @@ impl SceneRenderer {
         self.context.device.free_memory(self.editor_primitives_vertices_buffer.1, None);
     } }
 }
-unsafe fn generate_cloud_noise(
+unsafe fn generate_sky_textures(
     context: &Arc<Context>,
     cloud_shaping: &Texture,
     cloud_detailing: &Texture,
     cloud_weather_map: &Texture,
     atmosphere_transmittance_lut: &Texture,
     atmosphere_multiscatter_lut: &Texture,
+    continuous_sampler: &vk::Sampler,
 ) { unsafe {
     let shape_noise_info = NoiseInfo {
         r: [3.0, 7.0, 11.0, 0.65],
@@ -1664,14 +1667,6 @@ unsafe fn generate_cloud_noise(
         a: [0.0; 4],
         seeds: [0.0; 4],
         mode: 3,
-    };
-    let atmosphere_multiscatter_lut_info = NoiseInfo {
-        r: [0.0; 4],
-        g: [0.0; 4],
-        b: [0.0; 4],
-        a: [0.0; 4],
-        seeds: [0.0; 4],
-        mode: 4,
     };
 
     let command_buffers = context.begin_single_time_commands(1);
@@ -1727,22 +1722,25 @@ unsafe fn generate_cloud_noise(
     );
     //</editor-fold>
     //<editor-fold desc = "descriptors">
-    let descriptor_create_info = DescriptorCreateInfo::new(context)
+    let storage_descriptor_create_info = DescriptorCreateInfo::new(context)
         .descriptor_type(DescriptorType::STORAGE_IMAGE)
         .shader_stages(ShaderStageFlags::COMPUTE);
-    let descriptor_create_info2 = DescriptorCreateInfo::new(context)
+    let sampled_descriptor_create_info = DescriptorCreateInfo::new(context)
         .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
         .shader_stages(ShaderStageFlags::COMPUTE);
 
     let descriptor_set_create_info = DescriptorSetCreateInfo::new(context)
         .frames_in_flight(1)
-        .add_descriptor(Descriptor::new(&descriptor_create_info))
-        .add_descriptor(Descriptor::new(&descriptor_create_info))
-        .add_descriptor(Descriptor::new(&descriptor_create_info))
-        .add_descriptor(Descriptor::new(&descriptor_create_info))
-        .add_descriptor(Descriptor::new(&descriptor_create_info))
-        .add_descriptor(Descriptor::new(&descriptor_create_info2));
+        .add_descriptor(Descriptor::new(&storage_descriptor_create_info))
+        .add_descriptor(Descriptor::new(&storage_descriptor_create_info))
+        .add_descriptor(Descriptor::new(&storage_descriptor_create_info))
+        .add_descriptor(Descriptor::new(&storage_descriptor_create_info));
     let mut descriptor_set = DescriptorSet::new(descriptor_set_create_info);
+    let multiscatter_descriptor_set_create_info = DescriptorSetCreateInfo::new(context)
+        .frames_in_flight(1)
+        .add_descriptor(Descriptor::new(&storage_descriptor_create_info))
+        .add_descriptor(Descriptor::new(&sampled_descriptor_create_info));
+    let mut multiscatter_descriptor_set = DescriptorSet::new(multiscatter_descriptor_set_create_info);
 
     let image_infos = [
         vk::DescriptorImageInfo {
@@ -1765,16 +1763,6 @@ unsafe fn generate_cloud_noise(
             image_view: atmosphere_transmittance_lut.device_texture.borrow().image_view,
             image_layout: ImageLayout::GENERAL,
         }, // atmosphere transmittance lut
-        vk::DescriptorImageInfo {
-            sampler: vk::Sampler::null(),
-            image_view: atmosphere_transmittance_lut.device_texture.borrow().image_view,
-            image_layout: ImageLayout::GENERAL,
-        }, // atmosphere multiscatter lut
-        vk::DescriptorImageInfo {
-            sampler: vk::Sampler::null(),
-            image_view: atmosphere_transmittance_lut.device_texture.borrow().image_view,
-            image_layout: ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-        }, // atmosphere transmittance lut sample
     ];
     let descriptor_writes: Vec<vk::WriteDescriptorSet> = image_infos.iter().enumerate().map(|(i, info)| {
         vk::WriteDescriptorSet::default()
@@ -1784,8 +1772,33 @@ unsafe fn generate_cloud_noise(
             .image_info(slice::from_ref(info))
     }).collect();
     context.device.update_descriptor_sets(&descriptor_writes, &[]);
+    let image_infos = [
+        vk::DescriptorImageInfo {
+            sampler: vk::Sampler::null(),
+            image_view: atmosphere_multiscatter_lut.device_texture.borrow().image_view,
+            image_layout: ImageLayout::GENERAL,
+        }, // atmosphere multiscatter lut
+        vk::DescriptorImageInfo {
+            sampler: *continuous_sampler,
+            image_view: atmosphere_transmittance_lut.device_texture.borrow().image_view,
+            image_layout: ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+        }, // atmosphere transmittance lut sample
+    ];
+    let descriptor_writes = [
+        vk::WriteDescriptorSet::default()
+            .dst_set(multiscatter_descriptor_set.descriptor_sets[0])
+            .dst_binding(0)
+            .descriptor_type(DescriptorType::STORAGE_IMAGE)
+            .image_info(slice::from_ref(&image_infos[0])),
+        vk::WriteDescriptorSet::default()
+            .dst_set(multiscatter_descriptor_set.descriptor_sets[0])
+            .dst_binding(1)
+            .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
+            .image_info(slice::from_ref(&image_infos[1])),
+    ];
+    context.device.update_descriptor_sets(&descriptor_writes, &[]);
     //</editor-fold>
-    //<editor-fold desc = "pipeline">
+    //<editor-fold desc = "pipelines">
     let pipeline_layout_create_info = vk::PipelineLayoutCreateInfo {
         s_type: vk::StructureType::PIPELINE_LAYOUT_CREATE_INFO,
         set_layout_count: 1,
@@ -1798,17 +1811,37 @@ unsafe fn generate_cloud_noise(
         },
         ..Default::default()
     };
+    let multiscatter_pipeline_layout_create_info = vk::PipelineLayoutCreateInfo {
+        s_type: vk::StructureType::PIPELINE_LAYOUT_CREATE_INFO,
+        set_layout_count: 1,
+        p_set_layouts: &multiscatter_descriptor_set.descriptor_set_layout,
+        ..Default::default()
+    };
     let pipeline_layout = context.device.create_pipeline_layout(&pipeline_layout_create_info, None).unwrap();
+    let multiscatter_pipeline_layout = context.device.create_pipeline_layout(&multiscatter_pipeline_layout_create_info, None).unwrap();
     let mut spv_file = Cursor::new(load_file(&(SHADER_PATH.to_owned() + "\\sky\\precompute.comp.spv")).unwrap());
+    let mut multiscatter_spv_file = Cursor::new(load_file(&(SHADER_PATH.to_owned() + "\\sky\\multiscatter.comp.spv")).unwrap());
     let code = read_spv(&mut spv_file).expect("Failed to read compute shader spv file");
+    let multiscatter_code = read_spv(&mut multiscatter_spv_file).expect("Failed to read compute shader spv file");
     let shader_info = vk::ShaderModuleCreateInfo::default().code(&code);
+    let multiscatter_shader_info = vk::ShaderModuleCreateInfo::default().code(&multiscatter_code);
     let shader_module = context
         .device
         .create_shader_module(&shader_info, None)
         .expect("Compute shader module error");
+    let multiscatter_shader_module = context
+        .device
+        .create_shader_module(&multiscatter_shader_info, None)
+        .expect("Compute shader module error");
     let shader_entry_name = c"main";
     let shader_stage_create_info = vk::PipelineShaderStageCreateInfo {
         module: shader_module,
+        p_name: shader_entry_name.as_ptr(),
+        stage: ShaderStageFlags::COMPUTE,
+        ..Default::default()
+    };
+    let multiscatter_shader_stage_create_info = vk::PipelineShaderStageCreateInfo {
+        module: multiscatter_shader_module,
         p_name: shader_entry_name.as_ptr(),
         stage: ShaderStageFlags::COMPUTE,
         ..Default::default()
@@ -1819,11 +1852,19 @@ unsafe fn generate_cloud_noise(
         layout: pipeline_layout,
         ..Default::default()
     };
-    let compute_pipeline = context.device.create_compute_pipelines(
+    let multiscatter_compute_pipeline_create_info = vk::ComputePipelineCreateInfo {
+        s_type: vk::StructureType::COMPUTE_PIPELINE_CREATE_INFO,
+        stage: multiscatter_shader_stage_create_info,
+        layout: multiscatter_pipeline_layout,
+        ..Default::default()
+    };
+    let pipelines = context.device.create_compute_pipelines(
         vk::PipelineCache::null(),
-        &[compute_pipeline_create_info],
+        &[compute_pipeline_create_info, multiscatter_compute_pipeline_create_info],
         None
-    ).unwrap()[0];
+    ).unwrap();
+    let compute_pipeline = pipelines[0];
+    let multiscatter_pipeline = pipelines[1];
     //</editor-fold>
     //<editor-fold desc = "compute">
     context.device.cmd_bind_pipeline(command_buffers[0], vk::PipelineBindPoint::COMPUTE, compute_pipeline);
@@ -1859,7 +1900,8 @@ unsafe fn generate_cloud_noise(
         &atmosphere_transmittance_lut_info as *const NoiseInfo as *const u8,
         size_of::<NoiseInfo>(),
     ));
-    context.device.cmd_dispatch(command_buffers[0], 256 / sub_divs, 256 / sub_divs, 1);
+    context.device.cmd_dispatch(command_buffers[0], 256 / sub_divs, 64 / sub_divs, 1);
+
     transition_output(
         context,
         command_buffers[0],
@@ -1867,12 +1909,17 @@ unsafe fn generate_cloud_noise(
         1,
         barrier_info
     );
-
-    context.device.cmd_push_constants(command_buffers[0], pipeline_layout, ShaderStageFlags::COMPUTE, 0, slice::from_raw_parts(
-        &atmosphere_multiscatter_lut_info as *const NoiseInfo as *const u8,
-        size_of::<NoiseInfo>(),
-    ));
-    context.device.cmd_dispatch(command_buffers[0], 256 / sub_divs, 256 / sub_divs, 1);
+    context.device.cmd_bind_pipeline(command_buffers[0], vk::PipelineBindPoint::COMPUTE, multiscatter_pipeline);
+    context.device.cmd_bind_descriptor_sets(
+        command_buffers[0],
+        vk::PipelineBindPoint::COMPUTE,
+        multiscatter_pipeline_layout,
+        0,
+        &multiscatter_descriptor_set.descriptor_sets,
+        &[],
+    );
+    let sub_divs = 4;
+    context.device.cmd_dispatch(command_buffers[0], 32 / sub_divs, 32 / sub_divs, 1);
     //</editor-fold>
     //<editor-fold desc = "transition out">
     let barrier_info = (
@@ -1915,9 +1962,13 @@ unsafe fn generate_cloud_noise(
     context.end_single_time_commands(command_buffers);
 
     descriptor_set.destroy();
+    multiscatter_descriptor_set.destroy();
     context.device.destroy_pipeline_layout(pipeline_layout, None);
+    context.device.destroy_pipeline_layout(multiscatter_pipeline_layout, None);
     context.device.destroy_shader_module(shader_module, None);
+    context.device.destroy_shader_module(multiscatter_shader_module, None);
     context.device.destroy_pipeline(compute_pipeline, None);
+    context.device.destroy_pipeline(multiscatter_pipeline, None);
 } }
 
 #[derive(Clone, Debug, Copy)]

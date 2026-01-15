@@ -6,8 +6,6 @@ layout(set = 0, binding = 0) uniform writeonly image3D cloud_shaping;
 layout(set = 0, binding = 1) uniform writeonly image3D cloud_detailing;
 layout(set = 0, binding = 2) uniform writeonly image2D cloud_weather_map;
 layout(set = 0, binding = 3) uniform writeonly image2D atmosphere_transmittance_lut;
-layout(set = 0, binding = 4) uniform writeonly image2D atmosphere_multiscatter_lut;
-layout(set = 0, binding = 5) uniform sampler2D atmosphere_transmittance_lut_computed;
 
 const ivec3 offsets[] =
 {
@@ -237,63 +235,6 @@ vec2 transmittance_lut_uv(float height, float cos_view_zenith) {
     float v = clamp((height - PLANET_RADIUS) / (ATMOSPHERE_RADIUS - PLANET_RADIUS), 0.0, 1.0);
     return vec2(u, v);
 }
-vec3 transmittance(vec3 pos, vec3 sun_dir) {
-    float height = length(pos - PLANET_CENTER);
-    float cos_view_zenith = dot(normalize(pos - PLANET_CENTER), sun_dir);
-    vec2 uv = transmittance_lut_uv(height, cos_view_zenith);
-    return texture(atmosphere_transmittance_lut_computed, uv).rgb;
-}
-vec3 sample_sphere(float u, float v) {
-    // uniform dist
-    float z = 1.0 - 2.0 * u;
-    float r = sqrt(max(0.0, 1.0 - z * z));
-    float phi = 2.0 * 3.14159263 * v;
-    return vec3(r * cos(phi), z, r * sin(phi));
-}
-vec3 multiscatter(float height, float cos_sun_zenith) {
-    vec3 o = PLANET_CENTER + vec3(0, height, 0);
-    vec3 up = normalize(o - PLANET_CENTER);
-    vec3 sun_dir = normalize(up * cos_sun_zenith + vec3(1, 0, 0) * sqrt(max(0.0, 1.0 - cos_sun_zenith * cos_sun_zenith)));
-
-    vec3 multiscatter = vec3(0.0);
-
-    for (int i = 0; i < SPHERE_SAMPLES; i++) {
-        float u = float(i) / float(SPHERE_SAMPLES);
-        float v = fract(u * 1.618033988749895); // gr = better distribution apparently?
-        vec3 d = sample_sphere(u, v);
-
-        float t_min, t_max;
-        if (!intersect_sphere(o, d, PLANET_CENTER, ATMOSPHERE_RADIUS, t_min, t_max)) {
-            continue;
-        }
-
-        float t_ground_min, t_ground_max;
-        bool hit_ground = intersect_sphere(o, d, PLANET_CENTER, PLANET_RADIUS, t_ground_min, t_ground_max);
-
-        if (hit_ground && t_ground_min > 0.0) {
-            t_max = t_ground_min;
-        }
-
-        float step_size = t_max / float(MULTISCATTER_STEPS);
-        vec3 p = o + d * step_size * 0.5;
-
-        for (int j = 0; j < MULTISCATTER_STEPS; j++) {
-            vec2 density = atmosphere_density(p);
-
-            vec3 transmittance_sun = transmittance(p, sun_dir);
-
-            vec3 scattering = (RAYLEIGH_SCATTERING * density.x + MIE_SCATTERING * density.y) * transmittance_sun * step_size;
-            multiscatter += scattering;
-
-            p += d * step_size;
-        }
-    }
-
-    multiscatter /= float(SPHERE_SAMPLES);
-    multiscatter *= 4.0 * 3.14159263; // sphere integral
-
-    return multiscatter;
-}
 
 void main() {
     ivec3 coord = ivec3(gl_GlobalInvocationID.xyz);
@@ -337,21 +278,9 @@ void main() {
         // remap for sub-horizon
         float cos_view_zenith = uv.x * 1.15 - 0.15;
 
-        float height = PLANET_RADIUS + uv.y * (ATMOSPHERE_RADIUS - -PLANET_RADIUS);
+        float height = PLANET_RADIUS + uv.y * (ATMOSPHERE_RADIUS - PLANET_RADIUS);
 
         vec3 sample_transmittance = transmittance(height, cos_view_zenith);
         imageStore(atmosphere_transmittance_lut, coord.xy, vec4(sample_transmittance, 1.0));
-    }  else if (mode == 4) {
-        vec2 uv = vec2(coord) / imageSize(atmosphere_multiscatter_lut).xy;
-
-        float cos_view_zenith = uv.x * 1.15 - 0.15;
-
-        float cos_sun_zenith = uv.x * 2.0 - 1.0;
-
-        float height = PLANET_RADIUS + uv.y * (ATMOSPHERE_RADIUS - PLANET_RADIUS);
-
-        vec3 sample_multiscatter = multiscatter(height, cos_sun_zenith);
-
-        imageStore(atmosphere_multiscatter_lut, coord.xy, vec4(sample_multiscatter, 1.0));
     }
 }

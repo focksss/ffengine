@@ -87,9 +87,9 @@ bool intersect_aabb(
     vec3 o,
     vec3 d,
     vec3 bmin,
-vec3 bmax,
-out float t_min,
-out float t_max
+    vec3 bmax,
+    out float t_min,
+    out float t_max
 ) {
     vec3 inv_d = 1.0 / d;
 
@@ -266,6 +266,14 @@ vec3 lightmarch(vec3 p, vec3 cloud_min, vec3 cloud_max) {
 }
 
 void main() {
+    /*
+if (uv.x < 0.5) {
+color = texture(atmosphere_transmittance_lut, uv * vec2(2.0, 1.0));
+} else {
+color = texture(atmosphere_multiscatter_lut, uv * vec2(2.0, 1.0));
+}return;
+*/
+
     mat4 inverse_projection = inverse(constants.projection);
     mat4 inverse_view = inverse(constants.view);
 
