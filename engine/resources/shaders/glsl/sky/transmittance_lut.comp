@@ -5,80 +5,77 @@ layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
 layout(set = 0, binding = 0) uniform writeonly image2D lut;
 
 // atmosphere constants
-const int TRANSMITTANCE_STEPS = 20;
-const int MULTISCATTER_STEPS = 20;
-const int SPHERE_SAMPLES = 64;
-const float PLANET_RADIUS = 6371e3;
-const float ATMOSPHERE_RADIUS = 6471e3;
-const vec3 PLANET_CENTER = vec3(0.0, -PLANET_RADIUS, 0.0);
-// air molecule scattering, stronger at blue wavelengths
-const vec3 RAYLEIGH_SCATTERING = vec3(5.8e-6, 13.5e-6, 33.1e-6);
-const float RAYLEIGH_SCALE_HEIGHT = 8000.0;
-// particulate scattering, wavelength independent
-const vec3 MIE_SCATTERING = vec3(21e-6);
-const float MIE_SCALE_HEIGHT = 1200.0;
-const float MIE_G = 0.76; // anisotropy
-const vec3 SUN_INTENSITY = vec3(20.0);
-const int ATMOSPHERE_IN_SCATTERING_STEPS = 8;
-const int ATMOSPHERE_OPTICAL_DEPTH_STEPS = 8;
-vec2 atmosphere_density(vec3 p) {
-    float height = length(p - PLANET_CENTER) - PLANET_RADIUS;
-    height = max(0.0, height);
+// per MM, as per: https://www.shadertoy.com/view/slSXRW
+const float PLANET_RADIUS = 6.360;
+const float ATMOSPHERE_RADIUS = 6.460;
 
-    float rayleigh = exp(-height / RAYLEIGH_SCALE_HEIGHT);
-    float mie = exp(-height / MIE_SCALE_HEIGHT);
+const vec3 RAYLEIGH_SCATTERING = vec3(5.802, 13.558, 33.1);
+const float RAYLEIGH_ABSORPTION = 0.0;
 
-    return vec2(rayleigh, mie);
+const float MIE_SCATTERING = 3.996;
+const float MIE_ABSORPTION = 4.4;
+
+const vec3 OZONE_ABSORPTION = vec3(0.650, 1.881, .085);
+
+
+const float TRANSMITTANCE_STEPS = 40.0;
+
+float intersect_sphere(vec3 o, vec3 d, vec3 sc, float r) {
+    vec3 ro = o - sc;
+    float b = dot(ro, d);
+    float c = dot(ro, ro) - r * r;
+    if (c > 0.0f && b > 0.0) return -1.0;
+    float discriminant = b*b - c;
+    if (discriminant < 0.0) return -1.0;
+    if (discriminant > b * b) return (-b + sqrt(discriminant));
+    return -b - sqrt(discriminant);
 }
-bool intersect_sphere(vec3 o, vec3 d, vec3 center, float radius, out float t0, out float t1) {
-    vec3 oc = o - center;
-    float b = dot(oc, d);
-    float c = dot(oc, oc) - radius * radius;
-    float discriminant = b * b - c;
 
-    if (discriminant < 0.0) return false;
+void get_scattering_values(
+    vec3 p,
+    out vec3 rayleigh_scattering,
+    out float mie_scattering,
+    out vec3 extinction
+) {
+    float altitude = (length(p) - PLANET_RADIUS) * 1000.0; // km
 
-    float sqrt_disc = sqrt(discriminant);
-    t0 = -b - sqrt_disc;
-    t1 = -b + sqrt_disc;
+    float rayleigh_density = exp(-altitude/8.0);
+    float mie_density = exp(-altitude/1.2);
 
-    return t1 >= 0.0;
+    rayleigh_scattering = RAYLEIGH_SCATTERING * rayleigh_density;
+    float rayleigh_absorption = RAYLEIGH_ABSORPTION * rayleigh_density;
+
+    mie_scattering = MIE_SCATTERING * mie_density;
+    float mie_absorption = MIE_ABSORPTION * mie_density;
+
+    vec3 ozone_absorption = OZONE_ABSORPTION * max(0.0, 1.0 - abs(altitude - 25.0) / 15.0);
+
+    extinction = rayleigh_scattering + rayleigh_absorption + mie_scattering + mie_absorption + ozone_absorption;
 }
-vec3 transmittance(float height, float cos_view_zenith) {
-    vec3 p = PLANET_CENTER + vec3(0, height, 0);
-
-    vec3 up = normalize(p - PLANET_CENTER);
-    vec3 view_dir = normalize(up * cos_view_zenith + vec3(1, 0, 0) * sqrt(max(0.0, 1.0 - cos_view_zenith * cos_view_zenith)));
-
-    float t_min, t_max;
-    if (!intersect_sphere(p, view_dir, PLANET_CENTER, ATMOSPHERE_RADIUS, t_min, t_max)) {
-        return vec3(1.0);
+vec3 sun_transmittance(vec3 p, vec3 sun_dir) {
+    vec3 planet_center = vec3(p.x, 0.0, p.z);
+    if (intersect_sphere(p, sun_dir, planet_center, PLANET_RADIUS) > 0.0) {
+        return vec3(0.0);
     }
 
-    float t_ground_min, t_ground_max;
-    bool hit_ground = intersect_sphere(p, view_dir, PLANET_CENTER, PLANET_RADIUS, t_ground_min, t_ground_max);
+    float t_max = intersect_sphere(p, sun_dir, planet_center, ATMOSPHERE_RADIUS);
+    float t = 0.0;
 
-    if (hit_ground && t_ground_min > 0.0) {
-        t_max = t_ground_min;
+    vec3 transmittance = vec3(1.0);
+    for (float i = 0.0; i < TRANSMITTANCE_STEPS; i += 1.0) {
+        float t_n = ((i + 0.3) / TRANSMITTANCE_STEPS) * t_max;
+        float dt = t_n - t;
+        t = t_n;
+
+        vec3 sample_p = p + t * sun_dir;
+
+        vec3 rayleigh_scattering, extinction;
+        float mie_scattering;
+        get_scattering_values(sample_p, rayleigh_scattering, mie_scattering, extinction);
+
+        transmittance *= exp(-dt * extinction);
     }
-
-    float step_size = t_max / float(TRANSMITTANCE_STEPS);
-    vec3 sample_pos = p + view_dir * step_size * 0.5;
-
-    vec2 optical_depth = vec2(0.0);
-
-    for (int i = 0; i < TRANSMITTANCE_STEPS; i++) {
-        vec2 density = atmosphere_density(sample_pos);
-        optical_depth += density * step_size;
-        sample_pos += view_dir * step_size;
-    }
-
-    return exp(-(RAYLEIGH_SCATTERING * optical_depth.x + MIE_SCATTERING * optical_depth.y));
-}
-vec2 transmittance_lut_uv(float height, float cos_view_zenith) {
-    float u = clamp((cos_view_zenith + 0.15) / 1.15, 0.0, 1.0);
-    float v = clamp((height - PLANET_RADIUS) / (ATMOSPHERE_RADIUS - PLANET_RADIUS), 0.0, 1.0);
-    return vec2(u, v);
+    return transmittance;
 }
 
 void main() {
@@ -86,11 +83,12 @@ void main() {
 
     vec2 uv = vec2(coord) / imageSize(lut).xy;
 
-    // remap for sub-horizon
-    float cos_view_zenith = uv.x * 1.15 - 0.15;
+    float sun_cos_theta = 2.0 * uv.x - 1.0;
+    float sun_theta = acos(sun_cos_theta);
+    float height = mix(PLANET_RADIUS, ATMOSPHERE_RADIUS, uv.y);
 
-    float height = PLANET_RADIUS + uv.y * (ATMOSPHERE_RADIUS - PLANET_RADIUS);
+    vec3 p = vec3(0.0, height, 0.0);
+    vec3 sun_dir = normalize(vec3(0.0, sun_cos_theta, -sin(sun_theta)));
 
-    vec3 sample_transmittance = transmittance(height, cos_view_zenith);
-    imageStore(lut, coord.xy, vec4(sample_transmittance, 1.0));
+    imageStore(lut, coord.xy, vec4(sun_transmittance(p, sun_dir), 1.0));
 }
