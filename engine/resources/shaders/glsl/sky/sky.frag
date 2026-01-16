@@ -266,12 +266,12 @@ vec3 lightmarch(vec3 p, vec3 cloud_min, vec3 cloud_max) {
 }
 
 void main() {
-
-if (uv.x < 0.5) {
-color = texture(atmosphere_transmittance_lut, uv * vec2(2.0, 1.0));
-} else {
-color = vec4(texture(atmosphere_multiscatter_lut, uv * vec2(2.0, 1.0)).rgb * 0.1, 1.0);
-}return;
+//
+//if (uv.x < 0.5) {
+//color = texture(atmosphere_transmittance_lut, uv * vec2(2.0, 1.0));
+//} else {
+//color = vec4(texture(atmosphere_multiscatter_lut, uv * vec2(2.0, 1.0)).rgb, 1.0);
+//}return;
 
 
     mat4 inverse_projection = inverse(constants.projection);
