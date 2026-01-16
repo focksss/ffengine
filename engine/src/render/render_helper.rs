@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::ffi::c_void;
 use std::io::{BufWriter, Cursor};
+use std::slice;
 use std::sync::Arc;
 use ash::{vk, Device, Instance};
 use ash::util::read_spv;
@@ -18,6 +19,200 @@ bitflags! {
         const START = 0b0001;
         const END   = 0b0010;
         const ALL   = Self::START.bits() | Self::END.bits();
+    }
+}
+
+pub struct PushConstantData<'a, T> {
+    pub shader_stage_flags: ShaderStageFlags,
+    pub offset: u32,
+    pub data: &'a T,
+}
+
+pub struct ComputeRenderpass {
+    context: Arc<Context>,
+
+    pub descriptor_sets: Vec<DescriptorSet>,
+    pub pipelines: Vec<ComputePipeline>,
+    pub pipeline_layout: vk::PipelineLayout,
+}
+impl ComputeRenderpass {
+    pub unsafe fn new(create_info: ComputeRenderpassCreateInfo) -> ComputeRenderpass { unsafe {
+        let context = create_info.context.clone();
+        let mut descriptor_sets = Vec::new();
+        for info in create_info.descriptor_set_create_infos {
+            descriptor_sets.push(DescriptorSet::new(info))
+        }
+        let set_layouts = descriptor_sets.iter().map(|d| d.descriptor_set_layout).collect::<Vec<_>>();
+        let pipeline_layout = context
+            .device
+            .create_pipeline_layout(
+                &vk::PipelineLayoutCreateInfo {
+                    s_type: vk::StructureType::PIPELINE_LAYOUT_CREATE_INFO,
+                    set_layout_count: descriptor_sets.len() as u32,
+                    p_set_layouts: set_layouts.as_ptr(),
+                    p_push_constant_ranges: create_info.push_constant_infos.as_slice().as_ptr(),
+                    push_constant_range_count: create_info.push_constant_infos.len() as u32,
+                    ..Default::default()
+                }, None
+            ).unwrap();
+
+        let shaders = create_info.pipeline_create_infos.iter().map(|info| {
+            ComputeShader::new(
+                &context,
+                info.shader_uri.as_str(),
+            )
+        }).collect::<Vec<ComputeShader>>();
+        let shader_stage_create_infos = shaders.iter().map(|shader| {
+            shader.generate_shader_stage_create_infos()
+        }).collect::<Vec<PipelineShaderStageCreateInfo>>();
+
+        let mut pipeline_create_infos = Vec::new();
+        for i in 0..create_info.pipeline_create_infos.len() {
+            pipeline_create_infos.push(
+                vk::ComputePipelineCreateInfo {
+                    s_type: vk::StructureType::COMPUTE_PIPELINE_CREATE_INFO,
+                    stage: shader_stage_create_infos[i],
+                    layout: pipeline_layout,
+                    ..Default::default()
+                }
+            )
+        }
+
+        let vulkan_pipelines = context.device.create_compute_pipelines(
+            vk::PipelineCache::null(),
+            &pipeline_create_infos,
+            None
+        ).expect("Failed to create compute pipelines");
+        let pipelines: Vec<ComputePipeline> = shaders
+            .into_iter()
+            .zip(vulkan_pipelines.into_iter())
+            .map(|(shader, vk_pipeline)| ComputePipeline {
+                shader,
+                vulkan_pipeline: vk_pipeline,
+            })
+            .collect();
+        ComputeRenderpass {
+            context,
+
+            descriptor_sets,
+            pipelines,
+            pipeline_layout,
+        }
+    } }
+
+    pub unsafe fn do_push_constant<T>(
+        &self,
+        command_buffer: vk::CommandBuffer,
+        push_constant: PushConstantData<T>,
+    ) { unsafe {
+        self.context.device.cmd_push_constants(
+            command_buffer,
+            self.pipeline_layout,
+            ShaderStageFlags::COMPUTE,
+            push_constant.offset,
+            slice::from_raw_parts(push_constant.data as *const T as *const u8, size_of::<T>()),
+        )
+    } }
+
+    pub unsafe fn do_compute<F1: FnOnce()>(
+        &self,
+        current_frame: usize,
+        command_buffer: vk::CommandBuffer,
+        draw_action: Option<F1>,
+        pipeline_index: Option<usize>,
+        descriptor_set_index: Option<usize>,
+    ) { unsafe {
+        let device = &self.context.device;
+        self.bind_for_compute(current_frame, command_buffer, pipeline_index, descriptor_set_index);
+        if let Some(draw_action) = draw_action { draw_action() } else {
+            device.cmd_draw(command_buffer, 6, 1, 0, 0);
+        };
+    } }
+    pub unsafe fn bind_for_compute(
+        &self,
+        current_frame: usize,
+        command_buffer: vk::CommandBuffer,
+        pipeline_index: Option<usize>,
+        descriptor_set_index: Option<usize>,
+    ) { unsafe {
+        let device = &self.context.device;
+
+        device.cmd_bind_pipeline(
+            command_buffer,
+            vk::PipelineBindPoint::COMPUTE,
+            self.pipelines[pipeline_index.unwrap_or(0)].vulkan_pipeline,
+        );
+        device.cmd_bind_descriptor_sets(
+            command_buffer,
+            vk::PipelineBindPoint::COMPUTE,
+            self.pipeline_layout,
+            0,
+            &[self.descriptor_sets[descriptor_set_index.unwrap_or(0)].descriptor_sets[current_frame]],
+            &[],
+        );
+    }}
+
+    pub unsafe fn destroy(&mut self) { unsafe {
+        for pipeline in self.pipelines.iter() {
+            pipeline.shader.destroy();
+            self.context.device.destroy_pipeline(pipeline.vulkan_pipeline, None);
+        }
+        for descriptor_set in self.descriptor_sets.iter_mut() {
+            descriptor_set.destroy();
+        }
+        self.context.device.destroy_pipeline_layout(self.pipeline_layout, None);
+    } }
+}
+pub struct ComputeRenderpassCreateInfo {
+    pub context: Arc<Context>,
+    pub descriptor_set_create_infos: Vec<DescriptorSetCreateInfo>,
+
+    pub push_constant_infos: Vec<PushConstantRange>,
+
+    pub pipeline_create_infos: Vec<ComputePipelineCreateInfo>,
+}
+impl ComputeRenderpassCreateInfo {
+    pub fn new(context: &Arc<Context>) -> Self {
+        ComputeRenderpassCreateInfo {
+            context: context.clone(),
+            descriptor_set_create_infos: Vec::new(),
+
+            push_constant_infos: Vec::new(),
+
+            pipeline_create_infos: Vec::new(),
+        }
+    }
+
+    pub fn add_pipeline_create_info(mut self, pipeline: ComputePipelineCreateInfo) -> Self {
+        self.pipeline_create_infos.push(pipeline);
+        self
+    }
+    pub fn add_descriptor_set_create_info(mut self, descriptor_set_create_info: DescriptorSetCreateInfo) -> Self {
+        self.descriptor_set_create_infos.push(descriptor_set_create_info);
+        self
+    }
+    pub fn add_push_constant_range(mut self, push_constant_range: PushConstantRange) -> Self {
+        self.push_constant_infos.push(push_constant_range);
+        self
+    }
+}
+pub struct ComputePipeline {
+    shader: ComputeShader,
+    pub vulkan_pipeline: vk::Pipeline,
+}
+pub struct ComputePipelineCreateInfo {
+    pub shader_uri: String,
+}
+impl ComputePipelineCreateInfo {
+    pub fn new(shader_uri: &str) -> Self {
+        ComputePipelineCreateInfo {
+            shader_uri: String::from(shader_uri),
+        }
+    }
+
+    pub fn shader_uri(mut self, shader_uri: String) -> Self {
+        self.shader_uri = shader_uri;
+        self
     }
 }
 
@@ -423,6 +618,7 @@ pub struct PipelineCreateInfo<'a> {
     pub vertex_shader_uri: Option<String>,
     pub geometry_shader_uri: Option<String>,
     pub fragment_shader_uri: Option<String>,
+    pub compute_shader_uri: Option<String>,
 
     pub pipeline_vertex_input_state_create_info: PipelineVertexInputStateCreateInfo<'a>,
     pub pipeline_input_assembly_state_create_info: PipelineInputAssemblyStateCreateInfo<'a>,
@@ -455,6 +651,7 @@ impl<'a> PipelineCreateInfo<'a> {
             vertex_shader_uri: None,
             geometry_shader_uri: None,
             fragment_shader_uri: None,
+            compute_shader_uri: None,
 
             pipeline_vertex_input_state_create_info: PipelineVertexInputStateCreateInfo::default(),
             pipeline_input_assembly_state_create_info: PipelineInputAssemblyStateCreateInfo {
@@ -1968,5 +2165,45 @@ impl Shader {
             self.context.device.destroy_shader_module(self.geometry_module.unwrap(), None);
         }
         self.context.device.destroy_shader_module(self.fragment_module, None);
+    } }
+}
+pub struct ComputeShader {
+    context: Arc<Context>,
+
+    pub module: ShaderModule,
+}
+impl ComputeShader {
+    pub unsafe fn new(context: &Arc<Context>, path: &str) -> Self {
+        unsafe {
+            let mut vertex_spv_file = Cursor::new(load_file(&(SHADER_PATH.to_owned() + path)).unwrap());
+
+            let code = read_spv(&mut vertex_spv_file).expect("Failed to read compute shader spv file");
+            let shader_info = ShaderModuleCreateInfo::default().code(&code);
+
+            let shader_module = context
+                .device
+                .create_shader_module(&shader_info, None)
+                .expect("Vertex shader module error");
+            ComputeShader {
+                context: context.clone(),
+                module: shader_module,
+            }
+        }
+    }
+
+    pub fn generate_shader_stage_create_infos(&self) -> PipelineShaderStageCreateInfo<'_> {
+        let shader_entry_name = c"main";
+        PipelineShaderStageCreateInfo {
+            s_type: vk::StructureType::PIPELINE_SHADER_STAGE_CREATE_INFO,
+            module: self.module,
+            p_name: shader_entry_name.as_ptr(),
+            stage: ShaderStageFlags::COMPUTE,
+            ..Default::default()
+        }
+    }
+
+pub fn destroy(&self) {
+    unsafe {
+        self.context.device.destroy_shader_module(self.module, None);
     } }
 }

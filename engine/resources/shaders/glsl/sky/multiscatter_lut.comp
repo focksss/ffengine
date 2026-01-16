@@ -2,8 +2,8 @@
 
 layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
 
-layout(set = 0, binding = 0) uniform writeonly image2D atmosphere_multiscatter_lut;
-layout(set = 0, binding = 1) uniform sampler2D atmosphere_transmittance_lut_computed;
+layout(set = 0, binding = 0) uniform sampler2D atmosphere_transmittance_lut_computed;
+layout(set = 0, binding = 1) uniform writeonly image2D atmosphere_multiscatter_lut;
 
 // atmosphere constants
 const int TRANSMITTANCE_STEPS = 20;
@@ -113,9 +113,10 @@ void main() {
 
     vec2 uv = vec2(coord) / imageSize(atmosphere_multiscatter_lut).xy;
 
+
     float cos_sun_zenith = uv.x * 2.0 - 1.0;
 
-    // 0 = ground, 1 = atmosphere top
+    // uv.y = 0 = ground, 1 = atmosphere top
     float height = PLANET_RADIUS + uv.y * (ATMOSPHERE_RADIUS - PLANET_RADIUS);
 
     vec3 sample_multiscatter = multiscatter(height, cos_sun_zenith);
