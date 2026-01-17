@@ -138,8 +138,6 @@ vec3 raymarch(
 }
 
 void main() {
-    color = texture(multiscatter_lut, uv); return;
-
     float adj_v;
     if (uv.y < 0.5) {
         float coord = 1.0 - 2.0 * uv.y;
