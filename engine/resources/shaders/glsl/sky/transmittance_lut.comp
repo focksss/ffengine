@@ -1,21 +1,18 @@
 #version 460
-
-layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
-
-layout(set = 0, binding = 0) uniform writeonly image2D lut;
-
 // per MM, as per: https://www.shadertoy.com/view/slSXRW
 const float PLANET_RADIUS = 6.360;
 const float ATMOSPHERE_RADIUS = 6.460;
-
 const vec3 RAYLEIGH_SCATTERING = vec3(5.802, 13.558, 33.1);
 const float RAYLEIGH_ABSORPTION = 0.0;
-
-const float MIE_SCATTERING = 3.996;
+const float MIE_SCATTERING = 21.996;
 const float MIE_ABSORPTION = 4.4;
-
 const vec3 OZONE_ABSORPTION = vec3(0.650, 1.881, .085);
 
+
+
+layout(local_size_x = 4, local_size_y = 4, local_size_z = 1) in;
+
+layout(set = 0, binding = 0) uniform writeonly image2D lut;
 
 const float TRANSMITTANCE_STEPS = 40.0;
 
@@ -83,7 +80,7 @@ void main() {
     vec2 uv = vec2(coord) / imageSize(lut).xy;
 
     float sun_cos_theta = 2.0 * uv.x - 1.0;
-    float sun_theta = acos(sun_cos_theta);
+    float sun_theta = acos(clamp(sun_cos_theta, -1.0, 1.0));
     float height = mix(PLANET_RADIUS, ATMOSPHERE_RADIUS, uv.y);
 
     vec3 p = vec3(0.0, height, 0.0);

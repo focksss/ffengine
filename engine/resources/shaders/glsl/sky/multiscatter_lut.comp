@@ -1,21 +1,19 @@
 #version 460
-
-layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
-
-layout(set = 0, binding = 0) uniform sampler2D transmittance_lut;
-layout(set = 0, binding = 1) uniform writeonly image2D multiscatter_lut;
-
 // per MM, as per: https://www.shadertoy.com/view/slSXRW
 const float PLANET_RADIUS = 6.360;
 const float ATMOSPHERE_RADIUS = 6.460;
-
 const vec3 RAYLEIGH_SCATTERING = vec3(5.802, 13.558, 33.1);
 const float RAYLEIGH_ABSORPTION = 0.0;
-
-const float MIE_SCATTERING = 3.996;
+const float MIE_SCATTERING = 21.996;
 const float MIE_ABSORPTION = 4.4;
-
 const vec3 OZONE_ABSORPTION = vec3(0.650, 1.881, .085);
+
+
+
+layout(local_size_x = 4, local_size_y = 4, local_size_z = 1) in;
+
+layout(set = 0, binding = 0) uniform sampler2D transmittance_lut;
+layout(set = 0, binding = 1) uniform writeonly image2D multiscatter_lut;
 
 const float STEPS = 20.0;
 const int SQRT_SAMPLES = 8;
@@ -30,8 +28,8 @@ void get_scattering_values(
 ) {
     float altitude = (length(p) - PLANET_RADIUS) * 1000.0; // km
 
-    float rayleigh_density = exp(-altitude/8.0);
-    float mie_density = exp(-altitude/1.2);
+    float rayleigh_density = exp(-altitude / 8.0);
+    float mie_density = exp(-altitude / 1.2);
 
     rayleigh_scattering = RAYLEIGH_SCATTERING * rayleigh_density;
     float rayleigh_absorption = RAYLEIGH_ABSORPTION * rayleigh_density;
@@ -88,14 +86,14 @@ void multiscatter(vec3 p, vec3 sun_dir, out vec3 net_luminance, out vec3 fms) {
     net_luminance = vec3(0.0);
     fms = vec3(0.0);
 
-    vec3 planet_center = vec3(p.x, 0.0, p.z);
+    vec3 planet_center = vec3(0.0, 0.0, 0.0);
 
     float inverse_samples = 1.0/float(SQRT_SAMPLES * SQRT_SAMPLES);
     for (int i = 0; i < SQRT_SAMPLES; i++) {
         for (int j = 0; j < SQRT_SAMPLES; j++) {
             // symmetric about theta = 0. only integrate from zero to PI, not zero to 2*PI.
             float theta = PI * (float(i) + 0.5) / float(SQRT_SAMPLES);
-            float phi = acos(1.0 - 2.0*(float(j) + 0.5) / float(SQRT_SAMPLES));
+            float phi = acos(clamp(1.0 - 2.0*(float(j) + 0.5) / float(SQRT_SAMPLES), -1.0, 1.0));
             vec3 d = angle_to_vector(theta, phi);
 
             float t_atmosphere = intersect_sphere(p, d, planet_center, ATMOSPHERE_RADIUS);
@@ -164,8 +162,10 @@ void main() {
 
     vec2 uv = vec2(coord) / imageSize(multiscatter_lut).xy;
 
+    // imageStore(multiscatter_lut, coord.xy, vec4(uv, 0.0, 1.0)); return;
+
     float sun_cos_theta = 2.0 * uv.x - 1.0;
-    float sun_theta = acos(sun_cos_theta);
+    float sun_theta = acos(clamp(sun_cos_theta, -1.0, 1.0));
     float height = mix(PLANET_RADIUS, ATMOSPHERE_RADIUS, uv.y);
 
     vec3 p = vec3(0.0, height, 0.0);

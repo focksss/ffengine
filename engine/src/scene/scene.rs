@@ -10,7 +10,7 @@ use crate::engine::get_command_buffer;
 use crate::math::matrix::Matrix;
 use crate::math::Vector;
 use crate::render::render::{Renderer, MAX_FRAMES_IN_FLIGHT};
-use crate::render::scene_renderer::{get_runtime_s, CameraMatrixUniformData, SceneRenderer};
+use crate::render::scene_renderer::{CameraMatrixUniformData, SceneRenderer};
 use crate::render::vulkan_base::{copy_buffer_synchronous, copy_data_to_memory, Context, VkBase};
 use crate::scene::physics::hitboxes::bounding_box::BoundingBox;
 use crate::scene::physics::hitboxes::capsule::Capsule;
@@ -30,6 +30,8 @@ use crate::scene::world::world::{World};
 
 pub struct Scene {
     context: Arc<Context>,
+
+    pub runtime: f32,
 
     pub running: bool,
 
@@ -60,6 +62,7 @@ impl Scene {
         let mut scene = Self {
             context: context.clone(),
 
+            runtime: 0.0,
             running: false,
 
             entities: Vec::new(),
@@ -418,7 +421,9 @@ impl Scene {
         if self.running || force_run {
             self.update_physics_objects(delta_time);
 
-            self.world.borrow_mut().sun.vector = Vector::new3(0.3, f32::sin(get_runtime_s() * 0.5), f32::cos(get_runtime_s() * 0.5));
+            self.runtime += delta_time;
+
+            self.world.borrow_mut().sun.vector = Vector::new3(0.55, f32::sin(self.runtime * 0.05), f32::cos(-self.runtime * 0.05));
         }
         if frame == 0 {
             if self.running || force_run {

@@ -30,6 +30,11 @@ impl UserData for SceneRef {
             scene.running = val;
             Ok(())
         });
+
+        fields.add_field_method_get("runtime", |lua, this| {
+            with_scene!(lua => scene);
+            Ok(scene.runtime)
+        });
     }
     fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
         methods.add_method("get_entity", |lua, this, index: usize| {

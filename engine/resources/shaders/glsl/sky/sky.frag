@@ -5,7 +5,7 @@ layout(set = 0, binding = 1) uniform sampler3D cloud_shaping;
 layout(set = 0, binding = 2) uniform sampler3D cloud_detailing;
 layout(set = 0, binding = 3) uniform sampler2D cloud_weather_map;
 layout(set = 0, binding = 4) uniform sampler2D atmosphere_transmittance_lut;
-layout(set = 0, binding = 5) uniform sampler2D atmosphere_multiscatter_lut;
+layout(set = 0, binding = 5) uniform sampler2D atmosphere_sky_view_lut;
 layout(set = 0, binding = 6) uniform SunUBO {
     vec3 SUN_DIR;
     float pad;
@@ -61,13 +61,15 @@ const vec3 SUN_INTENSITY = vec3(20.0);
 const int ATMOSPHERE_IN_SCATTERING_STEPS = 8;
 const int ATMOSPHERE_OPTICAL_DEPTH_STEPS = 8;
 
+const float PI = 3.14159263;
+
 bool intersect_sphere(
-    vec3 o,
-    vec3 d,
-    vec3 center,
-    float radius,
-    out float t0,
-    out float t1
+vec3 o,
+vec3 d,
+vec3 center,
+float radius,
+out float t0,
+out float t1
 ) {
     vec3 oc = o - center;
     float b = dot(oc, d);
@@ -84,12 +86,12 @@ bool intersect_sphere(
 }
 
 bool intersect_aabb(
-    vec3 o,
-    vec3 d,
-    vec3 bmin,
-    vec3 bmax,
-    out float t_min,
-    out float t_max
+vec3 o,
+vec3 d,
+vec3 bmin,
+vec3 bmax,
+out float t_min,
+out float t_max
 ) {
     vec3 inv_d = 1.0 / d;
 
@@ -143,7 +145,7 @@ vec2 optical_depth(vec3 o, vec3 d, float t) {
 
     return optical_depth_accum;
 }
-vec3 calculate_atmosphere(vec3 o, vec3 d, float max_dist) {
+vec3 calculate_atmosphere2(vec3 o, vec3 d, float max_dist) {
     float t_min, t_max;
     if (!intersect_sphere(o, d, PLANET_CENTER, ATMOSPHERE_RADIUS, t_min, t_max)) {
         return vec3(0.0);
@@ -211,6 +213,86 @@ vec3 atmosphere_transmittance(vec3 o, vec3 d, float t) {
     return exp(-(RAYLEIGH_SCATTERING * od.x + MIE_SCATTERING * od.y));
 }
 
+vec3 jodie_reinhard_tonemap(vec3 c){
+    float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+    vec3 tc = c / (c + 1.0);
+    return mix(c / (l + 1.0), tc, tc);
+}
+vec3 get_transmittance(vec3 p, vec3 sun_dir) {
+    float height = length(p);
+    vec3 up = p / height;
+    float sun_cos_zenith_angle = dot(sun_dir, up);
+    vec2 uv = vec2(
+    clamp(0.5 + 0.5 * sun_cos_zenith_angle, 0.0, 1.0),
+    max(0.0, min(1.0, (height - PLANET_RADIUS) / (ATMOSPHERE_RADIUS - PLANET_RADIUS)))
+    );
+    return texture(atmosphere_transmittance_lut, uv).rgb;
+}
+vec3 sunWithBloom(vec3 rayDir, vec3 sunDir) {
+    const float sunSolidAngle = 2.0*PI/180.0;
+    const float minSunCosTheta = cos(sunSolidAngle);
+
+    float cosTheta = dot(rayDir, sunDir);
+    if (cosTheta >= minSunCosTheta) return vec3(1.0);
+
+    float offset = minSunCosTheta - cosTheta;
+    float gaussianBloom = exp(-offset*50000.0)*0.5;
+    float invBloom = 1.0/(0.02 + offset*300.0)*0.01;
+    return vec3(gaussianBloom+invBloom);
+}
+vec3 calculate_atmosphere(vec3 o, vec3 d, float t) {
+    vec3 o_MM = o * 1e-6 + vec3(0.0, 6.360 + 0.0002, 0.0);
+    float height = length(o_MM);
+    vec3 up = o_MM / height;
+
+    float horizon = acos(clamp(sqrt(height * height - 6.360 * 6.360) / height, -1.0, 1.0));
+    float altitude = horizon - acos(dot(d, up));
+
+    float azimuth;
+    if (abs(altitude) > (0.5 * PI - .0001)) {
+        azimuth = 0.0;
+    } else {
+        vec3 right = cross(SUN_DIR, up);
+        vec3 forward = cross(up, right);
+
+        vec3 projected_d = normalize(d - up * (dot(d, up)));
+        float sin_theta = dot(projected_d, right);
+        float cos_theta = dot(projected_d, forward);
+        azimuth = atan(sin_theta, cos_theta) + PI;
+    }
+
+    float v = 0.5 + 0.5 * sign(altitude) * sqrt(abs(altitude) * 2.0 / PI);
+    vec2 sky_uv = vec2(azimuth / (2.0 * PI), v);
+
+    vec3 luminance = texture(atmosphere_sky_view_lut, sky_uv).rgb;
+
+    // /*
+    vec3 sunLum = sunWithBloom(d, SUN_DIR);
+    // Use smoothstep to limit the effect, so it drops off to actual zero.
+    sunLum = smoothstep(0.002, 1.0, sunLum);
+    if (length(sunLum) > 0.0) {
+        float t0, t1;
+        if (intersect_sphere(o_MM, d, vec3(0.0), 6.360, t0, t1)) {
+            sunLum *= 0.0;
+        } else {
+            sunLum *= get_transmittance(o_MM, SUN_DIR);
+        }
+    }
+    luminance += sunLum;
+
+    // Tonemapping and gamma. Super ad-hoc, probably a better way to do this.
+    luminance *= 20.0;
+    luminance = pow(luminance, vec3(1.3));
+    luminance /= (smoothstep(0.0, 0.2, clamp(SUN_DIR.y, 0.0, 1.0))*2.0 + 0.15);
+
+    luminance = jodie_reinhard_tonemap(luminance);
+
+    luminance = pow(luminance, vec3(1.0/2.2));
+    // */
+
+    return luminance;
+}
+
 float sample_density(vec3 p) {
     float sample_height = (p.y - MIN) / (MAX - MIN);
     // https://www.desmos.com/calculator/rqxctltcfe
@@ -266,12 +348,13 @@ vec3 lightmarch(vec3 p, vec3 cloud_min, vec3 cloud_max) {
 }
 
 void main() {
-//
-//if (uv.x < 0.5) {
-//color = texture(atmosphere_transmittance_lut, uv * vec2(2.0, 1.0));
-//} else {
-//color = vec4(texture(atmosphere_multiscatter_lut, uv * vec2(2.0, 1.0)).rgb, 1.0);
-//}return;
+    if (uv.x < 0.4 && uv.y < 0.4) { color = vec4(texture(atmosphere_sky_view_lut, uv * 2.5).rgb / 0.01053, 1.0); return; }
+    //
+    //if (uv.x < 0.5) {
+    //color = texture(atmosphere_transmittance_lut, uv * vec2(2.0, 1.0));
+    //} else {
+    //color = vec4(texture(atmosphere_multiscatter_lut, uv * vec2(2.0, 1.0)).rgb, 1.0);
+    //}return;
 
 
     mat4 inverse_projection = inverse(constants.projection);
@@ -343,6 +426,7 @@ void main() {
 
     float max_atmosphere_dist = sky_hit ? 1e6 : t_geometry;
     vec3 atmosphere_color = calculate_atmosphere(o, d, max_atmosphere_dist);
+    color = vec4(atmosphere_color, 1.0); return;
 
     vec3 atmosphere_transmittance = atmosphere_transmittance(o, d, t_geometry);
 

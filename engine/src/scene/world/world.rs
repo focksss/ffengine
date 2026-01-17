@@ -96,7 +96,7 @@ impl World {
 
             cameras: Vec::new(),
             lights: Vec::new(),
-            sun: Sun::new_sun(Vector::new3(-1.0, -5.0, -1.0), Vector::new3(0.98, 0.84, 0.64)),
+            sun: Sun::new_sun(Vector::new3(0.55, 0.0, -1.0).normalize3(), Vector::new3(0.98, 0.84, 0.64)),
             buffers_need_update: false,
 
             loaded_files: HashMap::new(),

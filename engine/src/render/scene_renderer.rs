@@ -25,11 +25,6 @@ const SSAO_KERNAL_SIZE: usize = 16;
 const SSAO_RESOLUTION_MULTIPLIER: f32 = 0.5;
 pub const SHADOW_RES: u32 = 2048;
 
-static APP_START: LazyLock<Instant> = LazyLock::new(Instant::now);
-pub fn get_runtime_s() -> f32 {
-    APP_START.elapsed().as_secs_f32()
-}
-
 //TODO() FIX SSAO UPSAMPLING
 pub struct SceneRenderer {
     context: Arc<Context>,
@@ -47,6 +42,7 @@ pub struct SceneRenderer {
     pub opaque_forward_renderpass: Renderpass,
 
     pub outline_renderpass: Renderpass,
+    pub sky_view_lut_renderpass: Renderpass,
     pub sky_renderpass: Renderpass,
 
     pub ssao_pre_downsample_renderpass: Renderpass,
@@ -115,6 +111,7 @@ impl SceneRenderer {
             lighting_renderpass,
             outline_renderpass,
             cloud_renderpass,
+            sky_view_lut_renderpass,
         ) = SceneRenderer::create_rendering_objects(context, &null_texture, &null_tex_sampler, world, viewport);
 
         //<editor-fold desc = "ssao sampling setup">
@@ -188,7 +185,7 @@ impl SceneRenderer {
         context.device.free_memory(staging_buffer_memory, None);
         //</editor-fold>
 
-        //<editor-fold desc = "cloud noise setup">
+        //<editor-fold desc = "sky textures setup">
         let cloud_weather_map_info = TextureCreateInfo::new(context)
             .width(512)
             .height(512)
@@ -228,8 +225,8 @@ impl SceneRenderer {
             );
         let atmosphere_transmittance_lut = Texture::new(&atmosphere_transmittance_lut_info);
         let atmosphere_multiscatter_lut_info = TextureCreateInfo::new(context)
-            .width(32)
-            .height(32)
+            .width(64)
+            .height(64)
             .format(Format::R16G16B16A16_SFLOAT)
             .usage_flags(
                 vk::ImageUsageFlags::SAMPLED |
@@ -452,6 +449,26 @@ impl SceneRenderer {
             //<editor-fold desc = "sky">
             let image_infos = [
                 vk::DescriptorImageInfo {
+                    sampler: repeat_sampler,
+                    image_view: atmosphere_transmittance_lut.device_texture.borrow().image_view,
+                    image_layout: ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                }, // atmosphere transmittance lut
+                vk::DescriptorImageInfo {
+                    sampler: repeat_sampler,
+                    image_view: atmosphere_multiscatter_lut.device_texture.borrow().image_view,
+                    image_layout: ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                }, // atmosphere multiscatter lut
+            ];
+            let descriptor_writes: Vec<vk::WriteDescriptorSet> = image_infos.iter().enumerate().map(|(i, info)| {
+                vk::WriteDescriptorSet::default()
+                    .dst_set(sky_view_lut_renderpass.descriptor_set.borrow().descriptor_sets[current_frame])
+                    .dst_binding(i as u32)
+                    .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
+                    .image_info(slice::from_ref(info))
+            }).collect();
+            context.device.update_descriptor_sets(&descriptor_writes, &[]);
+            let image_infos = [
+                vk::DescriptorImageInfo {
                     sampler,
                     image_view: geometry_renderpass.pass.borrow().textures[current_frame][5].device_texture.borrow().image_view,
                     image_layout: ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
@@ -478,9 +495,9 @@ impl SceneRenderer {
                 }, // atmosphere transmittance lut
                 vk::DescriptorImageInfo {
                     sampler: repeat_sampler,
-                    image_view: atmosphere_multiscatter_lut.device_texture.borrow().image_view,
+                    image_view: sky_view_lut_renderpass.pass.borrow().textures[current_frame][0].device_texture.borrow().image_view,
                     image_layout: ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                }, // atmosphere multiscatter lut
+                }, // atmosphere sky view lut
             ];
             let descriptor_writes: Vec<vk::WriteDescriptorSet> = image_infos.iter().enumerate().map(|(i, info)| {
                 vk::WriteDescriptorSet::default()
@@ -500,7 +517,7 @@ impl SceneRenderer {
             &cloud_weather_map,
             &atmosphere_transmittance_lut,
             &atmosphere_multiscatter_lut,
-            &repeat_sampler,
+            &sampler,
         );
 
         //<editor-fold desc = "editor primitive buffers">
@@ -588,6 +605,7 @@ impl SceneRenderer {
             ssao_upsample_renderpass,
             lighting_renderpass,
             outline_renderpass,
+            sky_view_lut_renderpass,
             sky_renderpass: cloud_renderpass,
 
             cloud_shaping,
@@ -626,6 +644,7 @@ impl SceneRenderer {
         Renderpass, // lighting pass
         Renderpass, // outline pass
         Renderpass, // cloud pass
+        Renderpass, // sky view lut pass
     ) { unsafe {
         let resolution = Extent2D { width: viewport.width as u32, height: viewport.height as u32 };
         let image_infos: Vec<vk::DescriptorImageInfo> = vec![vk::DescriptorImageInfo {
@@ -1239,6 +1258,28 @@ impl SceneRenderer {
             Renderpass::new(renderpass_create_info)
         };
 
+        let sky_view_lut_renderpass = {
+            let descriptor_set_create_info = DescriptorSetCreateInfo::new(context)
+                .add_descriptor(Descriptor::new(&texture_sampler_create_info))
+                .add_descriptor(Descriptor::new(&texture_sampler_create_info));
+
+            let pass_create_info = RenderpassCreateInfo::new(context)
+                .pass_create_info(PassCreateInfo::new(context)
+                    .add_color_attachment_info(TextureCreateInfo::new(context).format(Format::R16G16B16A16_SFLOAT)
+                        .width(256).height(256)))
+                .resolution(Extent2D { width: 256, height: 256 })
+                .descriptor_set_create_info(descriptor_set_create_info)
+                .add_push_constant_range(vk::PushConstantRange {
+                    stage_flags: ShaderStageFlags::FRAGMENT,
+                    offset: 0,
+                    size: size_of::<SkyViewInfo>() as u32,
+                })
+                .add_pipeline_create_info(PipelineCreateInfo::new()
+                    .vertex_shader_uri(String::from("quad\\quad.vert.spv"))
+                    .fragment_shader_uri(String::from("sky\\sky_view_lut.frag.spv")));
+                Renderpass::new(pass_create_info)
+        };
+
         let cloud_renderpass = {
             let light_pass = lighting_renderpass.pass.borrow();
 
@@ -1299,7 +1340,8 @@ impl SceneRenderer {
             ssao_upsample_renderpass,
             lighting_renderpass,
             outline_renderpass,
-            cloud_renderpass
+            cloud_renderpass,
+            sky_view_lut_renderpass,
         )
     } }
     pub fn update_world_textures_all_frames(&self, world: &World) {
@@ -1402,7 +1444,7 @@ impl SceneRenderer {
         let ubo = SkyInfo {
             sun_direction: Vector::from_array(&sun_sendable.vector).normalize3().to_array3(),
             _pad: 0.0,
-            t: get_runtime_s(),
+            t: scene.runtime,
         };
         copy_data_to_memory(self.sky_renderpass.descriptor_set.borrow().descriptors[6].owned_buffers.2[current_frame], &[ubo]);
         let camera_constants = CameraMatrixUniformData {
@@ -1554,6 +1596,24 @@ impl SceneRenderer {
             Some((ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL, ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL, vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE)),
         );
 
+        self.sky_view_lut_renderpass.do_renderpass(
+            current_frame,
+            frame_command_buffer,
+            Some(|| {
+                device.cmd_push_constants(frame_command_buffer, self.sky_view_lut_renderpass.pipeline_layout, ShaderStageFlags::FRAGMENT, 0, slice::from_raw_parts(
+                    &SkyViewInfo {
+                        sun_direction: sun_sendable.vector,
+                        _pad: 0.0,
+                        view_position: player_camera.position.to_array3()
+                    } as *const SkyViewInfo as *const u8,
+                    size_of::<SkyViewInfo>(),
+                ))
+            }),
+            None::<fn()>,
+            None,
+            Transition::ALL
+        );
+
         self.sky_renderpass.do_renderpass(
             current_frame,
             frame_command_buffer,
@@ -1605,6 +1665,7 @@ impl SceneRenderer {
         self.lighting_renderpass.destroy();
         self.outline_renderpass.destroy();
         self.sky_renderpass.destroy();
+        self.sky_view_lut_renderpass.destroy();
 
         self.ssao_noise_texture.destroy();
         self.cloud_detailing.destroy();
@@ -1848,7 +1909,12 @@ unsafe fn generate_sky_textures(
         0,
         command_buffers[0],
         Some(|| {
-            context.device.cmd_dispatch(command_buffers[0], 256 / sub_divs, 64 / sub_divs, 1);
+            context.device.cmd_dispatch(
+                command_buffers[0],
+                atmosphere_transmittance_lut.resolution.width / sub_divs,
+                atmosphere_transmittance_lut.resolution.height / sub_divs,
+                1
+            );
         }),
         None, None
     );
@@ -1865,7 +1931,11 @@ unsafe fn generate_sky_textures(
         0,
         command_buffers[0],
         Some(|| {
-            context.device.cmd_dispatch(command_buffers[0], 32 / sub_divs, 32 / sub_divs, 1);
+            context.device.cmd_dispatch(
+                command_buffers[0],
+                atmosphere_multiscatter_lut.resolution.width / sub_divs,
+                atmosphere_multiscatter_lut.resolution.height / sub_divs,
+                1);
         }),
         None, None
     );
@@ -1982,6 +2052,13 @@ struct SkyInfo {
     sun_direction: [f32; 3],
     _pad: f32,
     t: f32,
+}
+#[derive(Clone, Debug, Copy)]
+#[repr(C)]
+struct SkyViewInfo {
+    sun_direction: [f32; 3],
+    _pad: f32,
+    view_position: [f32; 3],
 }
 /*
         let equirectangular_to_cubemap_pass_create_info = PassCreateInfo::new(context)
