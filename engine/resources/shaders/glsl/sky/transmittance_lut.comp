@@ -14,17 +14,16 @@ layout(local_size_x = 4, local_size_y = 4, local_size_z = 1) in;
 
 layout(set = 0, binding = 0) uniform writeonly image2D lut;
 
-const float TRANSMITTANCE_STEPS = 40.0;
+const float TRANSMITTANCE_STEPS = 80.0;
 
-float intersect_sphere(vec3 o, vec3 d, vec3 sc, float r) {
-    vec3 ro = o - sc;
-    float b = dot(ro, d);
-    float c = dot(ro, ro) - r * r;
+float intersect_sphere(vec3 o, vec3 d, float r) {
+    float b = dot(o, d);
+    float c = dot(o, o) - r*r;
     if (c > 0.0f && b > 0.0) return -1.0;
-    float discriminant = b*b - c;
-    if (discriminant < 0.0) return -1.0;
-    if (discriminant > b * b) return (-b + sqrt(discriminant));
-    return -b - sqrt(discriminant);
+    float discr = b*b - c;
+    if (discr < 0.0) return -1.0;
+    if (discr > b*b) return (-b + sqrt(discr));
+    return -b - sqrt(discr);
 }
 
 void get_scattering_values(
@@ -49,12 +48,11 @@ void get_scattering_values(
     extinction = rayleigh_scattering + rayleigh_absorption + mie_scattering + mie_absorption + ozone_absorption;
 }
 vec3 sun_transmittance(vec3 p, vec3 sun_dir) {
-    vec3 planet_center = vec3(p.x, 0.0, p.z);
-    if (intersect_sphere(p, sun_dir, planet_center, PLANET_RADIUS) > 0.0) {
+    if (intersect_sphere(p, sun_dir, PLANET_RADIUS) > 0.0) {
         return vec3(0.0);
     }
 
-    float t_max = intersect_sphere(p, sun_dir, planet_center, ATMOSPHERE_RADIUS);
+    float t_max = intersect_sphere(p, sun_dir, ATMOSPHERE_RADIUS);
     float t = 0.0;
 
     vec3 transmittance = vec3(1.0);

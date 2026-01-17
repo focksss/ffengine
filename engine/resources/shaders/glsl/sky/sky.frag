@@ -348,7 +348,7 @@ vec3 lightmarch(vec3 p, vec3 cloud_min, vec3 cloud_max) {
 }
 
 void main() {
-    if (uv.x < 0.4 && uv.y < 0.4) { color = vec4(texture(atmosphere_sky_view_lut, uv * 2.5).rgb / 0.01053, 1.0); return; }
+    if (uv.x < 0.4 && uv.y < 0.4) { color = vec4(texture(atmosphere_sky_view_lut, uv * 2.5).rgb / 0.2, 1.0); return; }
     //
     //if (uv.x < 0.5) {
     //color = texture(atmosphere_transmittance_lut, uv * vec2(2.0, 1.0));
