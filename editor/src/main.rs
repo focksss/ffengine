@@ -112,6 +112,7 @@ fn main() { unsafe {
             scene.add_rigid_body_from_entity(ground, 3, true);
 
             scene.add_rigid_body_from_entity(ball, 3, false);
+            scene.add_rigid_body_from_entity(ball2, 3, false);
         }
 
         /*

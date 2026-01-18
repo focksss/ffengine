@@ -114,105 +114,6 @@ float saturate(float v) {
     return clamp(v, 0.0, 1.0);
 }
 
-vec2 atmosphere_density(vec3 p) {
-    float height = length(p - PLANET_CENTER) - PLANET_RADIUS;
-    height = max(0.0, height);
-
-    float rayleigh = exp(-height / RAYLEIGH_SCALE_HEIGHT);
-    float mie = exp(-height / MIE_SCALE_HEIGHT);
-
-    return vec2(rayleigh, mie);
-}
-float rayleigh_phase(float cos_theta) {
-    return (3.0 / (16.0 * 3.14159)) * (1.0 + cos_theta * cos_theta);
-}
-float mie_phase(float cos_theta, float g) {
-    float g2 = g * g;
-    return (1.0 / (4.0 * 3.14159)) * ((1.0 - g2) / pow(1.0 + g2 - 2.0 * g * cos_theta, 1.5));
-}
-// returns rayleigh-mie
-vec2 optical_depth(vec3 o, vec3 d, float t) {
-    vec3 p = o;
-    float step_size = t / float(ATMOSPHERE_OPTICAL_DEPTH_STEPS);
-
-    vec2 optical_depth_accum = vec2(0.0);
-
-    for (int i = 0; i < ATMOSPHERE_OPTICAL_DEPTH_STEPS; i++) {
-        vec2 density = atmosphere_density(p);
-        optical_depth_accum += density * step_size;
-        p += d * step_size;
-    }
-
-    return optical_depth_accum;
-}
-vec3 calculate_atmosphere(vec3 o, vec3 d, float max_dist) {
-    float t_min, t_max;
-    if (!intersect_sphere(o, d, PLANET_CENTER, ATMOSPHERE_RADIUS, t_min, t_max)) {
-        return vec3(0.0);
-    }
-
-    // hit surface
-    float t_ground_min, t_ground_max;
-    bool hit_ground = intersect_sphere(o, d, PLANET_CENTER, PLANET_RADIUS, t_ground_min, t_ground_max);
-
-    t_min = max(0.0, t_min);
-    t_max = min(t_max, max_dist);
-
-    if (hit_ground && t_ground_min > 0.0) {
-        t_max = min(t_max, t_ground_min);
-    }
-
-    float t = t_max - t_min;
-    if (t <= 0.0) return vec3(0.0);
-
-    float step_size = t / float(ATMOSPHERE_IN_SCATTERING_STEPS);
-    vec3 p = o + d * (t_min + step_size * 0.5);
-
-    vec3 rayleigh_accum = vec3(0.0);
-    vec3 mie_accum = vec3(0.0);
-    vec2 optical_depth_accum = vec2(0.0);
-
-    float cos_theta = dot(d, SUN_DIR);
-    float rayleigh_phase_value = rayleigh_phase(cos_theta);
-    float mie_phase_value = mie_phase(cos_theta, MIE_G);
-
-    for (int i = 0; i < ATMOSPHERE_IN_SCATTERING_STEPS; i++) {
-        vec2 density = atmosphere_density(p);
-        optical_depth_accum += density * step_size;
-
-        // sun to sample point
-        float t_light_min, t_light_max;
-        intersect_sphere(p, SUN_DIR, PLANET_CENTER, ATMOSPHERE_RADIUS, t_light_min, t_light_max);
-        vec2 light_od = optical_depth(p, SUN_DIR, t_light_max);
-
-        // Calculate attenuation
-        vec2 total_od = optical_depth_accum + light_od;
-        vec3 attenuation = exp(-(RAYLEIGH_SCATTERING * total_od.x + MIE_SCATTERING * total_od.y));
-
-        rayleigh_accum += density.x * attenuation * step_size;
-        mie_accum += density.y * attenuation * step_size;
-
-        p += d * step_size;
-    }
-
-    vec3 rayleigh = rayleigh_accum * RAYLEIGH_SCATTERING * rayleigh_phase_value;
-    vec3 mie = mie_accum * MIE_SCATTERING * mie_phase_value;
-
-    return (rayleigh + mie) * SUN_INTENSITY;
-}
-vec3 atmosphere_transmittance(vec3 o, vec3 d, float t) {
-    float t_min, t_max;
-    if (!intersect_sphere(o, d, PLANET_CENTER, ATMOSPHERE_RADIUS, t_min, t_max)) {
-        return vec3(1.0);
-    }
-
-    t_min = max(0.0, t_min);
-    t_max = min(t_max, t);
-
-    vec2 od = optical_depth(o, d, t_max - t_min);
-    return exp(-(RAYLEIGH_SCATTERING * od.x + MIE_SCATTERING * od.y));
-}
-
 vec3 jodie_reinhard_tonemap(vec3 c){
     float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
     vec3 tc = c / (c + 1.0);
@@ -228,19 +129,7 @@ vec3 get_transmittance(vec3 p, vec3 sun_dir) {
     );
     return texture(atmosphere_transmittance_lut, uv).rgb;
 }
-vec3 sunWithBloom(vec3 rayDir, vec3 sunDir) {
-    const float sunSolidAngle = 2.0*PI/180.0;
-    const float minSunCosTheta = cos(sunSolidAngle);
-
-    float cosTheta = dot(rayDir, sunDir);
-    if (cosTheta >= minSunCosTheta) return vec3(1.0);
-
-    float offset = minSunCosTheta - cosTheta;
-    float gaussianBloom = exp(-offset*50000.0)*0.5;
-    float invBloom = 1.0/(0.02 + offset*300.0)*0.01;
-    return vec3(gaussianBloom+invBloom);
-}
-vec3 calculate_atmosphere2(vec3 o, vec3 d) {
+vec3 calculate_atmosphere(vec3 o, vec3 d) {
     vec3 o_MM = o * 1e-6 + vec3(0.0, 6.360 + 0.0002, 0.0);
     float height = length(o_MM);
     vec3 up = o_MM / height;
@@ -267,18 +156,6 @@ vec3 calculate_atmosphere2(vec3 o, vec3 d) {
     vec3 luminance = texture(atmosphere_sky_view_lut, sky_uv).rgb;
 
     // /*
-    vec3 sunLum = sunWithBloom(d, SUN_DIR);
-    // Use smoothstep to limit the effect, so it drops off to actual zero.
-    sunLum = smoothstep(0.002, 1.0, sunLum);
-    if (length(sunLum) > 0.0) {
-        float t0, t1;
-        if (intersect_sphere(o_MM, d, vec3(0.0), 6.360, t0, t1)) {
-            sunLum *= 0.0;
-        } else {
-            sunLum *= get_transmittance(o_MM, SUN_DIR);
-        }
-    }
-    luminance += sunLum;
 
     // Tonemapping and gamma. Super ad-hoc, probably a better way to do this.
     luminance *= 20.0;
@@ -344,11 +221,10 @@ vec3 lightmarch(vec3 p, vec3 cloud_min, vec3 cloud_max) {
 
     float shadow = DARKNESS_THRESHOLD + exp(-accum_density * ABSORPTION_TOWARDS_SUN) * (1.0 - DARKNESS_THRESHOLD);
 
-    return shadow * calculate_atmosphere(p, SUN_DIR, 10000.0);
+    return shadow * calculate_atmosphere(p, SUN_DIR);
 }
 
 void main() {
-    if (uv.x < 0.4 && uv.y < 0.4) { color = vec4(texture(atmosphere_sky_view_lut, uv * 2.5).rgb / 0.2, 1.0); return; }
     //
     //if (uv.x < 0.5) {
     //color = texture(atmosphere_transmittance_lut, uv * vec2(2.0, 1.0));
@@ -392,7 +268,7 @@ void main() {
 
     float travel_distance = min(t_max, t_geometry) - t_min;
 
-    float transmittance = 1.0;
+    float cloud_transmittance = 1.0;
     vec3 energy = vec3(0.0);
     if (do_march) {
         vec3 entrance = o + t_min * d;
@@ -405,10 +281,10 @@ void main() {
             if (density > 0.0) {
 
                 vec3 sample_energy = lightmarch(p, cloud_min, cloud_max);
-                energy += density * step_size * transmittance * sample_energy * phase;
-                transmittance *= exp(-density * step_size * ABSORPTION_THROUGH_CLOUD);
+                energy += density * step_size * cloud_transmittance * sample_energy * phase;
+                cloud_transmittance *= exp(-density * step_size * ABSORPTION_THROUGH_CLOUD);
 
-                if (transmittance < 0.01) break;
+                if (cloud_transmittance < 0.01) break;
             }
 
             t += step_size;
@@ -422,19 +298,18 @@ void main() {
         float eye_focus = pow(saturate(cos_theta), 1.3);
         float sun_factor = saturate(henyey_greenstein(eye_focus, 0.9995));
 
-        vec3 sun_transmittance = atmosphere_transmittance(o, d, 1e6);
-        sun = sun_col * sun_factor * sun_transmittance * transmittance;
+        vec3 sun_transmittance = get_transmittance(o * 1e-6 + vec3(0.0, PLANET_RADIUS + 0.0002, 0.0), SUN_DIR);
+        sun = sun_col * sun_factor * sun_transmittance * cloud_transmittance;
     }
 
-    // vec3 atmosphere_color = calculate_atmosphere(o, d, max_atmosphere_dist);
-    vec3 atmosphere_color = calculate_atmosphere2(o, d);
+    vec3 atmosphere_color = calculate_atmosphere(o, d);
 
-    vec3 atmosphere_transmittance = atmosphere_transmittance(o, d, t_geometry);
+    vec3 atmosphere_transmittance = get_transmittance(o, SUN_DIR);
 
     vec3 final_color = atmosphere_color;
 
     if (do_march) {
-        final_color = final_color * transmittance + energy;
+        final_color = final_color * cloud_transmittance + energy;
     }
 
     final_color += sun;
@@ -443,7 +318,7 @@ void main() {
         final_color *= atmosphere_transmittance;
     }
 
-    float final_alpha = sky_hit ? 1.0 : (1.0 - transmittance * atmosphere_transmittance.r);
+    float final_alpha = sky_hit ? 1.0 : (1.0 - cloud_transmittance * atmosphere_transmittance.r);
 
     color = vec4(final_color, final_alpha);
 }
