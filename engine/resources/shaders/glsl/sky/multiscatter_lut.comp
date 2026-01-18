@@ -18,11 +18,17 @@ layout(set = 0, binding = 1) uniform writeonly image2D multiscatter_lut;
 const float STEPS = 20.0;
 const int SQRT_SAMPLES = 4;
 
-const float TRANSMITTANCE_STEPS = 20.0;
-
-
 const float PI = 3.14159265358979323846264338327950288419716939937510;
 
+float intersect_sphere(vec3 o, vec3 d, float r) {
+    float b = dot(o, d);
+    float c = dot(o, o) - r*r;
+    if (c > 0.0f && b > 0.0) return -1.0;
+    float discr = b*b - c;
+    if (discr < 0.0) return -1.0;
+    if (discr > b*b) return (-b + sqrt(discr));
+    return -b - sqrt(discr);
+}
 void get_scattering_values(
     vec3 p,
     out vec3 rayleigh_scattering,
@@ -44,15 +50,7 @@ void get_scattering_values(
 
     extinction = rayleigh_scattering + rayleigh_absorption + mie_scattering + mie_absorption + ozone_absorption;
 }
-float intersect_sphere(vec3 o, vec3 d, float r) {
-    float b = dot(o, d);
-    float c = dot(o, o) - r*r;
-    if (c > 0.0f && b > 0.0) return -1.0;
-    float discr = b*b - c;
-    if (discr < 0.0) return -1.0;
-    if (discr > b*b) return (-b + sqrt(discr));
-    return -b - sqrt(discr);
-}
+const float TRANSMITTANCE_STEPS = 20.0;
 vec3 get_transmittance(vec3 p, vec3 sun_dir) {
     if (intersect_sphere(p, sun_dir, PLANET_RADIUS) > 0.0) {
         return vec3(0.0);
@@ -77,6 +75,7 @@ vec3 get_transmittance(vec3 p, vec3 sun_dir) {
     }
     return transmittance;
 }
+
 vec3 angle_to_vector(float theta, float phi) {
     float cp = cos(phi);
     float sp = sin(phi);

@@ -145,7 +145,7 @@ vec2 optical_depth(vec3 o, vec3 d, float t) {
 
     return optical_depth_accum;
 }
-vec3 calculate_atmosphere2(vec3 o, vec3 d, float max_dist) {
+vec3 calculate_atmosphere(vec3 o, vec3 d, float max_dist) {
     float t_min, t_max;
     if (!intersect_sphere(o, d, PLANET_CENTER, ATMOSPHERE_RADIUS, t_min, t_max)) {
         return vec3(0.0);
@@ -172,7 +172,7 @@ vec3 calculate_atmosphere2(vec3 o, vec3 d, float max_dist) {
     vec3 mie_accum = vec3(0.0);
     vec2 optical_depth_accum = vec2(0.0);
 
-    float cos_theta = dot(d, -SUN_DIR);
+    float cos_theta = dot(d, SUN_DIR);
     float rayleigh_phase_value = rayleigh_phase(cos_theta);
     float mie_phase_value = mie_phase(cos_theta, MIE_G);
 
@@ -182,8 +182,8 @@ vec3 calculate_atmosphere2(vec3 o, vec3 d, float max_dist) {
 
         // sun to sample point
         float t_light_min, t_light_max;
-        intersect_sphere(p, -SUN_DIR, PLANET_CENTER, ATMOSPHERE_RADIUS, t_light_min, t_light_max);
-        vec2 light_od = optical_depth(p, -SUN_DIR, t_light_max);
+        intersect_sphere(p, SUN_DIR, PLANET_CENTER, ATMOSPHERE_RADIUS, t_light_min, t_light_max);
+        vec2 light_od = optical_depth(p, SUN_DIR, t_light_max);
 
         // Calculate attenuation
         vec2 total_od = optical_depth_accum + light_od;
@@ -222,9 +222,13 @@ vec3 get_transmittance(vec3 p, vec3 sun_dir) {
     float height = length(p);
     vec3 up = p / height;
     float sun_cos_zenith_angle = dot(sun_dir, up);
+
+    const float planet_radius = 6.360;
+    const float atmosphere_radius = 6.460;
+
     vec2 uv = vec2(
     clamp(0.5 + 0.5 * sun_cos_zenith_angle, 0.0, 1.0),
-    max(0.0, min(1.0, (height - PLANET_RADIUS) / (ATMOSPHERE_RADIUS - PLANET_RADIUS)))
+    max(0.0, min(1.0, (height - planet_radius) / (atmosphere_radius - planet_radius)))
     );
     return texture(atmosphere_transmittance_lut, uv).rgb;
 }
@@ -240,7 +244,7 @@ vec3 sunWithBloom(vec3 rayDir, vec3 sunDir) {
     float invBloom = 1.0/(0.02 + offset*300.0)*0.01;
     return vec3(gaussianBloom+invBloom);
 }
-vec3 calculate_atmosphere(vec3 o, vec3 d, float t) {
+vec3 calculate_atmosphere2(vec3 o, vec3 d) {
     vec3 o_MM = o * 1e-6 + vec3(0.0, 6.360 + 0.0002, 0.0);
     float height = length(o_MM);
     vec3 up = o_MM / height;
@@ -327,7 +331,7 @@ float phase(float a) {
 }
 vec3 lightmarch(vec3 p, vec3 cloud_min, vec3 cloud_max) {
 
-    vec3 d = -SUN_DIR;
+    vec3 d = SUN_DIR;
     float t_min = 0.0;
     float t_max = 0.0;
     intersect_aabb(p, d, cloud_min, cloud_max, t_min, t_max);
@@ -344,11 +348,11 @@ vec3 lightmarch(vec3 p, vec3 cloud_min, vec3 cloud_max) {
 
     float shadow = DARKNESS_THRESHOLD + exp(-accum_density * ABSORPTION_TOWARDS_SUN) * (1.0 - DARKNESS_THRESHOLD);
 
-    return shadow * calculate_atmosphere(p, -SUN_DIR, 10000.0);
+    return shadow * calculate_atmosphere(p, SUN_DIR, 10000.0);
 }
 
 void main() {
-    if (uv.x < 0.4 && uv.y < 0.4) { color = vec4(texture(atmosphere_sky_view_lut, uv * 2.5).rgb / 0.2, 1.0); return; }
+    // if (uv.x < 0.4 && uv.y < 0.4) { color = vec4(texture(atmosphere_sky_view_lut, uv * 2.5).rgb / 0.2, 1.0); return; }
     //
     //if (uv.x < 0.5) {
     //color = texture(atmosphere_transmittance_lut, uv * vec2(2.0, 1.0));
@@ -383,9 +387,16 @@ void main() {
     vec3 geometry_p = (inverse_view * vec4(view_pos.xyz, 1.0)).xyz;
     float t_geometry = dot(geometry_p - o, d);
 
+    float max_atmosphere_dist = sky_hit ? 1e6 : t_geometry;
+
+
+    color = vec4(calculate_atmosphere(o, d, max_atmosphere_dist), 1.0); return; // raymarch
+    // color = vec4(calculate_atmosphere2(o, d), 1.0); return; // lut
+
+
     if (t_min > t_geometry) do_march = false;
 
-    float cos_theta = dot(d, -normalize(SUN_DIR));
+    float cos_theta = dot(d, SUN_DIR);
     float phase = phase(cos_theta);
 
     float travel_distance = min(t_max, t_geometry) - t_min;
@@ -424,9 +435,8 @@ void main() {
         sun = sun_col * sun_factor * sun_transmittance * transmittance;
     }
 
-    float max_atmosphere_dist = sky_hit ? 1e6 : t_geometry;
-    vec3 atmosphere_color = calculate_atmosphere(o, d, max_atmosphere_dist);
-    color = vec4(atmosphere_color, 1.0); return;
+    // vec3 atmosphere_color = calculate_atmosphere(o, d, max_atmosphere_dist);
+    vec3 atmosphere_color = calculate_atmosphere2(o, d);
 
     vec3 atmosphere_transmittance = atmosphere_transmittance(o, d, t_geometry);
 

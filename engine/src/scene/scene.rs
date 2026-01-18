@@ -423,7 +423,8 @@ impl Scene {
 
             self.runtime += delta_time;
 
-            self.world.borrow_mut().sun.vector = Vector::new3(0.55, f32::sin(self.runtime * 0.05), f32::cos(-self.runtime * 0.05));
+            // self.world.borrow_mut().sun.vector = Vector::new3(0.55, f32::sin(self.runtime * 0.05), f32::cos(-self.runtime * 0.05));
+            self.world.borrow_mut().sun.vector = Vector::new3(0.55, f32::sin(self.runtime * 0.05), -f32::cos(self.runtime * 0.05)).normalize3();
         }
         if frame == 0 {
             if self.running || force_run {

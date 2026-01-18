@@ -27,6 +27,15 @@ const float PI = 3.14159263;
 
 const int STEPS = 32;
 
+float intersect_sphere(vec3 o, vec3 d, float r) {
+    float b = dot(o, d);
+    float c = dot(o, o) - r*r;
+    if (c > 0.0f && b > 0.0) return -1.0;
+    float discr = b*b - c;
+    if (discr < 0.0) return -1.0;
+    if (discr > b*b) return (-b + sqrt(discr));
+    return -b - sqrt(discr);
+}
 void get_scattering_values(
 vec3 p,
 out vec3 rayleigh_scattering,
@@ -48,15 +57,32 @@ out vec3 extinction
 
     extinction = rayleigh_scattering + rayleigh_absorption + mie_scattering + mie_absorption + ozone_absorption;
 }
-float intersect_sphere(vec3 o, vec3 d, float r) {
-    float b = dot(o, d);
-    float c = dot(o, o) - r*r;
-    if (c > 0.0f && b > 0.0) return -1.0;
-    float discr = b*b - c;
-    if (discr < 0.0) return -1.0;
-    if (discr > b*b) return (-b + sqrt(discr));
-    return -b - sqrt(discr);
+const float TRANSMITTANCE_STEPS = 20.0;
+vec3 get_transmittance(vec3 p, vec3 sun_dir) {
+    if (intersect_sphere(p, sun_dir, PLANET_RADIUS) > 0.0) {
+        return vec3(0.0);
+    }
+
+    float t_max = intersect_sphere(p, sun_dir, ATMOSPHERE_RADIUS);
+    float t = 0.0;
+
+    vec3 transmittance = vec3(1.0);
+    for (float i = 0.0; i < TRANSMITTANCE_STEPS; i += 1.0) {
+        float t_n = ((i + 0.3) / TRANSMITTANCE_STEPS) * t_max;
+        float dt = t_n - t;
+        t = t_n;
+
+        vec3 sample_p = p + t * sun_dir;
+
+        vec3 rayleigh_scattering, extinction;
+        float mie_scattering;
+        get_scattering_values(sample_p, rayleigh_scattering, mie_scattering, extinction);
+
+        transmittance *= exp(-dt * extinction);
+    }
+    return transmittance;
 }
+
 float mie_phase(float cos_theta) {
     const float g = 0.8;
     const float scale = 3.0 / (8.0 * PI);
@@ -71,23 +97,13 @@ float rayleigh_phase(float cos_theta) {
     float k = 3.0 / (16.0 * PI);
     return k * (1.0 + cos_theta * cos_theta);
 }
-vec3 get_transmittance(vec3 p, vec3 sun_dir) {
+vec3 get_multiscatter(vec3 p, vec3 sun_dir) {
     float height = length(p);
     vec3 up = p / height;
     float sun_cos_zenith_angle = dot(sun_dir, up);
     vec2 uv = vec2(
     clamp(0.5 + 0.5 * sun_cos_zenith_angle, 0.0, 1.0),
     max(0.0, min(1.0, (height - PLANET_RADIUS) / (ATMOSPHERE_RADIUS - PLANET_RADIUS)))
-    );
-    return texture(transmittance_lut, uv).rgb;
-}
-vec3 get_multiscatter(vec3 p, vec3 sun_dir) {
-    float height = length(p);
-    vec3 up = p / height;
-    float sun_cos_zenith_angle = dot(sun_dir, up);
-    vec2 uv = vec2(
-        clamp(0.5 + 0.5 * sun_cos_zenith_angle, 0.0, 1.0),
-        max(0.0, min(1.0, (height - PLANET_RADIUS) / (ATMOSPHERE_RADIUS - PLANET_RADIUS)))
     );
     return texture(multiscatter_lut, uv).rgb;
 }
@@ -138,6 +154,8 @@ vec3 raymarch(
 }
 
 void main() {
+    // color = texture(multiscatter_lut, uv); return;
+
     float adj_v;
     if (uv.y < 0.5) {
         float coord = 1.0 - 2.0 * uv.y;
