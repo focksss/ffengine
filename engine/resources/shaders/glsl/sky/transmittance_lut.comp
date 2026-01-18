@@ -75,14 +75,14 @@ vec3 sun_transmittance(vec3 p, vec3 sun_dir) {
 void main() {
     ivec3 coord = ivec3(gl_GlobalInvocationID.xyz);
 
-    vec2 uv = vec2(coord) / imageSize(lut).xy;
+    vec2 uv = (vec2(coord) + 0.5) / vec2(imageSize(lut).xy);
 
     float sun_cos_theta = 2.0 * uv.x - 1.0;
-    float sun_theta = acos(clamp(sun_cos_theta, -1.0, 1.0));
     float height = mix(PLANET_RADIUS, ATMOSPHERE_RADIUS, uv.y);
 
     vec3 p = vec3(0.0, height, 0.0);
-    vec3 sun_dir = normalize(vec3(0.0, sun_cos_theta, -sin(sun_theta)));
+    float sun_sin_theta = sqrt(max(0.0, 1.0 - sun_cos_theta * sun_cos_theta));
+    vec3 sun_dir = vec3(0.0, sun_cos_theta, -sun_sin_theta);
 
     imageStore(lut, coord.xy, vec4(sun_transmittance(p, sun_dir), 1.0));
 }

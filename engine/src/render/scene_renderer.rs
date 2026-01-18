@@ -245,6 +245,14 @@ impl SceneRenderer {
             border_color: vk::BorderColor::FLOAT_OPAQUE_WHITE,
             ..Default::default()
         }, None).unwrap();
+        let clamp_sampler = context.device.create_sampler(&vk::SamplerCreateInfo {
+            mag_filter: vk::Filter::LINEAR,
+            min_filter: vk::Filter::LINEAR,
+            address_mode_u: vk::SamplerAddressMode::CLAMP_TO_EDGE,
+            address_mode_v: vk::SamplerAddressMode::CLAMP_TO_EDGE,
+            address_mode_w: vk::SamplerAddressMode::CLAMP_TO_EDGE,
+            ..Default::default()
+        }, None).unwrap();
         let repeat_sampler = context.device.create_sampler(&vk::SamplerCreateInfo {
             mag_filter: vk::Filter::LINEAR,
             min_filter: vk::Filter::LINEAR,
@@ -449,12 +457,12 @@ impl SceneRenderer {
             //<editor-fold desc = "sky">
             let image_infos = [
                 vk::DescriptorImageInfo {
-                    sampler: repeat_sampler,
+                    sampler: clamp_sampler,
                     image_view: atmosphere_transmittance_lut.device_texture.borrow().image_view,
                     image_layout: ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                 }, // atmosphere transmittance lut
                 vk::DescriptorImageInfo {
-                    sampler: repeat_sampler,
+                    sampler: clamp_sampler,
                     image_view: atmosphere_multiscatter_lut.device_texture.borrow().image_view,
                     image_layout: ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                 }, // atmosphere multiscatter lut
@@ -489,12 +497,12 @@ impl SceneRenderer {
                     image_layout: ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                 }, // cloud detailing
                 vk::DescriptorImageInfo {
-                    sampler: repeat_sampler,
+                    sampler: clamp_sampler,
                     image_view: atmosphere_transmittance_lut.device_texture.borrow().image_view,
                     image_layout: ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                 }, // atmosphere transmittance lut
                 vk::DescriptorImageInfo {
-                    sampler: repeat_sampler,
+                    sampler: clamp_sampler,
                     image_view: sky_view_lut_renderpass.pass.borrow().textures[current_frame][0].device_texture.borrow().image_view,
                     image_layout: ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                 }, // atmosphere sky view lut
@@ -517,7 +525,7 @@ impl SceneRenderer {
             &cloud_weather_map,
             &atmosphere_transmittance_lut,
             &atmosphere_multiscatter_lut,
-            &sampler,
+            &clamp_sampler,
         );
 
         //<editor-fold desc = "editor primitive buffers">

@@ -222,13 +222,9 @@ vec3 get_transmittance(vec3 p, vec3 sun_dir) {
     float height = length(p);
     vec3 up = p / height;
     float sun_cos_zenith_angle = dot(sun_dir, up);
-
-    const float planet_radius = 6.360;
-    const float atmosphere_radius = 6.460;
-
     vec2 uv = vec2(
     clamp(0.5 + 0.5 * sun_cos_zenith_angle, 0.0, 1.0),
-    max(0.0, min(1.0, (height - planet_radius) / (atmosphere_radius - planet_radius)))
+    max(0.0, min(1.0, (height - PLANET_RADIUS) / (ATMOSPHERE_RADIUS - PLANET_RADIUS)))
     );
     return texture(atmosphere_transmittance_lut, uv).rgb;
 }
@@ -352,7 +348,7 @@ vec3 lightmarch(vec3 p, vec3 cloud_min, vec3 cloud_max) {
 }
 
 void main() {
-    // if (uv.x < 0.4 && uv.y < 0.4) { color = vec4(texture(atmosphere_sky_view_lut, uv * 2.5).rgb / 0.2, 1.0); return; }
+    if (uv.x < 0.4 && uv.y < 0.4) { color = vec4(texture(atmosphere_sky_view_lut, uv * 2.5).rgb / 0.2, 1.0); return; }
     //
     //if (uv.x < 0.5) {
     //color = texture(atmosphere_transmittance_lut, uv * vec2(2.0, 1.0));
@@ -388,11 +384,6 @@ void main() {
     float t_geometry = dot(geometry_p - o, d);
 
     float max_atmosphere_dist = sky_hit ? 1e6 : t_geometry;
-
-
-    color = vec4(calculate_atmosphere(o, d, max_atmosphere_dist), 1.0); return; // raymarch
-    // color = vec4(calculate_atmosphere2(o, d), 1.0); return; // lut
-
 
     if (t_min > t_geometry) do_march = false;
 

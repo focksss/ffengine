@@ -57,30 +57,15 @@ out vec3 extinction
 
     extinction = rayleigh_scattering + rayleigh_absorption + mie_scattering + mie_absorption + ozone_absorption;
 }
-const float TRANSMITTANCE_STEPS = 20.0;
 vec3 get_transmittance(vec3 p, vec3 sun_dir) {
-    if (intersect_sphere(p, sun_dir, PLANET_RADIUS) > 0.0) {
-        return vec3(0.0);
-    }
-
-    float t_max = intersect_sphere(p, sun_dir, ATMOSPHERE_RADIUS);
-    float t = 0.0;
-
-    vec3 transmittance = vec3(1.0);
-    for (float i = 0.0; i < TRANSMITTANCE_STEPS; i += 1.0) {
-        float t_n = ((i + 0.3) / TRANSMITTANCE_STEPS) * t_max;
-        float dt = t_n - t;
-        t = t_n;
-
-        vec3 sample_p = p + t * sun_dir;
-
-        vec3 rayleigh_scattering, extinction;
-        float mie_scattering;
-        get_scattering_values(sample_p, rayleigh_scattering, mie_scattering, extinction);
-
-        transmittance *= exp(-dt * extinction);
-    }
-    return transmittance;
+    float height = length(p);
+    vec3 up = p / height;
+    float sun_cos_zenith_angle = dot(sun_dir, up);
+    vec2 uv = vec2(
+    clamp(0.5 + 0.5 * sun_cos_zenith_angle, 0.0, 1.0),
+    max(0.0, min(1.0, (height - PLANET_RADIUS) / (ATMOSPHERE_RADIUS - PLANET_RADIUS)))
+    );
+    return texture(transmittance_lut, uv).rgb;
 }
 
 float mie_phase(float cos_theta) {
