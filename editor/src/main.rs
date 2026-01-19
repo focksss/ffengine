@@ -2,11 +2,8 @@
 use std::default::Default;
 use std::path::{Path, PathBuf};
 use ffengine::engine::Engine;
-use ffengine::gui::gui::Element;
 use ffengine::math::Vector;
-use ffengine::scene::physics::player::{MovementMode, Player};
-use ffengine::scene::world::camera::Camera;
-use ffengine::scene::world::world::{Light};
+use ffengine::scene::scene::{CameraComponent, LightComponent};
 
 fn main() { unsafe {
     let mut app = Engine::new();
@@ -18,9 +15,14 @@ fn main() { unsafe {
         let renderer = &mut app.renderer.borrow_mut();
         let physics_engine = &mut app.physics_engine.borrow_mut();
 
-        app.world.borrow_mut().add_light(base, Light {
-            position: Vector::new3(0.0, 3.0, 0.0),
-            direction: Default::default(),
+        app.world.borrow_mut().add_texture("editor/resources/models/collisionTest/textures/checker_2x2.png", false);
+        //app.world.borrow_mut().add_texture("editor/resources/citrus_orchard_road_puresky_4k.hdr", false);
+
+
+
+        app.scene.borrow_mut().add_light(LightComponent {
+            owner: 0,
+            transform: 0,
             color: Vector::new3(1.0, 0.0, 1.0),
             light_type: 0,
             quadratic_falloff: 0.1,
@@ -28,13 +30,8 @@ fn main() { unsafe {
             constant_falloff: 0.1,
             inner_cutoff: 0.0,
             outer_cutoff: 0.0,
-        });
-
-        app.world.borrow_mut().add_texture("editor/resources/models/collisionTest/textures/checker_2x2.png", false);
-        //app.world.borrow_mut().add_texture("editor/resources/citrus_orchard_road_puresky_4k.hdr", false);
-
-
-
+        }, 0);
+        
         {
             let mut scene = app.scene.borrow_mut();
 
@@ -47,7 +44,7 @@ fn main() { unsafe {
             println!("");
 
             scene.new_entity_from_model(0, "editor/resources/models/ffocks/untitled.gltf");
-            let transform_index = scene.entities[1].transform;
+            let transform_index = scene.entities[2].transform;
             scene.transforms[transform_index].local_scale = Vector::fill(0.01);
             //app.scene.borrow_mut().new_entity_from_model(0, "C:\\Graphics\\assets\\rivals\\luna\\gltf\\luna.gltf");
             
@@ -169,27 +166,14 @@ fn main() { unsafe {
         let mut gui = renderer.guis[0].borrow_mut();
         gui.load_from_file("editor\\resources\\gui\\editor.gui");
     }
-    let player = Player::new(
-        &mut *app.scene.borrow_mut(),
-        app.world.clone(),
-        Camera::new_perspective_rotation(
-            Vector::new3(0.0, 2.0, 0.0),
-            Vector::empty(),
-            100.0,
-            1.0,
-            0.001,
-            1000.0,
-            true,
-            Vector::new3(0.0, 0.0, 1.0),
-        ),
-        Vector::new3(-0.15, -0.85, -0.15),
-        Vector::new3(0.15, 0.15, 0.15),
-        MovementMode::EDITOR,
-        0.2,
-        4.5,
-        0.0015
-    );
-    app.physics_engine.borrow_mut().add_player(player);
+    app.scene.borrow_mut().add_camera(CameraComponent::new_perspective_rotation(
+        100.0,
+        1.0,
+        0.001,
+        1000.0,
+        true,
+        Vector::new3(0.0, 0.0, 1.0),
+    ), 0);
 
     println!("starting");
 

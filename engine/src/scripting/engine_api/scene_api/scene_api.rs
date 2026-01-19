@@ -51,6 +51,9 @@ impl UserData for SceneRef {
         methods.add_method("get_rigid_body", |lua, this, index: usize| {
             Ok(lua.create_userdata(RigidBodyPointer { index }))
         });
+        methods.add_method("get_camera", |lua, this, index: usize| {
+            Ok(lua.create_userdata(CameraPointer { index }))
+        });
 
         methods.add_method("load_model", |lua, this, parent: usize| {
             with_scene_mut!(lua => scene);
@@ -281,6 +284,63 @@ impl UserData for RigidBodyPointer {
         fields.add_field_method_set("angular_velocity", |lua, this, val: Value| {
             with_scene_mut!(lua => scene);
             scene.rigid_body_components[this.index].angular_velocity = Vector::from_lua(val, lua)?;
+            Ok(())
+        });
+    }
+}
+
+pub struct CameraPointer {
+    pub index: usize,
+}
+impl UserData for CameraPointer {
+    fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
+        fields.add_field_method_get("owner", |lua, this| {
+            with_scene!(lua => scene);
+            Ok(scene.camera_components[this.index].owner)
+        });
+
+        fields.add_field_method_get("transform", |lua, this| {
+            with_scene!(lua => scene);
+            Ok(scene.camera_components[this.index].transform)
+        });
+
+        fields.add_field_method_get("fov_y", |lua, this| {
+            with_scene!(lua => scene);
+            Ok(scene.camera_components[this.index].fov_y)
+        });
+        fields.add_field_method_set("fov_y", |lua, this, val: f32| {
+            with_scene_mut!(lua => scene);
+            scene.camera_components[this.index].fov_y = val;
+            Ok(())
+        });
+
+        fields.add_field_method_get("aspect_ratio", |lua, this| {
+            with_scene!(lua => scene);
+            Ok(scene.camera_components[this.index].aspect_ratio)
+        });
+        fields.add_field_method_set("aspect_ratio", |lua, this, val: f32| {
+            with_scene_mut!(lua => scene);
+            scene.camera_components[this.index].aspect_ratio = val;
+            Ok(())
+        });
+
+        fields.add_field_method_get("near", |lua, this| {
+            with_scene!(lua => scene);
+            Ok(scene.camera_components[this.index].near)
+        });
+        fields.add_field_method_set("near", |lua, this, val: f32| {
+            with_scene_mut!(lua => scene);
+            scene.camera_components[this.index].near = val;
+            Ok(())
+        });
+
+        fields.add_field_method_get("far", |lua, this| {
+            with_scene!(lua => scene);
+            Ok(scene.camera_components[this.index].far)
+        });
+        fields.add_field_method_set("far", |lua, this, val: f32| {
+            with_scene_mut!(lua => scene);
+            scene.camera_components[this.index].far = val;
             Ok(())
         });
     }

@@ -1,16 +1,9 @@
 use std::path::{Path, PathBuf};
-use ash::vk;
 use mlua;
 use std::cell::RefCell;
-use std::collections::HashMap;
-use std::sync::Arc;
-use mlua::AsChunk;
 use crate::engine::EngineRef;
-use crate::gui::gui::GUI;
 use crate::math::Vector;
-use crate::scene::physics::player::MovementMode;
 use crate::scripting::engine_api::client_api::client_api::{LuaCursorIcon, LuaKeyCode, LuaMouseButton, LuaResizeDirection};
-use crate::scripting::engine_api::engine_api;
 use crate::scripting::engine_api::gui_api::gui_api::LuaAnchorPoint;
 
 thread_local! {
@@ -68,7 +61,6 @@ impl Lua {
             LuaResizeDirection::register_to_lua(lua)?;
             LuaMouseButton::register_to_lua(lua)?;
             LuaKeyCode::register_to_lua(lua)?;
-            MovementMode::register_to_lua(&lua)?;
             Vector::register_to_lua(&lua)?;
 
 

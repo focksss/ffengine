@@ -1,7 +1,5 @@
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::f32::consts::PI;
-use std::io::Cursor;
 use std::mem;
 use crate::offset_of;
 use ash::vk;
@@ -10,15 +8,11 @@ use rand::{rng, Rng};
 use std::path::PathBuf;
 use std::slice;
 use std::sync::{Arc, LazyLock};
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
-use ash::util::read_spv;
-use crate::math::matrix::Matrix;
 use crate::math::Vector;
 use crate::render::render::MAX_FRAMES_IN_FLIGHT;
 use crate::render::render_helper::{transition_output, ComputePipelineCreateInfo, ComputeRenderpass, ComputeRenderpassCreateInfo, Descriptor, DescriptorCreateInfo, DescriptorSet, DescriptorSetCreateInfo, DeviceTexture, PassCreateInfo, PipelineCreateInfo, PushConstantData, Renderpass, RenderpassCreateInfo, Shader, Texture, TextureCreateInfo, Transition, SHADER_PATH};
 use crate::render::vulkan_base::{copy_data_to_memory, load_file, Context, VkBase};
 use crate::scene::scene::{DrawMode, Instance, Scene};
-use crate::scene::world::camera::Camera;
 use crate::scene::world::world::{World, SunSendable, Vertex};
 
 const SSAO_KERNAL_SIZE: usize = 16;
@@ -28,6 +22,8 @@ pub const SHADOW_RES: u32 = 2048;
 //TODO() FIX SSAO UPSAMPLING
 pub struct SceneRenderer {
     context: Arc<Context>,
+
+    pub camera_index: usize,
 
     pub viewport: Arc<RefCell<vk::Viewport>>,
 
@@ -56,6 +52,7 @@ pub struct SceneRenderer {
     pub sampler: vk::Sampler,
     pub nearest_sampler: vk::Sampler,
     pub repeat_sampler: vk::Sampler,
+    pub clamp_sampler: vk::Sampler,
     pub ssao_kernal: [[f32; 4]; SSAO_KERNAL_SIZE],
     pub ssao_noise_texture: Texture,
     pub editor_primitives_vertices_buffer: (vk::Buffer, vk::DeviceMemory),
@@ -69,7 +66,7 @@ pub struct SceneRenderer {
     pub atmosphere_multiscatter_lut: Texture,
 }
 impl SceneRenderer {
-    pub unsafe fn new(context: &Arc<Context>, world: &World, viewport: vk::Viewport) -> SceneRenderer { unsafe {
+    pub unsafe fn new(context: &Arc<Context>, camera_index: usize, world: &World, viewport: vk::Viewport) -> SceneRenderer { unsafe {
         let null_tex_info = context.create_2d_texture_image(&PathBuf::from("").join("engine\\resources\\checker_2x2.png"), true) ;
         context.device.destroy_sampler(null_tex_info.0.1, None);
         let sampler_info = vk::SamplerCreateInfo {
@@ -595,6 +592,8 @@ impl SceneRenderer {
         SceneRenderer {
             context: context.clone(),
 
+            camera_index,
+
             hovered_ids: (0, 0),
             queued_id_buffer_sample: false,
 
@@ -625,6 +624,7 @@ impl SceneRenderer {
             sampler,
             nearest_sampler,
             repeat_sampler,
+            clamp_sampler,
 
             ssao_kernal,
             ssao_noise_texture,
@@ -1416,22 +1416,22 @@ impl SceneRenderer {
     pub unsafe fn render_world(
         &self,
         current_frame: usize,
-        scene: &Scene, player_camera_index: usize,
+        scene: &Scene,
     ) { unsafe {
         let device = &self.context.device;
 
         let frame_command_buffer = self.context.draw_command_buffers[current_frame];
 
-        let sun_sendable = scene.world.borrow().sun.to_sendable();
+        let camera = &scene.camera_components[self.camera_index];
+
+        let mut sun = &scene.sun_components[0].get_sendable(camera);
         
-        let player_camera = &scene.world.borrow().cameras[player_camera_index];
-        
-        copy_data_to_memory(self.lighting_renderpass.descriptor_set.borrow().descriptors[10].owned_buffers.2[current_frame], &[sun_sendable]);
-        copy_data_to_memory(self.shadow_renderpass.descriptor_set.borrow().descriptors[2].owned_buffers.2[current_frame], &[sun_sendable]);
+        copy_data_to_memory(self.lighting_renderpass.descriptor_set.borrow().descriptors[10].owned_buffers.2[current_frame], &[sun]);
+        copy_data_to_memory(self.shadow_renderpass.descriptor_set.borrow().descriptors[2].owned_buffers.2[current_frame], &[sun]);
         let ubo = SSAOPassUniformData {
             samples: self.ssao_kernal,
-            projection: player_camera.projection_matrix.data,
-            inverse_projection: player_camera.projection_matrix.inverse4().data,
+            projection: camera.projection_matrix.data,
+            inverse_projection: camera.projection_matrix.inverse4().data,
             radius: 1.5,
             width: (self.ssao_renderpass.viewport.width * SSAO_RESOLUTION_MULTIPLIER) as i32,
             height: (self.ssao_renderpass.viewport.height * SSAO_RESOLUTION_MULTIPLIER) as i32,
@@ -1439,8 +1439,8 @@ impl SceneRenderer {
         };
         copy_data_to_memory(self.ssao_renderpass.descriptor_set.borrow().descriptors[2].owned_buffers.2[current_frame], &[ubo]);
         let ubo = LightingUniformData {
-            shadow_cascade_distances: [player_camera.far * 0.005, player_camera.far * 0.015, player_camera.far * 0.045, player_camera.far * 0.15],
-            num_lights: scene.world.borrow().lights.len() as u32,
+            shadow_cascade_distances: [camera.far * 0.005, camera.far * 0.015, camera.far * 0.045, camera.far * 0.15],
+            num_lights: scene.light_components.len() as u32,
         };
         copy_data_to_memory(self.lighting_renderpass.descriptor_set.borrow().descriptors[9].owned_buffers.2[current_frame], &[ubo]);
         copy_data_to_memory(
@@ -1450,25 +1450,25 @@ impl SceneRenderer {
             )]
         );
         let ubo = SkyInfo {
-            sun_direction: Vector::from_array(&sun_sendable.vector).normalize3().to_array3(),
+            sun_direction: Vector::from_array(&sun.vector).normalize3().to_array3(),
             _pad: 0.0,
             t: scene.runtime,
         };
         copy_data_to_memory(self.sky_renderpass.descriptor_set.borrow().descriptors[6].owned_buffers.2[current_frame], &[ubo]);
         let camera_constants = CameraMatrixUniformData {
-            view: player_camera.view_matrix.data,
-            projection: player_camera.projection_matrix.data,
+            view: camera.view_matrix.data,
+            projection: camera.projection_matrix.data,
         };
         let camera_inverse_constants = CameraMatrixUniformData {
-            view: player_camera.view_matrix.inverse4().data,
-            projection: player_camera.projection_matrix.inverse4().data,
+            view: camera.view_matrix.inverse4().data,
+            projection: camera.projection_matrix.inverse4().data,
         };
 
         let radius = 20;
         let ssao_blur_constants_horizontal = BlurPassData {
             horizontal: 1,
             radius,
-            near: player_camera.near,
+            near: camera.near,
             sigma_spatial: 20.0,
             sigma_depth: 0.25, // weighted within shader
             sigma_normal: 0.2,
@@ -1477,14 +1477,14 @@ impl SceneRenderer {
         let ssao_blur_constants_vertical = BlurPassData {
             horizontal: 0,
             radius,
-            near: player_camera.near,
+            near: camera.near,
             sigma_spatial: 20.0,
             sigma_depth: 0.25, // weighted within shader
             sigma_normal: 0.2,
             infinite_reverse_depth: 1
         };
         let ssao_upsample_constants = DepthAwareUpsamplePassData {
-            near: player_camera.near,
+            near: camera.near,
             depth_threshold: 0.01,
             normal_threshold: 0.9,
             sharpness: 8.0,
@@ -1501,7 +1501,7 @@ impl SceneRenderer {
                 ));
             }),
             Some(|| {
-                scene.draw(self, current_frame, Some(&player_camera), DrawMode::Deferred);
+                scene.draw(self, current_frame, Some(self.camera_index), DrawMode::Deferred);
             }),
             None,
             Transition::ALL
@@ -1590,9 +1590,9 @@ impl SceneRenderer {
                 );
                 device.cmd_draw(frame_command_buffer, 36, 1, 0, 0);
 
-                scene.draw(self, current_frame, Some(&player_camera), DrawMode::Forward);
-                scene.draw(self, current_frame, Some(&player_camera), DrawMode::Outlined);
-                scene.draw(self, current_frame, Some(&player_camera), DrawMode::Hitboxes);
+                scene.draw(self, current_frame, Some(self.camera_index), DrawMode::Forward);
+                scene.draw(self, current_frame, Some(self.camera_index), DrawMode::Outlined);
+                scene.draw(self, current_frame, Some(self.camera_index), DrawMode::Hitboxes);
             }),
             None,
             Transition::NONE
@@ -1610,9 +1610,9 @@ impl SceneRenderer {
             Some(|| {
                 device.cmd_push_constants(frame_command_buffer, self.sky_view_lut_renderpass.pipeline_layout, ShaderStageFlags::FRAGMENT, 0, slice::from_raw_parts(
                     &SkyViewInfo {
-                        sun_direction: sun_sendable.vector,
+                        sun_direction: sun.vector,
                         _pad: 0.0,
-                        view_position: player_camera.position.to_array3()
+                        view_position: scene.transforms[camera.transform].world_translation.to_array3(),
                     } as *const SkyViewInfo as *const u8,
                     size_of::<SkyViewInfo>(),
                 ))
@@ -1686,6 +1686,7 @@ impl SceneRenderer {
         self.context.device.destroy_sampler(self.nearest_sampler, None);
         self.context.device.destroy_sampler(self.null_tex_sampler, None);
         self.context.device.destroy_sampler(self.repeat_sampler, None);
+        self.context.device.destroy_sampler(self.clamp_sampler, None);
 
         self.null_texture.destroy(&self.context);
 

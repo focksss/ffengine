@@ -12,10 +12,19 @@ local initial_value = Vector.new()
 --- false signifies changing position (for editor camera)
 local changing_rotation = false
 
+local camera_index = 0
+local transform_index
+local camera
+local transform
+
+function Awake() 
+    camera = Engine.scene:get_camera(camera_index)
+    transform_index = camera.transform
+    transform = Engine.scene:get_transform(transform_index)
+end
+
 function Update()
-    local player = Engine.physics_engine:get_player(0);
-    local camera = player.camera
-    local rigid_body = player.rigid_body
+    if camera == nil then return end
 
     local scene_viewport = Engine.renderer.scene_renderer.viewport
 	camera.aspect_ratio = scene_viewport.width / scene_viewport.height
@@ -23,7 +32,7 @@ function Update()
     if Engine.client:new_key_pressed(KeyCode.Escape) then
         Engine.client.cursor_locked = not Engine.client.cursor_locked
     end
-
+    --[[
     if player.movement_mode ~= MovementMode.EDITOR then
         local move_direction = Vector.new()
         local rot = camera.rotation
@@ -94,47 +103,42 @@ function Update()
         camera.position = editor_target + (Vector.new3(0.0, 0.0, 1.0):rotate_by_euler(editor_rotation) * editor_distance)
         camera.rotation = editor_rotation
     end
+    --]]
+    if Engine.client:mouse_button_pressed(MouseButton.Middle) then
+        local delta_pixels = Engine.client.cursor_position - initial_mouse_pos;
+
+        if changing_rotation then
+            editor_rotation = initial_value - Vector.new2(delta_pixels.y, delta_pixels.x) * editor_cam_rot_sense
+        else
+            local horizontal_axis = Vector.new3(1.0, 0.0, 0.0):rotate_by_euler(editor_rotation)
+            local vertical_axis = Vector.new3(0.0, 1.0, 0.0):rotate_by_euler(editor_rotation)
+            local horiz_add = horizontal_axis * delta_pixels.x * editor_distance * editor_cam_move_sense * -1.0
+            local vert_add = vertical_axis * delta_pixels.y * editor_distance * editor_cam_move_sense
+            editor_target = initial_value + horiz_add + vert_add
+        end
+    end
+
+    editor_rotation.z = 0.0
+    transform.translation = editor_target + (Vector.new3(0.0, 0.0, 1.0):rotate_by_euler(editor_rotation) * editor_distance)
+    transform.rotation = (editor_rotation):euler_to_quat()
 end
 
 function MouseScrolled()
     if Engine.renderer:gui(0):is_node_hovered(Engine.renderer:gui(0):get_root(0):get_child(2).index) then
-        local player = Engine.physics_engine:get_player(0);
-        if player.movement_mode == MovementMode.GHOST then
-            fly_speed = fly_speed * math.pow(1.1, Engine.client.scroll_delta.y)
-                    fly_speed = math.max(0.01, fly_speed)
-        elseif player.movement_mode == MovementMode.EDITOR then
-            local zoom_factor = 1.0 - (Engine.client.scroll_delta.y * 0.1)
-            editor_distance = editor_distance * zoom_factor
-            editor_distance = math.max(0.01, editor_distance)
-        end
+        local zoom_factor = 1.0 - (Engine.client.scroll_delta.y * 0.1)
+        editor_distance = editor_distance * zoom_factor
+        editor_distance = math.max(0.01, editor_distance)
     end
 end
 
-function MouseMoved()
-    local player = Engine.physics_engine:get_player(0);
-    local camera = player.camera
-
-    local new_rot = Vector.new()
-
-    local rot_x_delta = Engine.client.mouse_delta.y
-    local rot_y_delta = Engine.client.mouse_delta.x
-
-    new_rot.y = camera.rotation.y + rot_y_delta * sense
-    new_rot.x = camera.rotation.x - rot_x_delta * sense
-    new_rot.x = math.max(-math.pi * 0.5, math.min(new_rot.x, math.pi * 0.5))
-
-    camera.rotation = new_rot
-end
-
 function MouseButtonPressed()
-    local player = Engine.physics_engine:get_player(0);
-    if (Engine.client.ButtonPressed == MouseButton.Middle) and (player.movement_mode == MovementMode.EDITOR) then
+    if (Engine.client.ButtonPressed == MouseButton.Middle) then
         initial_mouse_pos = Engine.client.cursor_position
         if Engine.client:key_pressed(KeyCode.ShiftLeft) then
             initial_value = editor_target
             changing_rotation = false
         else
-            initial_value = player.camera.rotation
+            initial_value = transform.rotation
             changing_rotation = true
         end
     end

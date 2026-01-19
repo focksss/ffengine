@@ -2,7 +2,6 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ffi::c_void;
 use std::fs;
-use std::rc::Rc;
 use std::path::{Path, PathBuf};
 use std::ptr::null_mut;
 use std::sync::Arc;
@@ -10,15 +9,11 @@ use std::time::SystemTime;
 use ash::vk;
 use ash::vk::{CommandBuffer, DeviceMemory, ImageView, Sampler};
 use json::JsonValue;
-use crate::engine::get_command_buffer;
 use crate::math::matrix::Matrix;
 use crate::math::Vector;
 use crate::render::render::MAX_FRAMES_IN_FLIGHT;
-use crate::render::render_helper::Texture;
-use crate::render::scene_renderer::SHADOW_RES;
 use crate::render::vulkan_base::{copy_buffer_synchronous, copy_data_to_memory, Context, VkBase};
 use crate::scene::scene::{Instance, Scene};
-use crate::scene::world::camera::{Camera, Frustum};
 
 // SHOULD DETECT MATH VS COLOR DATA TEXTURES, LOAD COLOR AS SRGB, MATH AS UNORM
 const MAX_VERTICES: u64 = 3 * 10u64.pow(6); // 7 for bistro
@@ -27,12 +22,9 @@ pub const MAX_INSTANCES: u64 = 10u64 * 10u64.pow(4); // 5 for bistro
 const MAX_MATERIALS: u64 = 10u64 * 10u64.pow(4);
 const MAX_JOINTS: u64 = 10u64 * 10u64.pow(4);
 const MAX_LIGHTS: u64 = 10u64 * 10u64.pow(3);
+
 pub struct World {
     context: Arc<Context>,
-
-    pub cameras: Vec<Camera>,
-    pub lights: Vec<Light>,
-    pub sun: Sun,
 
     pub loaded_files: HashMap<String, usize>,
 
@@ -63,8 +55,10 @@ pub struct World {
     pub vertex_staging_buffer: (vk::Buffer, DeviceMemory, *mut c_void),
     pub indices_count: usize,
     buffer_indices_count: usize,
+    indices_buffer_size: u64,
     pub vertices_count: usize,
     buffer_vertices_count: usize,
+    vertex_buffer_size: u64,
 
     pub instance_staging_buffer: (vk::Buffer, DeviceMemory, *mut c_void),
     pub instance_buffers: Vec<(vk::Buffer, DeviceMemory)>,
@@ -94,9 +88,6 @@ impl World {
         Self {
             context: context.clone(),
 
-            cameras: Vec::new(),
-            lights: Vec::new(),
-            sun: Sun::new_sun(Vector::new3(0.55, 0.0, -1.0).normalize3(), Vector::new3(0.98, 0.84, 0.64)),
             buffers_need_update: false,
 
             loaded_files: HashMap::new(),
@@ -128,6 +119,8 @@ impl World {
             vertices_count: 0,
             buffer_indices_count: 0,
             buffer_vertices_count: 0,
+            indices_buffer_size: 0,
+            vertex_buffer_size: 0,
             instance_staging_buffer: (vk::Buffer::null(), DeviceMemory::null(), null_mut()),
             instance_buffers: Vec::new(),
             instance_buffer_size: 0,
@@ -152,8 +145,10 @@ impl World {
         self.instance_buffer_size = MAX_INSTANCES * size_of::<Instance>() as u64;
         self.material_buffer_size = MAX_MATERIALS * size_of::<MaterialSendable>() as u64;
         self.lights_buffers_size = MAX_LIGHTS * size_of::<LightSendable>() as u64;
-        (self.vertex_buffer, self.vertex_staging_buffer) = self.context.create_device_and_staging_buffer(size_of::<Vertex>() as u64 * MAX_VERTICES, &[0], vk::BufferUsageFlags::VERTEX_BUFFER, false, true, false);
-        (self.index_buffer, self.index_staging_buffer) = self.context.create_device_and_staging_buffer(size_of::<u32>() as u64 * 3 * MAX_INDICES, &[0], vk::BufferUsageFlags::INDEX_BUFFER, false, true, false);
+        self.indices_buffer_size = 3 * MAX_INDICES * size_of::<u32>() as u64;
+        self.vertex_buffer_size = MAX_VERTICES * size_of::<Vertex>() as u64;
+        (self.vertex_buffer, self.vertex_staging_buffer) = self.context.create_device_and_staging_buffer(self.vertex_buffer_size, &[0], vk::BufferUsageFlags::VERTEX_BUFFER, false, true, false);
+        (self.index_buffer, self.index_staging_buffer) = self.context.create_device_and_staging_buffer(self.indices_buffer_size, &[0], vk::BufferUsageFlags::INDEX_BUFFER, false, true, false);
         for i in 0..MAX_FRAMES_IN_FLIGHT {
             self.instance_buffers.push((vk::Buffer::null(), DeviceMemory::null()));
             self.material_buffers.push((vk::Buffer::null(), DeviceMemory::null()));
@@ -286,6 +281,23 @@ impl World {
 
             self.construct_textures(base);
 
+            /*
+            // let new_vertex_buffer_size =
+            //     (size_of::<Vertex>() * (self.buffer_vertices_count + self.new_vertices.len())) as u64;
+            // if new_vertex_buffer_size > self.vertex_buffer_size {
+            //
+            //     (self.vertex_buffer, self.vertex_staging_buffer) =
+            //         self.context.create_device_and_staging_buffer(
+            //             new_vertex_buffer_size,
+            //             &[0],
+            //             vk::BufferUsageFlags::VERTEX_BUFFER,
+            //             false,
+            //             true,
+            //             false
+            //         );
+            // }
+            */
+
             self.context.update_buffer_through_staging(
                 &command_buffer,
                 &self.vertex_buffer,
@@ -333,64 +345,6 @@ impl World {
             self.new_materials.clear();
         }
     } }
-    pub unsafe fn add_light(&mut self, base: &VkBase, light: Light) { unsafe {
-        let light_send = light.to_sendable();
-        let command_buffers = self.context.begin_single_time_commands(1);
-        for frame in 0..self.material_buffers.len() {
-            self.context.update_buffer_through_staging(
-                &command_buffers[0],
-                &self.lights_buffers[frame],
-                &self.lights_staging_buffer,
-                &[light_send],
-                size_of::<LightSendable>() as u64 * self.lights_count as u64,
-                frame == 0
-            );
-        }
-        self.context.end_single_time_commands(command_buffers);
-
-        self.lights_count += 1;
-
-        self.lights.push(light);
-    } }
-    pub fn add_camera(&mut self, camera: Camera) {
-        self.cameras.push(camera);
-    }
-
-    pub unsafe fn update_lights(&mut self, command_buffer: CommandBuffer, frame: usize) { unsafe {
-        let lights_send = self.lights.iter().map(|light| light.to_sendable()).collect::<Vec<_>>();
-        copy_data_to_memory(self.lights_staging_buffer.2, &lights_send);
-        copy_buffer_synchronous(&self.context.device, command_buffer, &self.lights_staging_buffer.0, &self.lights_buffers[frame].0, None, &self.lights_buffers_size);
-    } }
-    pub fn update_sun(&mut self, primary_camera_index: usize) {
-        self.sun.update(&self.cameras[primary_camera_index]);
-    }
-    pub fn update_cameras(&mut self) {
-        for camera in self.cameras.iter_mut() {
-            camera.update_matrices();
-            camera.update_frustum();
-        }
-    }
-
-    pub unsafe fn update_joints(&mut self, command_buffer: CommandBuffer, frame: usize) { unsafe {
-        let mut joints = Vec::new();
-        let mut total_skins = 0f32;
-        for skin in &mut self.skins {
-            skin.update_joint_matrices(&self.nodes);
-            total_skins += 1.0;
-        }
-        let mut total = 0f32;
-        for skin in self.skins.iter() {
-            joints.push(Matrix::new_manual([total_skins + total; 16]));
-            total += skin.joint_matrices.len() as f32;
-        }
-        for skin in &self.skins {
-            for joint in skin.joint_matrices.iter() {
-                joints.push(joint.clone());
-            }
-        }
-        copy_data_to_memory(self.joints_staging_buffer.2, &joints);
-        copy_buffer_synchronous(&self.context.device, command_buffer, &self.joints_staging_buffer.0, &self.joints_buffers[frame].0, None, &self.joints_buffers_size);
-    }}
 
     pub unsafe fn construct_textures(&mut self, base: &VkBase) { unsafe {
         let ungenerated_indices = self.images
@@ -470,47 +424,6 @@ impl World {
     } }
 }
 
-#[derive(Clone)]
-pub struct Light {
-    pub position: Vector,
-    pub direction: Vector,
-    pub color: Vector,
-    pub light_type: u32,
-    pub quadratic_falloff: f32,
-    pub linear_falloff: f32,
-    pub constant_falloff: f32,
-    pub inner_cutoff: f32,
-    pub outer_cutoff: f32,
-}
-impl Light {
-    pub fn new(position: Vector, direction: Vector, color: Vector) -> Light {
-        Light {
-            position,
-            direction,
-            color,
-            light_type: 0,
-            quadratic_falloff: 0.1,
-            linear_falloff: 0.1,
-            constant_falloff: 0.1,
-            inner_cutoff: 0.0,
-            outer_cutoff: 0.0,
-        }
-    }
-    pub fn to_sendable(&self) -> LightSendable {
-        LightSendable {
-            position: self.position.to_array3(),
-            _pad0: 0u32,
-            direction: self.direction.to_array3(),
-            light_type: self.light_type,
-            attenuation_values:
-                if self.light_type == 0 { [self.quadratic_falloff, self.linear_falloff, self.constant_falloff] }
-                    else { [self.inner_cutoff, self.outer_cutoff, 0.0] },
-            _pad1: 0u32,
-            color: self.color.to_array3(),
-            _pad2: 0u32,
-        }
-    }
-}
 #[derive(Copy)]
 #[derive(Clone)]
 pub struct LightSendable {
@@ -522,112 +435,6 @@ pub struct LightSendable {
     pub _pad1: u32,
     pub color: [f32; 3],
     pub _pad2: u32,
-}
-#[derive(Clone)]
-pub struct Sun {
-    pub vector: Vector,
-    pub color: Vector,
-    pub projections: [Matrix; 5],
-    pub views: [Matrix; 5],
-}
-impl Sun {
-    pub fn new_sun(vector: Vector, color: Vector) -> Sun {
-        Sun {
-            vector: Vector::new4(vector.x, vector.y, vector.z, 1.0).normalize3(),
-            color,
-            projections: [Matrix::new_ortho(-10.0, 10.0, -10.0, 10.0, 0.01, 1000.0); 5],
-            views: [Matrix::new_look_at(
-                &Vector::new3(vector.x * -100.0, vector.y * -100.0, vector.z * -100.0),
-                &Vector::new3(0.0, 0.0, 0.0),
-                &Vector::new3(0.0, 1.0, 0.0),
-            ); 5],
-        }
-    }
-    pub fn to_sendable(&self) -> SunSendable {
-        let mut matrices = Vec::new();
-        for i in 0..5 {
-            matrices.push((self.projections[i] * self.views[i]).data);
-        }
-        SunSendable {
-            matrices: <[[f32; 16]; 5]>::try_from(matrices.as_slice()).unwrap(),
-            vector: self.vector.to_array3(),
-            _pad0: 0u32,
-            color: self.color.to_array3(),
-            _pad1: 0u32,
-        }
-    }
-
-    pub fn update(&mut self, primary_camera: &Camera) {
-        let cascade_levels = [primary_camera.far * 0.005, primary_camera.far * 0.015, primary_camera.far * 0.045, primary_camera.far * 0.15];
-
-        for i in 0..cascade_levels.len() + 1 {
-            let matrices: [Matrix; 2];
-            if i == 0 {
-                matrices = self.get_cascade_matrix(primary_camera, primary_camera.near, cascade_levels[i]);
-            }
-            else if i < cascade_levels.len() {
-                matrices = self.get_cascade_matrix(primary_camera, cascade_levels[i - 1], cascade_levels[i]);
-            }
-            else {
-                matrices = self.get_cascade_matrix(primary_camera, cascade_levels[i - 1], primary_camera.far.min(500.0));
-            }
-            self.views[i] = matrices[0];
-            self.projections[i] = matrices[1];
-        }
-    }
-
-    fn get_cascade_matrix(&self, camera: &Camera, near: f32, far: f32) -> [Matrix; 2] {
-        let corners = camera.get_frustum_corners_with_near_far(near, far);
-
-        let mut sum = Vector::empty();
-        for corner in corners.iter() {
-            sum = sum + corner;
-        }
-        let mut frustum_center = sum / 8.0;
-        frustum_center.w = 1.0;
-
-        let mut max_radius_squared = 0.0f32;
-        for corner in &corners {
-            let v = *corner - frustum_center;
-            let radius_squared = v.dot4(&v);
-            if radius_squared > max_radius_squared { max_radius_squared = radius_squared; }
-        }
-        let radius = max_radius_squared.sqrt();
-
-        let texels_per_unit = SHADOW_RES as f32 / (radius * 2.0);
-        let scalar_matrix = Matrix::new_scalar(texels_per_unit);
-        let temp_view = Matrix::new_look_at(
-            &(-1.0 * self.vector),
-            &Vector::empty(),
-            &Vector::new3(0.0, 1.0, 0.0)
-        ) * scalar_matrix;
-        frustum_center = temp_view * frustum_center;
-        frustum_center.x = frustum_center.x.floor();
-        frustum_center.y = frustum_center.y.floor();
-        frustum_center.w = 1.0;
-        frustum_center = temp_view.inverse4() * frustum_center;
-
-        let view = Matrix::new_look_at(
-            &(frustum_center - (self.vector * 2.0 * radius)),
-            &frustum_center,
-            &Vector::new3(0.0, 1.0, 0.0)
-        );
-
-        let mut min_x = f32::MAX; let mut min_y = f32::MAX; let mut min_z = f32::MAX;
-        let mut max_x = f32::MIN; let mut max_y = f32::MIN; let mut max_z = f32::MIN;
-        for corner in &corners {
-            let corner_light_space = view * corner;
-            min_x = min_x.min(corner_light_space.x);
-            min_y = min_y.min(corner_light_space.y);
-            min_z = min_z.min(corner_light_space.z);
-            max_x = max_x.max(corner_light_space.x);
-            max_y = max_y.max(corner_light_space.y);
-            max_z = max_z.max(corner_light_space.z);
-        }
-
-        let projection = Matrix::new_ortho(min_x, max_x, min_y, max_y, -radius * 6.0, radius * 6.0);
-        [view, projection]
-    }
 }
 #[derive(Copy)]
 #[derive(Clone)]

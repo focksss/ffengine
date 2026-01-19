@@ -1,13 +1,4 @@
-use std::cell::RefCell;
-use std::sync::Arc;
-use crate::math::matrix::Matrix;
 use crate::math::Vector;
-use crate::scene::physics::hitboxes::bounding_box::BoundingBox;
-use crate::scene::physics::hitboxes::capsule::Capsule;
-use crate::scene::physics::hitboxes::hitbox::Hitbox;
-use crate::scene::physics::hitboxes::mesh::{Bvh, MeshCollider};
-use crate::scene::physics::player::{MovementMode, Player};
-use crate::scene::world::world::{Node, World, Vertex};
 
 const MAX_ITERATIONS: usize = 5;
 const MIN_MOVE_THRESHOLD: f32 = 0.001;
@@ -16,8 +7,6 @@ pub struct PhysicsEngine {
     pub gravity: Vector,
     pub air_resistance_coefficient: f32,
     pub player_horiz_const_resistance: f32,
-
-    pub players: Vec<Player>
 }
 
 impl PhysicsEngine {
@@ -26,12 +15,7 @@ impl PhysicsEngine {
             gravity,
             air_resistance_coefficient,
             player_horiz_const_resistance,
-            players: Vec::new(),
         }
-    }
-
-    pub fn add_player(&mut self, player: Player) {
-        self.players.push(player);
     }
 
     fn axis_angle_to_quat(axis: &Vector, angle: f32) -> Vector {

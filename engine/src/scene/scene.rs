@@ -1,27 +1,22 @@
 use std::cell::RefCell;
-use std::ops::Add;
+use std::f32::consts::PI;
 use std::slice;
 use std::sync::Arc;
 use std::time::SystemTime;
 use ash::{vk, Device};
 use ash::vk::{CommandBuffer, ShaderStageFlags};
-use parry3d::na::Quaternion;
 use crate::engine::get_command_buffer;
 use crate::math::matrix::Matrix;
 use crate::math::Vector;
 use crate::render::render::{Renderer, MAX_FRAMES_IN_FLIGHT};
-use crate::render::scene_renderer::{CameraMatrixUniformData, SceneRenderer};
+use crate::render::scene_renderer::{CameraMatrixUniformData, SceneRenderer, SHADOW_RES};
 use crate::render::vulkan_base::{copy_buffer_synchronous, copy_data_to_memory, Context, VkBase};
 use crate::scene::physics::hitboxes::bounding_box::BoundingBox;
-use crate::scene::physics::hitboxes::capsule::Capsule;
 use crate::scene::physics::hitboxes::convex_hull::ConvexHull;
 use crate::scene::physics::hitboxes::hitbox::{Hitbox, HitboxType};
-use crate::scene::physics::hitboxes::hitbox::HitboxType::OBB;
-use crate::scene::physics::hitboxes::mesh::MeshCollider;
 use crate::scene::physics::hitboxes::sphere::Sphere;
 use crate::scene::physics::physics_engine::{AxisType, ContactInformation, ContactPoint, PhysicsEngine};
-use crate::scene::world::camera::{Camera, Frustum};
-use crate::scene::world::world::{World};
+use crate::scene::world::world::{LightSendable, SunSendable, World};
 
 
 //TODO
@@ -47,6 +42,7 @@ pub struct Scene {
     pub hitbox_components: Vec<HitboxComponent>,
     pub camera_components: Vec<CameraComponent>,
     pub light_components: Vec<LightComponent>,
+    pub sun_components: Vec<SunComponent>,
 
     pub outlined_components: Vec<usize>,
     pub outlined_bodies: Vec<usize>,
@@ -56,6 +52,9 @@ pub struct Scene {
     pub physics_engine: Arc<RefCell<PhysicsEngine>>,
 
     dirty_render_components: Vec<usize>,
+    dirty_light_components: Vec<usize>,
+    dirty_sun_components: Vec<usize>,
+    dirty_camera_components: Vec<usize>,
 }
 impl Scene {
     pub fn new(context: &Arc<Context>, renderer: Arc<RefCell<Renderer>>, world: Arc<RefCell<World>>, physics_engine: Arc<RefCell<PhysicsEngine>>) -> Self {
@@ -75,24 +74,30 @@ impl Scene {
             hitbox_components: Vec::new(),
             camera_components: Vec::new(),
             light_components: Vec::new(),
+            sun_components: Vec::new(),
+
             outlined_components: Vec::new(),
             outlined_bodies: Vec::new(),
             renderer,
             world,
             physics_engine,
             dirty_render_components: Vec::new(),
+            dirty_light_components: Vec::new(),
+            dirty_sun_components: Vec::new(),
+            dirty_camera_components: Vec::new(),
         };
         scene.transforms.push(Transform::default());
+        scene.sun_components.push(SunComponent {
+            direction: Vector::new3(0.5, 0.0, 1.0).normalize3(),
+            color: Vector::fill(1.0)
+        });
         scene.entities.push(Entity {
             name: String::from("Scene"),
             transform: 0,
             children_indices: Vec::new(),
             parent: 0,
 
-            sun: Some(SunComponent {
-                direction: Vector::new3(-1.0, -5.0, -1.0),
-                color: Vector::new3(0.98, 0.84, 0.64)
-            }),
+            sun: Some(0),
             ..Default::default()
         });
 
@@ -215,6 +220,48 @@ impl Scene {
         for child_node_index in child_nodes {
             self.implement_world_node(child_node_index, node_entity_index);
         }
+    }
+
+    pub fn add_light(&mut self, mut light: LightComponent, parent_index: usize) -> usize {
+        let index = self.light_components.len();
+
+        let owner_index = self.entities.len();
+        self.entities[parent_index].children_indices.push(owner_index);
+        let mut entity = Entity::default();
+        entity.name = String::from(format!("LightEntity {}", index));
+        entity.transform = self.transforms.len();
+        entity.camera = Some(index);
+        self.entities.push(entity);
+        light.owner = owner_index;
+
+        let transform_index = self.transforms.len();
+        self.transforms.push(Transform::default());
+        light.transform = transform_index;
+
+        self.dirty_light_components.push(index);
+        self.light_components.push(light);
+        index
+    }
+
+    pub fn add_camera(&mut self, mut camera: CameraComponent, parent_index: usize) -> usize {
+        let index = self.camera_components.len();
+
+        let owner_index = self.entities.len();
+        self.entities[parent_index].children_indices.push(owner_index);
+        let mut entity = Entity::default();
+        entity.name = String::from(format!("CameraEntity {}", index));
+        entity.transform = self.transforms.len();
+        entity.camera = Some(index);
+        self.entities.push(entity);
+        camera.owner = owner_index;
+
+        let transform_index = self.transforms.len();
+        self.transforms.push(Transform::default());
+        camera.transform = transform_index;
+
+        self.dirty_camera_components.push(index);
+        self.camera_components.push(camera);
+        index
     }
 
     pub fn add_rigid_body_from_entity(&mut self, entity_index: usize, hitbox_type: usize, is_static: bool) {
@@ -424,76 +471,106 @@ impl Scene {
             self.runtime += delta_time;
 
             // self.world.borrow_mut().sun.vector = Vector::new3(0.55, f32::sin(self.runtime * 0.05), f32::cos(-self.runtime * 0.05));
-            self.world.borrow_mut().sun.vector = Vector::new3(0.55, f32::sin(self.runtime * 0.05), -f32::cos(self.runtime * 0.05)).normalize3();
+            self.sun_components[0].direction = Vector::new3(0.55, f32::sin(self.runtime * 0.05), -f32::cos(self.runtime * 0.05)).normalize3();
+
+            for animation in self.animation_components.iter_mut() {
+                animation.update(&mut self.entities, &mut self.transforms, &mut self.unupdated_entities)
+            }
         }
-        if frame == 0 {
-            if self.running || force_run {
-                for animation in self.animation_components.iter_mut() {
-                    animation.update(&mut self.entities, &mut self.transforms, &mut self.unupdated_entities)
+
+        let mut dirty_primitive_instance_data: Vec<Instance> = Vec::new();
+        for entity_index in self.unupdated_entities.clone().iter() {
+            //for entity_index in &vec![1usize] {
+            let parent_index = self.entities[*entity_index].parent;
+            let parent_transform = if *entity_index == 0 {
+                0
+            } else {
+                self.entities[parent_index].transform
+            };
+            self.update_entity(
+                frame,
+                parent_transform,
+                *entity_index,
+                &mut dirty_primitive_instance_data
+            );
+        }
+        self.unupdated_entities.clear();
+
+        for dirty_camera_index in &self.dirty_camera_components {
+            let camera = &mut self.camera_components[*dirty_camera_index];
+            let transform = &self.transforms[camera.transform];
+            camera.update_matrices(transform);
+            camera.update_frustum(transform);
+        }
+        self.dirty_camera_components.clear();
+
+        let mut joints = Vec::new();
+        let mut total = 0f32;
+        for skin in self.skin_components.iter() {
+            joints.push(Matrix::new_manual([self.skin_components.len() as f32 + total; 16]));
+            total += skin.joints.len() as f32;
+        }
+        for skin in self.skin_components.iter() {
+            skin.update(&self, &mut joints);
+        }
+
+        let world = &self.world.borrow();
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                dirty_primitive_instance_data.as_ptr() as *const u8,
+                world.instance_staging_buffer.2 as *mut u8,
+                size_of::<Instance>() * dirty_primitive_instance_data.len(),
+            );
+
+            let mut copy_regions = Vec::new();
+            for (i, &render_component_id) in self.dirty_render_components.iter().enumerate() {
+                copy_regions.push(vk::BufferCopy {
+                    src_offset: (i * size_of::<Instance>()) as u64,
+                    dst_offset: (render_component_id * size_of::<Instance>()) as u64,
+                    size: size_of::<Instance>() as u64,
+                });
+            }
+            self.dirty_render_components.clear();
+            copy_data_to_memory(world.joints_staging_buffer.2, &joints);
+            if !copy_regions.is_empty() {
+                for frame in 0..MAX_FRAMES_IN_FLIGHT {
+                    copy_buffer_synchronous(
+                        &self.context.device,
+                        command_buffer,
+                        &world.instance_staging_buffer.0,
+                        &world.instance_buffers[frame].0,
+                        Some(copy_regions.clone()),
+                        &0u64
+                    );
+
+                    copy_buffer_synchronous(&self.context.device, command_buffer, &world.joints_staging_buffer.0, &world.joints_buffers[frame].0, None, &world.joints_buffers_size);
                 }
+                copy_regions.clear();
             }
 
-            let mut dirty_primitive_instance_data: Vec<Instance> = Vec::new();
-            for entity_index in self.unupdated_entities.clone().iter() {
-                //for entity_index in &vec![1usize] {
-                let parent_index = self.entities[*entity_index].parent;
-                let parent_transform = if *entity_index == 0 {
-                    0
-                } else {
-                    self.entities[parent_index].transform
-                };
-                self.update_entity(
-                    frame,
-                    parent_transform,
-                    *entity_index,
-                    &mut dirty_primitive_instance_data
-                );
+            let mut new_light_data = Vec::new();
+            for (i, &light_id) in self.dirty_light_components.iter().enumerate() {
+                copy_regions.push(vk::BufferCopy {
+                    src_offset: (i * size_of::<LightSendable>()) as u64,
+                    dst_offset: (light_id * size_of::<LightSendable>()) as u64,
+                    size: size_of::<LightSendable>() as u64,
+                });
+                let light = &self.light_components[light_id];
+                let transform = &self.transforms[light.transform];
+                new_light_data.push(light.to_sendable(transform));
             }
-            self.unupdated_entities.clear();
-
-            let mut joints = Vec::new();
-            let mut total = 0f32;
-            for skin in self.skin_components.iter() {
-                joints.push(Matrix::new_manual([self.skin_components.len() as f32 + total; 16]));
-                total += skin.joints.len() as f32;
-            }
-            for skin in self.skin_components.iter() {
-                skin.update(&self, &mut joints);
-            }
-
-            let world = &self.world.borrow();
-            unsafe {
-                std::ptr::copy_nonoverlapping(
-                    dirty_primitive_instance_data.as_ptr() as *const u8,
-                    world.instance_staging_buffer.2 as *mut u8,
-                    size_of::<Instance>() * dirty_primitive_instance_data.len(),
-                );
-
-                let mut copy_regions = Vec::new();
-                for (i, &render_component_id) in self.dirty_render_components.iter().enumerate() {
-                    copy_regions.push(vk::BufferCopy {
-                        src_offset: (i * size_of::<Instance>()) as u64,
-                        dst_offset: (render_component_id * size_of::<Instance>()) as u64,
-                        size: size_of::<Instance>() as u64,
-                    });
-                }
-                self.dirty_render_components.clear();
-
-                copy_data_to_memory(world.joints_staging_buffer.2, &joints);
-
-                if !copy_regions.is_empty() {
-                    for frame in 0..MAX_FRAMES_IN_FLIGHT {
-                        copy_buffer_synchronous(
-                            &self.context.device,
-                            command_buffer,
-                            &world.instance_staging_buffer.0,
-                            &world.instance_buffers[frame].0,
-                            Some(copy_regions.clone()),
-                            &0u64
-                        );
-
-                        copy_buffer_synchronous(&self.context.device, command_buffer, &world.joints_staging_buffer.0, &world.joints_buffers[frame].0, None, &world.joints_buffers_size);
-                    }
+            self.dirty_light_components.clear();
+            copy_data_to_memory(world.lights_staging_buffer.2, &new_light_data);
+            if !copy_regions.is_empty() {
+                for frame in 0..MAX_FRAMES_IN_FLIGHT {
+                    copy_buffer_synchronous(
+                        &self.context.device,
+                        command_buffer,
+                        &world.lights_staging_buffer.0,
+                        &world.lights_buffers[frame].0,
+                        Some(copy_regions.clone()),
+                        &0u64
+                    );
                 }
             }
         }
@@ -565,6 +642,14 @@ impl Scene {
                 body.initialize(&mut self.transforms);
             }
 
+            if let Some(light_index) = entity.light {
+                self.dirty_light_components.push(light_index);
+            }
+
+            if let Some(camera_index) = entity.camera {
+                self.dirty_camera_components.push(camera_index);
+            }
+
             (entity.transform, entity.children_indices.clone())
         };
 
@@ -573,9 +658,10 @@ impl Scene {
         }
     }
 
-    pub unsafe fn draw(&self, scene_renderer: &SceneRenderer, frame: usize, camera: Option<&Camera>, draw_mode: DrawMode) {
+    pub unsafe fn draw(&self, scene_renderer: &SceneRenderer, frame: usize, camera: Option<usize>, draw_mode: DrawMode) {
         let command_buffer = get_command_buffer();
         let world = &self.world.borrow();
+        let camera = camera.map(|i| &self.camera_components[i]);
         unsafe {
             let (do_deferred, do_forward, do_outline, do_hitboxes) = match draw_mode {
                 DrawMode::Deferred => (true, false, false, false),
@@ -700,7 +786,7 @@ pub struct Entity {
     pub children_indices: Vec<usize>,
     pub parent: usize,
 
-    pub sun: Option<SunComponent>,
+    pub sun: Option<usize>,
     pub render_objects: Vec<usize>,
     pub joint_object: Option<usize>,
     pub animation_objects: Vec<usize>,
@@ -1524,7 +1610,7 @@ impl RenderComponent {
         command_buffer: &CommandBuffer,
         world: &World,
         index: usize,
-        camera: Option<&Camera>
+        camera: Option<&CameraComponent>
     ) {
         let mut all_points_outside_of_same_plane = false;
 
@@ -1563,14 +1649,269 @@ impl RenderComponent {
     }
 }
 pub struct CameraComponent {
-    pub camera_index: usize,
+    pub owner: usize,
+    pub transform: usize,
+
+    pub view_matrix: Matrix,
+    pub projection_matrix: Matrix,
+    pub fov_y: f32,
+    pub aspect_ratio: f32,
+    pub near: f32,
+    pub far: f32,
+    pub frustum: Frustum,
+    pub infinite_reverse: bool,
+
+    pub third_person: bool,
+    pub third_person_vector: Vector, // to be rotated by the cameras rotation and added to the position when creating the view matrix, if in third person
 }
+impl CameraComponent {
+    pub fn new_perspective_rotation(
+        fov_y: f32,
+        aspect_ratio: f32,
+        near: f32,
+        far: f32,
+        infinite_reverse: bool,
+        third_person_vector: Vector
+    ) -> Self {
+        Self {
+            owner: 0,
+            transform: 0,
+
+            view_matrix: Matrix::new(),
+            projection_matrix: Matrix::new(),
+            fov_y,
+            aspect_ratio,
+            near,
+            far,
+            frustum: Frustum::null(),
+            infinite_reverse,
+            third_person: false,
+            third_person_vector
+        }
+    }
+
+    pub fn update_matrices(&mut self, transform: &Transform) {
+        self.view_matrix = Matrix::new_view(
+            if self.third_person {
+                let third_person_position = &transform.world_translation + self.third_person_vector.rotate_by_euler(&transform.world_rotation.quat_to_euler());
+                third_person_position
+            } else { transform.world_translation.clone() },
+            &transform.world_rotation.quat_to_euler(),
+        );
+        self.projection_matrix = if self.infinite_reverse { Matrix::new_infinite_reverse_projection(
+            self.fov_y.to_radians(),
+            self.aspect_ratio,
+            self.near,
+        ) } else { Matrix::new_projection(
+            self.fov_y.to_radians(),
+            self.aspect_ratio,
+            self.near,
+            self.far,
+        ) }
+    }
+
+    pub fn update_frustum(&mut self, transform: &Transform) {
+        let rotation = &transform.world_rotation.quat_to_euler()
+            .mul_by_vec(&Vector::new3(-1.0, 1.0, 1.0)) + Vector::new3(0.0, -PI, 0.0);
+        let cam_front = Vector::new3(0.0, 0.0, 1.0).rotate_by_euler(&rotation);
+        let cam_up = Vector::new3(0.0, 1.0, 0.0).rotate_by_euler(&rotation);
+        let cam_right = cam_up.cross(&cam_front).normalize3();
+
+        let half_v = self.far * (self.fov_y*0.5).to_radians().tan();
+        let half_h = half_v*self.aspect_ratio;
+
+        let front_by_far = cam_front * self.far;
+
+        let position = transform.world_translation;
+
+        self.frustum = Frustum {
+            planes: [
+                Plane {
+                    normal: cam_front,
+                    point: position + (cam_front * self.near),
+                },
+                Plane {
+                    normal: cam_front * -1.0,
+                    point: position + front_by_far,
+                },
+                Plane {
+                    normal: cam_up.cross(&(front_by_far - (cam_right * half_h))),
+                    point: position,
+                },
+                Plane {
+                    normal: (front_by_far + (cam_right * half_h)).cross(&cam_up),
+                    point: position,
+                },
+                Plane {
+                    normal: cam_right.cross(&(front_by_far + (cam_up * half_v))),
+                    point: position,
+                },
+                Plane {
+                    normal: (front_by_far - (cam_up * half_v)).cross(&cam_right),
+                    point: position,
+                }
+            ],
+        }
+    }
+
+    pub fn get_frustum_corners_with_near_far(&self, near: f32, far: f32) -> [Vector; 8] {
+        let inverse_view_projection = (Matrix::new_projection(self.fov_y.to_radians(), self.aspect_ratio, near, far) * self.view_matrix).inverse4();
+        let mut corners = [
+            Vector::new4(-1.0, 1.0, 0.0, 1.0),
+            Vector::new4(1.0, 1.0, 0.0, 1.0),
+            Vector::new4(1.0, -1.0, 0.0, 1.0),
+            Vector::new4(-1.0, -1.0, 0.0, 1.0),
+            Vector::new4(-1.0, 1.0, 1.0, 1.0),
+            Vector::new4(1.0, 1.0, 1.0, 1.0),
+            Vector::new4(1.0, -1.0, 1.0, 1.0),
+            Vector::new4(-1.0, -1.0, 1.0, 1.0),
+        ];
+        for i in 0..corners.len() {
+            corners[i] = inverse_view_projection * corners[i];
+            corners[i] = corners[i] / corners[i].w;
+        }
+
+        corners
+    }
+}
+
 pub struct LightComponent {
-    pub light_index: usize,
+    pub owner: usize,
+    pub transform: usize,
+
+    pub color: Vector,
+    pub light_type: u32,
+    pub quadratic_falloff: f32,
+    pub linear_falloff: f32,
+    pub constant_falloff: f32,
+    pub inner_cutoff: f32,
+    pub outer_cutoff: f32,
+}
+impl LightComponent {
+    pub fn new(position: Vector, direction: Vector, color: Vector) -> LightComponent {
+        LightComponent {
+            owner: 0,
+            transform: 0,
+            color,
+            light_type: 0,
+            quadratic_falloff: 0.1,
+            linear_falloff: 0.1,
+            constant_falloff: 0.1,
+            inner_cutoff: 0.0,
+            outer_cutoff: 0.0,
+        }
+    }
+    pub fn to_sendable(&self, transform: &Transform) -> LightSendable {
+        LightSendable {
+            position: transform.world_translation.to_array3(),
+            _pad0: 0u32,
+            direction: Vector::new3(0.0, 0.0, 1.0).rotate_by_quat(&transform.world_rotation).to_array3(),
+            light_type: self.light_type,
+            attenuation_values:
+            if self.light_type == 0 { [self.quadratic_falloff, self.linear_falloff, self.constant_falloff] }
+            else { [self.inner_cutoff, self.outer_cutoff, 0.0] },
+            _pad1: 0u32,
+            color: self.color.to_array3(),
+            _pad2: 0u32,
+        }
+    }
 }
 pub struct SunComponent {
     pub direction: Vector,
     pub color: Vector,
+}
+impl SunComponent {
+    pub fn new_sun(vector: Vector, color: Vector) -> SunComponent {
+        SunComponent {
+            direction: Vector::new4(vector.x, vector.y, vector.z, 1.0).normalize3(),
+            color,
+        }
+    }
+    pub fn get_sendable(&self, primary_camera: &CameraComponent) -> SunSendable {
+        let cascade_levels = [primary_camera.far * 0.005, primary_camera.far * 0.015, primary_camera.far * 0.045, primary_camera.far * 0.15];
+
+        let mut views = Vec::new();
+        let mut projections = Vec::new();
+        for i in 0..cascade_levels.len() + 1 {
+            let matrices: [Matrix; 2];
+            if i == 0 {
+                matrices = self.get_cascade_matrix(primary_camera, primary_camera.near, cascade_levels[i]);
+            }
+            else if i < cascade_levels.len() {
+                matrices = self.get_cascade_matrix(primary_camera, cascade_levels[i - 1], cascade_levels[i]);
+            }
+            else {
+                matrices = self.get_cascade_matrix(primary_camera, cascade_levels[i - 1], primary_camera.far.min(500.0));
+            }
+            views.push(matrices[0]);
+            projections.push(matrices[1]);
+        }
+
+        let mut matrices = Vec::new();
+        for i in 0..5 {
+            matrices.push((projections[i] * views[i]).data);
+        }
+        SunSendable {
+            matrices: <[[f32; 16]; 5]>::try_from(matrices.as_slice()).unwrap(),
+            vector: self.direction.to_array3(),
+            _pad0: 0u32,
+            color: self.color.to_array3(),
+            _pad1: 0u32,
+        }
+    }
+
+    fn get_cascade_matrix(&self, camera: &CameraComponent, near: f32, far: f32) -> [Matrix; 2] {
+        let corners = camera.get_frustum_corners_with_near_far(near, far);
+
+        let mut sum = Vector::empty();
+        for corner in corners.iter() {
+            sum = sum + corner;
+        }
+        let mut frustum_center = sum / 8.0;
+        frustum_center.w = 1.0;
+
+        let mut max_radius_squared = 0.0f32;
+        for corner in &corners {
+            let v = *corner - frustum_center;
+            let radius_squared = v.dot4(&v);
+            if radius_squared > max_radius_squared { max_radius_squared = radius_squared; }
+        }
+        let radius = max_radius_squared.sqrt();
+
+        let texels_per_unit = SHADOW_RES as f32 / (radius * 2.0);
+        let scalar_matrix = Matrix::new_scalar(texels_per_unit);
+        let temp_view = Matrix::new_look_at(
+            &(-1.0 * self.direction),
+            &Vector::empty(),
+            &Vector::new3(0.0, 1.0, 0.0)
+        ) * scalar_matrix;
+        frustum_center = temp_view * frustum_center;
+        frustum_center.x = frustum_center.x.floor();
+        frustum_center.y = frustum_center.y.floor();
+        frustum_center.w = 1.0;
+        frustum_center = temp_view.inverse4() * frustum_center;
+
+        let view = Matrix::new_look_at(
+            &(frustum_center - (self.direction * 2.0 * radius)),
+            &frustum_center,
+            &Vector::new3(0.0, 1.0, 0.0)
+        );
+
+        let mut min_x = f32::MAX; let mut min_y = f32::MAX; let mut min_z = f32::MAX;
+        let mut max_x = f32::MIN; let mut max_y = f32::MIN; let mut max_z = f32::MIN;
+        for corner in &corners {
+            let corner_light_space = view * corner;
+            min_x = min_x.min(corner_light_space.x);
+            min_y = min_y.min(corner_light_space.y);
+            min_z = min_z.min(corner_light_space.z);
+            max_x = max_x.max(corner_light_space.x);
+            max_y = max_y.max(corner_light_space.y);
+            max_z = max_z.max(corner_light_space.z);
+        }
+
+        let projection = Matrix::new_ortho(min_x, max_x, min_y, max_y, -radius * 6.0, radius * 6.0);
+        [view, projection]
+    }
 }
 
 #[derive(Clone, Debug, Copy)]
@@ -1588,6 +1929,55 @@ impl Instance {
     }
 }
 
+#[derive(Clone, Debug, Copy)]
+pub struct Plane {
+    pub normal: Vector,
+    pub point: Vector,
+}
+impl Plane {
+    pub fn null() -> Self {
+        Self {
+            normal: Vector::empty(),
+            point: Vector::empty(),
+        }
+    }
+
+    pub fn test_point_within(&self, point: &Vector) -> bool {
+        let evaluated = self.normal * (point - self.point);
+        evaluated.x + evaluated.y + evaluated.z > 0.0
+    }
+
+    pub fn test_sphere_within(&self, center: &Vector, radius: f32) -> bool {
+        center.sub_vec(&self.point).dot4(&self.normal) > -radius
+    }
+}
+#[derive(Clone, Debug)]
+pub struct Frustum {
+    pub planes: [Plane; 6],
+}
+impl Frustum {
+    pub fn null() -> Self {
+        Self {
+            planes: [Plane::null(); 6],
+        }
+    }
+
+    pub fn test_point_within(&self, point: &Vector) -> bool {
+        let mut i = 0;
+        for plane in self.planes.iter() {
+            if plane.test_point_within(point) { i += 1 }
+        }
+        i >= 6
+    }
+
+    pub fn test_sphere_within(&self, center: &Vector, radius: f32) -> bool {
+        let mut i = 0;
+        for plane in self.planes.iter() {
+            if plane.test_sphere_within(center, radius) { i += 1 }
+        }
+        i >= 6
+    }
+}
 
 pub fn world_position_to_local(world_pos: Vector, parent: &Transform) -> Vector {
     ((world_pos - parent.world_translation) / parent.world_scale)

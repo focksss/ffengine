@@ -1,24 +1,16 @@
 use ash::vk;
-use ash::vk::{DescriptorType, DeviceSize, Format, ImageAspectFlags, ImageLayout, ImageSubresourceRange, MemoryPropertyFlags, PipelineInputAssemblyStateCreateInfo, PipelineRasterizationStateCreateInfo, Sampler, ShaderStageFlags};
+use ash::vk::{DescriptorType, Format, ImageLayout, Sampler, ShaderStageFlags};
 use std::cell::RefCell;
-use std::fs::File;
-use std::io::BufWriter;
-use std::{iter, slice};
+use std::slice;
 use std::sync::Arc;
 use crate::client::client::Client;
 use crate::gui::gui::{Element, GUI};
 use crate::math::Vector;
-use crate::scene::physics::hitboxes::hitbox::Hitbox;
-use crate::scene::physics::hitboxes::hitbox::Hitbox::OBB;
-use crate::scene::physics::hitboxes::hitbox::Hitbox::Sphere;
-use crate::scene::physics::hitboxes::mesh::Bvh;
 use crate::scene::physics::physics_engine::PhysicsEngine;
-use crate::scene::physics::player::Player;
 use crate::render::render_helper::{Descriptor, DescriptorCreateInfo, DescriptorSetCreateInfo, PassCreateInfo, PipelineCreateInfo, Renderpass, RenderpassCreateInfo, Texture, TextureCreateInfo, Transition};
 use crate::render::scene_renderer::SceneRenderer;
-use crate::render::vulkan_base::{compile_shaders, copy_data_to_memory, find_memorytype_index, VkBase};
+use crate::render::vulkan_base::{compile_shaders, VkBase};
 use crate::scene::scene::Scene;
-use crate::scene::world::camera::{Camera, CameraPointer};
 use crate::scene::world::world::World;
 
 pub const MAX_FRAMES_IN_FLIGHT: usize = 3;
@@ -26,8 +18,6 @@ pub const MAX_FRAMES_IN_FLIGHT: usize = 3;
 pub struct Renderer {
     pub device: ash::Device,
     pub draw_command_buffers: Vec<vk::CommandBuffer>,
-
-    pub camera: CameraPointer,
 
     pub present_renderpass: Renderpass,
     pub compositing_renderpass: Renderpass,
@@ -41,16 +31,14 @@ pub struct Renderer {
     pub present_sampler: Sampler,
 }
 impl Renderer {
-    pub unsafe fn new(base: &VkBase, controller: Arc<RefCell<Client>>, primary_camera: CameraPointer, num_guis: usize) -> Renderer { unsafe {
+    pub unsafe fn new(base: &VkBase, world: Arc<RefCell<World>>, controller: Arc<RefCell<Client>>, num_guis: usize) -> Renderer { unsafe {
         Renderer::compile_shaders();
-        let world_ref = primary_camera.world.clone();
-        let world = world_ref.borrow();
 
         let (
             scene_renderer,
             compositing_renderpass,
             present_renderpass,
-        ) = Renderer::create_rendering_objects(base, &world, vk::Viewport {
+        ) = Renderer::create_rendering_objects(base, &world.borrow(), vk::Viewport {
              width: base.surface_resolution.width as f32,
              height: base.surface_resolution.height as f32,
              x: 0.0,
@@ -78,8 +66,6 @@ impl Renderer {
         let mut renderer = Renderer {
             device: base.device.clone(),
             draw_command_buffers: base.draw_command_buffers.clone(),
-
-            camera: primary_camera,
 
             present_renderpass,
             compositing_renderpass,
@@ -129,7 +115,7 @@ impl Renderer {
             renderer.set_compositing_textures(compositing_textures);
         }
         renderer.set_compositing_layers(4);
-        renderer.scene_renderer.borrow_mut().update_world_textures_all_frames(&world);
+        renderer.scene_renderer.borrow_mut().update_world_textures_all_frames(&world.borrow());
 
         renderer
     } }
@@ -140,7 +126,7 @@ impl Renderer {
         Renderpass,
         Renderpass,
     ) { unsafe {
-        let scene_renderer = SceneRenderer::new(&base.context, world, scene_viewport);
+        let scene_renderer = SceneRenderer::new(&base.context, 0, world, scene_viewport);
 
         let context = &base.context;
 
@@ -151,7 +137,7 @@ impl Renderer {
             .shader_stages(ShaderStageFlags::FRAGMENT)
             .dynamic(true)
             .image_infos(vec![vk::DescriptorImageInfo {
-                image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                image_layout: ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                 image_view: scene_renderer.null_texture.image_view,
                 sampler: scene_renderer.null_tex_sampler,
                 ..Default::default()
@@ -305,10 +291,9 @@ impl Renderer {
         let frame_command_buffer = self.draw_command_buffers[current_frame];
 
         let mut scene = &mut scene.borrow_mut();
-        scene.world.borrow_mut().update_sun(self.camera.index);
         //println!("camera data {:?}", camera);
 
-        self.scene_renderer.borrow().render_world(current_frame, &scene, self.camera.index);
+        self.scene_renderer.borrow().render_world(current_frame, &scene);
 
         for gui in self.guis.iter() {
             gui.borrow_mut().draw(current_frame, frame_command_buffer);

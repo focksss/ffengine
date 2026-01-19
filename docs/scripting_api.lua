@@ -29,6 +29,7 @@ MovementMode = {
     ---@field get_render_component fun(self:Scene, index:integer):RenderComponent
     ---@field get_transform fun(self:Scene, index:integer):Transform
     ---@field get_rigid_body fun(self:Scene, index:integer):RigidBodyComponent
+    ---@field get_camera fun(self:Scene, index:integer):CameraComponent
     ---@field reset_outlines fun(self:Scene):nil
     ---@field add_outlined_component fun(self:Scene, index:integer):nil
     ---@field add_outlined_body fun(self:Scene, index:integer):nil
@@ -52,6 +53,14 @@ MovementMode = {
         ---@field static boolean
         ---@field velocity Vector
         ---@field angular_velocity Vector
+
+        ---@class CameraComponent
+        ---@field owner integer
+        ---@field transform integer
+        ---@field fov_y number
+        ---@field aspect_ratio number
+        ---@field near number
+        ---@field far number
 
         ---@class Entity
         ---@field transform_index integer
@@ -178,28 +187,6 @@ MovementMode = {
         ---@field reload_scripts_queued boolean
         ---@field close_requested boolean
 
-    ---@class PhysicsEngine
-    ---@field gravity Vector
-    ---@field get_player fun(self:PhysicsEngine, index:integer):Player
-    ---@field get_rigid_body fun(self:PhysicsEngine, index:integer):RigidBody
-
-    ---@class Player
-    ---@field movement_mode integer
-    ---@field grounded boolean
-    ---@field rigid_body RigidBody
-    ---@field camera Camera
-
-        ---@class RigidBody
-        ---@field position Vector
-        ---@field velocity Vector
-
-        ---@class Camera
-        ---@field position Vector
-        ---@field rotation Vector
-        ---@field fov_y number
-        ---@field aspect_ratio number
-        ---@field near number
-        ---@field far number
 
 
 

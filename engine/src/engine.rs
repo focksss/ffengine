@@ -11,14 +11,12 @@ use winit::event_loop::ControlFlow;
 use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
 use crate::math::Vector;
 use crate::client::client::Client;
-use crate::gui::gui::GUI;
 use crate::scene::physics::physics_engine::PhysicsEngine;
 use crate::render::render::{Renderer, MAX_FRAMES_IN_FLIGHT};
 use crate::render::vulkan_base::{record_submit_commandbuffer, VkBase};
 use crate::scene::scene::Scene;
 use crate::scripting::lua_engine::Lua;
-use crate::scene::world::camera::{Camera, CameraPointer};
-use crate::scene::world::world::{Light, World};
+use crate::scene::world::world::World;
 
 const PI: f32 = std::f32::consts::PI;
 
@@ -62,10 +60,7 @@ impl Engine {
         let rw_lock = RwLock::new(base.draw_command_buffers[0]);
         COMMAND_BUFFER.set(rw_lock).expect("Failed to initialize frame command buffer global");
 
-        let renderer = unsafe { Arc::new(RefCell::new(Renderer::new(&base, client.clone(), CameraPointer {
-            world: world.clone(),
-            index: 0
-        }, 1))) };
+        let renderer = unsafe { Arc::new(RefCell::new(Renderer::new(&base, world.clone(), client.clone(), 1))) };
 
         let engine = Engine {
             scene: Arc::new(RefCell::new(Scene::new(&base.context, renderer.clone(), world.clone(), physics_engine.clone()))),
@@ -221,10 +216,6 @@ impl Engine {
                                 {
                                     self.world.borrow_mut().update_buffers(base, frame_command_buffer);
                                     self.scene.borrow_mut().update_scene(frame_command_buffer, current_frame, delta_time, false);
-                                    let world_ref = &mut self.world.borrow_mut();
-                                    world_ref.update_lights(frame_command_buffer, current_frame);
-                                    world_ref.update_cameras();
-                                    world_ref.update_sun(0);
                                 }
 
                                 let flags = self.client.borrow().flags.clone();
