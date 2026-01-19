@@ -158,7 +158,7 @@ void multiscatter(vec3 p, vec3 sun_dir, out vec3 net_luminance, out vec3 fms) {
 void main() {
     ivec3 coord = ivec3(gl_GlobalInvocationID.xyz);
 
-    vec2 uv = vec2(coord) / imageSize(multiscatter_lut).xy;
+    vec2 uv = (vec2(coord) + vec2(0.5)) / imageSize(multiscatter_lut).xy;
 
     // imageStore(multiscatter_lut, coord.xy, vec4(uv, 0.0, 1.0)); return;
 

@@ -86,11 +86,11 @@ vec3 get_multiscatter(vec3 p, vec3 sun_dir) {
     float height = length(p);
     vec3 up = p / height;
     float sun_cos_zenith_angle = dot(sun_dir, up);
-    vec2 uv = vec2(
+    vec2 sample_uv = vec2(
     clamp(0.5 + 0.5 * sun_cos_zenith_angle, 0.0, 1.0),
     max(0.0, min(1.0, (height - PLANET_RADIUS) / (ATMOSPHERE_RADIUS - PLANET_RADIUS)))
     );
-    return texture(multiscatter_lut, uv).rgb;
+    return texture(multiscatter_lut, sample_uv).rgb;
 }
 
 vec3 raymarch(
@@ -139,8 +139,6 @@ vec3 raymarch(
 }
 
 void main() {
-    // color = texture(multiscatter_lut, uv); return;
-
     float adj_v;
     if (uv.y < 0.5) {
         float coord = 1.0 - 2.0 * uv.y;
