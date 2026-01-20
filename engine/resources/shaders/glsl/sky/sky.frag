@@ -120,8 +120,10 @@ vec3 jodie_reinhard_tonemap(vec3 c){
     return mix(c / (l + 1.0), tc, tc);
 }
 vec3 get_transmittance(vec3 p, vec3 sun_dir) {
-    float height = length(p);
-    vec3 up = p / height;
+    vec3 o_MM = p * 1e-6 + vec3(0.0, 6.360 + 0.0002, 0.0);
+    o_MM.y = max(1e-6, o_MM.y);
+    float height = length(o_MM);
+    vec3 up = o_MM / height;
     float sun_cos_zenith_angle = dot(sun_dir, up);
     vec2 uv = vec2(
     clamp(0.5 + 0.5 * sun_cos_zenith_angle, 0.0, 1.0),
@@ -131,6 +133,7 @@ vec3 get_transmittance(vec3 p, vec3 sun_dir) {
 }
 vec3 calculate_atmosphere(vec3 o, vec3 d) {
     vec3 o_MM = o * 1e-6 + vec3(0.0, 6.360 + 0.0002, 0.0);
+    o_MM.y = max(1e-6, o_MM.y);
     float height = length(o_MM);
     vec3 up = o_MM / height;
 

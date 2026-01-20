@@ -150,6 +150,7 @@ void main() {
     float azimuth = (uv.x - 0.5) * 2.0 * PI;
 
     vec3 view_pos = VIEW_POSITION * 1e-6 + vec3(0.0, PLANET_RADIUS + 0.0002, 0.0);
+    view_pos.y = max(0.0001, view_pos.y);
 
 
     float height = length(view_pos);

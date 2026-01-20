@@ -4,12 +4,17 @@ use std::cell::RefCell;
 use crate::engine::EngineRef;
 use crate::math::Vector;
 use crate::scripting::engine_api::client_api::client_api::{LuaCursorIcon, LuaKeyCode, LuaMouseButton, LuaResizeDirection};
-use crate::scripting::engine_api::gui_api::gui_api::LuaAnchorPoint;
+use crate::scripting::engine_api::gui_api::gui_api::{GUINodePointer, LuaAnchorPoint};
+use crate::scripting::engine_api::scene_api::scene_api::EntityPointer;
 
 thread_local! {
     static LUA: RefCell<Option<Lua>> = RefCell::new(None);
 }
 
+enum ScriptInstanceOwner {
+    Entity(EntityPointer),
+    GUINode(GUINodePointer),
+}
 pub struct Script {
     path: PathBuf,
     environment: mlua::RegistryKey,
@@ -20,6 +25,8 @@ pub struct Script {
     mouse_button_pressed_fn: Option<mlua::RegistryKey>,
     mouse_button_released_fn: Option<mlua::RegistryKey>,
     has_started: bool,
+
+    instance_owners: Vec<ScriptInstanceOwner>,
 }
 
 pub struct Lua {
@@ -139,6 +146,7 @@ impl Lua {
             mouse_button_pressed_fn,
             mouse_button_released_fn,
             has_started: false,
+            instance_owners: Vec::new(),
         };
 
         let assigned_index = if let Some(index) = self.free_script_indices.pop() {

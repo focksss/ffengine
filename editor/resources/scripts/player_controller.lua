@@ -138,7 +138,7 @@ function MouseButtonPressed()
             initial_value = editor_target
             changing_rotation = false
         else
-            initial_value = transform.rotation
+            initial_value = editor_rotation
             changing_rotation = true
         end
     end

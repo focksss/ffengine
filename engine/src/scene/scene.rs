@@ -1914,6 +1914,22 @@ impl SunComponent {
     }
 }
 
+/*
+TODO()
+    - Scripts exist as ScriptAssets in the LuaEngine
+    - ScriptComponents have ScriptInstances, which are instances of ScriptAssets
+    - ScriptInstances are called with a "self" being set in their environment
+    - Entities should have a HashMap of FieldComponents, which are per-entity fields that can be accessed by scripts
+    - eg. Lua: local health = self:get_field("health")
+    - eg. Lua: self:set_field("health", 10.0)
+*/
+pub struct ScriptComponent {
+    owner: usize,
+    uri: String,
+    script: usize,
+
+}
+
 #[derive(Clone, Debug, Copy)]
 #[repr(C)]
 pub struct Instance {
