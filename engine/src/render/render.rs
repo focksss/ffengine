@@ -191,7 +191,7 @@ impl Renderer {
             let mut gui = self.guis[0].borrow_mut();
             let viewport_node_index = gui.nodes[gui.nodes[gui.root_node_indices[0]].children_indices[2]].element_indices[0];
             gui.elements[viewport_node_index] = Element::Texture {
-                texture_set: scene_renderer.lighting_renderpass.pass.borrow().get_texture_set(0),
+                texture_set: scene_renderer.sky_renderpass.pass.borrow().get_texture_set(0),
                 index: gui.image_count,
                 additive_tint: Vector::empty(),
                 multiplicative_tint: Vector::fill(1.0),

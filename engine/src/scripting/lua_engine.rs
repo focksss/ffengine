@@ -238,9 +238,10 @@ impl Lua {
     pub fn call_script(
         script_index: usize,
         method_name: &str,
+        args: Option<mlua::MultiValue>,
     ) -> Result<(), mlua::Error> {
         Self::with_mut(|lua| {
-            lua.call_method_impl(script_index, method_name)
+            lua.call_method_impl(script_index, method_name, args)
         })
     }
 
@@ -248,6 +249,7 @@ impl Lua {
         &mut self,
         script_index: usize,
         method_name: &str,
+        args: Option<mlua::MultiValue>,
     ) -> Result<(), mlua::Error> {
         let script = &self.scripts[script_index];
 
@@ -259,7 +261,7 @@ impl Lua {
                 let key = self.lua.create_registry_value(func)?;
                 let method: mlua::Function = self.lua.registry_value(&key)?;
 
-                method.call::<_, ()>(())
+                method.call::<_, ()>(args.unwrap_or_default())
             }
             None => {
                 Err(mlua::Error::RuntimeError(
@@ -304,6 +306,7 @@ impl Lua {
             self.call_method_impl(
                 call.0,
                 call.1.as_str(),
+                None
             ).expect("failed to call cached method");
         }
         self.cached_calls.clear();

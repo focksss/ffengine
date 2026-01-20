@@ -479,6 +479,11 @@ impl SceneRenderer {
                     image_layout: ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
                 }, // geometry depth
                 vk::DescriptorImageInfo {
+                    sampler,
+                    image_view: lighting_renderpass.pass.borrow().textures[current_frame][0].device_texture.borrow().image_view,
+                    image_layout: ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                }, // drawn scene
+                vk::DescriptorImageInfo {
                     sampler: repeat_sampler,
                     image_view: cloud_shaping.device_texture.borrow().image_view,
                     image_layout: ImageLayout::SHADER_READ_ONLY_OPTIMAL,
@@ -1243,29 +1248,6 @@ impl SceneRenderer {
             Renderpass::new(forward_renderpass_create_info)
         };
 
-        let outline_renderpass = {
-            let light_pass = lighting_renderpass.pass.borrow();
-
-            let pass_create_info = PassCreateInfo::new(context)
-                .grab_attachment(&light_pass, 0, vk::AttachmentLoadOp::LOAD, vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
-            let descriptor_set_create_info = DescriptorSetCreateInfo::new(context)
-                .add_descriptor(Descriptor::new(&texture_sampler_create_info));
-
-            let renderpass_create_info = RenderpassCreateInfo::new(context)
-                .pass_create_info(pass_create_info)
-                .resolution(resolution)
-                .descriptor_set_create_info(descriptor_set_create_info)
-                .add_push_constant_range(vk::PushConstantRange {
-                    stage_flags: ShaderStageFlags::FRAGMENT,
-                    offset: 0,
-                    size: size_of::<OutlineConstantSendable>() as _,
-                })
-                .add_pipeline_create_info(PipelineCreateInfo::new()
-                    .vertex_shader_uri(String::from("quad\\quad.vert.spv"))
-                    .fragment_shader_uri(String::from("outline\\outline.frag.spv")));
-            Renderpass::new(renderpass_create_info)
-        };
-
         let sky_view_lut_renderpass = {
             let descriptor_set_create_info = DescriptorSetCreateInfo::new(context)
                 .add_descriptor(Descriptor::new(&texture_sampler_create_info))
@@ -1289,16 +1271,16 @@ impl SceneRenderer {
         };
 
         let cloud_renderpass = {
-            let light_pass = lighting_renderpass.pass.borrow();
-
             let ubo_create_info = DescriptorCreateInfo::new(context)
                 .descriptor_type(DescriptorType::UNIFORM_BUFFER)
                 .shader_stages(ShaderStageFlags::FRAGMENT)
                 .size(size_of::<SkyInfo>() as u64);
 
             let pass_create_info = PassCreateInfo::new(context)
-                .grab_attachment(&light_pass, 0, vk::AttachmentLoadOp::LOAD, vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
+                .add_color_attachment_info(TextureCreateInfo::new(context).format(Format::R16G16B16A16_SFLOAT)
+                    .width(resolution.width).height(resolution.height));
             let descriptor_set_create_info = DescriptorSetCreateInfo::new(context)
+                .add_descriptor(Descriptor::new(&texture_sampler_create_info))
                 .add_descriptor(Descriptor::new(&texture_sampler_create_info))
                 .add_descriptor(Descriptor::new(&texture_sampler_create_info))
                 .add_descriptor(Descriptor::new(&texture_sampler_create_info))
@@ -1334,6 +1316,29 @@ impl SceneRenderer {
                     .pipeline_color_blend_state_create_info(color_blend_state)
                     .vertex_shader_uri(String::from("quad\\quad.vert.spv"))
                     .fragment_shader_uri(String::from("sky\\sky.frag.spv")));
+            Renderpass::new(renderpass_create_info)
+        };
+
+        let outline_renderpass = {
+            let light_pass = cloud_renderpass.pass.borrow();
+
+            let pass_create_info = PassCreateInfo::new(context)
+                .grab_attachment(&light_pass, 0, vk::AttachmentLoadOp::LOAD, vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
+            let descriptor_set_create_info = DescriptorSetCreateInfo::new(context)
+                .add_descriptor(Descriptor::new(&texture_sampler_create_info));
+
+            let renderpass_create_info = RenderpassCreateInfo::new(context)
+                .pass_create_info(pass_create_info)
+                .resolution(resolution)
+                .descriptor_set_create_info(descriptor_set_create_info)
+                .add_push_constant_range(vk::PushConstantRange {
+                    stage_flags: ShaderStageFlags::FRAGMENT,
+                    offset: 0,
+                    size: size_of::<OutlineConstantSendable>() as _,
+                })
+                .add_pipeline_create_info(PipelineCreateInfo::new()
+                    .vertex_shader_uri(String::from("quad\\quad.vert.spv"))
+                    .fragment_shader_uri(String::from("outline\\outline.frag.spv")));
             Renderpass::new(renderpass_create_info)
         };
 
@@ -1424,10 +1429,10 @@ impl SceneRenderer {
 
         let camera = &scene.camera_components[self.camera_index];
 
-        let mut sun = &scene.sun_components[0].get_sendable(camera);
-        
-        copy_data_to_memory(self.lighting_renderpass.descriptor_set.borrow().descriptors[10].owned_buffers.2[current_frame], &[sun]);
+        let sun = scene.sun_components[0].get_sendable(camera);
+
         copy_data_to_memory(self.shadow_renderpass.descriptor_set.borrow().descriptors[2].owned_buffers.2[current_frame], &[sun]);
+        copy_data_to_memory(self.lighting_renderpass.descriptor_set.borrow().descriptors[10].owned_buffers.2[current_frame], &[sun]);
         let ubo = SSAOPassUniformData {
             samples: self.ssao_kernal,
             projection: camera.projection_matrix.data,
@@ -1454,7 +1459,7 @@ impl SceneRenderer {
             _pad: 0.0,
             t: scene.runtime,
         };
-        copy_data_to_memory(self.sky_renderpass.descriptor_set.borrow().descriptors[6].owned_buffers.2[current_frame], &[ubo]);
+        copy_data_to_memory(self.sky_renderpass.descriptor_set.borrow().descriptors[7].owned_buffers.2[current_frame], &[ubo]);
         let camera_constants = CameraMatrixUniformData {
             view: camera.view_matrix.data,
             projection: camera.projection_matrix.data,
@@ -1595,13 +1600,7 @@ impl SceneRenderer {
                 scene.draw(self, current_frame, Some(self.camera_index), DrawMode::Hitboxes);
             }),
             None,
-            Transition::NONE
-        );
-        self.geometry_renderpass.pass.borrow().transition(
-            frame_command_buffer,
-            current_frame,
-            None,
-            Some((ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL, ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL, vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE)),
+            Transition::END
         );
 
         self.sky_view_lut_renderpass.do_renderpass(
@@ -1633,7 +1632,7 @@ impl SceneRenderer {
             }),
             None::<fn()>,
             None,
-            Transition::NONE
+            Transition::START
         );
 
         self.outline_renderpass.do_renderpass(

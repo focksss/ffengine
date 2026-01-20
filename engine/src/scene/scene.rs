@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::f32::consts::PI;
 use std::slice;
 use std::sync::Arc;
@@ -43,6 +44,7 @@ pub struct Scene {
     pub camera_components: Vec<CameraComponent>,
     pub light_components: Vec<LightComponent>,
     pub sun_components: Vec<SunComponent>,
+    pub script_components: Vec<ScriptComponent>,
 
     pub outlined_components: Vec<usize>,
     pub outlined_bodies: Vec<usize>,
@@ -75,6 +77,7 @@ impl Scene {
             camera_components: Vec::new(),
             light_components: Vec::new(),
             sun_components: Vec::new(),
+            script_components: Vec::new(),
 
             outlined_components: Vec::new(),
             outlined_bodies: Vec::new(),
@@ -1881,7 +1884,7 @@ impl SunComponent {
         let texels_per_unit = SHADOW_RES as f32 / (radius * 2.0);
         let scalar_matrix = Matrix::new_scalar(texels_per_unit);
         let temp_view = Matrix::new_look_at(
-            &(-1.0 * self.direction),
+            &(1.0 * self.direction),
             &Vector::empty(),
             &Vector::new3(0.0, 1.0, 0.0)
         ) * scalar_matrix;
@@ -1892,7 +1895,7 @@ impl SunComponent {
         frustum_center = temp_view.inverse4() * frustum_center;
 
         let view = Matrix::new_look_at(
-            &(frustum_center - (self.direction * 2.0 * radius)),
+            &(frustum_center - (-self.direction * 2.0 * radius)),
             &frustum_center,
             &Vector::new3(0.0, 1.0, 0.0)
         );
@@ -1910,6 +1913,7 @@ impl SunComponent {
         }
 
         let projection = Matrix::new_ortho(min_x, max_x, min_y, max_y, -radius * 6.0, radius * 6.0);
+
         [view, projection]
     }
 }
@@ -1924,10 +1928,16 @@ TODO()
     - eg. Lua: self:set_field("health", 10.0)
 */
 pub struct ScriptComponent {
-    owner: usize,
-    uri: String,
-    script: usize,
-
+    pub owner: usize,
+    pub script: usize,
+    pub fields: HashMap<String, Field>,
+}
+pub enum Field {
+    Float(f32),
+    Int(i32),
+    Vec3(Vector),
+    Bool(bool),
+    String(String),
 }
 
 #[derive(Clone, Debug, Copy)]

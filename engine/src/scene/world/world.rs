@@ -438,6 +438,7 @@ pub struct LightSendable {
 }
 #[derive(Copy)]
 #[derive(Clone)]
+#[derive(Debug)]
 pub struct SunSendable {
     pub matrices: [[f32; 16]; 5],
     pub vector: [f32; 3],

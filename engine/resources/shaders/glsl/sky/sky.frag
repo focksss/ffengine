@@ -1,12 +1,13 @@
 #version 460
 
 layout(set = 0, binding = 0) uniform sampler2D depth;
-layout(set = 0, binding = 1) uniform sampler3D cloud_shaping;
-layout(set = 0, binding = 2) uniform sampler3D cloud_detailing;
-layout(set = 0, binding = 3) uniform sampler2D cloud_weather_map;
-layout(set = 0, binding = 4) uniform sampler2D atmosphere_transmittance_lut;
-layout(set = 0, binding = 5) uniform sampler2D atmosphere_sky_view_lut;
-layout(set = 0, binding = 6) uniform SunUBO {
+layout(set = 0, binding = 1) uniform sampler2D scene_color;
+layout(set = 0, binding = 2) uniform sampler3D cloud_shaping;
+layout(set = 0, binding = 3) uniform sampler3D cloud_detailing;
+layout(set = 0, binding = 4) uniform sampler2D cloud_weather_map;
+layout(set = 0, binding = 5) uniform sampler2D atmosphere_transmittance_lut;
+layout(set = 0, binding = 6) uniform sampler2D atmosphere_sky_view_lut;
+layout(set = 0, binding = 7) uniform SunUBO {
     vec3 SUN_DIR;
     float pad;
     float time;
@@ -276,7 +277,7 @@ void main() {
     vec3 energy = vec3(0.0);
     if (do_march) {
         vec3 entrance = o + t_min * d;
-        float step_size = (MAX - MIN) * 0.01;
+        float step_size = min(travel_distance, (MAX - MIN)) * 0.01;
         float t = 0.0;
         while (t < travel_distance) {
             vec3 p = entrance + t * d;
@@ -306,23 +307,20 @@ void main() {
         sun = sun_col * sun_factor * sun_transmittance * cloud_transmittance;
     }
 
+    float t_surface = sky_hit ? RANGE : t_geometry;
+    float visible_distance;
+    if (cloud_transmittance < 0.99) {
+        float cloud_surface_t = t_min + travel_distance * (1.0 - cloud_transmittance);
+        visible_distance = min(cloud_surface_t, t_surface);
+    } else {
+        visible_distance = t_surface;
+    }
+
+    float fog_factor = saturate(smoothstep(0.0, RANGE, visible_distance));
+
     vec3 atmosphere_color = calculate_atmosphere(o, d);
+    vec3 scene_color = texture(scene_color, uv).rgb;
+    vec3 world_color = (sky_hit ? atmosphere_color : scene_color) * cloud_transmittance + energy;
 
-    vec3 atmosphere_transmittance = get_transmittance(o, SUN_DIR);
-
-    vec3 final_color = atmosphere_color;
-
-    if (do_march) {
-        final_color = final_color * cloud_transmittance + energy;
-    }
-
-    final_color += sun;
-
-    if (!sky_hit) {
-        final_color *= atmosphere_transmittance;
-    }
-
-    float final_alpha = sky_hit ? 1.0 : (1.0 - cloud_transmittance * atmosphere_transmittance.r);
-
-    color = vec4(final_color, final_alpha);
+    color = vec4(world_color + sun, 1.0);
 }

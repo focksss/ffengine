@@ -4,6 +4,7 @@ use std::sync::Arc;
 use mlua::{FromLua, UserData, UserDataFields, UserDataMethods, Value};
 use crate::math::Vector;
 use crate::scene::scene::Scene;
+use crate::scripting::lua_engine::Lua;
 
 macro_rules! with_scene {
     ($lua:expr => $scene:ident) => {
@@ -344,4 +345,23 @@ impl UserData for CameraPointer {
             Ok(())
         });
     }
+}
+
+pub struct ScriptPointer {
+    pub index: usize,
+}
+impl UserData for ScriptPointer {
+    fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
+        fields.add_field_method_get("owner", |lua, this| {
+            with_scene!(lua => scene);
+            Ok(scene.camera_components[this.index].owner)
+        });
+    }
+    fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
+        methods.add_method("call_method", |lua, this, (method_name, args): (String, mlua::MultiValue)| {
+            with_scene!(lua => scene);
+            Lua::call_script(scene.script_components[this.index].script, method_name.as_str(), Some(args))
+        });
+    }
+
 }
