@@ -46,7 +46,8 @@ const float SHAPE_SPEED = 1.0;
 const float DETAIL_SPEED = -1.0;
 
 // atmosphere constants
-const float PLANET_RADIUS = 6371e3;
+const float PLANET_RADIUS = 6360e3;
+const float PLANET_RADIUS_MM = 6.36;
 const float ATMOSPHERE_RADIUS = 6471e3;
 const vec3 PLANET_CENTER = vec3(0.0, -PLANET_RADIUS, 0.0);
 
@@ -120,8 +121,8 @@ vec3 jodie_reinhard_tonemap(vec3 c){
     return mix(c / (l + 1.0), tc, tc);
 }
 vec3 get_transmittance(vec3 p, vec3 sun_dir) {
-    vec3 o_MM = p * 1e-6 + vec3(0.0, 6.360 + 0.0002, 0.0);
-    o_MM.y = max(1e-6, o_MM.y);
+    vec3 o_MM = p * 1e-6 + vec3(0.0, PLANET_RADIUS_MM + 0.0002, 0.0);
+    o_MM.y = max(PLANET_RADIUS_MM, o_MM.y);
     float height = length(o_MM);
     vec3 up = o_MM / height;
     float sun_cos_zenith_angle = dot(sun_dir, up);
@@ -132,8 +133,8 @@ vec3 get_transmittance(vec3 p, vec3 sun_dir) {
     return texture(atmosphere_transmittance_lut, uv).rgb;
 }
 vec3 calculate_atmosphere(vec3 o, vec3 d) {
-    vec3 o_MM = o * 1e-6 + vec3(0.0, 6.360 + 0.0002, 0.0);
-    o_MM.y = max(1e-6, o_MM.y);
+    vec3 o_MM = o * 1e-6 + vec3(0.0, PLANET_RADIUS_MM + 0.0002, 0.0);
+    o_MM.y = max(PLANET_RADIUS_MM, o_MM.y);
     float height = length(o_MM);
     vec3 up = o_MM / height;
 
