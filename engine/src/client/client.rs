@@ -60,7 +60,7 @@ impl Client {
         }
     }
 
-    pub unsafe fn reset_deltas(
+    pub fn reset_deltas(
         &mut self,
     ) {
         self.scroll_delta = (0.0, 0.0);

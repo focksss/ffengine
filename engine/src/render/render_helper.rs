@@ -36,7 +36,7 @@ pub struct ComputeRenderpass {
     pub pipeline_layout: vk::PipelineLayout,
 }
 impl ComputeRenderpass {
-    pub unsafe fn new(create_info: ComputeRenderpassCreateInfo) -> ComputeRenderpass { unsafe {
+    pub fn new(create_info: ComputeRenderpassCreateInfo) -> ComputeRenderpass { unsafe {
         let context = create_info.context.clone();
         let mut descriptor_sets = Vec::new();
         for info in create_info.descriptor_set_create_infos {
@@ -100,7 +100,7 @@ impl ComputeRenderpass {
         }
     } }
 
-    pub unsafe fn do_push_constant<T>(
+    pub fn do_push_constant<T>(
         &self,
         command_buffer: vk::CommandBuffer,
         push_constant: PushConstantData<T>,
@@ -114,7 +114,7 @@ impl ComputeRenderpass {
         )
     } }
 
-    pub unsafe fn do_compute<F1: FnOnce()>(
+    pub fn do_compute<F1: FnOnce()>(
         &self,
         current_frame: usize,
         command_buffer: vk::CommandBuffer,
@@ -128,7 +128,7 @@ impl ComputeRenderpass {
             device.cmd_draw(command_buffer, 6, 1, 0, 0);
         };
     } }
-    pub unsafe fn bind_for_compute(
+    pub fn bind_for_compute(
         &self,
         current_frame: usize,
         command_buffer: vk::CommandBuffer,
@@ -152,7 +152,7 @@ impl ComputeRenderpass {
         );
     }}
 
-    pub unsafe fn destroy(&mut self) { unsafe {
+    pub fn destroy(&mut self) { unsafe {
         for pipeline in self.pipelines.iter() {
             pipeline.shader.destroy();
             self.context.device.destroy_pipeline(pipeline.vulkan_pipeline, None);
@@ -227,7 +227,7 @@ pub struct Renderpass {
     pub scissor: vk::Rect2D,
 }
 impl Renderpass {
-    pub unsafe fn new(create_info: RenderpassCreateInfo) -> Renderpass { unsafe {
+    pub fn new(create_info: RenderpassCreateInfo) -> Renderpass { unsafe {
         let context = create_info.context.clone();
         let pass = if let Some(pass_create_info) = create_info.pass_create_info {
             Arc::new(RefCell::new(Pass::new(pass_create_info)))
@@ -329,7 +329,7 @@ impl Renderpass {
             scissor: create_info.scissor,
         }
     } }
-    pub unsafe fn new_present_renderpass(base: &VkBase) -> Renderpass { unsafe {
+    pub fn new_present_renderpass(base: &VkBase) -> Renderpass { unsafe {
         let context = base.context.clone();
         let mut create_info = RenderpassCreateInfo::new(&context);
         let create_info = create_info.add_pipeline_create_info(
@@ -433,7 +433,7 @@ impl Renderpass {
     /**
     * Defaults to rendering a fullscreen quad with no push constant
     */
-    pub unsafe fn do_renderpass<F1: FnOnce(), F2: FnOnce()>(
+    pub fn do_renderpass<F1: FnOnce(), F2: FnOnce()>(
         &self,
         current_frame: usize,
         command_buffer: vk::CommandBuffer,
@@ -469,7 +469,7 @@ impl Renderpass {
             )
         }
     } }
-    pub unsafe fn begin_renderpass(&self, current_frame: usize, command_buffer: vk::CommandBuffer, framebuffer_index: Option<usize>) { unsafe {
+    pub fn begin_renderpass(&self, current_frame: usize, command_buffer: vk::CommandBuffer, framebuffer_index: Option<usize>) { unsafe {
         let device = &self.context.device;
 
         &self.pass.borrow().begin(command_buffer, current_frame, &self.scissor);
@@ -491,7 +491,7 @@ impl Renderpass {
         );
     }}
 
-    pub unsafe fn destroy(&mut self) { unsafe {
+    pub fn destroy(&mut self) { unsafe {
         for pipeline in self.pipelines.iter() {
             pipeline.shader.destroy();
             self.context.device.destroy_pipeline(pipeline.vulkan_pipeline, None);
@@ -745,7 +745,7 @@ pub struct Pass {
     pub destroyed: bool,
 }
 impl Pass {
-    pub unsafe fn new(create_info: PassCreateInfo) -> Self { unsafe {
+    pub fn new(create_info: PassCreateInfo) -> Self { unsafe {
         let mut textures = Vec::new();
         let context = create_info.context.clone();
         let mut color_formats = Vec::new();
@@ -788,7 +788,7 @@ impl Pass {
             destroyed: false
         }
     } }
-    pub unsafe fn new_present_pass(base: &VkBase) -> Self { unsafe {
+    pub fn new_present_pass(base: &VkBase) -> Self { unsafe {
         let context = &base.context;
 
         let clear_values = vec![
@@ -819,7 +819,7 @@ impl Pass {
         }
     } }
 
-    pub unsafe fn begin(&self, command_buffer: vk::CommandBuffer, frame: usize, scissor: &vk::Rect2D) {
+    pub fn begin(&self, command_buffer: vk::CommandBuffer, frame: usize, scissor: &vk::Rect2D) {
         let mut colors = Vec::new();
         let mut depth = None;
         let mut stencil = None;
@@ -891,7 +891,7 @@ impl Pass {
         textures
     }
 
-    pub unsafe fn transition(
+    pub fn transition(
         &self,
         command_buffer: vk::CommandBuffer,
         frame: usize,
@@ -938,7 +938,7 @@ impl Pass {
         }
     } }
 
-    pub unsafe fn destroy(&mut self) { unsafe {
+    pub fn destroy(&mut self) { unsafe {
         if !self.destroyed {
             for frame_textures in &mut self.textures {
                 for texture in frame_textures {
@@ -1024,7 +1024,7 @@ pub struct Texture {
     pub initial_layout: vk::ImageLayout,
 }
 impl Texture {
-    pub unsafe fn new(create_info: &TextureCreateInfo) -> Self { unsafe {
+    pub fn new(create_info: &TextureCreateInfo) -> Self { unsafe {
         if let Some(preexisting) = &create_info.preexisting {
             let mut new = preexisting.clone();
             new.load_op = create_info.load_op;
@@ -1158,7 +1158,7 @@ impl Texture {
             }
         }
     } }
-    pub unsafe fn sample(&self, x: i32, y: i32, z: i32) -> Box<[f32]> { unsafe {
+    pub fn sample(&self, x: i32, y: i32, z: i32) -> Box<[f32]> { unsafe {
         let context = &self.context;
 
         let pixel_size = match self.format {
@@ -1382,7 +1382,7 @@ impl Texture {
             _ => unimplemented!("decode for {:?}", format),
         }
     }
-    pub unsafe fn destroy(&mut self) { {
+    pub fn destroy(&mut self) { {
         self.device_texture.borrow_mut().destroy(&self.context);
     } }
 
@@ -1461,7 +1461,7 @@ impl Texture {
     }
 }
 
-pub unsafe fn transition_output(
+pub fn transition_output(
     context: &Arc<Context>,
     command_buffer: vk::CommandBuffer,
     image: vk::Image,
@@ -1517,7 +1517,7 @@ pub struct DeviceTexture {
     pub destroyed: bool,
 }
 impl DeviceTexture {
-    pub unsafe fn destroy(&mut self, context: &Arc<Context>) {
+    pub fn destroy(&mut self, context: &Arc<Context>) {
         if !self.destroyed { unsafe {
             self.destroyed = true;
             context.device.destroy_image(self.image, None);
@@ -1646,7 +1646,7 @@ pub struct DescriptorSet {
     pub destroyed: bool,
 }
 impl DescriptorSet {
-    pub unsafe fn new(create_info: DescriptorSetCreateInfo) -> DescriptorSet { unsafe {
+    pub fn new(create_info: DescriptorSetCreateInfo) -> DescriptorSet { unsafe {
         let context = create_info.context.clone();
         let mut has_dynamic = false;
         let mut has_update_after_bind = false;
@@ -1799,7 +1799,7 @@ impl DescriptorSet {
             destroyed: false,
         }
     } }
-    pub unsafe fn destroy(&mut self) { unsafe {
+    pub fn destroy(&mut self) { unsafe {
         if !self.destroyed {
             self.context.device.destroy_descriptor_set_layout(self.descriptor_set_layout, None);
             self.context.device.destroy_descriptor_pool(self.descriptor_pool, None);
@@ -1848,7 +1848,7 @@ pub struct Descriptor {
     pub binding_flags: Option<DescriptorBindingFlags>
 }
 impl Descriptor {
-    pub unsafe fn new(create_info: &DescriptorCreateInfo) -> Self { unsafe {
+    pub fn new(create_info: &DescriptorCreateInfo) -> Self { unsafe {
         let context = &create_info.context;
         match create_info.descriptor_type {
             DescriptorType::UNIFORM_BUFFER => {
@@ -1974,7 +1974,7 @@ impl Descriptor {
         }
     } }
 
-    pub unsafe fn destroy(&self) { unsafe {
+    pub fn destroy(&self) { unsafe {
         if self.descriptor_type == DescriptorType::UNIFORM_BUFFER || self.descriptor_type == DescriptorType::STORAGE_BUFFER {
             for i in 0..self.owned_buffers.0.len() {
                 self.context.device.destroy_buffer(self.owned_buffers.0[i], None);
@@ -2068,7 +2068,7 @@ pub struct Shader {
     pub fragment_module: ShaderModule,
 }
 impl Shader {
-    pub unsafe fn new(context: &Arc<Context>, vert_path: &str, frag_path: &str, geometry_path: Option<&str>) -> Self { unsafe {
+    pub fn new(context: &Arc<Context>, vert_path: &str, frag_path: &str, geometry_path: Option<&str>) -> Self { unsafe {
         let mut vertex_spv_file = Cursor::new(load_file(&(SHADER_PATH.to_owned() + vert_path)).unwrap());
         let mut frag_spv_file = Cursor::new(load_file(&(SHADER_PATH.to_owned() + frag_path)).unwrap());
         let geometry_spv_file: Option<Cursor<Vec<u8>>> = if geometry_path.is_some() {
@@ -2173,7 +2173,7 @@ pub struct ComputeShader {
     pub module: ShaderModule,
 }
 impl ComputeShader {
-    pub unsafe fn new(context: &Arc<Context>, path: &str) -> Self {
+    pub fn new(context: &Arc<Context>, path: &str) -> Self {
         unsafe {
             let mut vertex_spv_file = Cursor::new(load_file(&(SHADER_PATH.to_owned() + path)).unwrap());
 

@@ -26,7 +26,7 @@ pub struct TextRenderer {
     sampler: Sampler,
 }
 impl TextRenderer {
-    pub unsafe fn new(context: &Arc<Context>, pass_ref: Option<Arc<RefCell<Pass>>>) -> TextRenderer { unsafe {
+    pub fn new(context: &Arc<Context>, pass_ref: Option<Arc<RefCell<Pass>>>) -> TextRenderer { unsafe {
         let sampler = context.device.create_sampler(&vk::SamplerCreateInfo {
             mag_filter: vk::Filter::LINEAR,
             min_filter: vk::Filter::LINEAR,
@@ -44,13 +44,13 @@ impl TextRenderer {
             sampler,
         }
     } }
-    pub unsafe fn destroy(&mut self) { unsafe {
+    pub fn destroy(&mut self) { unsafe {
         self.renderpass.destroy();
         self.context.device.destroy_sampler(self.sampler, None);
         self.default_font.destroy();
     } }
 
-    pub unsafe fn create_text_renderpass(context: &Arc<Context>, default_font: Arc<Font>, pass_ref: Option<Arc<RefCell<Pass>>>) -> Renderpass { unsafe {
+    pub fn create_text_renderpass(context: &Arc<Context>, default_font: Arc<Font>, pass_ref: Option<Arc<RefCell<Pass>>>) -> Renderpass { unsafe {
         let color_tex_create_info = TextureCreateInfo::new(context).format(Format::R8G8B8A8_UNORM);
         let pass_create_info = PassCreateInfo::new(context)
             .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
@@ -188,7 +188,7 @@ impl TextRenderer {
 
     * This function will not begin the renderpass, it assumes that the pass is already being recorded for.
     */
-    pub unsafe fn draw_gui_text(
+    pub fn draw_gui_text(
         &self,
         frame: usize,
         text_info: &TextInformation,

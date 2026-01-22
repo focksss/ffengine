@@ -117,7 +117,7 @@ impl Font {
             line_gap,
         }
     } }
-    pub unsafe fn destroy(&self) { unsafe {
+    pub fn destroy(&self) { unsafe {
         self.context.device.destroy_image(self.texture.image, None);
         self.context.device.free_memory(self.texture.device_memory, None);
         self.context.device.destroy_image_view(self.texture.image_view, None);

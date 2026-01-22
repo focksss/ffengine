@@ -31,7 +31,7 @@ pub struct Renderer {
     pub present_sampler: Sampler,
 }
 impl Renderer {
-    pub unsafe fn new(base: &VkBase, world: Arc<RefCell<World>>, controller: Arc<RefCell<Client>>, num_guis: usize) -> Renderer { unsafe {
+    pub fn new(base: &VkBase, world: Arc<RefCell<World>>, controller: Arc<RefCell<Client>>, num_guis: usize) -> Renderer { unsafe {
         Renderer::compile_shaders();
 
         let (
@@ -119,7 +119,7 @@ impl Renderer {
 
         renderer
     } }
-    unsafe fn create_rendering_objects(
+    fn create_rendering_objects(
         base: &VkBase, world: &World, scene_viewport: vk::Viewport
     ) -> (
         Arc<RefCell<SceneRenderer>>,
@@ -165,7 +165,7 @@ impl Renderer {
             present_renderpass,
         )
     } }
-    pub unsafe fn reload(&mut self, base: &VkBase, world: &World) { unsafe {
+    pub fn reload(&mut self, base: &VkBase, world: &World) { unsafe {
         self.device.device_wait_idle().unwrap();
 
         {
@@ -227,13 +227,13 @@ impl Renderer {
         scene_renderer.update_world_textures_all_frames(&world);
     } }
 
-    pub unsafe fn compile_shaders() {
+    pub fn compile_shaders() {
         #[cfg(debug_assertions)] {
             compile_shaders("engine\\resources\\shaders\\glsl").expect("Failed to compile shaders");
         }
     }
 
-    pub unsafe fn set_present_textures(&self, texture_set: Vec<&Texture>) { unsafe {
+    pub fn set_present_textures(&self, texture_set: Vec<&Texture>) { unsafe {
         for current_frame in 0..MAX_FRAMES_IN_FLIGHT {
             let present_info = [vk::DescriptorImageInfo {
                 sampler: self.present_sampler,
@@ -250,7 +250,7 @@ impl Renderer {
         }
     } }
     pub fn set_compositing_layers(&mut self, layers: usize) { self.compositing_renderpass_layers = layers }
-    pub unsafe fn set_compositing_textures(&self, texture_sets: Vec<Vec<Texture>>) { unsafe {
+    pub fn set_compositing_textures(&self, texture_sets: Vec<Vec<Texture>>) { unsafe {
         for current_frame in 0..MAX_FRAMES_IN_FLIGHT {
             let mut image_infos = texture_sets.iter().map(|texture_set| {
                 vk::DescriptorImageInfo {
@@ -280,7 +280,7 @@ impl Renderer {
         }
     } }
 
-    pub unsafe fn render_frame(
+    pub fn render_frame(
         &mut self,
         current_frame: usize,
         present_index: usize,
@@ -414,7 +414,7 @@ impl Renderer {
         );
     } }
 
-    pub unsafe fn destroy(&mut self) { unsafe {
+    pub fn destroy(&mut self) { unsafe {
         for gui in self.guis.iter() {
             gui.borrow_mut().destroy();
         }
@@ -426,7 +426,7 @@ impl Renderer {
 }
 
 /*
-pub unsafe fn screenshot_texture(texture: &Texture, layout: vk::ImageLayout, path: &str) {
+pub fn screenshot_texture(texture: &Texture, layout: vk::ImageLayout, path: &str) {
     unsafe { texture.context.device.device_wait_idle().unwrap(); }
 
     let bytes_per_pixel = match texture.format {

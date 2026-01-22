@@ -467,7 +467,7 @@ impl Scene {
          */
     }
 
-    pub unsafe fn update_scene(&mut self, command_buffer: CommandBuffer, frame: usize, delta_time: f32, force_run: bool) {
+    pub fn update_scene(&mut self, command_buffer: CommandBuffer, frame: usize, delta_time: f32, force_run: bool) {
         if self.running || force_run {
             self.update_physics_objects(delta_time);
 
@@ -661,7 +661,7 @@ impl Scene {
         }
     }
 
-    pub unsafe fn draw(&self, scene_renderer: &SceneRenderer, frame: usize, camera: Option<usize>, draw_mode: DrawMode) {
+    pub fn draw(&self, scene_renderer: &SceneRenderer, frame: usize, camera: Option<usize>, draw_mode: DrawMode) {
         let command_buffer = get_command_buffer();
         let world = &self.world.borrow();
         let camera = camera.map(|i| &self.camera_components[i]);
@@ -1605,7 +1605,7 @@ pub struct RenderComponent {
     material_index: usize,
 }
 impl RenderComponent {
-    unsafe fn draw(
+    fn draw(
         &self,
         scene:
         &Scene,

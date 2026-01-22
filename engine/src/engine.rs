@@ -48,7 +48,7 @@ pub struct EngineRef {
     pub client: Arc<RefCell<Client>>,
 }
 impl Engine {
-    pub unsafe fn new() -> Engine {
+    pub fn new() -> Engine {
         let base = VkBase::new("ffengine".to_string(), 1200, 700, MAX_FRAMES_IN_FLIGHT).unwrap();
         let mut world = World::new(&base.context);
         unsafe { world.initialize() }
@@ -89,7 +89,7 @@ impl Engine {
         Lua::load_scripts(vec![path]).expect("failed to load scripts");
     }
 
-    pub unsafe fn run(&mut self) {
+    pub fn run(&mut self) {
         let engine_ref = self.as_ref();
         let base = &mut self.base;
 
@@ -368,7 +368,7 @@ impl FrametimeManager {
             println!("    - {} with duration of: {:.3} ms", action_name, gpu_time_ms);
         } }
     }
-    pub unsafe fn destroy(&mut self, base: &VkBase) { unsafe {
+    pub fn destroy(&mut self, base: &VkBase) { unsafe {
         base.device.destroy_query_pool(self.query_pool, None);
     } }
 }

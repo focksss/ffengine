@@ -66,7 +66,7 @@ pub struct SceneRenderer {
     pub atmosphere_multiscatter_lut: Texture,
 }
 impl SceneRenderer {
-    pub unsafe fn new(context: &Arc<Context>, camera_index: usize, world: &World, viewport: vk::Viewport) -> SceneRenderer { unsafe {
+    pub fn new(context: &Arc<Context>, camera_index: usize, world: &World, viewport: vk::Viewport) -> SceneRenderer { unsafe {
         let null_tex_info = context.create_2d_texture_image(&PathBuf::from("").join("engine\\resources\\checker_2x2.png"), true) ;
         context.device.destroy_sampler(null_tex_info.0.1, None);
         let sampler_info = vk::SamplerCreateInfo {
@@ -639,7 +639,7 @@ impl SceneRenderer {
             editor_primitives_index_info,
         }
     } }
-    pub unsafe fn create_rendering_objects(
+    pub fn create_rendering_objects(
         context: &Arc<Context>,
         null_tex: &DeviceTexture,
         null_tex_sampler: &vk::Sampler,
@@ -1418,7 +1418,7 @@ impl SceneRenderer {
         //self.generate_skybox(frame, "editor/resources/citrus_orchard_road_puresky_4k.hdr");
     }}
 
-    pub unsafe fn render_world(
+    pub fn render_world(
         &self,
         current_frame: usize,
         scene: &Scene,
@@ -1660,7 +1660,7 @@ impl SceneRenderer {
         );
     } }
 
-    pub unsafe fn destroy(&mut self) { unsafe {
+    pub fn destroy(&mut self) { unsafe {
         self.geometry_renderpass.destroy();
         self.opaque_forward_renderpass.destroy();
         self.shadow_renderpass.destroy();
@@ -1695,7 +1695,7 @@ impl SceneRenderer {
         self.context.device.free_memory(self.editor_primitives_vertices_buffer.1, None);
     } }
 }
-unsafe fn generate_sky_textures(
+fn generate_sky_textures(
     context: &Arc<Context>,
     cloud_shaping: &Texture,
     cloud_detailing: &Texture,
@@ -2093,7 +2093,7 @@ struct SkyViewInfo {
 
 
 
-pub unsafe fn generate_skybox(&self, current_frame: usize, uri: &str) { unsafe {
+pub fn generate_skybox(&self, current_frame: usize, uri: &str) { unsafe {
     let texture_info = self.context.load_textures_batched(&[PathBuf::from(uri)], false);
     let texture = DeviceTexture {
         image: texture_info[0].1.0,

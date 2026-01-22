@@ -218,7 +218,7 @@ impl GUI {
 
     }
 
-    pub unsafe fn new(
+    pub fn new(
         index: usize,
         context: &Arc<Context>,
         controller: Arc<RefCell<Client>>,
@@ -267,7 +267,7 @@ impl GUI {
         gui.update_descriptors();
         gui
     } }
-    pub unsafe fn create_rendering_objects(context: &Arc<Context>, null_info: vk::DescriptorImageInfo) -> (Arc<RefCell<Pass>>, Renderpass, TextRenderer) { unsafe {
+    pub fn create_rendering_objects(context: &Arc<Context>, null_info: vk::DescriptorImageInfo) -> (Arc<RefCell<Pass>>, Renderpass, TextRenderer) { unsafe {
         let pass_create_info = PassCreateInfo::new(context)
             .add_color_attachment_info(TextureCreateInfo::new(context).format(Format::R16G16B16A16_SFLOAT).add_usage_flag(vk::ImageUsageFlags::TRANSFER_SRC));
         let pass_ref = Arc::new(RefCell::new(Pass::new(pass_create_info)));
@@ -310,11 +310,11 @@ impl GUI {
 
         (pass_ref.clone(), quad_renderpass, TextRenderer::new(context, Some(pass_ref.clone())))
     } }
-    pub unsafe fn set_fonts(&mut self, fonts: Vec<Arc<Font>>) {
+    pub fn set_fonts(&mut self, fonts: Vec<Arc<Font>>) {
         self.fonts = fonts.clone();
         self.text_renderer.update_font_atlases_all_frames(fonts);
     }
-    pub unsafe fn reload_rendering(&mut self, null_tex_sampler: vk::Sampler, null_tex_img_view: vk::ImageView) { unsafe {
+    pub fn reload_rendering(&mut self, null_tex_sampler: vk::Sampler, null_tex_img_view: vk::ImageView) { unsafe {
         let null_info = vk::DescriptorImageInfo {
             sampler: null_tex_sampler,
             image_view: null_tex_img_view,
@@ -1164,7 +1164,7 @@ impl GUI {
         });
         index
     }
-    pub unsafe fn load_from_file(&mut self, path: &str) {
+    pub fn load_from_file(&mut self, path: &str) {
         unsafe {
             for element in self.elements.drain(..) {
                 element.destroy(&self.context.device)
@@ -1284,7 +1284,7 @@ impl GUI {
             self.print_hierarchy(child_index, depth + 1);
         }
     }
-    unsafe fn update_descriptors(&self) {
+    fn update_descriptors(&self) {
         let mut image_infos: Vec<vk::DescriptorImageInfo> = Vec::with_capacity(1024);
 
         let mut borrowed_sampler = None;
@@ -1353,7 +1353,7 @@ impl GUI {
         self.new_texts.push(self.elements.len());
         self.elements.push(new_text);
     }
-    pub unsafe fn initialize_new_texts(&mut self) {
+    pub fn initialize_new_texts(&mut self) {
         for new_text in self.new_texts.drain(..) {
             if let Element::Text { text_information, ..} = &mut self.elements[new_text] {
                 if let Some(info) = text_information {
@@ -1922,7 +1922,7 @@ impl GUI {
         }
     }
 
-    pub unsafe fn draw(&mut self, current_frame: usize, command_buffer: CommandBuffer,) { unsafe {
+    pub fn draw(&mut self, current_frame: usize, command_buffer: CommandBuffer,) { unsafe {
         self.layout();
         let mut interactable_action_parameter_sets = Vec::new();
 
@@ -1964,7 +1964,7 @@ impl GUI {
             )
         }
     } }
-    unsafe fn draw_node(
+    fn draw_node(
         &self,
         node_index: usize,
         current_frame: usize,
@@ -2148,7 +2148,7 @@ impl GUI {
         }
     } }
 
-    pub unsafe fn destroy(&mut self) { unsafe {
+    pub fn destroy(&mut self) { unsafe {
         self.text_renderer.destroy();
         self.quad_renderpass.destroy();
         for font in &self.fonts {
@@ -2332,7 +2332,7 @@ pub enum Element {
     }
 }
 impl Element {
-    unsafe fn destroy(&self, device: &ash::Device) {
+    fn destroy(&self, device: &ash::Device) {
         match self {
             Element::Image {
                 image_view,

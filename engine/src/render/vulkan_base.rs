@@ -140,7 +140,7 @@ pub struct Context {
     pub graphics_queue: vk::Queue
 }
 impl Context {
-    pub unsafe fn create_buffer(
+    pub fn create_buffer(
         &self,
         size: vk::DeviceSize,
         usage: vk::BufferUsageFlags,
@@ -176,7 +176,7 @@ impl Context {
             .expect("failed to bind buffer memory");
     }
     }
-    pub unsafe fn copy_buffer(&self, src_buffer: &Buffer, dst_buffer: &Buffer, size: &vk::DeviceSize) { unsafe {
+    pub fn copy_buffer(&self, src_buffer: &Buffer, dst_buffer: &Buffer, size: &vk::DeviceSize) { unsafe {
         let command_buffers = self.begin_single_time_commands(1);
         let copy_region = [vk::BufferCopy {
             src_offset: 0,
@@ -188,7 +188,7 @@ impl Context {
         self.end_single_time_commands(command_buffers);
     } }
 
-    pub unsafe fn create_device_and_staging_buffer<T: Copy>(
+    pub fn create_device_and_staging_buffer<T: Copy>(
         &self,
         buffer_size_in: u64,
         data: &[T],
@@ -253,7 +253,7 @@ impl Context {
             ((buffer, buffer_memory), (staging_buffer, staging_buffer_memory, ptr))
         }
     } }
-    pub unsafe fn update_buffer_through_staging<T: Copy>(
+    pub fn update_buffer_through_staging<T: Copy>(
         &self,
         command_buffer: &CommandBuffer,
         buffer: &(Buffer, DeviceMemory),
@@ -386,7 +386,7 @@ impl Context {
             })
             .collect()
     }
-    pub unsafe fn transition_image_layout_batched(
+    pub fn transition_image_layout_batched(
         &self,
         command_buffer: CommandBuffer,
         image: Image,
@@ -434,7 +434,7 @@ impl Context {
             );
         }
     }
-    pub unsafe fn copy_buffer_to_image_batched(
+    pub fn copy_buffer_to_image_batched(
         &self,
         command_buffer: CommandBuffer,
         buffer: Buffer,
@@ -466,7 +466,7 @@ impl Context {
             );
         }
     }
-    pub unsafe fn generate_mipmaps_batched(
+    pub fn generate_mipmaps_batched(
         &self,
         command_buffer: CommandBuffer,
         image: Image,
@@ -585,7 +585,7 @@ impl Context {
             );
         }
     }
-    pub unsafe fn load_textures_batched(
+    pub fn load_textures_batched(
         &self,
         uris: &[PathBuf],
         generate_mipmaps: bool,
@@ -771,7 +771,7 @@ impl Context {
 
         results
     } }
-    pub unsafe fn create_2d_texture_image(
+    pub fn create_2d_texture_image(
         &self,
         uri: &PathBuf,
         generate_mipmaps: bool,
@@ -781,7 +781,7 @@ impl Context {
             results.pop().expect("Failed to load texture")
         }
     }
-    pub unsafe fn create_image(
+    pub fn create_image(
         &self,
         create_info: &vk::ImageCreateInfo<'_>,
         properties: MemoryPropertyFlags,
@@ -803,7 +803,7 @@ impl Context {
         *image_memory = self.device.allocate_memory(&texture_image_alloc_info, None).expect("Failed to allocate image memory");
         self.device.bind_image_memory(*image, *image_memory, 0).expect("Failed to bind image memory");
     } }
-    pub unsafe fn begin_single_time_commands(&self, command_buffer_count: u32) -> Vec<CommandBuffer> { unsafe {
+    pub fn begin_single_time_commands(&self, command_buffer_count: u32) -> Vec<CommandBuffer> { unsafe {
         let alloc_info = vk::CommandBufferAllocateInfo {
             s_type: vk::StructureType::COMMAND_BUFFER_ALLOCATE_INFO,
             level: vk::CommandBufferLevel::PRIMARY,
@@ -822,7 +822,7 @@ impl Context {
         }
         command_buffers
     } }
-    pub unsafe fn end_single_time_commands(&self, command_buffers: Vec<CommandBuffer>) { unsafe {
+    pub fn end_single_time_commands(&self, command_buffers: Vec<CommandBuffer>) { unsafe {
         for command_buffer in command_buffers.iter() {
             self.device.end_command_buffer(*command_buffer).unwrap();
         }
@@ -836,7 +836,7 @@ impl Context {
         self.device.queue_wait_idle(self.graphics_queue).unwrap();
         self.device.free_command_buffers(self.pool, &command_buffers);
     } }
-    pub unsafe fn transition_image_layout(&self, image: Image, subresource_range: ImageSubresourceRange, old_layout: vk::ImageLayout, new_layout: vk::ImageLayout) { unsafe {
+    pub fn transition_image_layout(&self, image: Image, subresource_range: ImageSubresourceRange, old_layout: vk::ImageLayout, new_layout: vk::ImageLayout) { unsafe {
         let command_buffers = self.begin_single_time_commands(1);
         let mut barrier = vk::ImageMemoryBarrier {
             s_type: vk::StructureType::IMAGE_MEMORY_BARRIER,
@@ -891,7 +891,7 @@ impl Context {
 
         self.end_single_time_commands(command_buffers);
     } }
-    pub unsafe fn copy_buffer_to_image(&self, buffer: Buffer, image: Image, extent: Extent3D) { unsafe {
+    pub fn copy_buffer_to_image(&self, buffer: Buffer, image: Image, extent: Extent3D) { unsafe {
         let command_buffers = self.begin_single_time_commands(1);
         let region = vk::BufferImageCopy {
             buffer_offset: 0,
@@ -1339,10 +1339,11 @@ impl VkBase {
         self.instance.destroy_instance(None);
     } }
 
-    pub unsafe fn set_surface_and_present_images(&mut self) {
-        self.device.device_wait_idle().unwrap();
-
-        self.swapchain_loader.destroy_swapchain(self.swapchain, None);
+    pub fn set_surface_and_present_images(&mut self) {
+        unsafe {
+            self.device.device_wait_idle().unwrap();
+            self.swapchain_loader.destroy_swapchain(self.swapchain, None);
+        }
 
         let (surface_format, surface_resolution, swapchain) =
             VkBase::create_swapchain(
@@ -1354,9 +1355,9 @@ impl VkBase {
                 &self.device
             );
 
-        for present_image_view in self.present_image_views.iter() {
+        unsafe { for present_image_view in self.present_image_views.iter() {
             self.device.destroy_image_view(*present_image_view, None)
-        }
+        } }
         let present_images_create_info = VkBase::create_present_images(
             &swapchain,
             &surface_format,
@@ -1372,7 +1373,7 @@ impl VkBase {
         self.present_images = present_images;
         self.present_image_views = present_image_views;
     }
-    pub unsafe fn resize_swapchain(&mut self)  {
+    pub fn resize_swapchain(&mut self)  {
         unsafe {
             //<editor-fold desc = "swapchain"
             let (surface_format, _, swapchain) = // _ = surface_resolution
@@ -1559,7 +1560,7 @@ impl Drop for VkBase {
         }
     }
 }
-pub unsafe fn copy_buffer_synchronous(
+pub fn copy_buffer_synchronous(
     device: &Device, 
     command_buffer: CommandBuffer, 
     src_buffer: &Buffer, 
@@ -1575,7 +1576,7 @@ pub unsafe fn copy_buffer_synchronous(
     }]);
     device.cmd_copy_buffer(command_buffer, *src_buffer, *dst_buffer, &copy_region);
 } }
-pub unsafe fn copy_data_to_memory<T: Copy>(dst: *mut c_void, data: &[T]) { unsafe {
+pub fn copy_data_to_memory<T: Copy>(dst: *mut c_void, data: &[T]) { unsafe {
     assert!(!dst.is_null(), "copy_data_to_memory: destination pointer is null!");
     assert!(data.len() * size_of::<T>() <= isize::MAX as usize, "data size too big");
 

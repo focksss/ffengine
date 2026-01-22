@@ -141,7 +141,7 @@ impl World {
             primitive_count: 0,
         }
     }
-    pub unsafe fn initialize(&mut self) { unsafe {
+    pub fn initialize(&mut self) { unsafe {
         self.instance_buffer_size = MAX_INSTANCES * size_of::<Instance>() as u64;
         self.material_buffer_size = MAX_MATERIALS * size_of::<MaterialSendable>() as u64;
         self.lights_buffers_size = MAX_LIGHTS * size_of::<LightSendable>() as u64;
@@ -178,7 +178,7 @@ impl World {
         }
     } }
 
-    pub unsafe fn add_model(&mut self, uri: &str) -> usize {
+    pub fn add_model(&mut self, uri: &str) -> usize {
         if !self.loaded_files.contains_key(&String::from(uri)) {
             self.loaded_files.insert(String::from(uri), self.models.len());
             let model = ModelContainer::new(uri, self);
@@ -237,7 +237,7 @@ impl World {
         }
         *self.loaded_files.get(&String::from(uri)).unwrap()
     }
-    pub unsafe fn add_texture(&mut self, uri: &str, generate_mips: bool) -> usize {
+    pub fn add_texture(&mut self, uri: &str, generate_mips: bool) -> usize {
         let sampler = if !self.loaded_files.contains_key(uri) {
             let path = PathBuf::from(uri);
             let (image_view, image, mips) = unsafe { self.context.create_2d_texture_image(&path, generate_mips) };
@@ -275,7 +275,7 @@ impl World {
 
         index
     }
-    pub unsafe fn update_buffers(&mut self, base: &VkBase, command_buffer: CommandBuffer) { unsafe {
+    pub fn update_buffers(&mut self, base: &VkBase, command_buffer: CommandBuffer) { unsafe {
         if self.buffers_need_update {
             self.buffers_need_update = false;
 
@@ -346,7 +346,7 @@ impl World {
         }
     } }
 
-    pub unsafe fn construct_textures(&mut self, base: &VkBase) { unsafe {
+    pub fn construct_textures(&mut self, base: &VkBase) { unsafe {
         let ungenerated_indices = self.images
             .iter()
             .enumerate()
@@ -373,7 +373,7 @@ impl World {
         }
     } }
 
-    pub unsafe fn destroy(&mut self, base: &VkBase) { unsafe {
+    pub fn destroy(&mut self, base: &VkBase) { unsafe {
         for instance_buffer in &self.instance_buffers {
             base.device.destroy_buffer(instance_buffer.0, None);
             base.device.free_memory(instance_buffer.1, None);
@@ -1247,7 +1247,7 @@ impl Image {
         }
     }
 
-    unsafe fn construct_image_view(&mut self, context: &Arc<Context>) { unsafe {
+    fn construct_image_view(&mut self, context: &Arc<Context>) { unsafe {
         let (image_view, image, mips) = context.create_2d_texture_image(&self.uri, true);
         self.image = image;
         self.image_view = image_view.0;
@@ -1292,7 +1292,7 @@ pub struct SceneTexture {
     pub has_sampler: bool,
 }
 impl SceneTexture {
-    pub unsafe fn construct_sampler(&mut self, max_lod: f32, base: &VkBase) { unsafe {
+    pub fn construct_sampler(&mut self, max_lod: f32, base: &VkBase) { unsafe {
         let sampler_info = vk::SamplerCreateInfo {
             s_type: vk::StructureType::SAMPLER_CREATE_INFO,
             mag_filter: self.sampler_info.mag_filter,
