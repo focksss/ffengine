@@ -1918,6 +1918,11 @@ impl SunComponent {
     }
 }
 
+pub struct CanvasComponent {
+    
+}
+
+
 /*
 TODO()
     - Scripts exist as ScriptAssets in the LuaEngine
