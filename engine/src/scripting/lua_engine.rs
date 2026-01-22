@@ -1,6 +1,8 @@
+use std::any::{Any, TypeId};
 use std::path::{Path, PathBuf};
 use mlua;
 use std::cell::RefCell;
+use std::collections::HashMap;
 use crate::engine::EngineRef;
 use crate::math::Vector;
 use crate::scripting::engine_api::client_api::client_api::{LuaCursorIcon, LuaKeyCode, LuaMouseButton, LuaResizeDirection};
@@ -11,9 +13,9 @@ thread_local! {
     static LUA: RefCell<Option<Lua>> = RefCell::new(None);
 }
 
-enum ScriptInstanceOwner {
-    Entity(EntityPointer),
-    GUINode(GUINodePointer),
+struct ScriptInstance {
+    owner: EntityPointer,
+    instance_environment: mlua::RegistryKey,
 }
 pub struct Script {
     path: PathBuf,
@@ -24,9 +26,25 @@ pub struct Script {
     mouse_moved_fn: Option<mlua::RegistryKey>,
     mouse_button_pressed_fn: Option<mlua::RegistryKey>,
     mouse_button_released_fn: Option<mlua::RegistryKey>,
+    fields: HashMap<String, Field>,
     has_started: bool,
 
-    instance_owners: Vec<ScriptInstanceOwner>,
+    instances: Vec<ScriptInstance>,
+}
+
+struct Field {
+    registry_key: mlua::RegistryKey,
+    field_type: FieldType,
+}
+enum FieldType {
+    Number,
+    Integer,
+    String,
+    Boolean,
+    Function,
+    Table,
+    UserData(TypeId),
+    Unknown,
 }
 
 pub struct Lua {
@@ -41,6 +59,43 @@ pub struct Lua {
 
 pub trait RegisterToLua {
     fn register_to_lua(lua: &mlua::Lua) -> mlua::Result<()>;
+}
+
+
+/*
+let env: mlua::Table = self.lua.registry_value(&self.scripts[i].environment)?;
+for pair in env.pairs::<mlua::Value, mlua::Value>() {
+let (key, value) = pair?;
+
+// Only string keys are meaningful for variable names
+if let mlua::Value::String(key_str) = key {
+let name = key_str.to_str()?;
+
+// Optional: skip internal / metadata fields
+if name.starts_with("__") || !name.contains("editor_distance") {
+continue;
+}
+
+println!("{} = {}", name, format_lua_value(&value));
+}
+}
+
+*/
+
+fn format_lua_value(value: &mlua::Value) -> String {
+    match value {
+        mlua::Value::Nil => "nil".to_string(),
+        mlua::Value::Boolean(b) => b.to_string(),
+        mlua::Value::Integer(i) => i.to_string(),
+        mlua::Value::Number(n) => n.to_string(),
+        mlua::Value::String(s) => format!("{:?}", s.to_str().unwrap_or("<invalid utf8>")),
+        mlua::Value::Table(_) => "<table>".to_string(),
+        mlua::Value::Function(_) => "<function>".to_string(),
+        mlua::Value::UserData(_) => "<userdata>".to_string(),
+        mlua::Value::Thread(_) => "<thread>".to_string(),
+        mlua::Value::LightUserData(_) => "<lightuserdata>".to_string(),
+        mlua::Value::Error(e) => format!("<error: {}>", e),
+    }
 }
 
 impl Lua {
@@ -136,6 +191,44 @@ impl Lua {
             .map(|f| self.lua.create_registry_value(f))
             .transpose()?;
 
+        let mut fields = HashMap::new();
+
+        let field_type = |value: &mlua::Value| match value {
+            mlua::Value::Integer(_) => FieldType::Integer,
+            mlua::Value::Number(_) => FieldType::Number,
+            mlua::Value::Boolean(_) => FieldType::Boolean,
+            mlua::Value::String(_) => FieldType::String,
+            mlua::Value::Table(_) => FieldType::Table,
+            // mlua::Value::UserData(ud) => FieldType::UserData(ud.type_id()),
+            _ => FieldType::Unknown,
+        };
+
+        for pair in environment.clone().pairs::<mlua::Value, mlua::Value>() {
+            let (key, value) = pair?;
+
+            let key_str = match key {
+                mlua::Value::String(s) => s.to_str()?.to_string(),
+                _ => continue,
+            };
+
+            match value {
+                mlua::Value::UserData(_)
+                | mlua::Value::Integer(_)
+                | mlua::Value::Number(_)
+                | mlua::Value::Boolean(_)
+                | mlua::Value::String(_)
+                | mlua::Value::Table(_) => {
+                    let field_type = field_type(&value);
+                    let registry_key = self.lua.create_registry_value(value)?;
+                    fields.insert(key_str, Field {
+                        field_type,
+                        registry_key,
+                    });
+                },
+                _ => {}
+            }
+        }
+
         let script = Script {
             path: PathBuf::from(path),
             environment: self.lua.create_registry_value(environment).unwrap(),
@@ -146,7 +239,8 @@ impl Lua {
             mouse_button_pressed_fn,
             mouse_button_released_fn,
             has_started: false,
-            instance_owners: Vec::new(),
+            fields,
+            instances: Vec::new(),
         };
 
         let assigned_index = if let Some(index) = self.free_script_indices.pop() {
@@ -244,7 +338,6 @@ impl Lua {
             lua.call_method_impl(script_index, method_name, args)
         })
     }
-
     fn call_method_impl(
         &mut self,
         script_index: usize,
@@ -321,6 +414,7 @@ impl Lua {
                         self.call_method_by_key(start_fn)?
                     }
                 }
+
                 self.call_method_by_key(self.scripts[i].update_fn.as_ref().unwrap())?
             }
         }
@@ -333,7 +427,7 @@ impl Lua {
     fn run_scroll_methods_impl(&mut self) -> Result<(), mlua::Error> {
         for i in 0..self.scripts.len() {
             if self.scripts[i].scroll_fn.is_some() {
-                self.call_method_by_key(self.scripts[i].scroll_fn.as_ref().unwrap())?
+                self.call_method_by_key(self.scripts[i].scroll_fn.as_ref().unwrap())?;
             }
         }
         Ok(())

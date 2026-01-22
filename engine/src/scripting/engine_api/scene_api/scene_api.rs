@@ -347,6 +347,7 @@ impl UserData for CameraPointer {
     }
 }
 
+#[derive(Clone)]
 pub struct ScriptPointer {
     pub index: usize,
 }

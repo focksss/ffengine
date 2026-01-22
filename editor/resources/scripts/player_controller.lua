@@ -1,21 +1,21 @@
 local fly_speed = 1.0
 local sense = 0.001
-local editor_cam_move_sense = 0.002
-local editor_cam_rot_sense = 0.005
+editor_cam_move_sense = 0.002
+editor_cam_rot_sense = 0.005
 --- editor camera vars
-local editor_target = Vector.new()
-local editor_rotation = Vector.new()
-local editor_distance = 5.0
+editor_target = Vector.new()
+editor_rotation = Vector.new()
+editor_distance = 5.0
 --- for tracking mouse when moving editor camera with middle click
-local initial_mouse_pos = Vector.new()
-local initial_value = Vector.new()
+initial_mouse_pos = Vector.new()
+initial_value = Vector.new()
 --- false signifies changing position (for editor camera)
-local changing_rotation = false
+changing_rotation = false
 
-local camera_index = 0
-local transform_index
-local camera
-local transform
+camera_index = 0
+transform_index = 0
+camera = nil
+transform = nil
 
 function Awake() 
     camera = Engine.scene:get_camera(camera_index)
@@ -32,6 +32,25 @@ function Update()
     if Engine.client:new_key_pressed(KeyCode.Escape) then
         Engine.client.cursor_locked = not Engine.client.cursor_locked
     end
+
+    if Engine.client:mouse_button_pressed(MouseButton.Middle) then
+        local delta_pixels = Engine.client.cursor_position - initial_mouse_pos;
+
+        if changing_rotation then
+            editor_rotation = initial_value - Vector.new2(delta_pixels.y, delta_pixels.x) * editor_cam_rot_sense
+        else
+            local horizontal_axis = Vector.new3(1.0, 0.0, 0.0):rotate_by_euler(editor_rotation)
+            local vertical_axis = Vector.new3(0.0, 1.0, 0.0):rotate_by_euler(editor_rotation)
+            local horiz_add = horizontal_axis * delta_pixels.x * editor_distance * editor_cam_move_sense * -1.0
+            local vert_add = vertical_axis * delta_pixels.y * editor_distance * editor_cam_move_sense
+            editor_target = initial_value + horiz_add + vert_add
+        end
+    end
+
+    editor_rotation.z = 0.0
+    transform.translation = editor_target + (Vector.new3(0.0, 0.0, 1.0):rotate_by_euler(editor_rotation) * editor_distance)
+    transform.rotation = (editor_rotation):euler_to_quat()
+end
     --[[
     if player.movement_mode ~= MovementMode.EDITOR then
         local move_direction = Vector.new()
@@ -104,25 +123,6 @@ function Update()
         camera.rotation = editor_rotation
     end
     --]]
-    if Engine.client:mouse_button_pressed(MouseButton.Middle) then
-        local delta_pixels = Engine.client.cursor_position - initial_mouse_pos;
-
-        if changing_rotation then
-            editor_rotation = initial_value - Vector.new2(delta_pixels.y, delta_pixels.x) * editor_cam_rot_sense
-        else
-            local horizontal_axis = Vector.new3(1.0, 0.0, 0.0):rotate_by_euler(editor_rotation)
-            local vertical_axis = Vector.new3(0.0, 1.0, 0.0):rotate_by_euler(editor_rotation)
-            local horiz_add = horizontal_axis * delta_pixels.x * editor_distance * editor_cam_move_sense * -1.0
-            local vert_add = vertical_axis * delta_pixels.y * editor_distance * editor_cam_move_sense
-            editor_target = initial_value + horiz_add + vert_add
-        end
-    end
-
-    editor_rotation.z = 0.0
-    transform.translation = editor_target + (Vector.new3(0.0, 0.0, 1.0):rotate_by_euler(editor_rotation) * editor_distance)
-    transform.rotation = (editor_rotation):euler_to_quat()
-end
-
 function MouseScrolled()
     if Engine.renderer:gui(0):is_node_hovered(Engine.renderer:gui(0):get_root(0):get_child(2).index) then
         local zoom_factor = 1.0 - (Engine.client.scroll_delta.y * 0.1)
