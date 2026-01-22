@@ -1,13 +1,12 @@
 use std::cell::RefCell;
 use std::ffi::c_void;
-use std::io::{BufWriter, Cursor};
+use std::io::Cursor;
 use std::slice;
 use std::sync::Arc;
-use ash::{vk, Device, Instance};
+use ash::vk;
 use ash::util::read_spv;
-use ash::vk::{Buffer, ClearColorValue, ClearDepthStencilValue, ClearValue, DescriptorBindingFlags, DescriptorImageInfo, DescriptorPool, DescriptorPoolCreateFlags, DescriptorPoolSize, DescriptorSetLayout, DescriptorSetLayoutCreateFlags, DescriptorType, DeviceMemory, DeviceSize, DynamicState, Extent3D, Format, GraphicsPipelineCreateInfo, ImageAspectFlags, ImageLayout, ImageSubresourceRange, ImageUsageFlags, ImageView, MemoryPropertyFlags, Offset2D, PhysicalDevice, PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo, PipelineDepthStencilStateCreateInfo, PipelineInputAssemblyStateCreateInfo, PipelineMultisampleStateCreateInfo, PipelineRasterizationStateCreateInfo, PipelineShaderStageCreateInfo, PipelineTessellationStateCreateInfo, PipelineVertexInputStateCreateInfo, PushConstantRange, SampleCountFlags, ShaderModule, ShaderModuleCreateInfo, ShaderStageFlags, StencilOpState};
+use ash::vk::{Buffer, ClearColorValue, ClearDepthStencilValue, ClearValue, DescriptorBindingFlags, DescriptorImageInfo, DescriptorPool, DescriptorPoolCreateFlags, DescriptorPoolSize, DescriptorSetLayout, DescriptorSetLayoutCreateFlags, DescriptorType, DeviceMemory, DeviceSize, DynamicState, Extent3D, Format, GraphicsPipelineCreateInfo, ImageAspectFlags, ImageLayout, ImageSubresourceRange, ImageUsageFlags, ImageView, MemoryPropertyFlags, PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo, PipelineDepthStencilStateCreateInfo, PipelineInputAssemblyStateCreateInfo, PipelineMultisampleStateCreateInfo, PipelineRasterizationStateCreateInfo, PipelineShaderStageCreateInfo, PipelineTessellationStateCreateInfo, PipelineVertexInputStateCreateInfo, PushConstantRange, SampleCountFlags, ShaderModule, ShaderModuleCreateInfo, ShaderStageFlags, StencilOpState};
 use bitflags::bitflags;
-use crate::engine::get_command_buffer;
 use crate::render::render::MAX_FRAMES_IN_FLIGHT;
 use crate::render::vulkan_base::{find_memorytype_index, load_file, Context, VkBase};
 
@@ -331,8 +330,7 @@ impl Renderpass {
     } }
     pub fn new_present_renderpass(base: &VkBase) -> Renderpass { unsafe {
         let context = base.context.clone();
-        let mut create_info = RenderpassCreateInfo::new(&context);
-        let create_info = create_info.add_pipeline_create_info(
+        let create_info = RenderpassCreateInfo::new(&context).add_pipeline_create_info(
             PipelineCreateInfo::new()
                 .vertex_shader_uri(String::from("quad\\quad.vert.spv"))
                 .fragment_shader_uri(String::from("quad\\quad.frag.spv"))
@@ -439,7 +437,6 @@ impl Renderpass {
         command_buffer: vk::CommandBuffer,
         push_constant_action: Option<F1>,
         draw_action: Option<F2>,
-        framebuffer_index: Option<usize>,
         transition: Transition,
     ) { unsafe {
         if transition.contains(Transition::START) {
@@ -452,7 +449,7 @@ impl Renderpass {
         }
 
         let device = &self.context.device;
-        self.begin_renderpass(current_frame, command_buffer, framebuffer_index);
+        self.begin_renderpass(current_frame, command_buffer);
         if let Some(push_constant_action) = push_constant_action { push_constant_action() };
         if let Some(draw_action) = draw_action { draw_action() } else {
             device.cmd_draw(command_buffer, 6, 1, 0, 0);
@@ -469,10 +466,10 @@ impl Renderpass {
             )
         }
     } }
-    pub fn begin_renderpass(&self, current_frame: usize, command_buffer: vk::CommandBuffer, framebuffer_index: Option<usize>) { unsafe {
+    pub fn begin_renderpass(&self, current_frame: usize, command_buffer: vk::CommandBuffer) { unsafe {
         let device = &self.context.device;
-
-        &self.pass.borrow().begin(command_buffer, current_frame, &self.scissor);
+        
+        self.pass.borrow().begin(command_buffer, current_frame, &self.scissor);
 
         device.cmd_bind_pipeline(
             command_buffer,
@@ -745,7 +742,7 @@ pub struct Pass {
     pub destroyed: bool,
 }
 impl Pass {
-    pub fn new(create_info: PassCreateInfo) -> Self { unsafe {
+    pub fn new(create_info: PassCreateInfo) -> Self {
         let mut textures = Vec::new();
         let context = create_info.context.clone();
         let mut color_formats = Vec::new();
@@ -787,8 +784,8 @@ impl Pass {
 
             destroyed: false
         }
-    } }
-    pub fn new_present_pass(base: &VkBase) -> Self { unsafe {
+    }
+    pub fn new_present_pass(base: &VkBase) -> Self {
         let context = &base.context;
 
         let clear_values = vec![
@@ -817,7 +814,7 @@ impl Pass {
 
             destroyed: false
         }
-    } }
+    }
 
     pub fn begin(&self, command_buffer: vk::CommandBuffer, frame: usize, scissor: &vk::Rect2D) {
         let mut colors = Vec::new();
@@ -897,7 +894,7 @@ impl Pass {
         frame: usize,
         color_old_new_access: Option<(vk::ImageLayout, vk::ImageLayout, vk::AccessFlags)>,
         depth_old_new_access: Option<(vk::ImageLayout, vk::ImageLayout, vk::AccessFlags)>,
-    ) { unsafe {
+    ) {
         if let Some(present_image_data) = &self.present_image_data {
             let info = color_old_new_access.unwrap();
             let barrier_data = (
@@ -936,9 +933,9 @@ impl Pass {
                 }
             }
         }
-    } }
+    }
 
-    pub fn destroy(&mut self) { unsafe {
+    pub fn destroy(&mut self) {
         if !self.destroyed {
             for frame_textures in &mut self.textures {
                 for texture in frame_textures {
@@ -947,7 +944,7 @@ impl Pass {
             }
             self.destroyed = true;
         }
-    }}
+    }
 }
 pub struct PassCreateInfo {
     context: Arc<Context>,

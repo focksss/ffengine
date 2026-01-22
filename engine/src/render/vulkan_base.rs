@@ -1,13 +1,10 @@
-use jpeg_decoder::Decoder;
 use std::{borrow::Cow, cell::RefCell, default::Default, error::Error, ffi, fs, io, ops::Drop, os::raw::c_char};
 use std::ffi::c_void;
-use std::fs::Metadata;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::ptr::null_mut;
 use std::sync::Arc;
-use std::time::Instant;
 use ash::{
     ext::debug_utils,
     khr::{surface, swapchain},
@@ -15,7 +12,7 @@ use ash::{
 };
 use ash::vk::{Buffer, CommandBuffer, DeviceMemory, Extent3D, Format, Image, ImageAspectFlags, ImageSubresourceLayers, ImageSubresourceRange, ImageUsageFlags, ImageView, MemoryPropertyFlags, Offset3D, Sampler, SurfaceFormatKHR, SwapchainKHR};
 use walkdir::WalkDir;
-use winit::{event_loop::EventLoop, raw_window_handle, raw_window_handle::{HasDisplayHandle, HasWindowHandle}, window::WindowBuilder};
+use winit::{event_loop::EventLoop, raw_window_handle::{HasDisplayHandle, HasWindowHandle}, window::WindowBuilder};
 use winit::platform::windows::WindowBuilderExtWindows;
 use winit::window::Icon;
 
@@ -594,14 +591,7 @@ impl Context {
             return Vec::new();
         }
 
-        // println!("starting parallel image decode...");
-        let decode_start = Instant::now();
-
         let decoded_images = Context::load_images_parallel(uris);
-
-        // println!("all images decoded in {:?}", decode_start.elapsed());
-        // println!("starting gpu upload...");
-        let upload_start = Instant::now();
 
         let command_buffers = self.begin_single_time_commands(1);
         let command_buffer = command_buffers[0];
@@ -762,7 +752,6 @@ impl Context {
         }
 
         self.end_single_time_commands(command_buffers);
-        // println!("gpu upload complete in {:?}", upload_start.elapsed());
 
         for (buffer, memory) in staging_buffers {
             self.device.destroy_buffer(buffer, None);
@@ -776,10 +765,8 @@ impl Context {
         uri: &PathBuf,
         generate_mipmaps: bool,
     ) -> ((ImageView, Sampler), (Image, DeviceMemory), u32) {
-        unsafe {
-            let mut results = self.load_textures_batched(&[uri.clone()], generate_mipmaps);
-            results.pop().expect("Failed to load texture")
-        }
+        let mut results = self.load_textures_batched(&[uri.clone()], generate_mipmaps);
+        results.pop().expect("Failed to load texture")
     }
     pub fn create_image(
         &self,
@@ -1374,29 +1361,27 @@ impl VkBase {
         self.present_image_views = present_image_views;
     }
     pub fn resize_swapchain(&mut self)  {
-        unsafe {
-            //<editor-fold desc = "swapchain"
-            let (surface_format, _, swapchain) = // _ = surface_resolution
-                VkBase::create_swapchain(
-                    &self.surface_loader,
-                    &self.pdevice,
-                    &self.surface,
-                    &self.window,
-                    &self.instance,
-                    &self.device
-                );
-            //</editor-fold>
-            //<editor-fold desc = "present images">
-            let present_images_create_info = VkBase::create_present_images(
-                &swapchain,
-                &surface_format,
-                &self.device,
+        //<editor-fold desc = "swapchain"
+        let (surface_format, _, swapchain) = // _ = surface_resolution
+            VkBase::create_swapchain(
+                &self.surface_loader,
+                &self.pdevice,
+                &self.surface,
+                &self.window,
                 &self.instance,
+                &self.device
             );
-            self.present_images = present_images_create_info.0;
-            self.present_image_views = present_images_create_info.1;
-            //</editor-fold>
-        }
+        //</editor-fold>
+        //<editor-fold desc = "present images">
+        let present_images_create_info = VkBase::create_present_images(
+            &swapchain,
+            &surface_format,
+            &self.device,
+            &self.instance,
+        );
+        self.present_images = present_images_create_info.0;
+        self.present_image_views = present_images_create_info.1;
+        //</editor-fold>
     }
     pub fn create_swapchain(
         surface_loader: &surface::Instance,

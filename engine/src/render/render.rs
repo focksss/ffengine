@@ -6,7 +6,6 @@ use std::sync::Arc;
 use crate::client::client::Client;
 use crate::gui::gui::{Element, GUI};
 use crate::math::Vector;
-use crate::scene::physics::physics_engine::PhysicsEngine;
 use crate::render::render_helper::{Descriptor, DescriptorCreateInfo, DescriptorSetCreateInfo, PassCreateInfo, PipelineCreateInfo, Renderpass, RenderpassCreateInfo, Texture, TextureCreateInfo, Transition};
 use crate::render::scene_renderer::SceneRenderer;
 use crate::render::vulkan_base::{compile_shaders, VkBase};
@@ -125,7 +124,7 @@ impl Renderer {
         Arc<RefCell<SceneRenderer>>,
         Renderpass,
         Renderpass,
-    ) { unsafe {
+    ) {
         let scene_renderer = SceneRenderer::new(&base.context, 0, world, scene_viewport);
 
         let context = &base.context;
@@ -164,7 +163,7 @@ impl Renderer {
             Renderpass::new(compositing_renderpass_create_info),
             present_renderpass,
         )
-    } }
+    }
     pub fn reload(&mut self, base: &VkBase, world: &World) { unsafe {
         self.device.device_wait_idle().unwrap();
 
@@ -283,14 +282,11 @@ impl Renderer {
     pub fn render_frame(
         &mut self,
         current_frame: usize,
-        present_index: usize,
         scene: Arc<RefCell<Scene>>,
-        render_hitboxes: bool,
-        physics_engine: &PhysicsEngine
     ) { unsafe {
         let frame_command_buffer = self.draw_command_buffers[current_frame];
 
-        let mut scene = &mut scene.borrow_mut();
+        let scene = &scene.borrow();
         //println!("camera data {:?}", camera);
 
         self.scene_renderer.borrow().render_world(current_frame, &scene);
@@ -394,7 +390,6 @@ impl Renderer {
                 ));
             }),
             None::<fn()>,
-            None,
             Transition::ALL
         );
         self.present_renderpass.pass.borrow().transition(
@@ -403,7 +398,7 @@ impl Renderer {
             Some((ImageLayout::UNDEFINED, ImageLayout::COLOR_ATTACHMENT_OPTIMAL, vk::AccessFlags::empty())),
             None,
         );
-        self.present_renderpass.begin_renderpass(current_frame, frame_command_buffer, Some(present_index));
+        self.present_renderpass.begin_renderpass(current_frame, frame_command_buffer);
         self.device.cmd_draw(frame_command_buffer, 6, 1, 0, 0);
         self.device.cmd_end_rendering(frame_command_buffer);
         self.present_renderpass.pass.borrow().transition(

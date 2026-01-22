@@ -3,15 +3,15 @@ use std::f32::consts::PI;
 use std::mem;
 use crate::offset_of;
 use ash::vk;
-use ash::vk::{DescriptorType, Extent2D, Format, Handle, ImageAspectFlags, ImageLayout, PipelineInputAssemblyStateCreateInfo, ShaderStageFlags};
+use ash::vk::{DescriptorType, Extent2D, Format, ImageAspectFlags, ImageLayout, PipelineInputAssemblyStateCreateInfo, ShaderStageFlags};
 use rand::{rng, Rng};
 use std::path::PathBuf;
 use std::slice;
-use std::sync::{Arc, LazyLock};
+use std::sync::Arc;
 use crate::math::Vector;
 use crate::render::render::MAX_FRAMES_IN_FLIGHT;
-use crate::render::render_helper::{transition_output, ComputePipelineCreateInfo, ComputeRenderpass, ComputeRenderpassCreateInfo, Descriptor, DescriptorCreateInfo, DescriptorSet, DescriptorSetCreateInfo, DeviceTexture, PassCreateInfo, PipelineCreateInfo, PushConstantData, Renderpass, RenderpassCreateInfo, Shader, Texture, TextureCreateInfo, Transition, SHADER_PATH};
-use crate::render::vulkan_base::{copy_data_to_memory, load_file, Context, VkBase};
+use crate::render::render_helper::{transition_output, ComputePipelineCreateInfo, ComputeRenderpass, ComputeRenderpassCreateInfo, Descriptor, DescriptorCreateInfo, DescriptorSetCreateInfo, DeviceTexture, PassCreateInfo, PipelineCreateInfo, PushConstantData, Renderpass, RenderpassCreateInfo, Texture, TextureCreateInfo, Transition};
+use crate::render::vulkan_base::{copy_data_to_memory, Context};
 use crate::scene::scene::{DrawMode, Instance, Scene};
 use crate::scene::world::world::{World, SunSendable, Vertex};
 
@@ -658,7 +658,7 @@ impl SceneRenderer {
         Renderpass, // outline pass
         Renderpass, // cloud pass
         Renderpass, // sky view lut pass
-    ) { unsafe {
+    ) {
         let resolution = Extent2D { width: viewport.width as u32, height: viewport.height as u32 };
         let image_infos: Vec<vk::DescriptorImageInfo> = vec![vk::DescriptorImageInfo {
             image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
@@ -1356,7 +1356,7 @@ impl SceneRenderer {
             cloud_renderpass,
             sky_view_lut_renderpass,
         )
-    } }
+    }
     pub fn update_world_textures_all_frames(&self, world: &World) {
         for frame in 0..MAX_FRAMES_IN_FLIGHT {
             self.update_world_textures(world, frame);
@@ -1508,7 +1508,6 @@ impl SceneRenderer {
             Some(|| {
                 scene.draw(self, current_frame, Some(self.camera_index), DrawMode::Deferred);
             }),
-            None,
             Transition::ALL
         );
 
@@ -1519,7 +1518,6 @@ impl SceneRenderer {
             Some(|| {
                 scene.draw(self, current_frame, None, DrawMode::All);
             }),
-            None,
             Transition::ALL
         );
 
@@ -1528,28 +1526,27 @@ impl SceneRenderer {
             frame_command_buffer,
             None::<fn()>,
             None::<fn()>,
-            None,
             Transition::ALL
         );
-        self.ssao_renderpass.do_renderpass(current_frame, frame_command_buffer, None::<fn()>, None::<fn()>, None, Transition::ALL);
+        self.ssao_renderpass.do_renderpass(current_frame, frame_command_buffer, None::<fn()>, None::<fn()>, Transition::ALL);
         self.ssao_blur_horizontal_renderpass.do_renderpass(current_frame, frame_command_buffer, Some(|| {
             device.cmd_push_constants(frame_command_buffer, self.ssao_blur_horizontal_renderpass.pipeline_layout, ShaderStageFlags::FRAGMENT, 0, slice::from_raw_parts(
                 &ssao_blur_constants_horizontal as *const BlurPassData as *const u8,
                 size_of::<BlurPassData>(),
             ));
-        }), None::<fn()>, None, Transition::ALL);
+        }), None::<fn()>, Transition::ALL);
         self.ssao_blur_vertical_renderpass.do_renderpass(current_frame, frame_command_buffer, Some(|| {
             device.cmd_push_constants(frame_command_buffer, self.ssao_blur_vertical_renderpass.pipeline_layout, ShaderStageFlags::FRAGMENT, 0, slice::from_raw_parts(
                 &ssao_blur_constants_vertical as *const BlurPassData as *const u8,
                 size_of::<BlurPassData>(),
             ));
-        }), None::<fn()>, None, Transition::ALL);
+        }), None::<fn()>, Transition::ALL);
         self.ssao_upsample_renderpass.do_renderpass(current_frame, frame_command_buffer, Some(|| {
             device.cmd_push_constants(frame_command_buffer, self.ssao_upsample_renderpass.pipeline_layout, ShaderStageFlags::FRAGMENT, 0, slice::from_raw_parts(
                 &ssao_upsample_constants as *const DepthAwareUpsamplePassData as *const u8,
                 size_of::<DepthAwareUpsamplePassData>(),
             ));
-        }), None::<fn()>, None, Transition::ALL);
+        }), None::<fn()>, Transition::ALL);
 
 
         self.lighting_renderpass.do_renderpass(
@@ -1562,7 +1559,6 @@ impl SceneRenderer {
             ))
         }),
             None::<fn()>,
-            None,
             Transition::START,
         );
 
@@ -1599,7 +1595,6 @@ impl SceneRenderer {
                 scene.draw(self, current_frame, Some(self.camera_index), DrawMode::Outlined);
                 scene.draw(self, current_frame, Some(self.camera_index), DrawMode::Hitboxes);
             }),
-            None,
             Transition::END
         );
 
@@ -1617,7 +1612,6 @@ impl SceneRenderer {
                 ))
             }),
             None::<fn()>,
-            None,
             Transition::ALL
         );
 
@@ -1631,7 +1625,6 @@ impl SceneRenderer {
                 ))
             }),
             None::<fn()>,
-            None,
             Transition::START
         );
 
@@ -1655,7 +1648,6 @@ impl SceneRenderer {
                 )
             }),
             None::<fn()>,
-            None,
             Transition::END
         );
     } }

@@ -144,7 +144,7 @@ impl Bvh {
         let mid = start + num_triangles / 2;
 
         let left_child = Some(Rc::new(RefCell::new(Self::split(
-            mesh.clone(),
+            mesh,
             triangles,
             start,
             mid,
@@ -152,7 +152,7 @@ impl Bvh {
         ))));
 
         let right_child = Some(Rc::new(RefCell::new(Self::split(
-            mesh.clone(),
+            mesh,
             triangles,
             mid,
             end,

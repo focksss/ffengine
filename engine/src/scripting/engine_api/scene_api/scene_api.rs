@@ -1,9 +1,6 @@
 use crate::engine::{get_command_buffer, EngineRef};
-use std::cell::RefCell;
-use std::sync::Arc;
 use mlua::{FromLua, UserData, UserDataFields, UserDataMethods, Value};
 use crate::math::Vector;
-use crate::scene::scene::Scene;
 use crate::scripting::lua_engine::Lua;
 
 macro_rules! with_scene {

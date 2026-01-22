@@ -4,7 +4,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use ash::vk;
-use ash::vk::{CommandBuffer, DescriptorType, Format, Handle, ImageLayout, ShaderStageFlags};
+use ash::vk::{CommandBuffer, DescriptorType, Format, ImageLayout, ShaderStageFlags};
 use json::JsonValue;
 use winit::event::MouseButton;
 use winit::keyboard::{Key, PhysicalKey, SmolStr};
@@ -14,7 +14,7 @@ use crate::render::render_helper::{Descriptor, DescriptorCreateInfo, DescriptorS
 use crate::gui::text::font::Font;
 use crate::gui::text::text_render::{TextInformation, TextRenderer};
 use crate::render::render::MAX_FRAMES_IN_FLIGHT;
-use crate::render::vulkan_base::{Context, VkBase};
+use crate::render::vulkan_base::Context;
 use crate::scripting::lua_engine::Lua;
 
 pub struct GUI {
@@ -224,7 +224,7 @@ impl GUI {
         controller: Arc<RefCell<Client>>,
         null_tex_sampler: vk::Sampler,
         null_tex_img_view: vk::ImageView
-    ) -> GUI { unsafe {
+    ) -> GUI {
         let null_info = vk::DescriptorImageInfo {
             sampler: null_tex_sampler,
             image_view: null_tex_img_view,
@@ -266,8 +266,8 @@ impl GUI {
         };
         gui.update_descriptors();
         gui
-    } }
-    pub fn create_rendering_objects(context: &Arc<Context>, null_info: vk::DescriptorImageInfo) -> (Arc<RefCell<Pass>>, Renderpass, TextRenderer) { unsafe {
+    }
+    pub fn create_rendering_objects(context: &Arc<Context>, null_info: vk::DescriptorImageInfo) -> (Arc<RefCell<Pass>>, Renderpass, TextRenderer) {
         let pass_create_info = PassCreateInfo::new(context)
             .add_color_attachment_info(TextureCreateInfo::new(context).format(Format::R16G16B16A16_SFLOAT).add_usage_flag(vk::ImageUsageFlags::TRANSFER_SRC));
         let pass_ref = Arc::new(RefCell::new(Pass::new(pass_create_info)));
@@ -309,12 +309,12 @@ impl GUI {
         let quad_renderpass = Renderpass::new(quad_renderpass_create_info);
 
         (pass_ref.clone(), quad_renderpass, TextRenderer::new(context, Some(pass_ref.clone())))
-    } }
+    }
     pub fn set_fonts(&mut self, fonts: Vec<Arc<Font>>) {
         self.fonts = fonts.clone();
         self.text_renderer.update_font_atlases_all_frames(fonts);
     }
-    pub fn reload_rendering(&mut self, null_tex_sampler: vk::Sampler, null_tex_img_view: vk::ImageView) { unsafe {
+    pub fn reload_rendering(&mut self, null_tex_sampler: vk::Sampler, null_tex_img_view: vk::ImageView) {
         let null_info = vk::DescriptorImageInfo {
             sampler: null_tex_sampler,
             image_view: null_tex_img_view,
@@ -325,7 +325,7 @@ impl GUI {
         self.quad_renderpass.destroy();
         (self.pass, self.quad_renderpass, self.text_renderer) = GUI::create_rendering_objects(&self.context, self.null_tex_info);
         self.update_descriptors();
-    } }
+    }
 
     /**
     * Uses custom JSON .gui files
@@ -351,7 +351,7 @@ impl GUI {
             }
          */
         let idx = self.elements.len();
-        let mut element = Element::default();
+        let element;
         if let JsonValue::Object(ref element_info) = element_json["info"] {
             match element_type {
                 "Quad" => {
@@ -873,7 +873,7 @@ impl GUI {
 
         let mut parent_relation = None;
         if let JsonValue::Object(ref parent_relation_json) = node_json["parent_relation"] {
-            let mut type_str = "";
+            let type_str;
             match &parent_relation_json["type"] {
                 JsonValue::String(s) => {
                     type_str = (*s).as_str();
@@ -1165,10 +1165,8 @@ impl GUI {
         index
     }
     pub fn load_from_file(&mut self, path: &str) {
-        unsafe {
-            for element in self.elements.drain(..) {
-                element.destroy(&self.context.device)
-            }
+        for element in self.elements.drain(..) {
+            element.destroy(&self.context.device)
         }
 
         let json = json::parse(fs::read_to_string(path).expect("failed to load json file").as_str()).expect("json parse error");
@@ -1217,7 +1215,7 @@ impl GUI {
 
             fonts.push(Arc::new(Font::new(&self.context, uri.as_str(), Some(glyph_msdf_size), Some(glyph_msdf_distance_range))));
         }
-        unsafe { self.set_fonts(fonts) };
+        self.set_fonts(fonts);
 
         for element_json in json["elements"].members() {
             self.parse_element(element_json);
@@ -1229,30 +1227,28 @@ impl GUI {
             unparented_true_indices.push(self.parse_node(node, &unparented_true_indices));
         }
 
-        unsafe {
-            let uris: Vec<PathBuf> = self.elements.iter()
-                .filter_map(|element| { match element {
-                    Element::Image { uri, ..} => { Some(PathBuf::from(uri)) }
-                    _ => None
-                }}).collect();
-            let textures = self.context.load_textures_batched(uris.as_slice(), true);
+        let uris: Vec<PathBuf> = self.elements.iter()
+            .filter_map(|element| { match element {
+                Element::Image { uri, ..} => { Some(PathBuf::from(uri)) }
+                _ => None
+            }}).collect();
+        let textures = self.context.load_textures_batched(uris.as_slice(), true);
 
-            for element in self.elements.iter_mut() {
-                if let Element::Image {
-                    index,
-                    image_view,
-                    image,
-                    memory,
-                    sampler,
-                    ..
-                } = element {
-                    let tex = textures[*index];
-                    (*image, *image_view, *memory, *sampler) = (tex.1.0, tex.0.0, tex.1.1, tex.0.1)
-                }
+        for element in self.elements.iter_mut() {
+            if let Element::Image {
+                index,
+                image_view,
+                image,
+                memory,
+                sampler,
+                ..
+            } = element {
+                let tex = textures[*index];
+                (*image, *image_view, *memory, *sampler) = (tex.1.0, tex.0.0, tex.1.1, tex.0.1)
             }
+        }
 
-            self.update_descriptors();
-        };
+        self.update_descriptors();
 
         let mut guis = Vec::new();
         for gui in json["guis"].members() {
@@ -1637,12 +1633,11 @@ impl GUI {
 
         for &child_index in operable_children_indices.iter() {
             let child = &nodes[child_index];
-            let mut dock_mode = DockMode::default();
+            let dock_mode;
             if let Some(relation) = &child.parent_relation {
                 match relation {
                     ParentRelation::Independent { .. } => continue,
                     ParentRelation::Docking(mode) => dock_mode = mode.clone(),
-                    _ => continue,
                 }
             } else {
                 continue
@@ -2148,7 +2143,7 @@ impl GUI {
         }
     } }
 
-    pub fn destroy(&mut self) { unsafe {
+    pub fn destroy(&mut self) {
         self.text_renderer.destroy();
         self.quad_renderpass.destroy();
         for font in &self.fonts {
@@ -2157,7 +2152,7 @@ impl GUI {
         for element in self.elements.iter() {
             element.destroy(&self.context.device)
         }
-    } }
+    }
 }
 
 #[derive(Clone)]

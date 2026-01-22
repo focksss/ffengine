@@ -5,7 +5,6 @@ use winit::dpi::PhysicalPosition;
 use winit::event::{DeviceEvent, ElementState, Event, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::keyboard::{PhysicalKey};
 use winit::window::CursorGrabMode;
-use crate::gui::gui::GUI;
 use crate::render::render::Renderer;
 use crate::scripting::lua_engine::Lua;
 

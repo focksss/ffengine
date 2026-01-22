@@ -1,4 +1,4 @@
-use std::any::{Any, TypeId};
+use std::any::TypeId;
 use std::path::{Path, PathBuf};
 use mlua;
 use std::cell::RefCell;
@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use crate::engine::EngineRef;
 use crate::math::Vector;
 use crate::scripting::engine_api::client_api::client_api::{LuaCursorIcon, LuaKeyCode, LuaMouseButton, LuaResizeDirection};
-use crate::scripting::engine_api::gui_api::gui_api::{GUINodePointer, LuaAnchorPoint};
+use crate::scripting::engine_api::gui_api::gui_api::LuaAnchorPoint;
 use crate::scripting::engine_api::scene_api::scene_api::EntityPointer;
 
 thread_local! {
@@ -154,7 +154,7 @@ impl Lua {
     }
 
     /// Returns the script and assigned index (could be different from scripts.len())
-    fn load_script_impl(&mut self, path: &Path) -> Result<(usize), Box<dyn std::error::Error>> {
+    fn load_script_impl(&mut self, path: &Path) -> Result<usize, Box<dyn std::error::Error>> {
         let script_content = std::fs::read_to_string(path)?;
         // create local-environment
         let environment = self.lua.create_table()?;

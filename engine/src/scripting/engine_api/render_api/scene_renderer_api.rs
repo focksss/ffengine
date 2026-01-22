@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::sync::Arc;
 use ash::vk;
-use mlua::{UserData, UserDataFields, UserDataMethods};
+use mlua::{UserData, UserDataFields};
 use crate::render::scene_renderer::SceneRenderer;
 
 struct ViewportRef(pub Arc<RefCell<vk::Viewport>>);

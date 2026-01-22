@@ -1,11 +1,10 @@
 #![warn(unused_qualifications)]
-use std::default::Default;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use ffengine::engine::Engine;
 use ffengine::math::Vector;
 use ffengine::scene::scene::{CameraComponent, LightComponent};
 
-fn main() { unsafe {
+fn main() {
     let mut app = Engine::new();
 
     app.load_script(Path::new("editor\\resources\\scripts\\player_controller.lua"));
@@ -13,7 +12,6 @@ fn main() { unsafe {
     {
         let base = &mut app.base;
         let renderer = &mut app.renderer.borrow_mut();
-        let physics_engine = &mut app.physics_engine.borrow_mut();
 
         app.world.borrow_mut().add_texture("editor/resources/models/collisionTest/textures/checker_2x2.png", false);
         //app.world.borrow_mut().add_texture("editor/resources/citrus_orchard_road_puresky_4k.hdr", false);
@@ -178,4 +176,4 @@ fn main() { unsafe {
     println!("starting");
 
     app.run()
-} }
+}

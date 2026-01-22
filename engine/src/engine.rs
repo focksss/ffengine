@@ -1,7 +1,7 @@
 #![warn(unused_qualifications)]
 use std::cell::RefCell;
 use std::default::Default;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::{Arc, OnceLock, RwLock};
 use std::time::{Duration, Instant};
 use ash::vk;
@@ -60,7 +60,7 @@ impl Engine {
         let rw_lock = RwLock::new(base.draw_command_buffers[0]);
         COMMAND_BUFFER.set(rw_lock).expect("Failed to initialize frame command buffer global");
 
-        let renderer = unsafe { Arc::new(RefCell::new(Renderer::new(&base, world.clone(), client.clone(), 1))) };
+        let renderer = Arc::new(RefCell::new(Renderer::new(&base, world.clone(), client.clone(), 1)));
 
         let engine = Engine {
             scene: Arc::new(RefCell::new(Scene::new(&base.context, renderer.clone(), world.clone(), physics_engine.clone()))),
@@ -218,9 +218,8 @@ impl Engine {
                                     self.scene.borrow_mut().update_scene(frame_command_buffer, current_frame, delta_time, false);
                                 }
 
-                                let flags = self.client.borrow().flags.clone();
                                 {
-                                    self.renderer.borrow_mut().render_frame(current_frame, present_index as usize, self.scene.clone(), flags.borrow().draw_hitboxes, &self.physics_engine.borrow());
+                                    self.renderer.borrow_mut().render_frame(current_frame, self.scene.clone());
                                 }
 
                                 Lua::run_cache(&engine_ref);
@@ -362,7 +361,7 @@ impl FrametimeManager {
                 &mut timestamps,
                 vk::QueryResultFlags::TYPE_64 | vk::QueryResultFlags::WAIT,
             ).unwrap();
-            let timestamp_period = unsafe { base.instance.get_physical_device_properties(base.pdevice).limits.timestamp_period };
+            let timestamp_period = base.instance.get_physical_device_properties(base.pdevice).limits.timestamp_period;
             let gpu_time_ns = (timestamps[1] - timestamps[0]) as f64 * timestamp_period as f64;
             let gpu_time_ms = gpu_time_ns / 1_000_000.0;
             println!("    - {} with duration of: {:.3} ms", action_name, gpu_time_ms);

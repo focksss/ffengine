@@ -4,14 +4,14 @@ use std::f32::consts::PI;
 use std::slice;
 use std::sync::Arc;
 use std::time::SystemTime;
-use ash::{vk, Device};
+use ash::vk;
 use ash::vk::{CommandBuffer, ShaderStageFlags};
 use crate::engine::get_command_buffer;
 use crate::math::matrix::Matrix;
 use crate::math::Vector;
 use crate::render::render::{Renderer, MAX_FRAMES_IN_FLIGHT};
 use crate::render::scene_renderer::{CameraMatrixUniformData, SceneRenderer, SHADOW_RES};
-use crate::render::vulkan_base::{copy_buffer_synchronous, copy_data_to_memory, Context, VkBase};
+use crate::render::vulkan_base::{copy_buffer_synchronous, copy_data_to_memory, Context};
 use crate::scene::physics::hitboxes::bounding_box::BoundingBox;
 use crate::scene::physics::hitboxes::convex_hull::ConvexHull;
 use crate::scene::physics::hitboxes::hitbox::{Hitbox, HitboxType};
@@ -857,16 +857,16 @@ impl Transform {
         }
     }
 
-    fn local_to_world_position(&self, position: Vector) -> Vector {
-        self.world_translation + (position * self.world_scale).rotate_by_quat(&self.world_rotation)
-    }
+    // fn local_to_world_position(&self, position: Vector) -> Vector {
+    //     self.world_translation + (position * self.world_scale).rotate_by_quat(&self.world_rotation)
+    // }
     fn world_to_local_position(&self, position: Vector, parent: &Transform) -> Vector {
         ((position - parent.world_translation) / parent.world_scale).rotate_by_quat(&parent.world_rotation.inverse_quat())
     }
 
-    fn local_to_world_rotation(&self, rotation: Vector) -> Vector {
-        self.world_rotation * rotation
-    }
+    // fn local_to_world_rotation(&self, rotation: Vector) -> Vector {
+    //     self.world_rotation * rotation
+    // }
     fn world_to_local_rotation(&self, rotation: Vector, parent: &Transform) -> Vector {
         parent.world_rotation.inverse_quat().combine(&rotation)
     }
@@ -2065,6 +2065,7 @@ fn test_axis_cross(
 
     ra + rb - distance
 }
+/*
 fn signed_volume1(a: Vector, b: Vector) -> (f32, f32) {
     let ab = b - a; // segment
     let ap = Vector::fill(0.0) - a; // a to origin
@@ -2212,3 +2213,4 @@ fn signed_volume3(a: Vector, b: Vector, c: Vector, d: Vector) -> Vector {
 fn same_sign(a: f32, b: f32) -> bool {
     a*b > 0.0
 }
+ */

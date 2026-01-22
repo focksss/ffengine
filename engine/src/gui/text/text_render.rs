@@ -1,18 +1,17 @@
 use std::mem;
-use std::{fs, slice};
+use std::slice;
 use std::cell::RefCell;
 use std::ffi::c_void;
 use ash::vk;
 use std::ptr::null_mut;
 use std::sync::Arc;
-use ash::vk::{CommandBuffer, DescriptorType, DeviceMemory, Format, Handle, SampleCountFlags, Sampler, ShaderStageFlags};
-use crate::gui::gui::Alignment;
+use ash::vk::{CommandBuffer, DescriptorType, DeviceMemory, Format, Sampler, ShaderStageFlags};
 use crate::gui::text::{font::Font, glyph::{Glyph, GlyphQuadVertex}};
 use crate::math::Vector;
 use crate::offset_of;
 use crate::render::render::MAX_FRAMES_IN_FLIGHT;
-use crate::render::render_helper::{Descriptor, DescriptorCreateInfo, DescriptorSetCreateInfo, Pass, PassCreateInfo, PipelineCreateInfo, Renderpass, RenderpassCreateInfo, Texture, TextureCreateInfo};
-use crate::render::vulkan_base::{copy_buffer_synchronous, copy_data_to_memory, Context, VkBase};
+use crate::render::render_helper::{Descriptor, DescriptorCreateInfo, DescriptorSetCreateInfo, Pass, PassCreateInfo, PipelineCreateInfo, Renderpass, RenderpassCreateInfo, TextureCreateInfo};
+use crate::render::vulkan_base::{copy_buffer_synchronous, copy_data_to_memory, Context};
 
 const OUTPUT_DIR: &str = "resources\\fonts\\generated";
 const MAX_FONTS: usize = 10;
@@ -50,7 +49,7 @@ impl TextRenderer {
         self.default_font.destroy();
     } }
 
-    pub fn create_text_renderpass(context: &Arc<Context>, default_font: Arc<Font>, pass_ref: Option<Arc<RefCell<Pass>>>) -> Renderpass { unsafe {
+    pub fn create_text_renderpass(context: &Arc<Context>, default_font: Arc<Font>, pass_ref: Option<Arc<RefCell<Pass>>>) -> Renderpass {
         let color_tex_create_info = TextureCreateInfo::new(context).format(Format::R8G8B8A8_UNORM);
         let pass_create_info = PassCreateInfo::new(context)
             .frames_in_flight(MAX_FRAMES_IN_FLIGHT)
@@ -141,7 +140,7 @@ impl TextRenderer {
             renderpass_create_info = renderpass_create_info.pass_ref(pass_ref.unwrap());
         }
         Renderpass::new(renderpass_create_info)
-    } }
+    }
 
     pub fn update_font_atlases_all_frames(&self, fonts: Vec<Arc<Font>>) {
         for frame in 0..MAX_FRAMES_IN_FLIGHT {
@@ -406,38 +405,36 @@ impl TextInformation {
         self.vertex_buffer_size = vertex_buffer_size;
         let index_buffer_size = (size_of::<u32>() * indices.len()) as u64 + 2000;
         self.index_buffer_size = index_buffer_size;
-        unsafe {
-            for i in 0..MAX_FRAMES_IN_FLIGHT {
-                if i == 0 {
-                    (self.vertex_buffer[i], self.vertex_staging_buffer) =
-                        self.context.create_device_and_staging_buffer(
-                            vertex_buffer_size,
-                            &vertices,
-                            vk::BufferUsageFlags::VERTEX_BUFFER, false, true, true
-                        );
-                    (self.index_buffer[i], self.index_staging_buffer) =
-                        self.context.create_device_and_staging_buffer(
-                            index_buffer_size,
-                            &indices,
-                            vk::BufferUsageFlags::INDEX_BUFFER, false, true, true
-                        );
-                } else {
-                    self.vertex_buffer[i] = self.context.create_device_and_staging_buffer(
+        for i in 0..MAX_FRAMES_IN_FLIGHT {
+            if i == 0 {
+                (self.vertex_buffer[i], self.vertex_staging_buffer) =
+                    self.context.create_device_and_staging_buffer(
                         vertex_buffer_size,
                         &vertices,
-                        vk::BufferUsageFlags::VERTEX_BUFFER, true, false, true
-                    ).0;
-                    self.index_buffer[i] = self.context.create_device_and_staging_buffer(
+                        vk::BufferUsageFlags::VERTEX_BUFFER, false, true, true
+                    );
+                (self.index_buffer[i], self.index_staging_buffer) =
+                    self.context.create_device_and_staging_buffer(
                         index_buffer_size,
                         &indices,
-                        vk::BufferUsageFlags::INDEX_BUFFER, true, false, true
-                    ).0
-                }
+                        vk::BufferUsageFlags::INDEX_BUFFER, false, true, true
+                    );
+            } else {
+                self.vertex_buffer[i] = self.context.create_device_and_staging_buffer(
+                    vertex_buffer_size,
+                    &vertices,
+                    vk::BufferUsageFlags::VERTEX_BUFFER, true, false, true
+                ).0;
+                self.index_buffer[i] = self.context.create_device_and_staging_buffer(
+                    index_buffer_size,
+                    &indices,
+                    vk::BufferUsageFlags::INDEX_BUFFER, true, false, true
+                ).0
             }
         }
     }
 
-    pub fn update_buffers(&mut self, command_buffer: CommandBuffer, frame: usize) { unsafe {
+    pub fn update_buffers(&mut self, command_buffer: CommandBuffer, frame: usize) {
         let (vertices, indices) = self.get_vertex_and_index_data();
         let vertex_buffer_size = size_of::<GlyphQuadVertex>() * vertices.len();
         let index_buffer_size = size_of::<u32>() * indices.len();
@@ -459,7 +456,7 @@ impl TextInformation {
             None,
             &(index_buffer_size as u64)
         );
-    } }
+    }
     pub fn update_buffers_all_frames(&mut self, command_buffer: CommandBuffer) {
         for frame in 0..self.vertex_buffer.len() {
             self.update_buffers(command_buffer, frame);

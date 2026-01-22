@@ -1,10 +1,7 @@
-use std::cell::RefCell;
 use std::cmp::PartialEq;
-use std::sync::Arc;
-use mlua::{FromLua, IntoLua, Lua, UserData, UserDataFields, UserDataMethods, Value};
-use mlua::prelude::LuaError;
+use mlua::{FromLua, IntoLua, UserData, UserDataFields, UserDataMethods, Value};
 use crate::engine::{get_command_buffer, EngineRef};
-use crate::gui::gui::{AnchorPoint, Element, GUIInteractableInformation, Node, Offset, ParentRelation, Size, GUI};
+use crate::gui::gui::{AnchorPoint, Element, GUIInteractableInformation, Node, Offset, ParentRelation, Size};
 use crate::math::Vector;
 use crate::scripting::lua_engine::RegisterToLua;
 

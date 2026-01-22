@@ -2,8 +2,6 @@ use crate::math::Vector;
 use crate::scene::physics::hitboxes::bounding_box::BoundingBox;
 use parry3d::transformation::convex_hull;
 use parry3d::math::Point;
-use rand::prelude::SliceRandom;
-use rand::{rng, thread_rng};
 use crate::math::matrix::Matrix;
 
 #[derive(Clone)]

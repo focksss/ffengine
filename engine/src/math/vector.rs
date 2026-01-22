@@ -1,9 +1,6 @@
 #![allow(dead_code)]
 
-use std::any::{Any, TypeId};
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
-use mlua::{FromLua, IntoLua, Lua, UserData, UserDataFields, UserDataMethods, Value};
-use mlua::prelude::{LuaError, LuaResult, LuaValue};
 
 #[derive(Clone, Debug, Copy)]
 #[derive(Default)]

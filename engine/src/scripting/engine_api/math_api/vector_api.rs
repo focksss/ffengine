@@ -1,4 +1,4 @@
-use mlua::{FromLua, IntoLua, Lua, MetaMethod, UserData, UserDataMethods, Value};
+use mlua::{FromLua, Lua, MetaMethod, UserData, UserDataMethods, Value};
 use crate::math::Vector;
 use crate::scripting::lua_engine::RegisterToLua;
 

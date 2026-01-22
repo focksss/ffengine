@@ -4,7 +4,6 @@ use crate::scene::world::world::{Node, World};
 use crate::math::Vector;
 use crate::scene::physics::hitboxes::bounding_box::BoundingBox;
 use crate::scene::physics::hitboxes::convex_hull::ConvexHull;
-use crate::scene::physics::hitboxes::hitbox;
 use crate::scene::physics::hitboxes::mesh::MeshCollider;
 
 pub enum Hitbox {
@@ -32,7 +31,7 @@ impl Hitbox {
                     Hitbox::OBB(bounds, ConvexHull::from_bounds(&bounds))
                 }
                 1 => {
-                    let mesh_collider = MeshCollider::new(mesh.clone(), scale);
+                    let mesh_collider = MeshCollider::new(mesh, scale);
                     Hitbox::Mesh(mesh_collider)
                 }
                 2 => {
