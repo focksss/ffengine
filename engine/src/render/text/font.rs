@@ -6,7 +6,7 @@ use std::process::Command;
 use std::sync::Arc;
 use ash::vk::Sampler;
 use serde_json::Value;
-use crate::gui::text::glyph::Glyph;
+use crate::render::text::glyph::Glyph;
 use crate::math::Vector;
 use crate::render::render_helper::DeviceTexture;
 use crate::render::vulkan_base::Context;

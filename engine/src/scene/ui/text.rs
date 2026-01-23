@@ -1,4 +1,4 @@
-use crate::gui::text::text_render::TextInformation;
+use crate::render::text::text_render::TextInformation;
 use crate::math::Vector;
 
 pub struct Text {

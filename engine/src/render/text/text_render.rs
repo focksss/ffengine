@@ -6,7 +6,7 @@ use ash::vk;
 use std::ptr::null_mut;
 use std::sync::Arc;
 use ash::vk::{CommandBuffer, DescriptorType, DeviceMemory, Format, Sampler, ShaderStageFlags};
-use crate::gui::text::{font::Font, glyph::{Glyph, GlyphQuadVertex}};
+use crate::render::text::{font::Font, glyph::{Glyph, GlyphQuadVertex}};
 use crate::math::Vector;
 use crate::offset_of;
 use crate::render::render::MAX_FRAMES_IN_FLIGHT;

@@ -27,6 +27,12 @@ use crate::scene::physics::hitboxes::hitbox::{Hitbox, HitboxType};
 use crate::scene::physics::hitboxes::sphere::Sphere;
 use crate::scene::physics::physics_engine::{AxisType, ContactInformation, ContactPoint, PhysicsEngine};
 use crate::scene::components::transform::Transform;
+use crate::scene::ui::image::Image;
+use crate::scene::ui::interaction::UiInteractableInformation;
+use crate::scene::ui::layout::UiNodeLayout;
+use crate::scene::ui::quad::Quad;
+use crate::scene::ui::text::Text;
+use crate::scene::ui::texture::Texture;
 use crate::scene::world::world::{LightSendable, SunSendable, World};
 
 
@@ -58,6 +64,13 @@ pub struct Scene {
     pub light_components: Vec<LightComponent>,
     pub sun_components: Vec<SunComponent>,
     pub script_components: Vec<ScriptComponent>,
+
+    pub ui_node_layouts: Vec<UiNodeLayout>,
+    pub ui_interactable_information: Vec<UiInteractableInformation>,
+    pub ui_quads: Vec<Quad>,
+    pub ui_texts: Vec<Text>,
+    pub ui_images: Vec<Image>,
+    pub ui_textures: Vec<Texture>,
 
     pub outlined_components: Vec<usize>,
     pub outlined_bodies: Vec<usize>,
@@ -91,6 +104,13 @@ impl Scene {
             light_components: Vec::new(),
             sun_components: Vec::new(),
             script_components: Vec::new(),
+
+            ui_node_layouts: Vec::new(),
+            ui_interactable_information: Vec::new(),
+            ui_texts: Vec::new(),
+            ui_quads: Vec::new(),
+            ui_images: Vec::new(),
+            ui_textures: Vec::new(),
 
             outlined_components: Vec::new(),
             outlined_bodies: Vec::new(),
@@ -797,6 +817,7 @@ pub struct Entity {
     pub parent: usize,
 
     pub suns: Vec<usize>,
+
     pub render_objects: Vec<usize>,
     pub joint_object: Option<usize>,
     pub animation_objects: Vec<usize>,
@@ -804,8 +825,8 @@ pub struct Entity {
     pub cameras: Vec<usize>,
     pub lights: Vec<usize>,
 
-    pub ui_container: Option<usize>,
-    pub ui_parent_relation: Option<usize>,
+    pub ui_layout: Option<usize>,
+    pub ui_interactable_information: Option<usize>,
     pub ui_quads: Vec<usize>,
     pub ui_texts: Vec<usize>,
     pub ui_images: Vec<usize>,
@@ -829,8 +850,8 @@ impl Default for Entity {
             cameras: Vec::new(),
             lights: Vec::new(),
             scripts: Vec::new(),
-            ui_container: None,
-            ui_parent_relation: None,
+            ui_layout: None,
+            ui_interactable_information: None,
             ui_images: Vec::new(),
             ui_quads: Vec::new(),
             ui_texts: Vec::new(),
