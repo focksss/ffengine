@@ -1,0 +1,791 @@
+use crate::math::matrix::Matrix;
+use crate::math::Vector;
+use crate::scene::components::hitbox::HitboxComponent;
+use crate::scene::components::transform::Transform;
+use crate::scene::physics::hitboxes::hitbox::{Hitbox, HitboxType};
+use crate::scene::physics::physics_engine::{AxisType, ContactInformation, ContactPoint};
+
+pub struct RigidBodyComponent {
+    pub owner: usize,
+    pub transform: usize,
+    pub owned_by_player: bool,
+
+    pub hitbox: usize,
+    pub is_static: bool,
+    pub restitution_coefficient: f32,
+    pub friction_coefficient: f32,
+    pub mass: f32,
+    pub inv_mass: f32,
+
+    pub x_i: Vector,
+    pub x_f: Vector,
+    pub q_i: Vector,
+    pub q_f: Vector,
+
+    pub velocity: Vector,
+    pub angular_velocity: Vector, // axis angle
+    pub differential_rotation: Vector, // quaternion
+    center_of_mass: Vector,
+
+    inertia_tensor: Matrix, // 3x3
+    inv_inertia_tensor: Matrix,
+
+    pub(crate) stored_hitbox_scale: Vector,
+}
+impl RigidBodyComponent {
+    pub fn set_mass(&mut self, hitbox: &Hitbox, transforms: &Vec<Transform>, mass: f32) {
+        self.mass = mass;
+        self.inv_mass = 1.0 / mass;
+        self.update_shape_properties(hitbox, transforms);
+    }
+    pub fn set_static(&mut self, hitbox: &Hitbox, transforms: &Vec<Transform>, is_static: bool) {
+        self.is_static = is_static;
+        if is_static {
+            self.inv_mass = 0.0;
+            self.mass = 999.0
+        } else {
+            self.inv_mass = 1.0 / self.mass;
+        }
+        self.update_shape_properties(hitbox, transforms);
+    }
+
+    pub fn update_shape_properties(&mut self, hitbox: &Hitbox, transforms: &Vec<Transform>) {
+        match &hitbox {
+            Hitbox::OBB(obb, _) => {
+                let a = obb.half_extents.x * 2.0;
+                let b = obb.half_extents.y * 2.0;
+                let c = obb.half_extents.z * 2.0;
+
+
+                self.inertia_tensor = Matrix::new();
+                self.inertia_tensor.set(0, 0, (1.0 / 12.0) * (b * b + c * c));
+                self.inertia_tensor.set(1, 1, (1.0 / 12.0) * (a * a + c * c));
+                self.inertia_tensor.set(2, 2, (1.0 / 12.0) * (a * a + b * b));
+
+                let d = -obb.center;
+                let d2 = d.dot3(&d);
+
+                // parallel axis theorem tensor
+                let pat = Matrix::new_manual([
+                    d2 - d.x*d.x, -d.x*d.y,     -d.x*d.z,     0.0,
+                    -d.y*d.x,     d2 - d.y*d.y, -d.y*d.z,     0.0,
+                    -d.z*d.x,     -d.z*d.y,     d2 - d.z*d.z, 0.0,
+                    0.0,          0.0,          0.0,          0.0
+                ]);
+
+                self.inertia_tensor += pat;
+
+                self.center_of_mass = obb.center
+            }
+            Hitbox::Mesh(_) => {
+                //TODO inertia tensor and center of mass
+            }
+            Hitbox::Capsule(capsule) => {
+                //TODO inertia tensor
+
+                self.center_of_mass = (capsule.a + capsule.b) * 0.5
+            }
+            Hitbox::Sphere(sphere) => {
+                let r2 = sphere.radius * sphere.radius;
+                let c = 2.0 / 5.0;
+                let v = c * r2;
+                self.inertia_tensor = Matrix::new();
+                self.inertia_tensor.set(0, 0, v);
+                self.inertia_tensor.set(1, 1, v);
+                self.inertia_tensor.set(2, 2, v);
+
+                self.center_of_mass = sphere.center
+            }
+            Hitbox::ConvexHull(convex) => {
+                self.center_of_mass = convex.center_of_mass(10);
+                self.inertia_tensor = convex.inertia_tensor(&self.center_of_mass, 10);
+            }
+        }
+        self.inv_inertia_tensor = self.inertia_tensor.inverse3().mul_float_into3(self.inv_mass);
+    }
+    pub fn get_inverse_inertia_tensor_world_space(&self, transforms: &Vec<Transform>) -> Matrix {
+        let transform = &transforms[self.transform];
+        let rot = Matrix::new_rotate_quaternion_vec4(&transform.world_rotation);
+        rot * self.inv_inertia_tensor * rot.transpose3()
+    }
+    pub fn get_center_of_mass_world_space(&self, transforms: &Vec<Transform>) -> Vector {
+        let transform = &transforms[self.transform];
+        transform.world_translation + self.center_of_mass.rotate_by_quat(&transform.world_rotation)
+    }
+    pub fn get_inverse_mass_world_space(&self, normal: &Vector, position: Option<&Vector>) -> f32 {
+        if self.is_static || self.inv_mass == 0.0 { return 0.0 }
+
+        let inv_rot = Matrix::new_rotate_quaternion_vec4(&self.q_f.inverse_quat());
+        let rn = if let Some(position) = position {
+            inv_rot * ((position - self.x_f).cross(normal).with('w', 0.0))
+        } else {
+            inv_rot * normal.with('w', 0.0)
+        };
+
+        let inv_inertia = Vector::new3(self.inv_inertia_tensor.data[0], self.inv_inertia_tensor.data[5], self.inv_inertia_tensor.data[10]);
+        let mut w = rn.dot3(&(rn * inv_inertia));
+
+        if position.is_some() {
+            w += self.inv_mass
+        }
+        w
+    }
+
+    pub fn initialize(&mut self, transforms: &Vec<Transform>) {
+        let transform = &transforms[self.transform];
+        self.x_f = transform.world_translation;
+        self.q_f = transform.world_rotation;
+    }
+    pub fn integrate(&mut self, dt: f32, g: &Vector) {
+        if self.is_static { return }
+
+        self.x_i = self.x_f;
+        self.q_i = self.q_f;
+
+        self.velocity += g * dt;
+        self.x_f += self.velocity * dt;
+
+        self.differential_rotation = self.angular_velocity.with('w', 0.0).combine(&self.q_f);
+        self.q_f += self.differential_rotation * (0.5 * dt);
+        self.q_f = self.q_f.normalize4();
+    }
+    pub fn update_velocity(&mut self, dt: f32) {
+        if self.is_static { return }
+
+        self.velocity = (self.x_f - self.x_i) / dt;
+
+        self.differential_rotation = self.q_f.combine(&self.q_i.inverse_quat());
+        self.angular_velocity = self.differential_rotation.with('w', 0.0) * 2.0 / dt;
+        if self.differential_rotation.w < 0.0 { self.angular_velocity = -self.angular_velocity }
+    }
+    pub fn update(&mut self, transforms: &mut Vec<Transform>, parent_transform: usize) {
+        if self.is_static { return }
+
+        let [transform, parent_transform] = transforms.get_disjoint_mut([self.transform, parent_transform]).unwrap();
+
+        transform.local_translation = transform.world_to_local_position(self.x_f, parent_transform);
+        transform.local_rotation = transform.world_to_local_rotation(self.q_f, parent_transform);
+    }
+    pub fn apply_correction(
+        &mut self,
+        dt: f32,
+        correction: Vector,
+        compliance: f32,
+        pos_a: Vector,
+        pos_b: Vector,
+        body_b: Option<&mut RigidBodyComponent>
+    ) -> Vector {
+        if correction.magnitude3_sq() == 0.0 { return Vector::empty() }
+
+        let c = correction.magnitude3();
+        let mut n = correction.normalize3();
+        let mut w = self.get_inverse_mass_world_space(&n, Some(&pos_a));
+        if let Some(body_b) = &body_b {
+            w += body_b.get_inverse_mass_world_space(&n, Some(&pos_b));
+        }
+        if w == 0.0 { return Vector::empty() }
+
+        // XPBD
+        let alpha = compliance / dt / dt;
+        let lambda = -c / (w + alpha);
+        n = n * -lambda;
+
+        let correct = |body: &mut RigidBodyComponent, correction: &Vector, position: &Vector| {
+            if body.is_static || body.inv_mass == 0.0 { return }
+
+            body.x_f += correction * body.inv_mass;
+
+            let inv_inertia = Vector::new3(body.inv_inertia_tensor.data[0], body.inv_inertia_tensor.data[5], body.inv_inertia_tensor.data[10]);
+            let d_angular_vel = ((position - body.x_f)
+                .cross(correction)
+                .with('w', 0.0)
+                .rotate_by_quat(&body.q_f.inverse_quat())
+                * inv_inertia)
+                .with('w', 0.0)
+                .rotate_by_quat(&body.q_f);
+            body.differential_rotation = d_angular_vel.with('w', 0.0).combine(&body.q_f);
+            body.q_f += (0.5 * body.differential_rotation).normalize4();
+        };
+
+        correct(self, &-n, &pos_a);
+        if let Some(body_b) = body_b {
+            correct(body_b, &n, &pos_b);
+        }
+        lambda * correction / dt / dt
+    }
+
+    pub fn will_collide_with(
+        &self,
+        hitbox_components: &Vec<HitboxComponent>,
+        other: &RigidBodyComponent,
+        dt: f32,
+    ) -> Option<ContactInformation> {
+        let self_hitbox = &hitbox_components[self.hitbox].hitbox;
+        let other_hitbox = &hitbox_components[other.hitbox].hitbox;
+        let other_type = other_hitbox.get_type();
+
+        match other_type {
+            HitboxType::SPHERE => self.intersects_sphere(self_hitbox, other_hitbox, other, dt),
+            HitboxType::OBB => self.intersects_obb(self_hitbox, other_hitbox, other, dt),
+            HitboxType::CONVEX => self.intersects_convex_hull(self_hitbox, other_hitbox, other, dt),
+            _ => { panic!("intersection not implemented") }
+        }
+    }
+
+    fn intersects_sphere(
+        &self,
+        self_hitbox: &Hitbox,
+        other_hitbox: &Hitbox,
+        other: &RigidBodyComponent,
+        dt: f32,
+    ) -> Option<ContactInformation> {
+        if let Hitbox::Sphere(sphere) = other_hitbox {
+            return match self_hitbox {
+                Hitbox::Sphere(a) => {
+                    let p_a = a.center.rotate_by_quat(&self.q_f) + self.x_f;
+                    let p_b = sphere.center.rotate_by_quat(&other.q_f) + other.x_f;
+                    /*
+                                        if let Some((point, time_of_impact)) = {
+                                            let relative_vel = self.velocity - other.velocity;
+
+                                            let end_pt_a = p_a + relative_vel * dt;
+                                            let dir = end_pt_a - p_a;
+
+                                            let mut t0 = 0.0;
+                                            let mut t1 = 0.0;
+                                            if dir.magnitude3() < 0.001 {
+                                                let ab = p_b - p_a;
+                                                let radius = a.radius + sphere.radius + 0.001;
+                                                if ab.magnitude3() > radius {
+                                                    return None
+                                                }
+                                            } else if let Some((i_t0, i_t1)) = Sphere::ray_sphere(&p_a, &dir, &p_b, a.radius + sphere.radius) {
+                                                t0 = i_t0;
+                                                t1 = i_t1;
+                                            } else {
+                                                return None
+                                            }
+
+                                            // convert 0-1 to 0-dt
+                                            t0 *= dt;
+                                            t1 *= dt;
+
+                                            // collision happened in past
+                                            if t1 < 0.0 { return None }
+
+                                            let toi = if t0 < 0.0 { 0.0 } else { t0 };
+
+                                            // collision happens past dt
+                                            if toi > dt { return None }
+
+                                            let new_pos_a = p_a + self.velocity * toi;
+                                            let new_pos_b = p_b + other.velocity * toi;
+
+                                            let ab = (new_pos_b - new_pos_a).normalize3();
+
+                                            Some((ContactPoint {
+                                                point_on_a: new_pos_a + ab * a.radius,
+                                                point_on_b: new_pos_b - ab * sphere.radius,
+
+                                                penetration: 0.0,
+                                            }, toi))
+                                        } {
+                                            // there will be a collision
+                                            /*
+                                            self.update(time_of_impact);
+                                            other.update(time_of_impact);
+
+                                             */
+
+                                            let normal = (self_transform.world_translation - other_transform.world_translation).normalize3();
+
+                                            /*
+                                            self.update(-time_of_impact);
+                                            other.update(-time_of_impact);
+
+                                             */
+
+                                            let ab = other_transform.world_translation - self_transform.world_translation;
+                                            let r = ab.magnitude3() - (a.radius + sphere.radius);
+
+                                            Some(ContactInformation {
+                                                contact_points: vec![point],
+                                                time_of_impact,
+                                                normal,
+                                            })
+                                        } else {
+                                            None
+                                        }
+
+                     */
+                    let d = p_b - p_a;
+                    let d_m = d.magnitude3();
+                    let n = if d_m > 1e-6 { d / d_m } else { Vector::new3(0.0, 1.0, 0.0) };
+
+                    if d_m > a.radius + sphere.radius { return None }
+
+                    let point_on_a = p_a + n * a.radius;
+                    let point_on_b = p_b - n * sphere.radius;
+
+                    let penetration = a.radius + sphere.radius - d_m;
+
+                    Some(ContactInformation {
+                        contact_points: vec![ContactPoint {
+                            point_on_a,
+                            point_on_b,
+                            penetration,
+                        }],
+                        normal: n,
+                        time_of_impact: penetration,
+                    })
+                }
+                Hitbox::OBB(obb, _) => {
+                    let rot = Matrix::new_rotate_quaternion_vec4(&self.q_f);
+
+                    let sphere_center = sphere.center.rotate_by_quat(&other.q_f) + other.x_f;
+                    let obb_center = (rot * obb.center.with('w', 1.0)) + self.x_f;
+
+                    let axes = [
+                        rot * Vector::new4(1.0, 0.0, 0.0, 1.0),
+                        rot * Vector::new4(0.0, 1.0, 0.0, 1.0),
+                        rot * Vector::new4(0.0, 0.0, 1.0, 1.0),
+                    ];
+
+                    let delta = sphere_center - obb_center;
+                    let local_sphere_center = Vector::new3(delta.dot3(&axes[0]), delta.dot3(&axes[1]), delta.dot3(&axes[2]));
+
+                    let closest_local = local_sphere_center.clamp3(&(-1.0 * obb.half_extents), &obb.half_extents);
+                    let closest_world = obb_center + (axes[0] * closest_local.x) + (axes[1] * closest_local.y) + (axes[2] * closest_local.z);
+
+                    let diff = sphere_center - closest_world;
+                    let dist_sq = diff.dot3(&diff);
+                    let radius_sq = sphere.radius * sphere.radius;
+                    if dist_sq > radius_sq {
+                        return None
+                    }
+                    let dist = dist_sq.sqrt();
+
+                    let (normal, penetration, point_on_obb) = if dist < 1e-6 {
+                        let penetrations = [
+                            (obb.half_extents.x - local_sphere_center.x.abs(), 0, local_sphere_center.x.signum()),
+                            (obb.half_extents.y - local_sphere_center.y.abs(), 1, local_sphere_center.y.signum()),
+                            (obb.half_extents.z - local_sphere_center.z.abs(), 2, local_sphere_center.z.signum()),
+                        ];
+                        let mut min_pen = penetrations[0];
+                        for &pen in &penetrations[1..] {
+                            if pen.0 < min_pen.0 {
+                                min_pen = pen;
+                            }
+                        }
+
+                        let axis_idx = min_pen.1;
+                        let sign = min_pen.2;
+                        let normal = axes[axis_idx] * sign;
+                        let penetration = min_pen.0 + sphere.radius;
+
+                        let mut local_point = local_sphere_center;
+                        match axis_idx {
+                            0 => local_point.x = obb.half_extents.x * sign,
+                            1 => local_point.y = obb.half_extents.y * sign,
+                            2 => local_point.z = obb.half_extents.z * sign,
+                            _ => unreachable!(),
+                        }
+
+                        let point_on_obb = obb_center + (
+                            axes[0] * local_point.x + axes[1] * local_point.y + axes[2] * local_point.z
+                        );
+
+                        (normal, penetration, point_on_obb)
+                    } else {
+                        let normal = diff * (1.0 / dist);
+                        let penetration = sphere.radius - dist;
+                        (normal, penetration, closest_world)
+                    };
+
+                    let point_on_sphere = sphere_center - (normal * sphere.radius);
+
+                    let tolerance = 1e-4;
+                    let mut contact_points = vec![ContactPoint {
+                        point_on_a: point_on_obb,
+                        point_on_b: point_on_sphere,
+                        penetration,
+                    }];
+
+                    let on_face_x = (local_sphere_center.x.abs() - obb.half_extents.x).abs() < tolerance;
+                    let on_face_y = (local_sphere_center.y.abs() - obb.half_extents.y).abs() < tolerance;
+                    let on_face_z = (local_sphere_center.z.abs() - obb.half_extents.z).abs() < tolerance;
+
+                    let faces_count = on_face_x as u8 + on_face_y as u8 + on_face_z as u8;
+
+                    // additional contact points for edge/corner
+                    if faces_count >= 2 && dist > 1e-6 {
+                        let tangent1 = if normal.x.abs() < 0.9 {
+                            Vector::new3(1.0, 0.0, 0.0).cross(&normal).normalize3()
+                        } else {
+                            Vector::new3(0.0, 1.0, 0.0).cross(&normal).normalize3()
+                        };
+                        let tangent2 = normal.cross(&tangent1).normalize3();
+
+                        // contact points in a circle around the main contact
+                        let num_additional = if faces_count == 3 { 3 } else { 2 }; // corner/edge
+                        for i in 1..=num_additional {
+                            let angle = (i as f32) * std::f32::consts::PI * 2.0 / (num_additional + 1) as f32;
+                            let offset = tangent1 * (angle.cos() * 0.01) + tangent2 * (angle.sin() * 0.01);
+
+                            contact_points.push(ContactPoint {
+                                point_on_a: point_on_obb + offset,
+                                point_on_b: point_on_sphere + offset,
+                                penetration,
+                            });
+                        }
+                    }
+
+                    Some(ContactInformation {
+                        contact_points,
+                        normal,
+                        time_of_impact: penetration,
+                    })
+                }
+                _ => { None }
+            }
+        }
+        None
+    }
+    pub fn intersects_obb(
+        &self,
+        self_hitbox: &Hitbox,
+        other_hitbox: &Hitbox,
+        other: &RigidBodyComponent,
+        dt: f32,
+    ) -> Option<ContactInformation> {
+        if let Hitbox::OBB(obb, _) = other_hitbox {
+            return match self_hitbox {
+                Hitbox::OBB(this_obb, _) => {
+                    let (a, b) = (this_obb, obb);
+
+                    let a_center = a.center.rotate_by_quat(&self.q_f) + self.x_f;
+                    let b_center = b.center.rotate_by_quat(&other.q_f) + other.x_f;
+
+                    let a_quat = self.q_f;
+                    let b_quat = other.q_f;
+
+                    let a_axes = [
+                        Vector::new3(1.0, 0.0, 0.0).rotate_by_quat(&a_quat),
+                        Vector::new3(0.0, 1.0, 0.0).rotate_by_quat(&a_quat),
+                        Vector::new3(0.0, 0.0, 1.0).rotate_by_quat(&a_quat),
+                    ];
+                    let b_axes = [
+                        Vector::new3(1.0, 0.0, 0.0).rotate_by_quat(&b_quat),
+                        Vector::new3(0.0, 1.0, 0.0).rotate_by_quat(&b_quat),
+                        Vector::new3(0.0, 0.0, 1.0).rotate_by_quat(&b_quat),
+                    ];
+
+                    let t = b_center - a_center;
+
+                    let mut min_penetration = f32::MAX;
+                    let mut collision_normal = Vector::empty();
+                    let mut best_axis_type = AxisType::FaceA(0);
+                    for i in 0..3 {
+                        { // a_normals
+                            let axis = a_axes[i];
+                            let penetration = test_axis(&axis, &t, &a.half_extents, &b.half_extents, &a_axes, &b_axes, true);
+                            if penetration < 0.0 {
+                                return None
+                            }
+                            if penetration < min_penetration {
+                                min_penetration = penetration;
+                                collision_normal = axis;
+                                best_axis_type = AxisType::FaceA(i);
+                            }
+                        }
+                        { // b_normals
+                            let axis = b_axes[i];
+                            let penetration = test_axis(&axis, &t, &a.half_extents, &b.half_extents, &a_axes, &b_axes, true);
+                            if penetration < 0.0 {
+                                return None
+                            }
+                            if penetration < min_penetration {
+                                min_penetration = penetration;
+                                collision_normal = axis;
+                                best_axis_type = AxisType::FaceB(i);
+                            }
+                        }
+                        for j in 0..3 { // edge-edge cross-products
+                            let axis = a_axes[i].cross(&b_axes[j]);
+                            let axis_length = axis.magnitude3();
+
+                            if axis_length < 1e-6 {
+                                continue;
+                            }
+
+                            let axis_normalized = axis / axis_length;
+                            let penetration = test_axis_cross(&axis_normalized, &t, &a.half_extents, &b.half_extents, &a_axes, &b_axes);
+
+                            if penetration < 0.0 {
+                                return None;
+                            }
+
+                            if penetration < min_penetration {
+                                min_penetration = penetration;
+                                collision_normal = axis_normalized;
+                                best_axis_type = AxisType::Edge(i, j);
+                            }
+                        }
+                    }
+
+                    if collision_normal.dot3(&t) < 0.0 {
+                        collision_normal = -collision_normal;
+                    }
+
+                    Some(ContactInformation {
+                        contact_points: vec![ContactPoint {
+                            point_on_a: a_center + t.normalize3() * a.half_extents.magnitude3(),
+                            point_on_b: b_center - t.normalize3() * b.half_extents.magnitude3(),
+                            penetration: min_penetration
+                        }],
+                        normal: collision_normal,
+                        time_of_impact: min_penetration,
+                    })
+                }
+                Hitbox::Sphere(_) => {
+                    if let Some(contact) = other.intersects_sphere(other_hitbox, self_hitbox, self, dt) {
+                        Some(contact.flip())
+                    } else { None }
+                }
+                _ => None
+            }
+        }
+        None
+    }
+    fn intersects_convex_hull(
+        &self,
+        self_hitbox: &Hitbox,
+        other_hitbox: &Hitbox,
+        other: &RigidBodyComponent,
+        dt: f32,
+    ) -> Option<ContactInformation> {
+        // TODO
+        None
+    }
+}
+impl Default for RigidBodyComponent {
+    fn default() -> Self {
+        Self {
+            owned_by_player: false,
+            owner: 0,
+            transform: 0,
+            hitbox: 0,
+            is_static: true,
+            restitution_coefficient: 0.5,
+            friction_coefficient: 0.5,
+            mass: 999.0,
+            inv_mass: 0.0,
+            x_i: Vector::new(),
+            x_f: Vector::new(),
+            q_i: Vector::new(),
+            q_f: Vector::new(),
+            velocity: Default::default(),
+            angular_velocity: Default::default(),
+            differential_rotation: Default::default(),
+            center_of_mass: Vector::new(),
+            inertia_tensor: Matrix::new(),
+            inv_inertia_tensor: Matrix::new(),
+            stored_hitbox_scale: Vector::fill(1.0),
+        }
+    }
+}
+
+
+fn test_axis(
+    axis: &Vector,
+    t: &Vector,
+    half_a: &Vector,
+    half_b: &Vector,
+    axes_a: &[Vector; 3],
+    axes_b: &[Vector; 3],
+    is_a: bool,
+) -> f32 {
+    let ra = if is_a {
+        half_a.x * axes_a[0].dot3(axis).abs() +
+            half_a.y * axes_a[1].dot3(axis).abs() +
+            half_a.z * axes_a[2].dot3(axis).abs()
+    } else {
+        half_a.x * axes_a[0].dot3(axis).abs() +
+            half_a.y * axes_a[1].dot3(axis).abs() +
+            half_a.z * axes_a[2].dot3(axis).abs()
+    };
+    let rb = half_b.x * axes_b[0].dot3(axis).abs() +
+        half_b.y * axes_b[1].dot3(axis).abs() +
+        half_b.z * axes_b[2].dot3(axis).abs();
+    let distance = t.dot3(axis).abs();
+    ra + rb - distance
+}
+fn test_axis_cross(
+    axis: &Vector,
+    t: &Vector,
+    half_a: &Vector,
+    half_b: &Vector,
+    axes_a: &[Vector; 3],
+    axes_b: &[Vector; 3],
+) -> f32 {
+    let ra = half_a.x * axes_a[0].dot3(axis).abs() +
+        half_a.y * axes_a[1].dot3(axis).abs() +
+        half_a.z * axes_a[2].dot3(axis).abs();
+
+    let rb = half_b.x * axes_b[0].dot3(axis).abs() +
+        half_b.y * axes_b[1].dot3(axis).abs() +
+        half_b.z * axes_b[2].dot3(axis).abs();
+
+    let distance = t.dot3(axis).abs();
+
+    ra + rb - distance
+}
+/*
+fn signed_volume1(a: Vector, b: Vector) -> (f32, f32) {
+    let ab = b - a; // segment
+    let ap = Vector::fill(0.0) - a; // a to origin
+    let p = a + ab * ab.dot3(&ap) / ab.magnitude3_sq(); // origin projected onto the segment
+
+    // get axis with the greatest length
+    let mut index = 0;
+    let mut max_mu: f32 = 0.0;
+    for i in 0..3 {
+        let mu = ab.get(i);
+        if mu.abs() > max_mu.abs() {
+            max_mu = mu;
+            index = i;
+        }
+    }
+    // project all to found axis
+    let a = a.get(index);
+    let b = b.get(index);
+    let p = p.get(index);
+    // signed distance from a to p and p to b
+    let c0 = p - a;
+    let c1 = b - p;
+    // p on segment
+    if (p > a && p < b) || (p < a && p > b) {
+        return (c1 / max_mu, c0 / max_mu)
+    }
+    // p off the segment on a-side
+    if (a <= b && p <= a) || (a >= b && p <= a) {
+        return (1.0, 0.0)
+    }
+    // p off the segment on b-side
+    (0.0, 1.0)
+}
+fn signed_volume2(a: Vector, b: Vector, c: Vector) -> Vector {
+    let n = (b - a).cross(&(c - a)); // normal
+    let p = n * a.dot3(&n) / n.magnitude3_sq(); // origin projected onto the triangle
+
+    // find axis with the largest area
+    let mut index = 0;
+    let mut max_area: f32 = 0.0;
+    for i in 0..3 {
+        let j = (i + 1) % 3;
+        let k = (i + 2) % 3;
+
+        let a = Vector::new2(a.get(j), a.get(k));
+        let b = Vector::new2(b.get(j), b.get(k));
+        let c = Vector::new2(c.get(j), c.get(k));
+        let ab = b - a;
+        let ac = c - a;
+        let area = ab.x * ac.y - ab.y * ac.x;
+        if area.abs() > max_area.abs() {
+            max_area = area;
+            index = i;
+        }
+    }
+
+    // project onto axis with the largest area
+    let x = (index + 1) % 3;
+    let y = (index + 2) % 3;
+    let vertices = [
+        Vector::new2(a.get(x), a.get(y)),
+        Vector::new2(b.get(x), b.get(y)),
+        Vector::new2(c.get(x), c.get(y)),
+    ];
+    let p = Vector::new2(p.get(x), p.get(y));
+
+    // areas of all tris formed by projected origin and edges
+    let mut areas = Vector::empty();
+    for i in 0..3 {
+        let j = (i + 1) % 3;
+        let k = (i + 2) % 3;
+
+        let a = p;
+        let b = vertices[j];
+        let c = vertices[k];
+        let ab = b - a;
+        let ac = c - a;
+        areas.set(i, ab.x * ac.y - ab.y * ac.x);
+    }
+
+    // if the projected origin is inside the triangle, return barycentric coords of it
+    if same_sign(max_area, areas.x) && same_sign(max_area, areas.y) && same_sign(max_area, areas.z) {
+        return areas / max_area
+    }
+
+    // project onto edges, return barycentric coords of the closest point to origin
+    let mut min_dist = f32::MAX;
+    let mut lambdas = Vector::new3(1.0, 0.0, 0.0);
+    for i in 0..3 {
+        let j = (i + 1) % 3;
+        let k = (i + 2) % 3;
+
+        let edge_points = [a, b, c];
+        let lambda_edge = signed_volume1(edge_points[j], edge_points[k]);
+        let point = edge_points[j] * lambda_edge.0 + edge_points[k] * lambda_edge.1;
+        let dist = point.magnitude3_sq();
+        if dist < min_dist {
+            min_dist = dist;
+            lambdas.set(i, 0.0);
+            lambdas.set(j, lambda_edge.0);
+            lambdas.set(k, lambda_edge.1);
+        }
+    }
+    lambdas
+}
+fn signed_volume3(a: Vector, b: Vector, c: Vector, d: Vector) -> Vector {
+    let m = Matrix::new_manual([
+        a.x, b.x, c.x, d.x,
+        a.y, b.y, c.y, d.y,
+        a.z, b.z, c.z, d.z,
+        1.0, 1.0, 1.0, 1.0,
+    ]);
+    let c = Vector::new4(
+        m.cofactor(3, 0),
+        m.cofactor(3, 1),
+        m.cofactor(3, 2),
+        m.cofactor(3, 3),
+    );
+    let det = c.x + c.y + c.z + c.w;
+
+    // origin already inside tetrahedron
+    if same_sign(det, c.x) && same_sign(det, c.y) && same_sign(det, c.z) && same_sign(det, c.w) {
+        return c / det
+    }
+
+    // project origin onto faces, find closest, return its barycentric coords
+    let mut lambdas = Vector::empty();
+    let mut min_dist = f32::MAX;
+    for i in 0..4 {
+        let j = (i + 1) % 4;
+        let k = (i + 2) % 4;
+
+        let face_points = [a, b, c, d];
+        let lambda_face = signed_volume2(face_points[i], face_points[j], face_points[k]);
+        let point = face_points[i] * lambda_face.x + face_points[j] * lambda_face.y + face_points[k] * lambda_face.z;
+        let dist = point.magnitude3_sq();
+        if dist < min_dist {
+            min_dist = dist;
+            lambdas = lambda_face;
+        }
+    }
+
+    lambdas
+}
+fn same_sign(a: f32, b: f32) -> bool {
+    a*b > 0.0
+}
+ */

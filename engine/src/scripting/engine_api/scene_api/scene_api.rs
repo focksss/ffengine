@@ -93,6 +93,7 @@ impl UserData for SceneRef {
     }
 }
 
+#[derive(Clone)]
 pub struct EntityPointer {
     index: usize,
 }
@@ -163,6 +164,7 @@ impl UserData for EntityPointer {
     }
 }
 
+#[derive(Clone)]
 pub struct TransformPointer {
     index: usize,
 }
@@ -218,6 +220,7 @@ impl UserData for TransformPointer {
     }
 }
 
+#[derive(Clone)]
 pub struct RenderComponentPointer {
     pub index: usize,
 }
@@ -229,6 +232,7 @@ impl UserData for RenderComponentPointer {
     }
 }
 
+#[derive(Clone)]
 pub struct RigidBodyPointer {
     pub index: usize,
 }
@@ -287,6 +291,7 @@ impl UserData for RigidBodyPointer {
     }
 }
 
+#[derive(Clone)]
 pub struct CameraPointer {
     pub index: usize,
 }
@@ -358,7 +363,8 @@ impl UserData for ScriptPointer {
     fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
         methods.add_method("call_method", |lua, this, (method_name, args): (String, mlua::MultiValue)| {
             with_scene!(lua => scene);
-            Lua::call_script(scene.script_components[this.index].script, method_name.as_str(), Some(args))
+            let script_component = &scene.script_components[this.index];
+            Lua::call_method(script_component.script, script_component.instance, method_name.as_str(), Some(args))
         });
     }
 

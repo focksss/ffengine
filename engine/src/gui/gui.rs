@@ -15,11 +15,13 @@ use crate::gui::text::font::Font;
 use crate::gui::text::text_render::{TextInformation, TextRenderer};
 use crate::render::render::MAX_FRAMES_IN_FLIGHT;
 use crate::render::vulkan_base::Context;
-use crate::scripting::lua_engine::Lua;
+use crate::scripting::engine_api::scene_api::scene_api::ScriptPointer;
+use crate::scripting::lua_engine::{Field, Lua};
 
 pub struct GUI {
-    index: usize,
     context: Arc<Context>,
+
+    pub gui_root_sets: Vec<Vec<usize>>,
 
     pub text_field_focused: bool,
 
@@ -31,7 +33,6 @@ pub struct GUI {
     pub quad_renderpass: Renderpass,
 
     pub nodes: Vec<Node>,
-    pub root_node_indices: Vec<usize>,
     pub unparented_node_indices: Vec<usize>,
 
     pub elements: Vec<Element>,
@@ -63,12 +64,12 @@ impl GUI {
         for passive_action in interactable_information.passive_actions.iter() {
             Lua::cache_call(
                 passive_action.1,
+                passive_action.2,
                 passive_action.0.as_str(),
                 Some(self.active_node),
-                Some(self.index)
             )
         }
-
+ 
         let (x, y, left_pressed, left_just_pressed, right_pressed, right_just_pressed) = {
             let client = self.controller.borrow();
             let x = client.cursor_position.x as f32;
@@ -89,9 +90,9 @@ impl GUI {
             for unhover_action in interactable_information.unhover_actions.iter() {
                 Lua::cache_call(
                     unhover_action.1,
+                    unhover_action.2,
                     unhover_action.0.as_str(),
                     Some(self.active_node),
-                    Some(self.index)
                 )
             }
         } else {
@@ -99,9 +100,9 @@ impl GUI {
             for hover_action in interactable_information.hover_actions.iter() {
                 Lua::cache_call(
                     hover_action.1,
+                    hover_action.2,
                     hover_action.0.as_str(),
                     Some(self.active_node),
-                    Some(self.index)
                 )
             }
         }
@@ -111,9 +112,9 @@ impl GUI {
                 for left_down_action in interactable_information.left_down_actions.iter() {
                     Lua::cache_call(
                         left_down_action.1,
+                        left_down_action.2,
                         left_down_action.0.as_str(),
                         Some(self.active_node),
-                        Some(self.index)
                     );
                 }
                 if !interactable_information.left_up_actions.is_empty() || !interactable_information.left_hold_actions.is_empty() {
@@ -139,9 +140,9 @@ impl GUI {
                 for left_hold_action in interactable_information.left_hold_actions.iter() {
                     Lua::cache_call(
                         left_hold_action.1,
+                        left_hold_action.2,
                         left_hold_action.0.as_str(),
                         Some(self.active_node),
-                        Some(self.index)
                     )
                 }
                 break;
@@ -150,9 +151,9 @@ impl GUI {
                     for left_tap_action in interactable_information.left_up_actions.iter() {
                         Lua::cache_call(
                             left_tap_action.1,
+                            left_tap_action.2,
                             left_tap_action.0.as_str(),
                             Some(self.active_node),
-                            Some(self.index)
                         )
                     }
                 }
@@ -164,9 +165,9 @@ impl GUI {
                 for right_down_action in interactable_information.right_down_actions.iter() {
                     Lua::cache_call(
                         right_down_action.1,
+                        right_down_action.2,
                         right_down_action.0.as_str(),
                         Some(self.active_node),
-                        Some(self.index)
                     );
                 }
                 if !interactable_information.right_up_actions.is_empty() || !interactable_information.right_hold_actions.is_empty() {
@@ -192,9 +193,9 @@ impl GUI {
                 for right_hold_action in interactable_information.right_hold_actions.iter() {
                     Lua::cache_call(
                         right_hold_action.1,
+                        right_hold_action.2,
                         right_hold_action.0.as_str(),
                         Some(self.active_node),
-                        Some(self.index)
                     )
                 }
                 break;
@@ -203,9 +204,9 @@ impl GUI {
                     for right_tap_action in interactable_information.right_up_actions.iter() {
                         Lua::cache_call(
                             right_tap_action.1,
+                            right_tap_action.2,
                             right_tap_action.0.as_str(),
                             Some(self.active_node),
-                            Some(self.index)
                         )
                     }
                 }
@@ -215,11 +216,9 @@ impl GUI {
     }
     pub fn handle_typing_input(&mut self, logical_key: Key, text: Option<SmolStr>, physical_key: Option<PhysicalKey>) {
         // println!("handle_typing_input: {:?}", text);
-
     }
 
     pub fn new(
-        index: usize,
         context: &Arc<Context>,
         controller: Arc<RefCell<Client>>,
         null_tex_sampler: vk::Sampler,
@@ -233,7 +232,7 @@ impl GUI {
         let (pass_ref, quad_renderpass, text_renderer) = GUI::create_rendering_objects(context, null_info);
 
         let gui = GUI {
-            index,
+            gui_root_sets: Vec::new(),
 
             text_field_focused: false,
 
@@ -245,7 +244,6 @@ impl GUI {
             quad_renderpass,
 
             nodes: Vec::new(),
-            root_node_indices: Vec::new(),
             unparented_node_indices: Vec::new(),
 
             elements: Vec::new(),
@@ -2167,11 +2165,7 @@ pub enum Container {
     },
     Dock,
 }
-#[derive(Clone, Debug)]
-pub enum Offset {
-    Pixels(f32),
-    Factor(f32),
-}
+
 impl Default for Container {
     fn default() -> Self {
         Container::Dock
@@ -2185,6 +2179,12 @@ impl PartialEq for Container {
             _ => false,
         }
     }
+}
+
+#[derive(Clone, Debug)]
+pub enum Offset {
+    Pixels(f32),
+    Factor(f32),
 }
 #[derive(Clone)]
 pub enum PackingMode {
@@ -2416,19 +2416,25 @@ impl Node {
     }
 }
 #[derive(Clone)]
+pub struct InteractionInformation {
+    method: String,
+    script_pointer: ScriptPointer,
+    args: Vec<Field>
+}
+#[derive(Clone)]
 pub struct GUIInteractableInformation {
     was_initially_left_pressed: bool,
     was_initially_right_pressed: bool,
 
-    passive_actions: Vec<(String, usize)>,
-    pub hover_actions: Vec<(String, usize)>,
-    unhover_actions: Vec<(String, usize)>,
-    pub left_up_actions: Vec<(String, usize)>,
-    pub left_down_actions: Vec<(String, usize)>,
-    pub left_hold_actions: Vec<(String, usize)>,
-    pub(crate) right_up_actions: Vec<(String, usize)>,
-    right_down_actions: Vec<(String, usize)>,
-    right_hold_actions: Vec<(String, usize)>,
+    passive_actions: Vec<InteractionInformation>,
+    pub hover_actions: Vec<InteractionInformation>,
+    unhover_actions: Vec<InteractionInformation>,
+    pub left_up_actions: Vec<InteractionInformation>,
+    pub left_down_actions: Vec<InteractionInformation>,
+    pub left_hold_actions: Vec<InteractionInformation>,
+    pub(crate) right_up_actions: Vec<InteractionInformation>,
+    right_down_actions: Vec<InteractionInformation>,
+    right_hold_actions: Vec<InteractionInformation>,
 }
 impl Default for GUIInteractableInformation {
     fn default() -> Self {

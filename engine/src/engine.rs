@@ -11,9 +11,11 @@ use winit::event_loop::ControlFlow;
 use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
 use crate::math::Vector;
 use crate::client::client::Client;
+use crate::gui::gui::GUI;
 use crate::scene::physics::physics_engine::PhysicsEngine;
 use crate::render::render::{Renderer, MAX_FRAMES_IN_FLIGHT};
 use crate::render::vulkan_base::{record_submit_commandbuffer, VkBase};
+use crate::scene::parser::load_scene;
 use crate::scene::scene::Scene;
 use crate::scripting::lua_engine::Lua;
 use crate::scene::world::world::World;
@@ -31,6 +33,7 @@ pub fn get_command_buffer() -> vk::CommandBuffer {
 
 pub struct Engine {
     pub scene: Arc<RefCell<Scene>>,
+    pub gui: Arc<RefCell<GUI>>,
 
     pub base: VkBase,
     pub world: Arc<RefCell<World>>,
@@ -48,7 +51,7 @@ pub struct EngineRef {
     pub client: Arc<RefCell<Client>>,
 }
 impl Engine {
-    pub fn new() -> Engine {
+    pub fn new(scene_path: &str) -> Engine {
         let base = VkBase::new("ffengine".to_string(), 1200, 700, MAX_FRAMES_IN_FLIGHT).unwrap();
         let mut world = World::new(&base.context);
         unsafe { world.initialize() }
@@ -60,10 +63,13 @@ impl Engine {
         let rw_lock = RwLock::new(base.draw_command_buffers[0]);
         COMMAND_BUFFER.set(rw_lock).expect("Failed to initialize frame command buffer global");
 
-        let renderer = Arc::new(RefCell::new(Renderer::new(&base, world.clone(), client.clone(), 1)));
+        let renderer = Arc::new(RefCell::new(Renderer::new(&base, world.clone())));
+
+        let (scene, gui) = load_scene(scene_path, &base.context, renderer.clone(), world.clone(), physics_engine.clone(), client.clone());
 
         let engine = Engine {
-            scene: Arc::new(RefCell::new(Scene::new(&base.context, renderer.clone(), world.clone(), physics_engine.clone()))),
+            scene: Arc::new(RefCell::new(scene)),
+            gui: Arc::new(RefCell::new(gui)),
 
             physics_engine,
             renderer,
@@ -129,7 +135,7 @@ impl Engine {
                             if base.needs_swapchain_recreate {
                                 base.device.device_wait_idle().unwrap();
                                 base.set_surface_and_present_images();
-                                self.renderer.borrow_mut().reload(&base, &self.world.borrow());
+                                self.renderer.borrow_mut().reload(&base, &self.world.borrow(), &mut self.gui.borrow_mut());
 
                                 base.needs_swapchain_recreate = false;
                                 // frametime_manager.reset();
@@ -143,7 +149,7 @@ impl Engine {
 
                                 let renderer = &mut self.renderer.borrow_mut();
 
-                                renderer.reload(base, &self.world.borrow());
+                                renderer.reload(base, &self.world.borrow(), &mut self.gui.borrow_mut());
                                 
                                 // renderer.gui.borrow_mut().load_from_file(base, "editor\\resources\\gui\\editor.gui");
                                 
@@ -179,9 +185,7 @@ impl Engine {
                         last_frame_time = now;
 
                         Lua::run_update_methods().expect("Failed to run Update methods");
-                        for gui in self.renderer.borrow_mut().guis.iter() {
-                            gui.borrow_mut().initialize_new_texts();
-                        }
+                        self.gui.borrow_mut().initialize_new_texts();
 
                         let current_fence = base.draw_commands_reuse_fences[current_frame];
                         {
@@ -219,10 +223,8 @@ impl Engine {
                                 }
 
                                 {
-                                    self.renderer.borrow_mut().render_frame(current_frame, self.scene.clone());
+                                    self.renderer.borrow_mut().render_frame(current_frame, self.scene.clone(), self.gui.clone());
                                 }
-
-                                Lua::run_cache(&engine_ref);
                             },
                         );
                         {

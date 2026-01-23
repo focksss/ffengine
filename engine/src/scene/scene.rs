@@ -12,20 +12,33 @@ use crate::math::Vector;
 use crate::render::render::{Renderer, MAX_FRAMES_IN_FLIGHT};
 use crate::render::scene_renderer::{CameraMatrixUniformData, SceneRenderer, SHADOW_RES};
 use crate::render::vulkan_base::{copy_buffer_synchronous, copy_data_to_memory, Context};
+use crate::scene::components::animation::AnimationComponent;
+use crate::scene::components::camera::CameraComponent;
+use crate::scene::components::hitbox::HitboxComponent;
+use crate::scene::components::light::LightComponent;
+use crate::scene::components::mesh::Mesh;
+use crate::scene::components::rigid_body::RigidBodyComponent;
+use crate::scene::components::script::ScriptComponent;
+use crate::scene::components::skin::SkinComponent;
+use crate::scene::components::sun::SunComponent;
 use crate::scene::physics::hitboxes::bounding_box::BoundingBox;
 use crate::scene::physics::hitboxes::convex_hull::ConvexHull;
 use crate::scene::physics::hitboxes::hitbox::{Hitbox, HitboxType};
 use crate::scene::physics::hitboxes::sphere::Sphere;
 use crate::scene::physics::physics_engine::{AxisType, ContactInformation, ContactPoint, PhysicsEngine};
+use crate::scene::components::transform::Transform;
 use crate::scene::world::world::{LightSendable, SunSendable, World};
 
 
-//TODO
-// - EVERYTHING is contained by an entity and is a type of component, including gui elements and rendering pipelines
+/**
+ECS
+ - EVERYTHING is contained by an entity and is a type of component.
+ - Cameras (will) own their own SceneRenderer and render to either a RenderTexture or the screen.
+*/
 
 
 pub struct Scene {
-    context: Arc<Context>,
+    pub(crate) context: Arc<Context>,
 
     pub runtime: f32,
 
@@ -36,7 +49,7 @@ pub struct Scene {
     pub unupdated_entities: Vec<usize>,
 
     pub transforms: Vec<Transform>,
-    pub render_components: Vec<RenderComponent>,
+    pub mesh_components: Vec<Mesh>,
     pub skin_components: Vec<SkinComponent>,
     pub animation_components: Vec<AnimationComponent>,
     pub rigid_body_components: Vec<RigidBodyComponent>,
@@ -69,7 +82,7 @@ impl Scene {
             entities: Vec::new(),
             unupdated_entities: Vec::new(),
             transforms: Vec::new(),
-            render_components: Vec::new(),
+            mesh_components: Vec::new(),
             skin_components: Vec::new(),
             animation_components: Vec::new(),
             rigid_body_components: Vec::new(),
@@ -90,17 +103,11 @@ impl Scene {
             dirty_camera_components: Vec::new(),
         };
         scene.transforms.push(Transform::default());
-        scene.sun_components.push(SunComponent {
-            direction: Vector::new3(0.5, 0.0, 1.0).normalize3(),
-            color: Vector::fill(1.0)
-        });
         scene.entities.push(Entity {
-            name: String::from("Scene"),
+            name: String::from("Global Root"),
             transform: 0,
             children_indices: Vec::new(),
             parent: 0,
-
-            sun: Some(0),
             ..Default::default()
         });
 
@@ -207,8 +214,8 @@ impl Scene {
                         ..Default::default()
                     });
 
-                    let render_component_index = self.render_components.len();
-                    self.render_components.push(RenderComponent {
+                    let render_component_index = self.mesh_components.len();
+                    self.mesh_components.push(Mesh {
                         mesh_primitive_index: (mesh_index, i),
                         skin_index: node.skin,
                         material_index: primitive.material_index as usize,
@@ -233,7 +240,7 @@ impl Scene {
         let mut entity = Entity::default();
         entity.name = String::from(format!("LightEntity {}", index));
         entity.transform = self.transforms.len();
-        entity.camera = Some(index);
+        entity.lights = vec![index];
         self.entities.push(entity);
         light.owner = owner_index;
 
@@ -254,7 +261,7 @@ impl Scene {
         let mut entity = Entity::default();
         entity.name = String::from(format!("CameraEntity {}", index));
         entity.transform = self.transforms.len();
-        entity.camera = Some(index);
+        entity.cameras = vec![index];
         self.entities.push(entity);
         camera.owner = owner_index;
 
@@ -273,7 +280,7 @@ impl Scene {
         let entity = &mut self.entities[entity_index];
 
         if !entity.render_objects.is_empty() {
-            let render_component = &self.render_components[entity.render_objects[0]];
+            let render_component = &self.mesh_components[entity.render_objects[0]];
             let mesh = &self.world.borrow().meshes[render_component.mesh_primitive_index.0];
 
             entity.rigid_body = Some(self.rigid_body_components.len());
@@ -619,7 +626,7 @@ impl Scene {
             };
 
             for (i, render_object_index) in entity.render_objects.iter().enumerate() {
-                let render_component = &self.render_components[*render_object_index];
+                let render_component = &self.mesh_components[*render_object_index];
 
                 self.transforms[render_component.transform].update_local_matrix();
 
@@ -645,12 +652,12 @@ impl Scene {
                 body.initialize(&mut self.transforms);
             }
 
-            if let Some(light_index) = entity.light {
-                self.dirty_light_components.push(light_index);
+            for light_index in &entity.lights {
+                self.dirty_light_components.push(*light_index);
             }
 
-            if let Some(camera_index) = entity.camera {
-                self.dirty_camera_components.push(camera_index);
+            for camera_index in &entity.cameras {
+                self.dirty_camera_components.push(*camera_index);
             }
 
             (entity.transform, entity.children_indices.clone())
@@ -758,11 +765,11 @@ impl Scene {
                         scene_renderer.opaque_forward_renderpass.pipelines[0].vulkan_pipeline,
                     );
                     for index in self.outlined_components.iter() {
-                        self.render_components[*index].draw(&self, scene_renderer, &command_buffer, world, *index, camera);
+                        self.mesh_components[*index].draw(&self, scene_renderer, &command_buffer, world, *index, camera);
                     }
                 } else {
                     if do_deferred {
-                        for (i, render_component) in self.render_components.iter().enumerate() {
+                        for (i, render_component) in self.mesh_components.iter().enumerate() {
                             render_component.draw(&self, scene_renderer, &command_buffer, world, i, camera);
                         }
                     }
@@ -789,13 +796,22 @@ pub struct Entity {
     pub children_indices: Vec<usize>,
     pub parent: usize,
 
-    pub sun: Option<usize>,
+    pub suns: Vec<usize>,
     pub render_objects: Vec<usize>,
     pub joint_object: Option<usize>,
     pub animation_objects: Vec<usize>,
     pub rigid_body: Option<usize>,
-    pub camera: Option<usize>,
-    pub light: Option<usize>,
+    pub cameras: Vec<usize>,
+    pub lights: Vec<usize>,
+
+    pub ui_container: Option<usize>,
+    pub ui_parent_relation: Option<usize>,
+    pub ui_quads: Vec<usize>,
+    pub ui_texts: Vec<usize>,
+    pub ui_images: Vec<usize>,
+    pub ui_textures: Vec<usize>,
+
+    pub scripts: Vec<usize>,
 }
 impl Default for Entity {
     fn default() -> Self {
@@ -805,780 +821,24 @@ impl Default for Entity {
             animated_transform: (0, false),
             children_indices: Vec::new(),
             parent: 0,
-            sun: None,
+            suns: Vec::new(),
             render_objects: Vec::new(),
             joint_object: None,
             animation_objects: Vec::new(),
             rigid_body: None,
-            camera: None,
-            light: None,
-        }
-    }
-}
-pub struct Transform {
-    is_identity: bool,
-    pub owner: usize,
-
-    pub local_translation: Vector,
-    pub local_rotation: Vector,
-    pub local_scale: Vector,
-
-    local: Matrix,
-
-    pub world_translation: Vector,
-    pub world_rotation: Vector,
-    pub world_scale: Vector,
-
-    world: Matrix
-}
-impl Transform {
-    fn update_local_matrix(&mut self) {
-        let rotate = Matrix::new_rotate_quaternion_vec4(&self.local_rotation);
-        let scale = Matrix::new_scale_vec3(&self.local_scale);
-        let translate = Matrix::new_translation_vec3(&self.local_translation);
-
-        self.local = translate * rotate * scale;
-    }
-    fn update_world_matrix(&mut self, parent_transform: &Transform, animated_transform: Option<&Transform>) {
-        if let Some(animated) = animated_transform {
-            self.world_scale = parent_transform.world_scale * animated.local_scale;
-            self.world_rotation = parent_transform.world_rotation.combine(&animated.local_rotation);
-            self.world_translation = parent_transform.world_translation +
-                (animated.local_translation * parent_transform.world_scale)
-                    .rotate_by_quat(&parent_transform.world_rotation);
-            self.world = parent_transform.world * animated.local;
-        } else {
-            self.world_scale = parent_transform.world_scale * self.local_scale;
-            self.world_rotation = parent_transform.world_rotation.combine(&self.local_rotation);
-            self.world_translation = parent_transform.world_translation +
-                (self.local_translation * parent_transform.world_scale)
-                    .rotate_by_quat(&parent_transform.world_rotation);
-            self.world = parent_transform.world * self.local;
-        }
-    }
-
-    // fn local_to_world_position(&self, position: Vector) -> Vector {
-    //     self.world_translation + (position * self.world_scale).rotate_by_quat(&self.world_rotation)
-    // }
-    fn world_to_local_position(&self, position: Vector, parent: &Transform) -> Vector {
-        ((position - parent.world_translation) / parent.world_scale).rotate_by_quat(&parent.world_rotation.inverse_quat())
-    }
-
-    // fn local_to_world_rotation(&self, rotation: Vector) -> Vector {
-    //     self.world_rotation * rotation
-    // }
-    fn world_to_local_rotation(&self, rotation: Vector, parent: &Transform) -> Vector {
-        parent.world_rotation.inverse_quat().combine(&rotation)
-    }
-}
-impl Default for Transform {
-    fn default() -> Self {
-        Transform {
-            owner: 0,
-            is_identity: true,
-
-            local_translation: Vector::new(),
-            local_rotation: Vector::new4(0.0, 0.0, 0.0, 1.0),
-            local_scale: Vector::fill(1.0),
-
-            local: Matrix::new(),
-
-            world_translation: Vector::new(),
-            world_rotation: Vector::new4(0.0, 0.0, 0.0, 1.0),
-            world_scale: Vector::fill(1.0),
-
-            world: Matrix::new(),
+            cameras: Vec::new(),
+            lights: Vec::new(),
+            scripts: Vec::new(),
+            ui_container: None,
+            ui_parent_relation: None,
+            ui_images: Vec::new(),
+            ui_quads: Vec::new(),
+            ui_texts: Vec::new(),
+            ui_textures: Vec::new(),
         }
     }
 }
 
-
-
-pub struct AnimationComponent {
-    owner_entity: usize,
-    pub channels: Vec<(usize, usize, String)>, // sampler index, impacted node, target transform component
-    pub samplers: Vec<(Vec<f32>, String, Vec<Vector>)>, // input times, interpolation method, output vectors
-    pub start_time: SystemTime,
-    pub duration: f32,
-    pub running: bool,
-    pub repeat: bool,
-    pub snap_back: bool,
-}
-impl AnimationComponent {
-    pub fn start(&mut self) {
-        self.start_time = SystemTime::now();
-        self.running = true;
-    }
-
-    pub fn stop(&mut self, entities: &mut Vec<Entity>) {
-        self.running = false;
-        if self.snap_back {
-            for channel in self.channels.iter() {
-                entities[channel.1].animated_transform.1 = false;
-            }
-        }
-    }
-
-    pub fn update(&mut self, entities: &mut Vec<Entity>, transforms: &mut Vec<Transform>, unnupdated_entities: &mut Vec<usize>) {
-        if !self.running {
-            return
-        }
-        unnupdated_entities.push(self.owner_entity);
-        let current_time = SystemTime::now();
-        let elapsed_time = current_time.duration_since(self.start_time).unwrap().as_secs_f32();
-        let mut repeat = false;
-        if elapsed_time > self.duration {
-            if self.repeat {
-                repeat = true
-            } else {
-                self.stop(entities);
-                return
-            }
-        }
-        for channel in self.channels.iter() {
-            let sampler = &self.samplers[channel.0];
-            let mut current_time_index = 0;
-            for i in 0..sampler.0.len() - 1 {
-                if elapsed_time >= sampler.0[i] && elapsed_time < sampler.0[i + 1] {
-                    current_time_index = i;
-                    break
-                }
-            }
-            let current_time_index = current_time_index.min(sampler.0.len() - 1);
-            let interpolation_factor = ((elapsed_time - sampler.0[current_time_index]) / (sampler.0[current_time_index + 1] - sampler.0[current_time_index])).min(1.0).max(0.0);
-            let vector1 = &sampler.2[current_time_index];
-            let vector2 = &sampler.2[current_time_index + 1];
-            let new_vector;
-            if channel.2.eq("translation") || channel.2.eq("scale") {
-                new_vector = Vector::new3(
-                    vector1.x + interpolation_factor * (vector2.x - vector1.x),
-                    vector1.y + interpolation_factor * (vector2.y - vector1.y),
-                    vector1.z + interpolation_factor * (vector2.z - vector1.z),
-                )
-            } else {
-                new_vector = Vector::spherical_lerp(vector1, vector2, interpolation_factor)
-            }
-
-            let entity = &mut entities[channel.1];
-            entity.animated_transform.1 = true;
-            let animated_transform = &mut transforms[entity.animated_transform.0];
-
-            if channel.2.eq("translation") {
-                animated_transform.local_translation = new_vector
-            } else if channel.2.eq("rotation") {
-                animated_transform.local_rotation = new_vector
-            } else if channel.2.eq("scale") {
-                animated_transform.local_scale = new_vector
-            } else {
-                panic!("Illogical animation channel target! Should be translation, rotation or scale");
-            }
-        }
-        if repeat {
-            self.start()
-        }
-    }
-}
-pub struct SkinComponent {
-    joints: Vec<usize>, // entity indices
-    inverse_bind_matrices: Vec<Matrix>
-}
-impl SkinComponent {
-    pub fn update(&self, scene: &Scene, joints: &mut Vec<Matrix>) {
-        for (i, joint_entity_index) in self.joints.iter().enumerate() {
-            let world_transform = scene.transforms[scene.entities[*joint_entity_index].transform].world;
-            joints.push(world_transform * self.inverse_bind_matrices[i]);
-        }
-    }
-}
-pub struct RigidBodyComponent {
-    pub owner: usize,
-    pub transform: usize,
-    pub owned_by_player: bool,
-
-    pub hitbox: usize,
-    pub is_static: bool,
-    pub restitution_coefficient: f32,
-    pub friction_coefficient: f32,
-    pub mass: f32,
-    pub inv_mass: f32,
-
-    pub x_i: Vector,
-    pub x_f: Vector,
-    pub q_i: Vector,
-    pub q_f: Vector,
-
-    pub velocity: Vector,
-    pub angular_velocity: Vector, // axis angle
-    pub differential_rotation: Vector, // quaternion
-    center_of_mass: Vector,
-
-    inertia_tensor: Matrix, // 3x3
-    inv_inertia_tensor: Matrix,
-
-    stored_hitbox_scale: Vector,
-}
-impl RigidBodyComponent {
-    pub fn set_mass(&mut self, hitbox: &Hitbox, transforms: &Vec<Transform>, mass: f32) {
-        self.mass = mass;
-        self.inv_mass = 1.0 / mass;
-        self.update_shape_properties(hitbox, transforms);
-    }
-    pub fn set_static(&mut self, hitbox: &Hitbox, transforms: &Vec<Transform>, is_static: bool) {
-        self.is_static = is_static;
-        if is_static {
-            self.inv_mass = 0.0;
-            self.mass = 999.0
-        } else {
-            self.inv_mass = 1.0 / self.mass;
-        }
-        self.update_shape_properties(hitbox, transforms);
-    }
-
-    pub fn update_shape_properties(&mut self, hitbox: &Hitbox, transforms: &Vec<Transform>) {
-        match &hitbox {
-            Hitbox::OBB(obb, _) => {
-                let a = obb.half_extents.x * 2.0;
-                let b = obb.half_extents.y * 2.0;
-                let c = obb.half_extents.z * 2.0;
-
-
-                self.inertia_tensor = Matrix::new();
-                self.inertia_tensor.set(0, 0, (1.0 / 12.0) * (b * b + c * c));
-                self.inertia_tensor.set(1, 1, (1.0 / 12.0) * (a * a + c * c));
-                self.inertia_tensor.set(2, 2, (1.0 / 12.0) * (a * a + b * b));
-
-                let d = -obb.center;
-                let d2 = d.dot3(&d);
-
-                // parallel axis theorem tensor
-                let pat = Matrix::new_manual([
-                    d2 - d.x*d.x, -d.x*d.y,     -d.x*d.z,     0.0,
-                    -d.y*d.x,     d2 - d.y*d.y, -d.y*d.z,     0.0,
-                    -d.z*d.x,     -d.z*d.y,     d2 - d.z*d.z, 0.0,
-                    0.0,          0.0,          0.0,          0.0
-                ]);
-
-                self.inertia_tensor += pat;
-
-                self.center_of_mass = obb.center
-            }
-            Hitbox::Mesh(_) => {
-                //TODO inertia tensor and center of mass
-            }
-            Hitbox::Capsule(capsule) => {
-                //TODO inertia tensor
-
-                self.center_of_mass = (capsule.a + capsule.b) * 0.5
-            }
-            Hitbox::Sphere(sphere) => {
-                let r2 = sphere.radius * sphere.radius;
-                let c = 2.0 / 5.0;
-                let v = c * r2;
-                self.inertia_tensor = Matrix::new();
-                self.inertia_tensor.set(0, 0, v);
-                self.inertia_tensor.set(1, 1, v);
-                self.inertia_tensor.set(2, 2, v);
-
-                self.center_of_mass = sphere.center
-            }
-            Hitbox::ConvexHull(convex) => {
-                self.center_of_mass = convex.center_of_mass(10);
-                self.inertia_tensor = convex.inertia_tensor(&self.center_of_mass, 10);
-            }
-        }
-        self.inv_inertia_tensor = self.inertia_tensor.inverse3().mul_float_into3(self.inv_mass);
-    }
-    pub fn get_inverse_inertia_tensor_world_space(&self, transforms: &Vec<Transform>) -> Matrix {
-        let transform = &transforms[self.transform];
-        let rot = Matrix::new_rotate_quaternion_vec4(&transform.world_rotation);
-        rot * self.inv_inertia_tensor * rot.transpose3()
-    }
-    pub fn get_center_of_mass_world_space(&self, transforms: &Vec<Transform>) -> Vector {
-        let transform = &transforms[self.transform];
-        transform.world_translation + self.center_of_mass.rotate_by_quat(&transform.world_rotation)
-    }
-    pub fn get_inverse_mass_world_space(&self, normal: &Vector, position: Option<&Vector>) -> f32 {
-        if self.is_static || self.inv_mass == 0.0 { return 0.0 }
-
-        let inv_rot = Matrix::new_rotate_quaternion_vec4(&self.q_f.inverse_quat());
-        let rn = if let Some(position) = position {
-            inv_rot * ((position - self.x_f).cross(normal).with('w', 0.0))
-        } else {
-            inv_rot * normal.with('w', 0.0)
-        };
-
-        let inv_inertia = Vector::new3(self.inv_inertia_tensor.data[0], self.inv_inertia_tensor.data[5], self.inv_inertia_tensor.data[10]);
-        let mut w = rn.dot3(&(rn * inv_inertia));
-
-        if position.is_some() {
-            w += self.inv_mass
-        }
-        w
-    }
-
-    pub fn initialize(&mut self, transforms: &Vec<Transform>) {
-        let transform = &transforms[self.transform];
-        self.x_f = transform.world_translation;
-        self.q_f = transform.world_rotation;
-    }
-    pub fn integrate(&mut self, dt: f32, g: &Vector) {
-        if self.is_static { return }
-
-        self.x_i = self.x_f;
-        self.q_i = self.q_f;
-
-        self.velocity += g * dt;
-        self.x_f += self.velocity * dt;
-
-        self.differential_rotation = self.angular_velocity.with('w', 0.0).combine(&self.q_f);
-        self.q_f += self.differential_rotation * (0.5 * dt);
-        self.q_f = self.q_f.normalize4();
-    }
-    pub fn update_velocity(&mut self, dt: f32) {
-        if self.is_static { return }
-
-        self.velocity = (self.x_f - self.x_i) / dt;
-
-        self.differential_rotation = self.q_f.combine(&self.q_i.inverse_quat());
-        self.angular_velocity = self.differential_rotation.with('w', 0.0) * 2.0 / dt;
-        if self.differential_rotation.w < 0.0 { self.angular_velocity = -self.angular_velocity }
-    }
-    pub fn update(&mut self, transforms: &mut Vec<Transform>, parent_transform: usize) {
-        if self.is_static { return }
-
-        let [transform, parent_transform] = transforms.get_disjoint_mut([self.transform, parent_transform]).unwrap();
-
-        transform.local_translation = transform.world_to_local_position(self.x_f, parent_transform);
-        transform.local_rotation = transform.world_to_local_rotation(self.q_f, parent_transform);
-    }
-    pub fn apply_correction(
-        &mut self,
-        dt: f32,
-        correction: Vector,
-        compliance: f32,
-        pos_a: Vector,
-        pos_b: Vector,
-        body_b: Option<&mut RigidBodyComponent>
-    ) -> Vector {
-        if correction.magnitude3_sq() == 0.0 { return Vector::empty() }
-
-        let c = correction.magnitude3();
-        let mut n = correction.normalize3();
-        let mut w = self.get_inverse_mass_world_space(&n, Some(&pos_a));
-        if let Some(body_b) = &body_b {
-            w += body_b.get_inverse_mass_world_space(&n, Some(&pos_b));
-        }
-        if w == 0.0 { return Vector::empty() }
-
-        // XPBD
-        let alpha = compliance / dt / dt;
-        let lambda = -c / (w + alpha);
-        n = n * -lambda;
-
-        let correct = |body: &mut RigidBodyComponent, correction: &Vector, position: &Vector| {
-            if body.is_static || body.inv_mass == 0.0 { return }
-
-            body.x_f += correction * body.inv_mass;
-
-            let inv_inertia = Vector::new3(body.inv_inertia_tensor.data[0], body.inv_inertia_tensor.data[5], body.inv_inertia_tensor.data[10]);
-            let d_angular_vel = ((position - body.x_f)
-                .cross(correction)
-                .with('w', 0.0)
-                .rotate_by_quat(&body.q_f.inverse_quat())
-                * inv_inertia)
-                .with('w', 0.0)
-                .rotate_by_quat(&body.q_f);
-            body.differential_rotation = d_angular_vel.with('w', 0.0).combine(&body.q_f);
-            body.q_f += (0.5 * body.differential_rotation).normalize4();
-        };
-
-        correct(self, &-n, &pos_a);
-        if let Some(body_b) = body_b {
-            correct(body_b, &n, &pos_b);
-        }
-        lambda * correction / dt / dt
-    }
-
-    pub fn will_collide_with(
-        &self,
-        hitbox_components: &Vec<HitboxComponent>,
-        other: &RigidBodyComponent,
-        dt: f32,
-    ) -> Option<ContactInformation> {
-        let self_hitbox = &hitbox_components[self.hitbox].hitbox;
-        let other_hitbox = &hitbox_components[other.hitbox].hitbox;
-        let other_type = other_hitbox.get_type();
-
-        match other_type {
-            HitboxType::SPHERE => self.intersects_sphere(self_hitbox, other_hitbox, other, dt),
-            HitboxType::OBB => self.intersects_obb(self_hitbox, other_hitbox, other, dt),
-            HitboxType::CONVEX => self.intersects_convex_hull(self_hitbox, other_hitbox, other, dt),
-            _ => { panic!("intersection not implemented") }
-        }
-    }
-
-    fn intersects_sphere(
-        &self,
-        self_hitbox: &Hitbox,
-        other_hitbox: &Hitbox,
-        other: &RigidBodyComponent,
-        dt: f32,
-    ) -> Option<ContactInformation> {
-        if let Hitbox::Sphere(sphere) = other_hitbox {
-            return match self_hitbox {
-                Hitbox::Sphere(a) => {
-                    let p_a = a.center.rotate_by_quat(&self.q_f) + self.x_f;
-                    let p_b = sphere.center.rotate_by_quat(&other.q_f) + other.x_f;
-                    /*
-                                        if let Some((point, time_of_impact)) = {
-                                            let relative_vel = self.velocity - other.velocity;
-
-                                            let end_pt_a = p_a + relative_vel * dt;
-                                            let dir = end_pt_a - p_a;
-
-                                            let mut t0 = 0.0;
-                                            let mut t1 = 0.0;
-                                            if dir.magnitude3() < 0.001 {
-                                                let ab = p_b - p_a;
-                                                let radius = a.radius + sphere.radius + 0.001;
-                                                if ab.magnitude3() > radius {
-                                                    return None
-                                                }
-                                            } else if let Some((i_t0, i_t1)) = Sphere::ray_sphere(&p_a, &dir, &p_b, a.radius + sphere.radius) {
-                                                t0 = i_t0;
-                                                t1 = i_t1;
-                                            } else {
-                                                return None
-                                            }
-
-                                            // convert 0-1 to 0-dt
-                                            t0 *= dt;
-                                            t1 *= dt;
-
-                                            // collision happened in past
-                                            if t1 < 0.0 { return None }
-
-                                            let toi = if t0 < 0.0 { 0.0 } else { t0 };
-
-                                            // collision happens past dt
-                                            if toi > dt { return None }
-
-                                            let new_pos_a = p_a + self.velocity * toi;
-                                            let new_pos_b = p_b + other.velocity * toi;
-
-                                            let ab = (new_pos_b - new_pos_a).normalize3();
-
-                                            Some((ContactPoint {
-                                                point_on_a: new_pos_a + ab * a.radius,
-                                                point_on_b: new_pos_b - ab * sphere.radius,
-
-                                                penetration: 0.0,
-                                            }, toi))
-                                        } {
-                                            // there will be a collision
-                                            /*
-                                            self.update(time_of_impact);
-                                            other.update(time_of_impact);
-
-                                             */
-
-                                            let normal = (self_transform.world_translation - other_transform.world_translation).normalize3();
-
-                                            /*
-                                            self.update(-time_of_impact);
-                                            other.update(-time_of_impact);
-
-                                             */
-
-                                            let ab = other_transform.world_translation - self_transform.world_translation;
-                                            let r = ab.magnitude3() - (a.radius + sphere.radius);
-
-                                            Some(ContactInformation {
-                                                contact_points: vec![point],
-                                                time_of_impact,
-                                                normal,
-                                            })
-                                        } else {
-                                            None
-                                        }
-
-                     */
-                    let d = p_b - p_a;
-                    let d_m = d.magnitude3();
-                    let n = if d_m > 1e-6 { d / d_m } else { Vector::new3(0.0, 1.0, 0.0) };
-
-                    if d_m > a.radius + sphere.radius { return None }
-
-                    let point_on_a = p_a + n * a.radius;
-                    let point_on_b = p_b - n * sphere.radius;
-
-                    let penetration = a.radius + sphere.radius - d_m;
-
-                    Some(ContactInformation {
-                        contact_points: vec![ContactPoint {
-                            point_on_a,
-                            point_on_b,
-                            penetration,
-                        }],
-                        normal: n,
-                        time_of_impact: penetration,
-                    })
-                }
-                Hitbox::OBB(obb, _) => {
-                    let rot = Matrix::new_rotate_quaternion_vec4(&self.q_f);
-
-                    let sphere_center = sphere.center.rotate_by_quat(&other.q_f) + other.x_f;
-                    let obb_center = (rot * obb.center.with('w', 1.0)) + self.x_f;
-
-                    let axes = [
-                        rot * Vector::new4(1.0, 0.0, 0.0, 1.0),
-                        rot * Vector::new4(0.0, 1.0, 0.0, 1.0),
-                        rot * Vector::new4(0.0, 0.0, 1.0, 1.0),
-                    ];
-
-                    let delta = sphere_center - obb_center;
-                    let local_sphere_center = Vector::new3(delta.dot3(&axes[0]), delta.dot3(&axes[1]), delta.dot3(&axes[2]));
-
-                    let closest_local = local_sphere_center.clamp3(&(-1.0 * obb.half_extents), &obb.half_extents);
-                    let closest_world = obb_center + (axes[0] * closest_local.x) + (axes[1] * closest_local.y) + (axes[2] * closest_local.z);
-
-                    let diff = sphere_center - closest_world;
-                    let dist_sq = diff.dot3(&diff);
-                    let radius_sq = sphere.radius * sphere.radius;
-                    if dist_sq > radius_sq {
-                        return None
-                    }
-                    let dist = dist_sq.sqrt();
-
-                    let (normal, penetration, point_on_obb) = if dist < 1e-6 {
-                        let penetrations = [
-                            (obb.half_extents.x - local_sphere_center.x.abs(), 0, local_sphere_center.x.signum()),
-                            (obb.half_extents.y - local_sphere_center.y.abs(), 1, local_sphere_center.y.signum()),
-                            (obb.half_extents.z - local_sphere_center.z.abs(), 2, local_sphere_center.z.signum()),
-                        ];
-                        let mut min_pen = penetrations[0];
-                        for &pen in &penetrations[1..] {
-                            if pen.0 < min_pen.0 {
-                                min_pen = pen;
-                            }
-                        }
-
-                        let axis_idx = min_pen.1;
-                        let sign = min_pen.2;
-                        let normal = axes[axis_idx] * sign;
-                        let penetration = min_pen.0 + sphere.radius;
-
-                        let mut local_point = local_sphere_center;
-                        match axis_idx {
-                            0 => local_point.x = obb.half_extents.x * sign,
-                            1 => local_point.y = obb.half_extents.y * sign,
-                            2 => local_point.z = obb.half_extents.z * sign,
-                            _ => unreachable!(),
-                        }
-
-                        let point_on_obb = obb_center + (
-                            axes[0] * local_point.x + axes[1] * local_point.y + axes[2] * local_point.z
-                        );
-
-                        (normal, penetration, point_on_obb)
-                    } else {
-                        let normal = diff * (1.0 / dist);
-                        let penetration = sphere.radius - dist;
-                        (normal, penetration, closest_world)
-                    };
-
-                    let point_on_sphere = sphere_center - (normal * sphere.radius);
-
-                    let tolerance = 1e-4;
-                    let mut contact_points = vec![ContactPoint {
-                        point_on_a: point_on_obb,
-                        point_on_b: point_on_sphere,
-                        penetration,
-                    }];
-
-                    let on_face_x = (local_sphere_center.x.abs() - obb.half_extents.x).abs() < tolerance;
-                    let on_face_y = (local_sphere_center.y.abs() - obb.half_extents.y).abs() < tolerance;
-                    let on_face_z = (local_sphere_center.z.abs() - obb.half_extents.z).abs() < tolerance;
-
-                    let faces_count = on_face_x as u8 + on_face_y as u8 + on_face_z as u8;
-
-                    // additional contact points for edge/corner
-                    if faces_count >= 2 && dist > 1e-6 {
-                        let tangent1 = if normal.x.abs() < 0.9 {
-                            Vector::new3(1.0, 0.0, 0.0).cross(&normal).normalize3()
-                        } else {
-                            Vector::new3(0.0, 1.0, 0.0).cross(&normal).normalize3()
-                        };
-                        let tangent2 = normal.cross(&tangent1).normalize3();
-
-                        // contact points in a circle around the main contact
-                        let num_additional = if faces_count == 3 { 3 } else { 2 }; // corner/edge
-                        for i in 1..=num_additional {
-                            let angle = (i as f32) * std::f32::consts::PI * 2.0 / (num_additional + 1) as f32;
-                            let offset = tangent1 * (angle.cos() * 0.01) + tangent2 * (angle.sin() * 0.01);
-
-                            contact_points.push(ContactPoint {
-                                point_on_a: point_on_obb + offset,
-                                point_on_b: point_on_sphere + offset,
-                                penetration,
-                            });
-                        }
-                    }
-
-                    Some(ContactInformation {
-                        contact_points,
-                        normal,
-                        time_of_impact: penetration,
-                    })
-                }
-                _ => { None }
-            }
-        }
-        None
-    }
-    pub fn intersects_obb(
-        &self,
-        self_hitbox: &Hitbox,
-        other_hitbox: &Hitbox,
-        other: &RigidBodyComponent,
-        dt: f32,
-    ) -> Option<ContactInformation> {
-        if let Hitbox::OBB(obb, _) = other_hitbox {
-            return match self_hitbox {
-                Hitbox::OBB(this_obb, _) => {
-                    let (a, b) = (this_obb, obb);
-
-                    let a_center = a.center.rotate_by_quat(&self.q_f) + self.x_f;
-                    let b_center = b.center.rotate_by_quat(&other.q_f) + other.x_f;
-
-                    let a_quat = self.q_f;
-                    let b_quat = other.q_f;
-
-                    let a_axes = [
-                        Vector::new3(1.0, 0.0, 0.0).rotate_by_quat(&a_quat),
-                        Vector::new3(0.0, 1.0, 0.0).rotate_by_quat(&a_quat),
-                        Vector::new3(0.0, 0.0, 1.0).rotate_by_quat(&a_quat),
-                    ];
-                    let b_axes = [
-                        Vector::new3(1.0, 0.0, 0.0).rotate_by_quat(&b_quat),
-                        Vector::new3(0.0, 1.0, 0.0).rotate_by_quat(&b_quat),
-                        Vector::new3(0.0, 0.0, 1.0).rotate_by_quat(&b_quat),
-                    ];
-
-                    let t = b_center - a_center;
-
-                    let mut min_penetration = f32::MAX;
-                    let mut collision_normal = Vector::empty();
-                    let mut best_axis_type = AxisType::FaceA(0);
-                    for i in 0..3 {
-                        { // a_normals
-                            let axis = a_axes[i];
-                            let penetration = test_axis(&axis, &t, &a.half_extents, &b.half_extents, &a_axes, &b_axes, true);
-                            if penetration < 0.0 {
-                                return None
-                            }
-                            if penetration < min_penetration {
-                                min_penetration = penetration;
-                                collision_normal = axis;
-                                best_axis_type = AxisType::FaceA(i);
-                            }
-                        }
-                        { // b_normals
-                            let axis = b_axes[i];
-                            let penetration = test_axis(&axis, &t, &a.half_extents, &b.half_extents, &a_axes, &b_axes, true);
-                            if penetration < 0.0 {
-                                return None
-                            }
-                            if penetration < min_penetration {
-                                min_penetration = penetration;
-                                collision_normal = axis;
-                                best_axis_type = AxisType::FaceB(i);
-                            }
-                        }
-                        for j in 0..3 { // edge-edge cross-products
-                            let axis = a_axes[i].cross(&b_axes[j]);
-                            let axis_length = axis.magnitude3();
-
-                            if axis_length < 1e-6 {
-                                continue;
-                            }
-
-                            let axis_normalized = axis / axis_length;
-                            let penetration = test_axis_cross(&axis_normalized, &t, &a.half_extents, &b.half_extents, &a_axes, &b_axes);
-
-                            if penetration < 0.0 {
-                                return None;
-                            }
-
-                            if penetration < min_penetration {
-                                min_penetration = penetration;
-                                collision_normal = axis_normalized;
-                                best_axis_type = AxisType::Edge(i, j);
-                            }
-                        }
-                    }
-
-                    if collision_normal.dot3(&t) < 0.0 {
-                        collision_normal = -collision_normal;
-                    }
-
-                    Some(ContactInformation {
-                        contact_points: vec![ContactPoint {
-                            point_on_a: a_center + t.normalize3() * a.half_extents.magnitude3(),
-                            point_on_b: b_center - t.normalize3() * b.half_extents.magnitude3(),
-                            penetration: min_penetration
-                        }],
-                        normal: collision_normal,
-                        time_of_impact: min_penetration,
-                    })
-                }
-                Hitbox::Sphere(_) => {
-                    if let Some(contact) = other.intersects_sphere(other_hitbox, self_hitbox, self, dt) {
-                        Some(contact.flip())
-                    } else { None }
-                }
-                _ => None
-            }
-        }
-        None
-    }
-    fn intersects_convex_hull(
-        &self,
-        self_hitbox: &Hitbox,
-        other_hitbox: &Hitbox,
-        other: &RigidBodyComponent,
-        dt: f32,
-    ) -> Option<ContactInformation> {
-        // TODO
-        None
-    }
-}
-impl Default for RigidBodyComponent {
-    fn default() -> Self {
-        Self {
-            owned_by_player: false,
-            owner: 0,
-            transform: 0,
-            hitbox: 0,
-            is_static: true,
-            restitution_coefficient: 0.5,
-            friction_coefficient: 0.5,
-            mass: 999.0,
-            inv_mass: 0.0,
-            x_i: Vector::new(),
-            x_f: Vector::new(),
-            q_i: Vector::new(),
-            q_f: Vector::new(),
-            velocity: Default::default(),
-            angular_velocity: Default::default(),
-            differential_rotation: Default::default(),
-            center_of_mass: Vector::new(),
-            inertia_tensor: Matrix::new(),
-            inv_inertia_tensor: Matrix::new(),
-            stored_hitbox_scale: Vector::fill(1.0),
-        }
-    }
-}
 struct CollisionConstraint {
     body_a: usize,
     body_b: usize,
@@ -1594,355 +854,10 @@ impl CollisionConstraint {
         body_a.apply_correction(dt, self.normal * self.penetration, 0.0, self.pt_on_a, self.pt_on_b, Some(body_b));
     }
 }
-pub struct HitboxComponent {
-    pub hitbox: Hitbox,
-}
 
-pub struct RenderComponent {
-    mesh_primitive_index: (usize, usize), // world mesh, mesh-primitive index
-    transform: usize, // independent from parent
-    skin_index: Option<i32>,
-    material_index: usize,
-}
-impl RenderComponent {
-    fn draw(
-        &self,
-        scene:
-        &Scene,
-        scene_renderer: &SceneRenderer,
-        command_buffer: &CommandBuffer,
-        world: &World,
-        index: usize,
-        camera: Option<&CameraComponent>
-    ) {
-        let mut all_points_outside_of_same_plane = false;
-
-        let primitive = &world.meshes[self.mesh_primitive_index.0].primitives[self.mesh_primitive_index.1];
-
-        if camera.is_some() {
-            for plane_idx in 0..6 {
-                let mut all_outside_this_plane = true;
-
-                for corner in primitive.corners.iter() {
-                    let world_pos = scene.transforms[self.transform].world * Vector::new4(corner.x, corner.y, corner.z, 1.0);
-
-                    if camera.unwrap().frustum.planes[plane_idx].test_point_within(&world_pos) {
-                        all_outside_this_plane = false;
-                        break;
-                    }
-                }
-                if all_outside_this_plane {
-                    all_points_outside_of_same_plane = true;
-                    break;
-                }
-            }
-        }
-        if !all_points_outside_of_same_plane || camera.is_none() {
-            unsafe {
-                scene.context.device.cmd_draw_indexed(
-                    *command_buffer,
-                    world.accessors[primitive.indices].count as u32,
-                    1,
-                    primitive.index_buffer_offset as u32,
-                    0,
-                    index as u32,
-                );
-            }
-        }
-    }
-}
-pub struct CameraComponent {
-    pub owner: usize,
-    pub transform: usize,
-
-    pub view_matrix: Matrix,
-    pub projection_matrix: Matrix,
-    pub fov_y: f32,
-    pub aspect_ratio: f32,
-    pub near: f32,
-    pub far: f32,
-    pub frustum: Frustum,
-    pub infinite_reverse: bool,
-
-    pub third_person: bool,
-    pub third_person_vector: Vector, // to be rotated by the cameras rotation and added to the position when creating the view matrix, if in third person
-}
-impl CameraComponent {
-    pub fn new_perspective_rotation(
-        fov_y: f32,
-        aspect_ratio: f32,
-        near: f32,
-        far: f32,
-        infinite_reverse: bool,
-        third_person_vector: Vector
-    ) -> Self {
-        Self {
-            owner: 0,
-            transform: 0,
-
-            view_matrix: Matrix::new(),
-            projection_matrix: Matrix::new(),
-            fov_y,
-            aspect_ratio,
-            near,
-            far,
-            frustum: Frustum::null(),
-            infinite_reverse,
-            third_person: false,
-            third_person_vector
-        }
-    }
-
-    pub fn update_matrices(&mut self, transform: &Transform) {
-        self.view_matrix = Matrix::new_view(
-            if self.third_person {
-                let third_person_position = &transform.world_translation + self.third_person_vector.rotate_by_euler(&transform.world_rotation.quat_to_euler());
-                third_person_position
-            } else { transform.world_translation.clone() },
-            &transform.world_rotation.quat_to_euler(),
-        );
-        self.projection_matrix = if self.infinite_reverse { Matrix::new_infinite_reverse_projection(
-            self.fov_y.to_radians(),
-            self.aspect_ratio,
-            self.near,
-        ) } else { Matrix::new_projection(
-            self.fov_y.to_radians(),
-            self.aspect_ratio,
-            self.near,
-            self.far,
-        ) }
-    }
-
-    pub fn update_frustum(&mut self, transform: &Transform) {
-        let rotation = &transform.world_rotation.quat_to_euler()
-            .mul_by_vec(&Vector::new3(-1.0, 1.0, 1.0)) + Vector::new3(0.0, -PI, 0.0);
-        let cam_front = Vector::new3(0.0, 0.0, 1.0).rotate_by_euler(&rotation);
-        let cam_up = Vector::new3(0.0, 1.0, 0.0).rotate_by_euler(&rotation);
-        let cam_right = cam_up.cross(&cam_front).normalize3();
-
-        let half_v = self.far * (self.fov_y*0.5).to_radians().tan();
-        let half_h = half_v*self.aspect_ratio;
-
-        let front_by_far = cam_front * self.far;
-
-        let position = transform.world_translation;
-
-        self.frustum = Frustum {
-            planes: [
-                Plane {
-                    normal: cam_front,
-                    point: position + (cam_front * self.near),
-                },
-                Plane {
-                    normal: cam_front * -1.0,
-                    point: position + front_by_far,
-                },
-                Plane {
-                    normal: cam_up.cross(&(front_by_far - (cam_right * half_h))),
-                    point: position,
-                },
-                Plane {
-                    normal: (front_by_far + (cam_right * half_h)).cross(&cam_up),
-                    point: position,
-                },
-                Plane {
-                    normal: cam_right.cross(&(front_by_far + (cam_up * half_v))),
-                    point: position,
-                },
-                Plane {
-                    normal: (front_by_far - (cam_up * half_v)).cross(&cam_right),
-                    point: position,
-                }
-            ],
-        }
-    }
-
-    pub fn get_frustum_corners_with_near_far(&self, near: f32, far: f32) -> [Vector; 8] {
-        let inverse_view_projection = (Matrix::new_projection(self.fov_y.to_radians(), self.aspect_ratio, near, far) * self.view_matrix).inverse4();
-        let mut corners = [
-            Vector::new4(-1.0, 1.0, 0.0, 1.0),
-            Vector::new4(1.0, 1.0, 0.0, 1.0),
-            Vector::new4(1.0, -1.0, 0.0, 1.0),
-            Vector::new4(-1.0, -1.0, 0.0, 1.0),
-            Vector::new4(-1.0, 1.0, 1.0, 1.0),
-            Vector::new4(1.0, 1.0, 1.0, 1.0),
-            Vector::new4(1.0, -1.0, 1.0, 1.0),
-            Vector::new4(-1.0, -1.0, 1.0, 1.0),
-        ];
-        for i in 0..corners.len() {
-            corners[i] = inverse_view_projection * corners[i];
-            corners[i] = corners[i] / corners[i].w;
-        }
-
-        corners
-    }
-}
-
-pub struct LightComponent {
-    pub owner: usize,
-    pub transform: usize,
-
-    pub color: Vector,
-    pub light_type: u32,
-    pub quadratic_falloff: f32,
-    pub linear_falloff: f32,
-    pub constant_falloff: f32,
-    pub inner_cutoff: f32,
-    pub outer_cutoff: f32,
-}
-impl LightComponent {
-    pub fn new(position: Vector, direction: Vector, color: Vector) -> LightComponent {
-        LightComponent {
-            owner: 0,
-            transform: 0,
-            color,
-            light_type: 0,
-            quadratic_falloff: 0.1,
-            linear_falloff: 0.1,
-            constant_falloff: 0.1,
-            inner_cutoff: 0.0,
-            outer_cutoff: 0.0,
-        }
-    }
-    pub fn to_sendable(&self, transform: &Transform) -> LightSendable {
-        LightSendable {
-            position: transform.world_translation.to_array3(),
-            _pad0: 0u32,
-            direction: Vector::new3(0.0, 0.0, 1.0).rotate_by_quat(&transform.world_rotation).to_array3(),
-            light_type: self.light_type,
-            attenuation_values:
-            if self.light_type == 0 { [self.quadratic_falloff, self.linear_falloff, self.constant_falloff] }
-            else { [self.inner_cutoff, self.outer_cutoff, 0.0] },
-            _pad1: 0u32,
-            color: self.color.to_array3(),
-            _pad2: 0u32,
-        }
-    }
-}
-pub struct SunComponent {
-    pub direction: Vector,
-    pub color: Vector,
-}
-impl SunComponent {
-    pub fn new_sun(vector: Vector, color: Vector) -> SunComponent {
-        SunComponent {
-            direction: Vector::new4(vector.x, vector.y, vector.z, 1.0).normalize3(),
-            color,
-        }
-    }
-    pub fn get_sendable(&self, primary_camera: &CameraComponent) -> SunSendable {
-        let cascade_levels = [primary_camera.far * 0.005, primary_camera.far * 0.015, primary_camera.far * 0.045, primary_camera.far * 0.15];
-
-        let mut views = Vec::new();
-        let mut projections = Vec::new();
-        for i in 0..cascade_levels.len() + 1 {
-            let matrices: [Matrix; 2];
-            if i == 0 {
-                matrices = self.get_cascade_matrix(primary_camera, primary_camera.near, cascade_levels[i]);
-            }
-            else if i < cascade_levels.len() {
-                matrices = self.get_cascade_matrix(primary_camera, cascade_levels[i - 1], cascade_levels[i]);
-            }
-            else {
-                matrices = self.get_cascade_matrix(primary_camera, cascade_levels[i - 1], primary_camera.far.min(500.0));
-            }
-            views.push(matrices[0]);
-            projections.push(matrices[1]);
-        }
-
-        let mut matrices = Vec::new();
-        for i in 0..5 {
-            matrices.push((projections[i] * views[i]).data);
-        }
-        SunSendable {
-            matrices: <[[f32; 16]; 5]>::try_from(matrices.as_slice()).unwrap(),
-            vector: self.direction.to_array3(),
-            _pad0: 0u32,
-            color: self.color.to_array3(),
-            _pad1: 0u32,
-        }
-    }
-
-    fn get_cascade_matrix(&self, camera: &CameraComponent, near: f32, far: f32) -> [Matrix; 2] {
-        let corners = camera.get_frustum_corners_with_near_far(near, far);
-
-        let mut sum = Vector::empty();
-        for corner in corners.iter() {
-            sum = sum + corner;
-        }
-        let mut frustum_center = sum / 8.0;
-        frustum_center.w = 1.0;
-
-        let mut max_radius_squared = 0.0f32;
-        for corner in &corners {
-            let v = *corner - frustum_center;
-            let radius_squared = v.dot4(&v);
-            if radius_squared > max_radius_squared { max_radius_squared = radius_squared; }
-        }
-        let radius = max_radius_squared.sqrt();
-
-        let texels_per_unit = SHADOW_RES as f32 / (radius * 2.0);
-        let scalar_matrix = Matrix::new_scalar(texels_per_unit);
-        let temp_view = Matrix::new_look_at(
-            &(1.0 * self.direction),
-            &Vector::empty(),
-            &Vector::new3(0.0, 1.0, 0.0)
-        ) * scalar_matrix;
-        frustum_center = temp_view * frustum_center;
-        frustum_center.x = frustum_center.x.floor();
-        frustum_center.y = frustum_center.y.floor();
-        frustum_center.w = 1.0;
-        frustum_center = temp_view.inverse4() * frustum_center;
-
-        let view = Matrix::new_look_at(
-            &(frustum_center - (-self.direction * 2.0 * radius)),
-            &frustum_center,
-            &Vector::new3(0.0, 1.0, 0.0)
-        );
-
-        let mut min_x = f32::MAX; let mut min_y = f32::MAX; let mut min_z = f32::MAX;
-        let mut max_x = f32::MIN; let mut max_y = f32::MIN; let mut max_z = f32::MIN;
-        for corner in &corners {
-            let corner_light_space = view * corner;
-            min_x = min_x.min(corner_light_space.x);
-            min_y = min_y.min(corner_light_space.y);
-            min_z = min_z.min(corner_light_space.z);
-            max_x = max_x.max(corner_light_space.x);
-            max_y = max_y.max(corner_light_space.y);
-            max_z = max_z.max(corner_light_space.z);
-        }
-
-        let projection = Matrix::new_ortho(min_x, max_x, min_y, max_y, -radius * 6.0, radius * 6.0);
-
-        [view, projection]
-    }
-}
 
 pub struct CanvasComponent {
     
-}
-
-
-/*
-TODO()
-    - Scripts exist as ScriptAssets in the LuaEngine
-    - ScriptComponents have ScriptInstances, which are instances of ScriptAssets
-    - ScriptInstances are called with a "self" being set in their environment
-    - Entities should have a HashMap of FieldComponents, which are per-entity fields that can be accessed by scripts
-    - eg. Lua: local health = self:get_field("health")
-    - eg. Lua: self:set_field("health", 10.0)
-*/
-pub struct ScriptComponent {
-    pub owner: usize,
-    pub script: usize,
-    pub fields: HashMap<String, Field>,
-}
-pub enum Field {
-    Float(f32),
-    Int(i32),
-    Vec3(Vector),
-    Bool(bool),
-    String(String),
 }
 
 #[derive(Clone, Debug, Copy)]
@@ -1960,56 +875,6 @@ impl Instance {
     }
 }
 
-#[derive(Clone, Debug, Copy)]
-pub struct Plane {
-    pub normal: Vector,
-    pub point: Vector,
-}
-impl Plane {
-    pub fn null() -> Self {
-        Self {
-            normal: Vector::empty(),
-            point: Vector::empty(),
-        }
-    }
-
-    pub fn test_point_within(&self, point: &Vector) -> bool {
-        let evaluated = self.normal * (point - self.point);
-        evaluated.x + evaluated.y + evaluated.z > 0.0
-    }
-
-    pub fn test_sphere_within(&self, center: &Vector, radius: f32) -> bool {
-        center.sub_vec(&self.point).dot4(&self.normal) > -radius
-    }
-}
-#[derive(Clone, Debug)]
-pub struct Frustum {
-    pub planes: [Plane; 6],
-}
-impl Frustum {
-    pub fn null() -> Self {
-        Self {
-            planes: [Plane::null(); 6],
-        }
-    }
-
-    pub fn test_point_within(&self, point: &Vector) -> bool {
-        let mut i = 0;
-        for plane in self.planes.iter() {
-            if plane.test_point_within(point) { i += 1 }
-        }
-        i >= 6
-    }
-
-    pub fn test_sphere_within(&self, center: &Vector, radius: f32) -> bool {
-        let mut i = 0;
-        for plane in self.planes.iter() {
-            if plane.test_sphere_within(center, radius) { i += 1 }
-        }
-        i >= 6
-    }
-}
-
 pub fn world_position_to_local(world_pos: Vector, parent: &Transform) -> Vector {
     ((world_pos - parent.world_translation) / parent.world_scale)
         .rotate_by_quat(&parent.world_rotation.inverse_quat())
@@ -2020,197 +885,3 @@ pub fn linear_displacement_to_local(dx: Vector, parent: &Transform) -> Vector {
 pub fn angular_displacement_to_local(dq: Vector, parent: &Transform) -> Vector {
     parent.world_rotation.inverse_quat().combine(&dq.combine(&parent.world_rotation))
 }
-
-fn test_axis(
-    axis: &Vector,
-    t: &Vector,
-    half_a: &Vector,
-    half_b: &Vector,
-    axes_a: &[Vector; 3],
-    axes_b: &[Vector; 3],
-    is_a: bool,
-) -> f32 {
-    let ra = if is_a {
-        half_a.x * axes_a[0].dot3(axis).abs() +
-            half_a.y * axes_a[1].dot3(axis).abs() +
-            half_a.z * axes_a[2].dot3(axis).abs()
-    } else {
-        half_a.x * axes_a[0].dot3(axis).abs() +
-            half_a.y * axes_a[1].dot3(axis).abs() +
-            half_a.z * axes_a[2].dot3(axis).abs()
-    };
-    let rb = half_b.x * axes_b[0].dot3(axis).abs() +
-        half_b.y * axes_b[1].dot3(axis).abs() +
-        half_b.z * axes_b[2].dot3(axis).abs();
-    let distance = t.dot3(axis).abs();
-    ra + rb - distance
-}
-fn test_axis_cross(
-    axis: &Vector,
-    t: &Vector,
-    half_a: &Vector,
-    half_b: &Vector,
-    axes_a: &[Vector; 3],
-    axes_b: &[Vector; 3],
-) -> f32 {
-    let ra = half_a.x * axes_a[0].dot3(axis).abs() +
-        half_a.y * axes_a[1].dot3(axis).abs() +
-        half_a.z * axes_a[2].dot3(axis).abs();
-
-    let rb = half_b.x * axes_b[0].dot3(axis).abs() +
-        half_b.y * axes_b[1].dot3(axis).abs() +
-        half_b.z * axes_b[2].dot3(axis).abs();
-
-    let distance = t.dot3(axis).abs();
-
-    ra + rb - distance
-}
-/*
-fn signed_volume1(a: Vector, b: Vector) -> (f32, f32) {
-    let ab = b - a; // segment
-    let ap = Vector::fill(0.0) - a; // a to origin
-    let p = a + ab * ab.dot3(&ap) / ab.magnitude3_sq(); // origin projected onto the segment
-
-    // get axis with the greatest length
-    let mut index = 0;
-    let mut max_mu: f32 = 0.0;
-    for i in 0..3 {
-        let mu = ab.get(i);
-        if mu.abs() > max_mu.abs() {
-            max_mu = mu;
-            index = i;
-        }
-    }
-    // project all to found axis
-    let a = a.get(index);
-    let b = b.get(index);
-    let p = p.get(index);
-    // signed distance from a to p and p to b
-    let c0 = p - a;
-    let c1 = b - p;
-    // p on segment
-    if (p > a && p < b) || (p < a && p > b) {
-        return (c1 / max_mu, c0 / max_mu)
-    }
-    // p off the segment on a-side
-    if (a <= b && p <= a) || (a >= b && p <= a) {
-        return (1.0, 0.0)
-    }
-    // p off the segment on b-side
-    (0.0, 1.0)
-}
-fn signed_volume2(a: Vector, b: Vector, c: Vector) -> Vector {
-    let n = (b - a).cross(&(c - a)); // normal
-    let p = n * a.dot3(&n) / n.magnitude3_sq(); // origin projected onto the triangle
-
-    // find axis with the largest area
-    let mut index = 0;
-    let mut max_area: f32 = 0.0;
-    for i in 0..3 {
-        let j = (i + 1) % 3;
-        let k = (i + 2) % 3;
-
-        let a = Vector::new2(a.get(j), a.get(k));
-        let b = Vector::new2(b.get(j), b.get(k));
-        let c = Vector::new2(c.get(j), c.get(k));
-        let ab = b - a;
-        let ac = c - a;
-        let area = ab.x * ac.y - ab.y * ac.x;
-        if area.abs() > max_area.abs() {
-            max_area = area;
-            index = i;
-        }
-    }
-
-    // project onto axis with the largest area
-    let x = (index + 1) % 3;
-    let y = (index + 2) % 3;
-    let vertices = [
-        Vector::new2(a.get(x), a.get(y)),
-        Vector::new2(b.get(x), b.get(y)),
-        Vector::new2(c.get(x), c.get(y)),
-    ];
-    let p = Vector::new2(p.get(x), p.get(y));
-
-    // areas of all tris formed by projected origin and edges
-    let mut areas = Vector::empty();
-    for i in 0..3 {
-        let j = (i + 1) % 3;
-        let k = (i + 2) % 3;
-
-        let a = p;
-        let b = vertices[j];
-        let c = vertices[k];
-        let ab = b - a;
-        let ac = c - a;
-        areas.set(i, ab.x * ac.y - ab.y * ac.x);
-    }
-
-    // if the projected origin is inside the triangle, return barycentric coords of it
-    if same_sign(max_area, areas.x) && same_sign(max_area, areas.y) && same_sign(max_area, areas.z) {
-        return areas / max_area
-    }
-
-    // project onto edges, return barycentric coords of the closest point to origin
-    let mut min_dist = f32::MAX;
-    let mut lambdas = Vector::new3(1.0, 0.0, 0.0);
-    for i in 0..3 {
-        let j = (i + 1) % 3;
-        let k = (i + 2) % 3;
-
-        let edge_points = [a, b, c];
-        let lambda_edge = signed_volume1(edge_points[j], edge_points[k]);
-        let point = edge_points[j] * lambda_edge.0 + edge_points[k] * lambda_edge.1;
-        let dist = point.magnitude3_sq();
-        if dist < min_dist {
-            min_dist = dist;
-            lambdas.set(i, 0.0);
-            lambdas.set(j, lambda_edge.0);
-            lambdas.set(k, lambda_edge.1);
-        }
-    }
-    lambdas
-}
-fn signed_volume3(a: Vector, b: Vector, c: Vector, d: Vector) -> Vector {
-    let m = Matrix::new_manual([
-        a.x, b.x, c.x, d.x,
-        a.y, b.y, c.y, d.y,
-        a.z, b.z, c.z, d.z,
-        1.0, 1.0, 1.0, 1.0,
-    ]);
-    let c = Vector::new4(
-        m.cofactor(3, 0),
-        m.cofactor(3, 1),
-        m.cofactor(3, 2),
-        m.cofactor(3, 3),
-    );
-    let det = c.x + c.y + c.z + c.w;
-
-    // origin already inside tetrahedron
-    if same_sign(det, c.x) && same_sign(det, c.y) && same_sign(det, c.z) && same_sign(det, c.w) {
-        return c / det
-    }
-
-    // project origin onto faces, find closest, return its barycentric coords
-    let mut lambdas = Vector::empty();
-    let mut min_dist = f32::MAX;
-    for i in 0..4 {
-        let j = (i + 1) % 4;
-        let k = (i + 2) % 4;
-
-        let face_points = [a, b, c, d];
-        let lambda_face = signed_volume2(face_points[i], face_points[j], face_points[k]);
-        let point = face_points[i] * lambda_face.x + face_points[j] * lambda_face.y + face_points[k] * lambda_face.z;
-        let dist = point.magnitude3_sq();
-        if dist < min_dist {
-            min_dist = dist;
-            lambdas = lambda_face;
-        }
-    }
-
-    lambdas
-}
-fn same_sign(a: f32, b: f32) -> bool {
-    a*b > 0.0
-}
- */

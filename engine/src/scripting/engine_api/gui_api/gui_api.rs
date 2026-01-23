@@ -6,20 +6,21 @@ use crate::math::Vector;
 use crate::scripting::lua_engine::RegisterToLua;
 
 macro_rules! with_gui {
-    ($lua:expr, $gui_index:expr => $gui:ident) => {
+    ($lua:expr => $gui:ident) => {
         let __engine = $lua.app_data_ref::<EngineRef>().unwrap();
         let __renderer = __engine.renderer.borrow();
-        let $gui = __renderer.guis[$gui_index].borrow();
+        let $gui = __renderer.gui.borrow();
     };
 }
 macro_rules! with_gui_mut {
-    ($lua:expr, $gui_index:expr => $gui:ident) => {
+    ($lua:expr => $gui:ident) => {
         let __engine = $lua.app_data_ref::<EngineRef>().unwrap();
         let __renderer = __engine.renderer.borrow();
-        let mut $gui = __renderer.guis[$gui_index].borrow_mut();
+        let mut $gui = __renderer.gui.borrow_mut();
     };
 }
 
+#[derive(Clone)]
 pub struct GUITextPointer {
     gui_index: usize,
     index: usize
@@ -27,7 +28,7 @@ pub struct GUITextPointer {
 impl UserData for GUITextPointer {
     fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
         fields.add_field_method_get("text_message", |lua, this| {
-            with_gui!(lua, this.gui_index => gui);
+            with_gui!(lua => gui);
             match &gui.elements[this.index] {
                 Element::Text { text_information, .. } => {
                     Ok(text_information.as_ref().unwrap().text.clone())
@@ -37,7 +38,7 @@ impl UserData for GUITextPointer {
         });
 
         fields.add_field_method_get("font_size", |lua, this| {
-            with_gui!(lua, this.gui_index => gui);
+            with_gui!(lua => gui);
             match &gui.elements[this.index] {
                 Element::Text { text_information, .. } => {
                     Ok(text_information.as_ref().map_or(-1.0, |t| t.font_size))
@@ -46,7 +47,7 @@ impl UserData for GUITextPointer {
             }
         });
         fields.add_field_method_set("font_size", |lua, this, val: f32| {
-            with_gui_mut!(lua, this.gui_index => gui);
+            with_gui_mut!(lua => gui);
             match &mut gui.elements[this.index] {
                 Element::Text { text_information, .. } => {
                     if let Some(text_info) = text_information.as_mut() {
@@ -59,7 +60,7 @@ impl UserData for GUITextPointer {
         });
 
         fields.add_field_method_get("auto_wrap_distance", |lua, this| {
-            with_gui!(lua, this.gui_index => gui);
+            with_gui!(lua => gui);
             match &gui.elements[this.index] {
                 Element::Text { text_information, .. } => {
                     Ok(text_information.as_ref().map_or(-1.0, |t| t.auto_wrap_distance))
@@ -68,7 +69,7 @@ impl UserData for GUITextPointer {
             }
         });
         fields.add_field_method_set("auto_wrap_distance", |lua, this, val: f32| {
-            with_gui_mut!(lua, this.gui_index => gui);
+            with_gui_mut!(lua => gui);
             match &mut gui.elements[this.index] {
                 Element::Text { text_information, .. } => {
                     if let Some(text_info) = text_information.as_mut() {
@@ -82,7 +83,7 @@ impl UserData for GUITextPointer {
     }
     fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
         methods.add_method_mut("update_text", |lua, this, text: String| {
-            with_gui_mut!(lua, this.gui_index => gui);
+            with_gui_mut!(lua => gui);
             match &mut gui.elements[this.index] {
                 Element::Text { text_information, .. } => {
                     if let Some(text_info) = text_information.as_mut() {
@@ -99,6 +100,7 @@ impl UserData for GUITextPointer {
     }
 }
 
+#[derive(Clone)]
 pub struct GUIQuadPointer {
     gui_index: usize,
     index: usize
@@ -106,7 +108,7 @@ pub struct GUIQuadPointer {
 impl UserData for GUIQuadPointer {
     fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
         fields.add_field_method_get("color", |lua, this| {
-            with_gui!(lua, this.gui_index => gui);
+            with_gui!(lua => gui);
             match &gui.elements[this.index] {
                 Element::Quad { color, .. } => {
                     Ok(color.clone())
@@ -115,7 +117,7 @@ impl UserData for GUIQuadPointer {
             }
         });
         fields.add_field_method_set("color", |lua, this, val: Value| {
-            with_gui_mut!(lua, this.gui_index => gui);
+            with_gui_mut!(lua => gui);
             match &mut gui.elements[this.index] {
                 Element::Quad { color: quad_color, .. } => {
                     *quad_color = Vector::from_lua(val, lua)?;
@@ -126,7 +128,7 @@ impl UserData for GUIQuadPointer {
         });
 
         fields.add_field_method_get("corner_radius", |lua, this| {
-            with_gui!(lua, this.gui_index => gui);
+            with_gui!(lua => gui);
             match &gui.elements[this.index] {
                 Element::Quad { corner_radius, .. } => {
                     Ok(*corner_radius)
@@ -135,7 +137,7 @@ impl UserData for GUIQuadPointer {
             }
         });
         fields.add_field_method_set("corner_radius", |lua, this, val: f32| {
-            with_gui_mut!(lua, this.gui_index => gui);
+            with_gui_mut!(lua => gui);
             match &mut gui.elements[this.index] {
                 Element::Quad { corner_radius, .. } => {
                     *corner_radius = val;
@@ -147,6 +149,7 @@ impl UserData for GUIQuadPointer {
     }
 }
 
+#[derive(Clone)]
 pub struct GUIImagePointer {
     gui_index: usize,
     index: usize
@@ -154,7 +157,7 @@ pub struct GUIImagePointer {
 impl UserData for GUIImagePointer {
     fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
         fields.add_field_method_get("additive_tint", |lua, this| {
-            with_gui!(lua, this.gui_index => gui);
+            with_gui!(lua => gui);
             match &gui.elements[this.index] {
                 Element::Image { additive_tint, .. } => {
                     Ok(additive_tint.clone())
@@ -163,7 +166,7 @@ impl UserData for GUIImagePointer {
             }
         });
         fields.add_field_method_set("additive_tint", |lua, this, val: Value| {
-            with_gui_mut!(lua, this.gui_index => gui);
+            with_gui_mut!(lua => gui);
             match &mut gui.elements[this.index] {
                 Element::Image { additive_tint: quad_additive_tint, .. } => {
                     *quad_additive_tint = Vector::from_lua(val, lua)?;
@@ -174,7 +177,7 @@ impl UserData for GUIImagePointer {
         });
 
         fields.add_field_method_get("multiplicative_tint", |lua, this| {
-            with_gui!(lua, this.gui_index => gui);
+            with_gui!(lua => gui);
             match &gui.elements[this.index] {
                 Element::Image { multiplicative_tint, .. } => {
                     Ok(multiplicative_tint.clone())
@@ -183,7 +186,7 @@ impl UserData for GUIImagePointer {
             }
         });
         fields.add_field_method_set("multiplicative_tint", |lua, this, val: Value| {
-            with_gui_mut!(lua, this.gui_index => gui);
+            with_gui_mut!(lua => gui);
             match &mut gui.elements[this.index] {
                 Element::Image { multiplicative_tint: quad_multiplicative_tint, .. } => {
                     *quad_multiplicative_tint = Vector::from_lua(val, lua)?;
@@ -194,7 +197,7 @@ impl UserData for GUIImagePointer {
         });
 
         fields.add_field_method_get("index", |lua, this| {
-            with_gui!(lua, this.gui_index => gui);
+            with_gui!(lua => gui);
             match &gui.elements[this.index] {
                 Element::Image { index, .. } => {
                     Ok(*index)
@@ -203,7 +206,7 @@ impl UserData for GUIImagePointer {
             }
         });
         fields.add_field_method_set("index", |lua, this, val: usize| {
-            with_gui_mut!(lua, this.gui_index => gui);
+            with_gui_mut!(lua => gui);
             match &mut gui.elements[this.index] {
                 Element::Image { index, .. } => {
                     *index = val;
@@ -214,7 +217,7 @@ impl UserData for GUIImagePointer {
         });
 
         fields.add_field_method_get("corner_radius", |lua, this| {
-            with_gui!(lua, this.gui_index => gui);
+            with_gui!(lua => gui);
             match &gui.elements[this.index] {
                 Element::Image { corner_radius, .. } => {
                     Ok(*corner_radius)
@@ -223,7 +226,7 @@ impl UserData for GUIImagePointer {
             }
         });
         fields.add_field_method_set("corner_radius", |lua, this, val: f32| {
-            with_gui_mut!(lua, this.gui_index => gui);
+            with_gui_mut!(lua => gui);
             match &mut gui.elements[this.index] {
                 Element::Image { corner_radius, .. } => {
                     *corner_radius = val;
@@ -235,6 +238,7 @@ impl UserData for GUIImagePointer {
     }
 }
 
+#[derive(Clone)]
 pub struct GUITexturePointer {
     gui_index: usize,
     index: usize
@@ -242,7 +246,7 @@ pub struct GUITexturePointer {
 impl UserData for GUITexturePointer {
     fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
         fields.add_field_method_get("additive_tint", |lua, this| {
-            with_gui!(lua, this.gui_index => gui);
+            with_gui!(lua => gui);
             match &gui.elements[this.index] {
                 Element::Texture { additive_tint, .. } => {
                     Ok(additive_tint.clone())
@@ -251,7 +255,7 @@ impl UserData for GUITexturePointer {
             }
         });
         fields.add_field_method_set("additive_tint", |lua, this, val: Value| {
-            with_gui_mut!(lua, this.gui_index => gui);
+            with_gui_mut!(lua => gui);
             match &mut gui.elements[this.index] {
                 Element::Texture { additive_tint: quad_additive_tint, .. } => {
                     *quad_additive_tint = Vector::from_lua(val, lua)?;
@@ -262,7 +266,7 @@ impl UserData for GUITexturePointer {
         });
 
         fields.add_field_method_get("multiplicative_tint", |lua, this| {
-            with_gui!(lua, this.gui_index => gui);
+            with_gui!(lua => gui);
             match &gui.elements[this.index] {
                 Element::Texture { multiplicative_tint, .. } => {
                     Ok(multiplicative_tint.clone())
@@ -271,7 +275,7 @@ impl UserData for GUITexturePointer {
             }
         });
         fields.add_field_method_set("multiplicative_tint", |lua, this, val: Value| {
-            with_gui_mut!(lua, this.gui_index => gui);
+            with_gui_mut!(lua => gui);
             match &mut gui.elements[this.index] {
                 Element::Texture { multiplicative_tint: quad_multiplicative_tint, .. } => {
                     *quad_multiplicative_tint = Vector::from_lua(val, lua)?;
@@ -282,7 +286,7 @@ impl UserData for GUITexturePointer {
         });
 
         fields.add_field_method_get("index", |lua, this| {
-            with_gui!(lua, this.gui_index => gui);
+            with_gui!(lua => gui);
             match &gui.elements[this.index] {
                 Element::Texture { index, .. } => {
                     Ok(*index)
@@ -291,7 +295,7 @@ impl UserData for GUITexturePointer {
             }
         });
         fields.add_field_method_set("index", |lua, this, val: usize| {
-            with_gui_mut!(lua, this.gui_index => gui);
+            with_gui_mut!(lua => gui);
             match &mut gui.elements[this.index] {
                 Element::Texture { index, .. } => {
                     *index = val;
@@ -302,7 +306,7 @@ impl UserData for GUITexturePointer {
         });
 
         fields.add_field_method_get("corner_radius", |lua, this| {
-            with_gui!(lua, this.gui_index => gui);
+            with_gui!(lua => gui);
             match &gui.elements[this.index] {
                 Element::Texture { corner_radius, .. } => {
                     Ok(*corner_radius)
@@ -311,7 +315,7 @@ impl UserData for GUITexturePointer {
             }
         });
         fields.add_field_method_set("corner_radius", |lua, this, val: f32| {
-            with_gui_mut!(lua, this.gui_index => gui);
+            with_gui_mut!(lua => gui);
             match &mut gui.elements[this.index] {
                 Element::Texture { corner_radius, .. } => {
                     *corner_radius = val;
@@ -323,6 +327,7 @@ impl UserData for GUITexturePointer {
     }
 }
 
+#[derive(Clone)]
 pub struct GUINodePointer {
     gui_index: usize,
     index: usize
@@ -330,11 +335,11 @@ pub struct GUINodePointer {
 impl UserData for GUINodePointer {
     fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
         fields.add_field_method_get("hidden", |lua, this| {
-            with_gui!(lua, this.gui_index => gui);
+            with_gui!(lua => gui);
             Ok(gui.nodes[this.index].hidden)
         });
         fields.add_field_method_set("hidden", |lua, this, val: bool| {
-            with_gui_mut!(lua, this.gui_index => gui);
+            with_gui_mut!(lua => gui);
             gui.nodes[this.index].hidden = val;
             Ok(())
         });
@@ -342,7 +347,7 @@ impl UserData for GUINodePointer {
         fields.add_field_method_get("index", |lua, this| Ok(this.index));
 
         fields.add_field_method_get("children_indices", |lua, this| {
-            with_gui!(lua, this.gui_index => gui);
+            with_gui!(lua => gui);
             let children = &gui.nodes[this.index].children_indices;
             let table = lua.create_table()?;
             for (i, child_index) in children.iter().enumerate() {
@@ -351,7 +356,7 @@ impl UserData for GUINodePointer {
             Ok(table)
         });
         fields.add_field_method_get("element_indices", |lua, this| {
-            with_gui!(lua, this.gui_index => gui);
+            with_gui!(lua => gui);
             let elements = &gui.nodes[this.index].element_indices;
             let table = lua.create_table()?;
             for (i, element_index) in elements.iter().enumerate() {
@@ -361,72 +366,72 @@ impl UserData for GUINodePointer {
         });
 
         fields.add_field_method_get("num_elements", |lua, this| {
-            with_gui!(lua, this.gui_index => gui);
+            with_gui!(lua => gui);
             Ok(gui.nodes[this.index].children_indices.len())
         });
 
         fields.add_field_method_get("position", |lua, this| {
-            with_gui!(lua, this.gui_index => gui);
+            with_gui!(lua => gui);
             Ok(gui.nodes[this.index].position)
         });
         fields.add_field_method_get("size", |lua, this| {
-            with_gui!(lua, this.gui_index => gui);
+            with_gui!(lua => gui);
             Ok(gui.nodes[this.index].size)
         });
         fields.add_field_method_get("clip_min", |lua, this| {
-            with_gui!(lua, this.gui_index => gui);
+            with_gui!(lua => gui);
             Ok(gui.nodes[this.index].clip_min)
         });
         fields.add_field_method_get("clip_max", |lua, this| {
-            with_gui!(lua, this.gui_index => gui);
+            with_gui!(lua => gui);
             Ok(gui.nodes[this.index].clip_max)
         });
     }
     fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
         methods.add_method_mut("reset", |lua, this, ()| {
-            with_gui_mut!(lua, this.gui_index => gui);
+            with_gui_mut!(lua => gui);
             let original_parent = gui.nodes[this.index].parent_index;
             let original_index = gui.nodes[this.index].index;
             Ok(gui.nodes[this.index] = Node::new(original_index, original_parent))
         });
 
         methods.add_method("get_parent", |lua, this, ()| {
-            with_gui!(lua, this.gui_index => gui);
+            with_gui!(lua => gui);
             lua.create_userdata(GUINodePointer {
                 gui_index: this.gui_index,
                 index: gui.nodes[this.index].parent_index.unwrap_or(0)
             })
         });
         methods.add_method("get_child_index", |lua, this, val: i32| {
-            with_gui!(lua, this.gui_index => gui);
+            with_gui!(lua => gui);
             Ok(gui.nodes[this.index].children_indices[val as usize])
         });
         methods.add_method("get_child", |lua, this, val: i32| {
-            with_gui!(lua, this.gui_index => gui);
+            with_gui!(lua => gui);
             lua.create_userdata(GUINodePointer {
                 gui_index: this.gui_index,
                 index: gui.nodes[this.index].children_indices[val as usize]
             })
         });
         methods.add_method_mut("add_child_index", |lua, this, val: i32| {
-            with_gui_mut!(lua, this.gui_index => gui);
+            with_gui_mut!(lua => gui);
             Ok(gui.nodes[this.index].children_indices.push(val as usize))
         });
         methods.add_method_mut("remove_child_index_at", |lua, this, val: i32| {
-            with_gui_mut!(lua, this.gui_index => gui);
+            with_gui_mut!(lua => gui);
             Ok(gui.nodes[this.index].children_indices.remove(val as usize))
         });
         methods.add_method_mut("clear_children", |lua, this, ()| {
-            with_gui_mut!(lua, this.gui_index => gui);
+            with_gui_mut!(lua => gui);
             Ok(gui.nodes[this.index].children_indices.clear())
         });
 
         methods.add_method("get_element_index", |lua, this, val: i32| {
-            with_gui!(lua, this.gui_index => gui);
+            with_gui!(lua => gui);
             Ok(gui.nodes[this.index].element_indices[val as usize])
         });
         methods.add_method("get_element", |lua, this, val: i32| {
-            with_gui!(lua, this.gui_index => gui);
+            with_gui!(lua => gui);
             let element_index = gui.nodes[this.index].element_indices[val as usize];
             match gui.elements[element_index] {
                 Element::Image { .. } => {
@@ -456,7 +461,7 @@ impl UserData for GUINodePointer {
             }
         });
         methods.add_method("get_image_at", |lua, this, val: i32| {
-            with_gui!(lua, this.gui_index => gui);
+            with_gui!(lua => gui);
             let element_index = gui.nodes[this.index].element_indices[val as usize];
             match gui.elements[element_index] {
                 Element::Image { .. } => {
@@ -469,7 +474,7 @@ impl UserData for GUINodePointer {
             }
         });
         methods.add_method("get_quad_at", |lua, this, val: i32| {
-            with_gui!(lua, this.gui_index => gui);
+            with_gui!(lua => gui);
             let element_index = gui.nodes[this.index].element_indices[val as usize];
             match gui.elements[element_index] {
                 Element::Quad { .. } => {
@@ -482,7 +487,7 @@ impl UserData for GUINodePointer {
             }
         });
         methods.add_method("get_text_at", |lua, this, val: i32| {
-            with_gui!(lua, this.gui_index => gui);
+            with_gui!(lua => gui);
             let element_index = gui.nodes[this.index].element_indices[val as usize];
             match gui.elements[element_index] {
                 Element::Text { .. } => {
@@ -495,15 +500,15 @@ impl UserData for GUINodePointer {
             }
         });
         methods.add_method_mut("add_element_index", |lua, this, val: i32| {
-            with_gui_mut!(lua, this.gui_index => gui);
+            with_gui_mut!(lua => gui);
             Ok(gui.nodes[this.index].element_indices.push(val as usize))
         });
         methods.add_method_mut("set_element_index_at_to", |lua, this, vals: (i32, i32)| {
-            with_gui_mut!(lua, this.gui_index => gui);
+            with_gui_mut!(lua => gui);
             Ok(gui.nodes[this.index].element_indices[vals.0 as usize] = vals.1 as usize)
         });
         methods.add_method_mut("remove_element_index_at", |lua, this, val: i32| {
-            with_gui_mut!(lua, this.gui_index => gui);
+            with_gui_mut!(lua => gui);
             let node = &mut gui.nodes[this.index];
             Ok(if node.element_indices.len() > val as usize {
                 node.element_indices.remove(val as usize);
@@ -511,7 +516,7 @@ impl UserData for GUINodePointer {
         });
 
         methods.add_method_mut("add_left_up_action", |lua, this, val: (String, usize)| {
-            with_gui_mut!(lua, this.gui_index => gui);
+            with_gui_mut!(lua => gui);
             let script_index = gui.script_indices[val.1];
             let node = &mut gui.nodes[this.index];
             if let Some(interactable_information) = &mut node.interactable_information {
@@ -524,7 +529,7 @@ impl UserData for GUINodePointer {
             Ok(())
         });
         methods.add_method_mut("add_right_up_action", |lua, this, val: (String, usize)| {
-            with_gui_mut!(lua, this.gui_index => gui);
+            with_gui_mut!(lua => gui);
             let script_index = gui.script_indices[val.1];
             let node = &mut gui.nodes[this.index];
             if let Some(interactable_information) = &mut node.interactable_information {
@@ -537,7 +542,7 @@ impl UserData for GUINodePointer {
             Ok(())
         });
         methods.add_method_mut("add_hover_action", |lua, this, val: (String, usize)| {
-            with_gui_mut!(lua, this.gui_index => gui);
+            with_gui_mut!(lua => gui);
             let script_index = gui.script_indices[val.1];
             let node = &mut gui.nodes[this.index];
             if let Some(interactable_information) = &mut node.interactable_information {
@@ -551,7 +556,7 @@ impl UserData for GUINodePointer {
         });
 
         methods.add_method_mut("set_width", |lua, this, val: (String, f32)| {
-            with_gui_mut!(lua, this.gui_index => gui);
+            with_gui_mut!(lua => gui);
             gui.nodes[this.index].width = match val.0.as_str() {
                 "Factor" => Size::Factor(val.1),
                 "Auto" => Size::Auto,
@@ -562,7 +567,7 @@ impl UserData for GUINodePointer {
             Ok(())
         });
         methods.add_method_mut("set_height", |lua, this, val: (String, f32)| {
-            with_gui_mut!(lua, this.gui_index => gui);
+            with_gui_mut!(lua => gui);
             gui.nodes[this.index].height = match val.0.as_str() {
                 "Factor" => Size::Factor(val.1),
                 "Auto" => Size::Auto,
@@ -574,7 +579,7 @@ impl UserData for GUINodePointer {
         });
 
         methods.add_method_mut("set_anchor_point", |lua, this, val: LuaAnchorPoint| {
-            with_gui_mut!(lua, this.gui_index => gui);
+            with_gui_mut!(lua => gui);
             let node = &mut gui.nodes[this.index];
 
             let new_relation = ParentRelation::Independent {
@@ -597,7 +602,7 @@ impl UserData for GUINodePointer {
         });
 
         methods.add_method_mut("set_x", |lua, this, vals: (String, f32)| {
-            with_gui_mut!(lua, this.gui_index => gui);
+            with_gui_mut!(lua => gui);
             let node = &mut gui.nodes[this.index];
 
             let offset = match vals.0.as_str() {
@@ -625,7 +630,7 @@ impl UserData for GUINodePointer {
             Ok(())
         });
         methods.add_method_mut("set_y", |lua, this, vals: (String, f32)| {
-            with_gui_mut!(lua, this.gui_index => gui);
+            with_gui_mut!(lua => gui);
             let node = &mut gui.nodes[this.index];
 
             let offset = match vals.0.as_str() {
@@ -661,7 +666,7 @@ pub struct GUIPointer {
 impl UserData for GUIPointer {
     fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
         fields.add_field_method_get("ActiveNode", |lua, this| {
-            with_gui!(lua, this.index => gui);
+            with_gui!(lua => gui);
 
             let node = GUINodePointer {
                 gui_index: this.index,
@@ -671,16 +676,16 @@ impl UserData for GUIPointer {
         });
 
         fields.add_field_method_get("num_elements", |lua, this| {
-            with_gui!(lua, this.index => gui);
+            with_gui!(lua => gui);
             Ok(gui.elements.len())
         });
         fields.add_field_method_get("num_nodes", |lua, this| {
-            with_gui!(lua, this.index => gui);
+            with_gui!(lua => gui);
             Ok(gui.nodes.len())
         });
 
         fields.add_field_method_get("root_node_indices", |lua, this| {
-            with_gui!(lua, this.index => gui);
+            with_gui!(lua => gui);
             let roots = &gui.root_node_indices;
             let table = lua.create_table()?;
             for (i, root_index) in roots.iter().enumerate() {
@@ -691,38 +696,38 @@ impl UserData for GUIPointer {
     }
     fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
         methods.add_method("is_node_hovered", |lua, this, node_index: usize| {
-            with_gui!(lua, this.index => gui);
+            with_gui!(lua => gui);
             Ok(gui.hovered_nodes.contains(&node_index))
         });
 
         methods.add_method("get_root_index", |lua, this, val: i32| {
-            with_gui!(lua, this.index => gui);
+            with_gui!(lua => gui);
             Ok(gui.root_node_indices[val as usize])
         });
         methods.add_method("get_root", |lua, this, val: i32| {
-            with_gui!(lua, this.index => gui);
+            with_gui!(lua => gui);
             lua.create_userdata(GUINodePointer {
                 gui_index: this.index,
                 index: gui.root_node_indices[val as usize]
             })
         });
         methods.add_method("get_unparented", |lua, this, val: i32| {
-            with_gui!(lua, this.index => gui);
+            with_gui!(lua => gui);
             lua.create_userdata(GUINodePointer {
                 gui_index: this.index,
                 index: gui.unparented_node_indices[val as usize]
             })
         });
         methods.add_method("get_unparented_index", |lua, this, val: i32| {
-            with_gui!(lua, this.index => gui);
+            with_gui!(lua => gui);
             Ok(gui.unparented_node_indices[val as usize])
         });
         methods.add_method_mut("add_root_index", |lua, this, val: i32| {
-            with_gui_mut!(lua, this.index => gui);
+            with_gui_mut!(lua => gui);
             Ok(gui.root_node_indices.push(val as usize))
         });
         methods.add_method_mut("remove_root_index_at", |lua, this, val: i32| {
-            with_gui_mut!(lua, this.index => gui);
+            with_gui_mut!(lua => gui);
             Ok(gui.root_node_indices.remove(val as usize))
         });
 
@@ -731,7 +736,7 @@ impl UserData for GUIPointer {
             lua.create_userdata(node)
         });
         methods.add_method("get_quad", |lua, this, index: usize| {
-            with_gui!(lua, this.index => gui);
+            with_gui!(lua => gui);
             if let Element::Quad { .. } = gui.elements[index] {
                 let quad = GUIQuadPointer { gui_index: this.index, index };
                 lua.create_userdata(quad)
@@ -740,7 +745,7 @@ impl UserData for GUIPointer {
             }
         });
         methods.add_method("get_text", |lua, this, index: usize| {
-            with_gui!(lua, this.index => gui);
+            with_gui!(lua => gui);
             if let Element::Text { .. } = gui.elements[index] {
                 let text = GUITextPointer { gui_index: this.index, index };
                 lua.create_userdata(text)
@@ -749,7 +754,7 @@ impl UserData for GUIPointer {
             }
         });
         methods.add_method("get_image", |lua, this, index: usize| {
-            with_gui!(lua, this.index => gui);
+            with_gui!(lua => gui);
             if let Element::Image { .. } = gui.elements[index] {
                 let image = GUIImagePointer { gui_index: this.index, index };
                 lua.create_userdata(image)
@@ -759,22 +764,22 @@ impl UserData for GUIPointer {
         });
 
         methods.add_method_mut("add_node", |lua, this, parent_index: i32| {
-            with_gui_mut!(lua, this.index => gui);
+            with_gui_mut!(lua => gui);
             let num_nodes = gui.nodes.len();
             gui.nodes.push(Node::new(num_nodes, if parent_index < 0 { None } else { Some(parent_index as usize) }));
             Ok(num_nodes)
         });
         methods.add_method_mut("clone_node", |lua, this, copy_index_parent_index: (i32, i32)| {
-            with_gui_mut!(lua, this.index => gui);
+            with_gui_mut!(lua => gui);
             Ok(gui.clone_node(copy_index_parent_index.0 as usize, copy_index_parent_index.1 as usize))
         });
         methods.add_method_mut("add_quad", |lua, this, ()| {
-            with_gui_mut!(lua, this.index => gui);
+            with_gui_mut!(lua => gui);
             gui.elements.push(Element::default_quad());
             Ok(())
         });
         methods.add_method_mut("add_text", |lua, this, initial_text: String| {
-            with_gui_mut!(lua, this.index => gui);
+            with_gui_mut!(lua => gui);
             gui.add_text(initial_text);
             Ok(gui.elements.len() - 1)
         });

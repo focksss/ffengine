@@ -1,0 +1,71 @@
+{
+  "assets": {
+    "scripts": [
+      {
+        "uri": "editor\\resources\\scripts\\editor.lua"
+      },
+      {
+        "uri": "editor\\resources\\scripts\\transform_editor.lua"
+      },
+      {
+        "uri": "editor\\resources\\scripts\\render_component_editor.lua"
+      },
+      {
+        "uri": "editor\\resources\\scripts\\entity_editor.lua"
+      },
+      {
+        "uri": "editor\\resources\\scripts\\rigid_body_editor.lua"
+      },
+      {
+        "uri": "editor\\resources\\scripts\\player_controller.lua"
+      }
+    ],
+    "fonts": [
+      {
+        "uri": "editor\\resources\\fonts\\Oxygen-Regular.ttf",
+        "glyph_msdf_size": 32,
+        "glyph_msdf_distance_range": 2.0
+      }
+    ]
+  },
+  "scene": {
+    "components": [
+
+    ],
+    "entities": [
+      {
+        "name": "Scene Root",
+        "suns": [
+          {
+            "direction": [0.5, 0.0, 1.0],
+            "color": [1.0]
+          }
+        ],
+        "children": [
+          {
+            "from_model": "editor/resources/models/collisionTest/collisionTestNoWalls.gltf"
+          }
+        ]
+      },
+      {
+        "name": "Editor Root",
+        "children": [
+          {
+            "name": "Viewport Camera",
+            "cameras": [
+              {
+                "type": "perspective_rotation",
+                "fov_y": 100.0,
+                "aspect_ratio": 1.0,
+                "near": 0.001,
+                "far": 1000.0,
+                "infinite_reverse": true,
+                "third_person_vector": [0.0, 0.0, 1.0]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -3,56 +3,61 @@ use std::path::{Path, PathBuf};
 use mlua;
 use std::cell::RefCell;
 use std::collections::HashMap;
+use mlua::Function;
 use crate::engine::EngineRef;
 use crate::math::Vector;
 use crate::scripting::engine_api::client_api::client_api::{LuaCursorIcon, LuaKeyCode, LuaMouseButton, LuaResizeDirection};
-use crate::scripting::engine_api::gui_api::gui_api::LuaAnchorPoint;
-use crate::scripting::engine_api::scene_api::scene_api::EntityPointer;
+use crate::scripting::engine_api::gui_api::gui_api::{GUIImagePointer, GUINodePointer, GUIQuadPointer, GUITextPointer, GUITexturePointer, LuaAnchorPoint};
+use crate::scripting::engine_api::scene_api::scene_api::{CameraPointer, EntityPointer, RenderComponentPointer, RigidBodyPointer, TransformPointer};
 
 thread_local! {
     static LUA: RefCell<Option<Lua>> = RefCell::new(None);
 }
 
-struct ScriptInstance {
-    owner: EntityPointer,
-    instance_environment: mlua::RegistryKey,
-}
-pub struct Script {
+pub struct ScriptAsset {
     path: PathBuf,
-    environment: mlua::RegistryKey,
-    start_fn: Option<mlua::RegistryKey>,
-    update_fn: Option<mlua::RegistryKey>,
-    scroll_fn: Option<mlua::RegistryKey>,
-    mouse_moved_fn: Option<mlua::RegistryKey>,
-    mouse_button_pressed_fn: Option<mlua::RegistryKey>,
-    mouse_button_released_fn: Option<mlua::RegistryKey>,
-    fields: HashMap<String, Field>,
-    has_started: bool,
+    fields: HashMap<String, FieldType>,
 
     instances: Vec<ScriptInstance>,
-}
-
-struct Field {
-    registry_key: mlua::RegistryKey,
-    field_type: FieldType,
 }
 enum FieldType {
     Number,
     Integer,
     String,
     Boolean,
-    Function,
     Table,
     UserData(TypeId),
     Unknown,
 }
+#[derive(Clone)]
+pub enum Field {
+    Number(f32),
+    Integer(i32),
+    String(String),
+    Boolean(bool),
+    Table(Vec<Box<Field>>),
+    UiNode(GUINodePointer),
+    UiQuad(GUIQuadPointer),
+    UiText(GUITextPointer),
+    UiTexture(GUITexturePointer),
+    UiImage(GUIImagePointer),
+    Entity(EntityPointer),
+    Transform(TransformPointer),
+    RenderComponent(RenderComponentPointer),
+    RigidBody(RigidBodyPointer),
+    Camera(CameraPointer),
+}
+struct ScriptInstance {
+    owner: EntityPointer,
+    environment: mlua::RegistryKey,
+    has_started: bool,
+}
 
 pub struct Lua {
     lua: mlua::Lua,
-    scripts: Vec<Script>,
+    scripts: Vec<ScriptAsset>,
     free_script_indices: Vec<usize>,
 
-    cached_calls: Vec<(usize, String, usize, usize)>, // stores script index, method name, call index, and gui index.
     reload_scripts_requested: bool,
     load_scripts_requested: bool,
 }
@@ -108,7 +113,6 @@ impl Lua {
                 lua: mlua::Lua::new(),
                 scripts: Vec::new(),
                 free_script_indices: Vec::new(),
-                cached_calls: Vec::new(),
                 reload_scripts_requested: false,
                 load_scripts_requested: false,
             });
@@ -168,29 +172,6 @@ impl Lua {
             .set_environment(environment.clone())
             .exec()?;
 
-        // extract lifecycle functions
-        let start_fn = environment.get::<_, Option<mlua::Function>>("Start")?
-            .map(|f| self.lua.create_registry_value(f))
-            .transpose()?;
-        let update_fn = environment.get::<_, Option<mlua::Function>>("Update")?
-            .map(|f| self.lua.create_registry_value(f))
-            .transpose()?;
-        let on_awake_fn = environment.get::<_, Option<mlua::Function>>("Awake")?
-            .map(|f| self.lua.create_registry_value(f))
-            .transpose()?;
-        let scroll_fn = environment.get::<_, Option<mlua::Function>>("MouseScrolled")?
-            .map(|f| self.lua.create_registry_value(f))
-            .transpose()?;
-        let mouse_moved_fn = environment.get::<_, Option<mlua::Function>>("MouseMoved")?
-            .map(|f| self.lua.create_registry_value(f))
-            .transpose()?;
-        let mouse_button_pressed_fn = environment.get::<_, Option<mlua::Function>>("MouseButtonPressed")?
-            .map(|f| self.lua.create_registry_value(f))
-            .transpose()?;
-        let mouse_button_released_fn = environment.get::<_, Option<mlua::Function>>("MouseButtonReleased")?
-            .map(|f| self.lua.create_registry_value(f))
-            .transpose()?;
-
         let mut fields = HashMap::new();
 
         let field_type = |value: &mlua::Value| match value {
@@ -219,26 +200,14 @@ impl Lua {
                 | mlua::Value::String(_)
                 | mlua::Value::Table(_) => {
                     let field_type = field_type(&value);
-                    let registry_key = self.lua.create_registry_value(value)?;
-                    fields.insert(key_str, Field {
-                        field_type,
-                        registry_key,
-                    });
+                    fields.insert(key_str, field_type);
                 },
                 _ => {}
             }
         }
 
-        let script = Script {
+        let script = ScriptAsset {
             path: PathBuf::from(path),
-            environment: self.lua.create_registry_value(environment).unwrap(),
-            start_fn,
-            update_fn,
-            scroll_fn,
-            mouse_moved_fn,
-            mouse_button_pressed_fn,
-            mouse_button_released_fn,
-            has_started: false,
             fields,
             instances: Vec::new(),
         };
@@ -251,18 +220,32 @@ impl Lua {
             self.scripts.len() - 1
         };
 
-        if on_awake_fn.is_some() {
-            self.cache_call_impl(assigned_index, "Awake", None, None);
-        }
-
         Ok(assigned_index)
     }
-    fn call_method_by_key(
-        &self,
-        method_key: &mlua::RegistryKey,
-    ) -> Result<(), mlua::Error> {
-        let func: mlua::Function = self.lua.registry_value(method_key)?;
-        func.call::<_, ()>(())?;
+
+    pub fn add_script_instance(script_index: usize, owner: EntityPointer) {
+        Self::with_mut(|lua| { lua.add_script_instance_impl(script_index, owner).expect("script instance add failed"); })
+    }
+    fn add_script_instance_impl(&mut self, script_index: usize, owner: EntityPointer) -> Result<(), mlua::Error> {
+        let script = &mut self.scripts[script_index];
+
+        // create local-environment
+        let environment = self.lua.create_table()?;
+        // create a metadata-table describing local access to global
+        let metatable = self.lua.create_table()?;
+        metatable.set("__index", self.lua.globals())?;
+        // apply that metadata-table to the local environment
+        environment.set_metatable(Some(metatable));
+
+        if let Some(update) = environment.get::<_, Option<Function>>("Update")? {
+            update.call::<_, ()>(())?;
+        }
+
+        script.instances.push(ScriptInstance {
+            owner,
+            environment: self.lua.create_registry_value(environment)?,
+            has_started: false,
+        });
         Ok(())
     }
 
@@ -284,14 +267,7 @@ impl Lua {
             .collect();
 
         for &i in to_remove.iter().rev() {
-            let script = self.scripts.remove(i);
-            self.lua.remove_registry_value(script.environment)?;
-            if let Some(start_fn) = script.start_fn {
-                self.lua.remove_registry_value(start_fn)?;
-            }
-            if let Some(update_fn) = script.update_fn {
-                self.lua.remove_registry_value(update_fn)?;
-            }
+            self.scripts.remove(i);
         }
 
         let mut indices = Vec::new();
@@ -312,13 +288,6 @@ impl Lua {
         let mut scripts_dir = Vec::new();
         for script in self.scripts.drain(..) {
             scripts_dir.push(script.path);
-            self.lua.remove_registry_value(script.environment)?;
-            if let Some(start_fn) = script.start_fn {
-                self.lua.remove_registry_value(start_fn)?;
-            }
-            if let Some(update_fn) = script.update_fn {
-                self.lua.remove_registry_value(update_fn)?;
-            }
         }
 
         for path in scripts_dir {
@@ -329,93 +298,40 @@ impl Lua {
         Ok(())
     }
 
-    pub fn call_script(
+    pub fn call_method(
         script_index: usize,
+        instance_index: usize,
         method_name: &str,
         args: Option<mlua::MultiValue>,
     ) -> Result<(), mlua::Error> {
         Self::with_mut(|lua| {
-            lua.call_method_impl(script_index, method_name, args)
+            lua.call_method_impl(script_index, instance_index, method_name, args)
         })
     }
     fn call_method_impl(
         &mut self,
         script_index: usize,
+        instance_index: usize,
         method_name: &str,
         args: Option<mlua::MultiValue>,
     ) -> Result<(), mlua::Error> {
         let script = &self.scripts[script_index];
+        let environment: mlua::Table = self.lua.registry_value(&script.instances[instance_index].environment)?;
 
-        let env: mlua::Table = self.lua.registry_value(&script.environment)?;
-        let method: Option<mlua::Function> = env.get(method_name)?;
-
-        match method {
-            Some(func) => {
-                let key = self.lua.create_registry_value(func)?;
-                let method: mlua::Function = self.lua.registry_value(&key)?;
-
-                method.call::<_, ()>(args.unwrap_or_default())
-            }
-            None => {
-                Err(mlua::Error::RuntimeError(
-                    format!("Method '{}' not found in script '{}'", method_name, script.path.display()).into(),
-                ))
-            }
+        if let Some(func) = environment.get::<_, Option<Function>>(method_name)? {
+            func.call::<_, ()>(args.unwrap_or_default())?;
+            Ok(())
+        } else {
+            panic!("failed to call method {}", method_name);
         }
     }
 
     /// call_index is used as the "active_object" index during method calling
-    pub fn cache_call(script_index: usize, method_name: &str, call_index: Option<usize>, gui_index: Option<usize>) {
-        Self::with_mut(|lua| lua.cache_call_impl(script_index, method_name, call_index, gui_index));
-    }
-    fn cache_call_impl(
-        &mut self,
-        script_index: usize,
-        method_name: &str,
-        call_index: Option<usize>,
-        gui_index: Option<usize>,
-    ) {
-        self.cached_calls.push((script_index, method_name.to_string(), call_index.unwrap_or(0), gui_index.unwrap_or(0)));
-    }
-
-    pub fn clear_cache() {
-        Self::with_mut(|lua| lua.cached_calls.clear());
-    }
-
-    pub fn run_cache(
-        engine: &EngineRef,
-    ) {
-        Self::with_mut(|lua| {
-            lua.run_cache_impl(engine);
-        })
-    }
-    fn run_cache_impl(
-        &mut self,
-        engine: &EngineRef,
-    ) {
-        for call in self.cached_calls.clone() {
-            engine.renderer.borrow_mut().guis[call.3].borrow_mut().active_node = call.2;
-
-            self.call_method_impl(
-                call.0,
-                call.1.as_str(),
-                None
-            ).expect("failed to call cached method");
-        }
-        self.cached_calls.clear();
-    }
 
     fn run_update_methods_impl(&mut self) -> Result<(), mlua::Error> {
-        for i in 0..self.scripts.len() {
-            if self.scripts[i].update_fn.is_some() {
-                if !self.scripts[i].has_started {
-                    self.scripts[i].has_started = true;
-                    if let Some(start_fn) = &self.scripts[i].start_fn {
-                        self.call_method_by_key(start_fn)?
-                    }
-                }
-
-                self.call_method_by_key(self.scripts[i].update_fn.as_ref().unwrap())?
+        for script_index in 0..self.scripts.len() {
+            for instance_index in 0..self.scripts[script_index].instances.len() {
+                self.call_method_impl(script_index, instance_index, "Update", None)?;
             }
         }
         Ok(())
@@ -425,9 +341,9 @@ impl Lua {
     }
 
     fn run_scroll_methods_impl(&mut self) -> Result<(), mlua::Error> {
-        for i in 0..self.scripts.len() {
-            if self.scripts[i].scroll_fn.is_some() {
-                self.call_method_by_key(self.scripts[i].scroll_fn.as_ref().unwrap())?;
+        for script_index in 0..self.scripts.len() {
+            for instance_index in 0..self.scripts[script_index].instances.len() {
+                self.call_method_impl(script_index, instance_index, "MouseScrolled", None)?;
             }
         }
         Ok(())
@@ -437,9 +353,9 @@ impl Lua {
     }
 
     fn run_mouse_moved_methods_impl(&mut self) -> Result<(), mlua::Error> {
-        for i in 0..self.scripts.len() {
-            if self.scripts[i].mouse_moved_fn.is_some() {
-                self.call_method_by_key(self.scripts[i].mouse_moved_fn.as_ref().unwrap())?
+        for script_index in 0..self.scripts.len() {
+            for instance_index in 0..self.scripts[script_index].instances.len() {
+                self.call_method_impl(script_index, instance_index, "MouseMoved", None)?;
             }
         }
         Ok(())
@@ -449,9 +365,9 @@ impl Lua {
     }
 
     fn run_mouse_button_pressed_methods_impl(&mut self) -> Result<(), mlua::Error> {
-        for i in 0..self.scripts.len() {
-            if self.scripts[i].mouse_button_pressed_fn.is_some() {
-                self.call_method_by_key(self.scripts[i].mouse_button_pressed_fn.as_ref().unwrap())?
+        for script_index in 0..self.scripts.len() {
+            for instance_index in 0..self.scripts[script_index].instances.len() {
+                self.call_method_impl(script_index, instance_index, "MouseButtonPressed", None)?;
             }
         }
         Ok(())
@@ -461,9 +377,9 @@ impl Lua {
     }
 
     fn run_mouse_button_released_methods_impl(&mut self) -> Result<(), mlua::Error> {
-        for i in 0..self.scripts.len() {
-            if self.scripts[i].mouse_button_released_fn.is_some() {
-                self.call_method_by_key(self.scripts[i].mouse_button_released_fn.as_ref().unwrap())?
+        for script_index in 0..self.scripts.len() {
+            for instance_index in 0..self.scripts[script_index].instances.len() {
+                self.call_method_impl(script_index, instance_index, "MouseButtonReleased", None)?;
             }
         }
         Ok(())
