@@ -2,7 +2,7 @@ use crate::render::text::text_render::TextInformation;
 use crate::math::Vector;
 
 pub struct Text {
-    text_information: Option<TextInformation>,
+    pub text_information: Option<TextInformation>,
     font_index: usize,
     color: Vector,
 }

@@ -1,11 +1,9 @@
 use std::cell::RefCell;
 use std::{fs, slice};
 use std::collections::HashSet;
-use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use ash::vk;
 use ash::vk::{CommandBuffer, DescriptorType, Format, ImageLayout, ShaderStageFlags};
-use json::JsonValue;
 use winit::event::MouseButton;
 use winit::keyboard::{Key, PhysicalKey, SmolStr};
 use crate::client::client::*;
@@ -15,12 +13,11 @@ use crate::render::text::font::Font;
 use crate::render::text::text_render::{TextInformation, TextRenderer};
 use crate::render::render::MAX_FRAMES_IN_FLIGHT;
 use crate::render::vulkan_base::Context;
+use crate::scene::scene::Scene;
 use crate::scripting::lua_engine::{Field, Lua};
 
 pub struct UiRenderer {
     context: Arc<Context>,
-
-    pub gui_root_sets: Vec<Vec<usize>>,
 
     pub text_field_focused: bool,
 
@@ -378,7 +375,7 @@ impl UiRenderer {
     }
 
     pub fn add_text(&mut self, text: String) {
-        let new_text = Element::Text {
+        let new_text = Text {
             text_information: Some(TextInformation::new(self.fonts[0].clone())
                 .text(text.as_str())
                 .font_size(17.0)
@@ -389,113 +386,15 @@ impl UiRenderer {
         self.new_texts.push(self.elements.len());
         self.elements.push(new_text);
     }
-    pub fn initialize_new_texts(&mut self) {
+    pub fn initialize_new_texts(&mut self, scene: &mut Scene) {
         for new_text in self.new_texts.drain(..) {
-            if let Element::Text { text_information, ..} = &mut self.elements[new_text] {
-                if let Some(info) = text_information {
-                    info.set_buffers();
-                }
+            if let Some(info) = &mut scene.ui_texts[new_text].text_information {
+                info.set_buffers();
             }
         }
     }
 
-    /// returns new node index
-    pub fn clone_node(&mut self, index: usize, parent_index: usize) -> usize {
-        let node_index = self.nodes.len();
-        self.nodes.push(self.nodes[index].clone());
-
-        let mut new_children_indices = Vec::new();
-        for child in self.nodes[node_index].children_indices.clone() {
-            new_children_indices.push(self.clone_node(child, node_index));
-        }
-        let mut new_element_indices = Vec::new();
-        for element_index in self.nodes[node_index].element_indices.clone() {
-            let element = &self.elements[element_index];
-            match element {
-                Element::Text {
-                    text_information,
-                    font_index,
-                    color,
-                } => {
-                    let new_text = Element::Text {
-                        text_information: Some(TextInformation::new(self.fonts[0].clone())
-                            .text(text_information.as_ref().unwrap().text.as_str())
-                            .font_size(text_information.as_ref().unwrap().font_size)
-                            .newline_distance(text_information.as_ref().unwrap().auto_wrap_distance)),
-                        font_index: *font_index,
-                        color: color.clone(),
-                    };
-                    new_element_indices.push(self.elements.len());
-                    self.new_texts.push(self.elements.len());
-                    self.elements.push(new_text)
-                },
-                Element::Quad {
-                    corner_radius,
-                    color,
-                } => {
-                    new_element_indices.push(self.elements.len());
-                    self.elements.push(Element::Quad {
-                        corner_radius: *corner_radius,
-                        color: color.clone(),
-                    })
-                },
-                Element::Image {
-                    index,
-                    uri,
-                    alpha_threshold,
-                    additive_tint,
-                    multiplicative_tint,
-                    corner_radius,
-                    aspect_ratio,
-                    image_view,
-                    image,
-                    memory,
-                    sampler
-                } => {
-                    new_element_indices.push(element_index);
-                    // Element::Image {
-                    //     index: *index,
-                    //     uri: uri.clone(),
-                    //     alpha_threshold: *alpha_threshold,
-                    //     additive_tint: additive_tint.clone(),
-                    //     multiplicative_tint: multiplicative_tint.clone(),
-                    //     corner_radius: *corner_radius,
-                    //     aspect_ratio: *aspect_ratio,
-                    //     image_view: image_view.clone(),
-                    //     image: image.clone(),
-                    //     memory: memory.clone(),
-                    //     sampler: sampler.clone(),
-                    // }
-                },
-                Element::Texture {
-                    texture_set,
-                    index,
-                    additive_tint,
-                    multiplicative_tint,
-                    aspect_ratio,
-                    corner_radius,
-                } => {
-                    new_element_indices.push(self.elements.len());
-                    self.elements.push(Element::Texture {
-                        texture_set: texture_set.clone(),
-                        index: *index,
-                        additive_tint: *additive_tint,
-                        multiplicative_tint: *multiplicative_tint,
-                        corner_radius: *corner_radius,
-                        aspect_ratio: *aspect_ratio,
-                    })
-                }
-            }
-        }
-        self.nodes[node_index].children_indices = new_children_indices;
-        self.nodes[node_index].element_indices = new_element_indices;
-        self.nodes[node_index].parent_index = Some(parent_index);
-
-        node_index
-    }
-
-    pub fn draw(&mut self, current_frame: usize, command_buffer: CommandBuffer,) { unsafe {
-        self.layout();
+    pub fn draw(&mut self, scene: &mut Scene, current_frame: usize, command_buffer: CommandBuffer,) { unsafe {
         let mut interactable_action_parameter_sets = Vec::new();
 
         self.pass.borrow().transition(
@@ -506,9 +405,11 @@ impl UiRenderer {
         );
         self.pass.borrow().begin(command_buffer, current_frame, &self.text_renderer.renderpass.scissor);
 
-        for node_index in &self.root_node_indices {
+        let ui_root_entities = scene.ui_root_entities.clone();
+        for node_index in ui_root_entities {
             self.draw_node(
-                *node_index,
+                scene,
+                node_index,
                 current_frame,
                 command_buffer,
                 &mut interactable_action_parameter_sets,
@@ -526,7 +427,6 @@ impl UiRenderer {
         let mut can_trigger_left_click_event = true;
         let mut can_trigger_right_click_event = true;
         for parameter_set in interactable_action_parameter_sets.iter().rev() {
-            self.active_node = parameter_set.0;
             self.handle_gui_interaction(
                 parameter_set.0,
                 parameter_set.1,
@@ -538,185 +438,163 @@ impl UiRenderer {
     } }
     fn draw_node(
         &self,
+        scene: &mut Scene,
         node_index: usize,
         current_frame: usize,
         command_buffer: CommandBuffer,
         interactable_parameter_sets: &mut Vec<(usize, Vector, Vector)>
     ) { unsafe {
-        let node = &self.nodes[node_index];
-        if node.hidden { return };
+        let entity = &scene.entities[node_index];
+        let layout = &scene.ui_node_layouts[entity.ui_layout.unwrap()];
+        if layout.hidden { return };
 
-        if node.clip_max.x < 0.0 || node.clip_max.y < 0.0
-            || node.clip_min.x > self.quad_renderpass.viewport.width || node.clip_min.y > self.quad_renderpass.viewport.height {
+        if layout.clip_max.x < 0.0 || layout.clip_max.y < 0.0
+            || layout.clip_min.x > self.quad_renderpass.viewport.width || layout.clip_min.y > self.quad_renderpass.viewport.height {
             return;
         }
 
-        for element_index in node.element_indices.iter() {
-            let element = &self.elements[*element_index];
-            match element {
-                Element::Quad {
-                    color,
-                    corner_radius
-                } => {
-                    //println!("{}", node.index);
-                    let quad_constants = GUIQuadSendable {
-                        additive_color: color.to_array4(),
-                        multiplicative_color: [1.0; 4],
-                        resolution: [self.quad_renderpass.viewport.width as i32, self.quad_renderpass.viewport.height as i32],
-                        clip_min: node.clip_min.to_array2(),
-                        clip_max: node.clip_max.to_array2(),
-                        position: node.position.to_array2(),
-                        scale: node.size.to_array2(),
-                        corner_radius: *corner_radius,
-                        image: -1,
-                    };
+        for quad_index in &entity.ui_quads {
+            let quad = &scene.ui_quads[*quad_index];
+            let quad_constants = GUIQuadSendable {
+                additive_color: quad.color.to_array4(),
+                multiplicative_color: [1.0; 4],
+                resolution: [self.quad_renderpass.viewport.width as i32, self.quad_renderpass.viewport.height as i32],
+                clip_min: layout.clip_min.to_array2(),
+                clip_max: layout.clip_max.to_array2(),
+                position: layout.position.to_array2(),
+                scale: layout.size.to_array2(),
+                corner_radius: quad.corner_radius,
+                image: -1,
+            };
 
-                    let device = &self.context.device;
-                    device.cmd_bind_pipeline(
-                        command_buffer,
-                        vk::PipelineBindPoint::GRAPHICS,
-                        self.quad_renderpass.pipelines[0].vulkan_pipeline,
-                    );
-                    device.cmd_set_viewport(command_buffer, 0, &[self.quad_renderpass.viewport]);
-                    device.cmd_set_scissor(command_buffer, 0, &[self.quad_renderpass.scissor]);
-                    device.cmd_bind_descriptor_sets(
-                        command_buffer,
-                        vk::PipelineBindPoint::GRAPHICS,
-                        self.quad_renderpass.pipeline_layout,
-                        0,
-                        &[self.quad_renderpass.descriptor_set.borrow().descriptor_sets[current_frame]],
-                        &[],
-                    );
-                    device.cmd_push_constants(command_buffer, self.quad_renderpass.pipeline_layout, ShaderStageFlags::ALL_GRAPHICS, 0, slice::from_raw_parts(
-                        &quad_constants as *const GUIQuadSendable as *const u8,
-                        size_of::<GUIQuadSendable>(),
-                    ));
-                    device.cmd_draw(command_buffer, 6, 1, 0, 0);
-                },
-                Element::Image {
-                    index,
-                    alpha_threshold,
-                    additive_tint,
-                    multiplicative_tint,
-                    corner_radius,
-                    aspect_ratio,
-                    ..
-                } => {
-                    let mut scale = node.size.to_array2();
-                    if let Some(ratio) = aspect_ratio {
-                        let min = scale[0].min(scale[1]);
-                        let min_axis = if scale[0] < scale[1] { 0 } else { 1 };
-                        scale[min_axis] = min;
-                        scale[1 - min_axis] = ratio * min;
-                    }
-
-                    let quad_constants = GUIQuadSendable {
-                        additive_color: additive_tint.to_array4(),
-                        multiplicative_color: multiplicative_tint.to_array4(),
-                        resolution: [self.quad_renderpass.viewport.width as i32, self.quad_renderpass.viewport.height as i32],
-                        clip_min: node.clip_min.to_array2(),
-                        clip_max: node.clip_max.to_array2(),
-                        position: node.position.to_array2(),
-                        scale,
-                        corner_radius: *corner_radius,
-                        image: *index as i32,
-                    };
-
-                    let device = &self.context.device;
-                    device.cmd_bind_pipeline(
-                        command_buffer,
-                        vk::PipelineBindPoint::GRAPHICS,
-                        self.quad_renderpass.pipelines[0].vulkan_pipeline,
-                    );
-                    device.cmd_set_viewport(command_buffer, 0, &[self.quad_renderpass.viewport]);
-                    device.cmd_set_scissor(command_buffer, 0, &[self.quad_renderpass.scissor]);
-                    device.cmd_bind_descriptor_sets(
-                        command_buffer,
-                        vk::PipelineBindPoint::GRAPHICS,
-                        self.quad_renderpass.pipeline_layout,
-                        0,
-                        &[self.quad_renderpass.descriptor_set.borrow().descriptor_sets[current_frame]],
-                        &[],
-                    );
-                    device.cmd_push_constants(command_buffer, self.quad_renderpass.pipeline_layout, ShaderStageFlags::ALL_GRAPHICS, 0, slice::from_raw_parts(
-                        &quad_constants as *const GUIQuadSendable as *const u8,
-                        size_of::<GUIQuadSendable>(),
-                    ));
-                    device.cmd_draw(command_buffer, 6, 1, 0, 0);
-                },
-                Element::Texture {
-                    texture_set,
-                    index,
-                    additive_tint,
-                    multiplicative_tint,
-                    corner_radius,
-                    aspect_ratio,
-                    ..
-                } => {
-                    let mut scale = node.size.to_array2();
-                    if let Some(ratio) = aspect_ratio {
-                        let min = scale[0].min(scale[1]);
-                        let min_axis = if scale[0] < scale[1] { 0 } else { 1 };
-                        scale[min_axis] = min;
-                        scale[1 - min_axis] = ratio * min;
-                    }
-
-                    let quad_constants = GUIQuadSendable {
-                        additive_color: additive_tint.to_array4(),
-                        multiplicative_color: multiplicative_tint.to_array4(),
-                        resolution: [self.quad_renderpass.viewport.width as i32, self.quad_renderpass.viewport.height as i32],
-                        clip_min: node.clip_min.to_array2(),
-                        clip_max: node.clip_max.to_array2(),
-                        position: node.position.to_array2(),
-                        scale,
-                        corner_radius: *corner_radius,
-                        image: *index as i32,
-                    };
-
-                    let device = &self.context.device;
-                    device.cmd_bind_pipeline(
-                        command_buffer,
-                        vk::PipelineBindPoint::GRAPHICS,
-                        self.quad_renderpass.pipelines[0].vulkan_pipeline,
-                    );
-                    device.cmd_set_viewport(command_buffer, 0, &[self.quad_renderpass.viewport]);
-                    device.cmd_set_scissor(command_buffer, 0, &[self.quad_renderpass.scissor]);
-                    device.cmd_bind_descriptor_sets(
-                        command_buffer,
-                        vk::PipelineBindPoint::GRAPHICS,
-                        self.quad_renderpass.pipeline_layout,
-                        0,
-                        &[self.quad_renderpass.descriptor_set.borrow().descriptor_sets[current_frame]],
-                        &[],
-                    );
-                    device.cmd_push_constants(command_buffer, self.quad_renderpass.pipeline_layout, ShaderStageFlags::ALL_GRAPHICS, 0, slice::from_raw_parts(
-                        &quad_constants as *const GUIQuadSendable as *const u8,
-                        size_of::<GUIQuadSendable>(),
-                    ));
-                    device.cmd_draw(command_buffer, 6, 1, 0, 0);
-                },
-                Element::Text {
-                    text_information,
-                    ..
-                } => {
-                    self.text_renderer.draw_gui_text(
-                        current_frame,
-                        text_information.as_ref().unwrap(),
-                        node.position,
-                        node.size,
-                        node.clip_min,
-                        node.clip_max,
-                    );
-                }
+            let device = &self.context.device;
+            device.cmd_bind_pipeline(
+                command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.quad_renderpass.pipelines[0].vulkan_pipeline,
+            );
+            device.cmd_set_viewport(command_buffer, 0, &[self.quad_renderpass.viewport]);
+            device.cmd_set_scissor(command_buffer, 0, &[self.quad_renderpass.scissor]);
+            device.cmd_bind_descriptor_sets(
+                command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.quad_renderpass.pipeline_layout,
+                0,
+                &[self.quad_renderpass.descriptor_set.borrow().descriptor_sets[current_frame]],
+                &[],
+            );
+            device.cmd_push_constants(command_buffer, self.quad_renderpass.pipeline_layout, ShaderStageFlags::ALL_GRAPHICS, 0, slice::from_raw_parts(
+                &quad_constants as *const GUIQuadSendable as *const u8,
+                size_of::<GUIQuadSendable>(),
+            ));
+            device.cmd_draw(command_buffer, 6, 1, 0, 0);
+        }
+        for image_index in &entity.ui_images {
+            let image = &scene.ui_images[*image_index];
+            let mut scale = layout.size.to_array2();
+            if let Some(ratio) = image.aspect_ratio {
+                let min = scale[0].min(scale[1]);
+                let min_axis = if scale[0] < scale[1] { 0 } else { 1 };
+                scale[min_axis] = min;
+                scale[1 - min_axis] = ratio * min;
             }
+
+            let quad_constants = GUIQuadSendable {
+                additive_color: image.additive_tint.to_array4(),
+                multiplicative_color: image.multiplicative_tint.to_array4(),
+                resolution: [self.quad_renderpass.viewport.width as i32, self.quad_renderpass.viewport.height as i32],
+                clip_min: layout.clip_min.to_array2(),
+                clip_max: layout.clip_max.to_array2(),
+                position: layout.position.to_array2(),
+                scale,
+                corner_radius: image.corner_radius,
+                image: image.index as i32,
+            };
+
+            let device = &self.context.device;
+            device.cmd_bind_pipeline(
+                command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.quad_renderpass.pipelines[0].vulkan_pipeline,
+            );
+            device.cmd_set_viewport(command_buffer, 0, &[self.quad_renderpass.viewport]);
+            device.cmd_set_scissor(command_buffer, 0, &[self.quad_renderpass.scissor]);
+            device.cmd_bind_descriptor_sets(
+                command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.quad_renderpass.pipeline_layout,
+                0,
+                &[self.quad_renderpass.descriptor_set.borrow().descriptor_sets[current_frame]],
+                &[],
+            );
+            device.cmd_push_constants(command_buffer, self.quad_renderpass.pipeline_layout, ShaderStageFlags::ALL_GRAPHICS, 0, slice::from_raw_parts(
+                &quad_constants as *const GUIQuadSendable as *const u8,
+                size_of::<GUIQuadSendable>(),
+            ));
+            device.cmd_draw(command_buffer, 6, 1, 0, 0);
+        }
+        for texture_index in &entity.ui_textures {
+            let texture = &scene.ui_textures[*texture_index];
+            let mut scale = layout.size.to_array2();
+            if let Some(ratio) = texture.aspect_ratio {
+                let min = scale[0].min(scale[1]);
+                let min_axis = if scale[0] < scale[1] { 0 } else { 1 };
+                scale[min_axis] = min;
+                scale[1 - min_axis] = ratio * min;
+            }
+
+            let quad_constants = GUIQuadSendable {
+                additive_color: texture.additive_tint.to_array4(),
+                multiplicative_color: texture.multiplicative_tint.to_array4(),
+                resolution: [self.quad_renderpass.viewport.width as i32, self.quad_renderpass.viewport.height as i32],
+                clip_min: layout.clip_min.to_array2(),
+                clip_max: layout.clip_max.to_array2(),
+                position: layout.position.to_array2(),
+                scale,
+                corner_radius: texture.corner_radius,
+                image: texture.index as i32,
+            };
+
+            let device = &self.context.device;
+            device.cmd_bind_pipeline(
+                command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.quad_renderpass.pipelines[0].vulkan_pipeline,
+            );
+            device.cmd_set_viewport(command_buffer, 0, &[self.quad_renderpass.viewport]);
+            device.cmd_set_scissor(command_buffer, 0, &[self.quad_renderpass.scissor]);
+            device.cmd_bind_descriptor_sets(
+                command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.quad_renderpass.pipeline_layout,
+                0,
+                &[self.quad_renderpass.descriptor_set.borrow().descriptor_sets[current_frame]],
+                &[],
+            );
+            device.cmd_push_constants(command_buffer, self.quad_renderpass.pipeline_layout, ShaderStageFlags::ALL_GRAPHICS, 0, slice::from_raw_parts(
+                &quad_constants as *const GUIQuadSendable as *const u8,
+                size_of::<GUIQuadSendable>(),
+            ));
+            device.cmd_draw(command_buffer, 6, 1, 0, 0);
+        }
+        for text_index in &entity.ui_texts {
+            let text = &scene.ui_texts[*text_index];
+            self.text_renderer.draw_gui_text(
+                current_frame,
+                text.text_information.as_ref().unwrap(),
+                layout.position,
+                layout.size,
+                layout.clip_min,
+                layout.clip_max,
+            );
         }
 
-        if node.interactable_information.is_some() {
-            interactable_parameter_sets.push((node_index, node.clip_min, node.clip_max));
+        if entity.ui_interactable_information.is_some() {
+            interactable_parameter_sets.push((node_index, layout.clip_min, layout.clip_max));
         }
 
-        for child in &node.children_indices {
-            self.draw_node(*child, current_frame, command_buffer, interactable_parameter_sets);
+        for child in &entity.children_indices.clone() {
+            self.draw_node(scene, *child, current_frame, command_buffer, interactable_parameter_sets);
         }
     } }
 

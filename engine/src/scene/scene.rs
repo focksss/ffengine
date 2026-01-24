@@ -42,9 +42,8 @@ ECS
  - Cameras (will) own their own SceneRenderer and render to either a RenderTexture or the screen.
 */
 
-
 pub struct Scene {
-    pub(crate) context: Arc<Context>,
+    pub context: Arc<Context>,
 
     pub runtime: f32,
 
@@ -74,6 +73,8 @@ pub struct Scene {
 
     pub outlined_components: Vec<usize>,
     pub outlined_bodies: Vec<usize>,
+
+    pub ui_root_entities: Vec<usize>,
 
     pub renderer: Arc<RefCell<Renderer>>,
     pub world: Arc<RefCell<World>>,
@@ -111,6 +112,8 @@ impl Scene {
             ui_quads: Vec::new(),
             ui_images: Vec::new(),
             ui_textures: Vec::new(),
+
+            ui_root_entities: Vec::new(),
 
             outlined_components: Vec::new(),
             outlined_bodies: Vec::new(),
@@ -495,6 +498,8 @@ impl Scene {
     }
 
     pub fn update_scene(&mut self, command_buffer: CommandBuffer, frame: usize, delta_time: f32, force_run: bool) {
+        self.layout_ui();
+
         if self.running || force_run {
             self.update_physics_objects(delta_time);
 
@@ -614,6 +619,8 @@ impl Scene {
     ) {
         let (transform, children_indices) = {
             let entity = &self.entities[entity_index];
+
+            if entity.ui_layout.is_some() { return }
 
             let entity_world_transform = if entity.transform == parent_transform {
                 let entity_transform = &mut self.transforms[entity.transform];

@@ -11,7 +11,6 @@ use winit::event_loop::ControlFlow;
 use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
 use crate::math::Vector;
 use crate::client::client::Client;
-use crate::gui::gui::GUI;
 use crate::scene::physics::physics_engine::PhysicsEngine;
 use crate::render::render::{Renderer, MAX_FRAMES_IN_FLIGHT};
 use crate::render::vulkan_base::{record_submit_commandbuffer, VkBase};
@@ -33,7 +32,6 @@ pub fn get_command_buffer() -> vk::CommandBuffer {
 
 pub struct Engine {
     pub scene: Arc<RefCell<Scene>>,
-    pub gui: Arc<RefCell<GUI>>,
 
     pub base: VkBase,
     pub world: Arc<RefCell<World>>,
@@ -63,13 +61,12 @@ impl Engine {
         let rw_lock = RwLock::new(base.draw_command_buffers[0]);
         COMMAND_BUFFER.set(rw_lock).expect("Failed to initialize frame command buffer global");
 
-        let renderer = Arc::new(RefCell::new(Renderer::new(&base, world.clone())));
+        let renderer = Arc::new(RefCell::new(Renderer::new(&base, world.clone(), client.clone())));
 
-        let (scene, gui) = load_scene(scene_path, &base.context, renderer.clone(), world.clone(), physics_engine.clone(), client.clone());
+        let scene = load_scene(scene_path, &base.context, renderer.clone(), world.clone(), physics_engine.clone());
 
         let engine = Engine {
             scene: Arc::new(RefCell::new(scene)),
-            gui: Arc::new(RefCell::new(gui)),
 
             physics_engine,
             renderer,
@@ -135,7 +132,7 @@ impl Engine {
                             if base.needs_swapchain_recreate {
                                 base.device.device_wait_idle().unwrap();
                                 base.set_surface_and_present_images();
-                                self.renderer.borrow_mut().reload(&base, &self.world.borrow(), &mut self.gui.borrow_mut());
+                                self.renderer.borrow_mut().reload(&base, &self.world.borrow(), self.client.clone());
 
                                 base.needs_swapchain_recreate = false;
                                 // frametime_manager.reset();
@@ -149,7 +146,7 @@ impl Engine {
 
                                 let renderer = &mut self.renderer.borrow_mut();
 
-                                renderer.reload(base, &self.world.borrow(), &mut self.gui.borrow_mut());
+                                renderer.reload(base, &self.world.borrow(), self.client.clone());
                                 
                                 // renderer.gui.borrow_mut().load_from_file(base, "editor\\resources\\gui\\editor.gui");
                                 
@@ -185,7 +182,7 @@ impl Engine {
                         last_frame_time = now;
 
                         Lua::run_update_methods().expect("Failed to run Update methods");
-                        self.gui.borrow_mut().initialize_new_texts();
+                        self.renderer.borrow_mut().ui_renderer.initialize_new_texts();
 
                         let current_fence = base.draw_commands_reuse_fences[current_frame];
                         {
@@ -223,7 +220,7 @@ impl Engine {
                                 }
 
                                 {
-                                    self.renderer.borrow_mut().render_frame(current_frame, self.scene.clone(), self.gui.clone());
+                                    self.renderer.borrow_mut().render_frame(current_frame, self.scene.clone());
                                 }
                             },
                         );
@@ -266,7 +263,7 @@ impl Engine {
                         current_frame = (current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
                         frame_count += 1;
                     },
-                    _ => { Client::handle_event(self.client.clone(), self.renderer.clone(), event) },
+                    _ => { Client::handle_event(self.client.clone(), &mut self.renderer.borrow_mut().ui_renderer, event) },
                 }
             }).expect("Failed to initiate render loop");
 

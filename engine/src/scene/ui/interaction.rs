@@ -11,15 +11,15 @@ pub struct UiInteractableInformation {
     was_initially_left_pressed: bool,
     was_initially_right_pressed: bool,
 
-    passive_actions: Vec<crate::gui::gui::InteractionInformation>,
-    pub hover_actions: Vec<crate::gui::gui::InteractionInformation>,
-    unhover_actions: Vec<crate::gui::gui::InteractionInformation>,
-    pub left_up_actions: Vec<crate::gui::gui::InteractionInformation>,
-    pub left_down_actions: Vec<crate::gui::gui::InteractionInformation>,
-    pub left_hold_actions: Vec<crate::gui::gui::InteractionInformation>,
-    pub(crate) right_up_actions: Vec<crate::gui::gui::InteractionInformation>,
-    right_down_actions: Vec<crate::gui::gui::InteractionInformation>,
-    right_hold_actions: Vec<crate::gui::gui::InteractionInformation>,
+    passive_actions: Vec<InteractionInformation>,
+    pub hover_actions: Vec<InteractionInformation>,
+    unhover_actions: Vec<InteractionInformation>,
+    pub left_up_actions: Vec<InteractionInformation>,
+    pub left_down_actions: Vec<InteractionInformation>,
+    pub left_hold_actions: Vec<InteractionInformation>,
+    pub(crate) right_up_actions: Vec<InteractionInformation>,
+    right_down_actions: Vec<InteractionInformation>,
+    right_hold_actions: Vec<InteractionInformation>,
 }
 impl Default for UiInteractableInformation {
     fn default() -> Self {

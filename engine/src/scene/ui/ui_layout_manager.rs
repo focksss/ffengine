@@ -1,23 +1,20 @@
-use std::sync::Arc;
 use crate::math::*;
-use crate::render::vulkan_base::Context;
+use crate::scene::scene::{Entity, Scene};
+use crate::scene::ui::{Alignment, AnchorPoint, DockMode, Offset, PackingMode, Padding, Size, StackDirection};
+use crate::scene::ui::layout::{Container, ParentRelation, UiNodeLayout};
 
-pub struct UiManager {
-    pub context: Arc<Context>,
-    pub gui_root_sets: Vec<Vec<usize>>,
-}
-impl UiManager {
-    fn layout(&mut self) {
+impl Scene {
+    pub(crate) fn layout_ui(&mut self) {
         let window_size = (
             self.context.window.inner_size().width as f32,
             self.context.window.inner_size().height as f32
         );
 
-        for root_node_index in self.root_node_indices.iter() {
-            Self::layout_node(
+        let root_entities = self.ui_root_entities.clone();
+        for root_node_index in root_entities {
+            self.layout_node(
                 &window_size,
-                &mut self.nodes,
-                *root_node_index,
+                root_node_index,
                 &(0.0, 0.0),
                 &window_size,
                 &((0.0, 0.0), window_size),
@@ -25,17 +22,18 @@ impl UiManager {
         }
     }
     fn layout_node(
+        &mut self,
         gui_viewport: &(f32, f32),
-        nodes: &mut Vec<Node>,
         node_index: usize,
         parent_origin: &(f32, f32),
         parent_size: &(f32, f32),
         parent_clipping: &((f32, f32), (f32, f32)),
     ) {
+        let entity = &mut self.entities[node_index];
+        let layout = &mut self.ui_node_layouts[entity.ui_layout.unwrap()];
         // set size and position if this container is independent, otherwise it was already set by the parent
         {
-            let node = &mut nodes[node_index];
-            if let Some(relation) = &node.parent_relation {
+            if let Some(relation) = &layout.parent_relation {
                 match relation {
                     ParentRelation::Independent { relative, anchor, offset_x, offset_y } => {
                         let anchor_factor = match anchor {
@@ -51,14 +49,14 @@ impl UiManager {
                         };
                         let final_parent_size = if *relative { parent_size } else { gui_viewport };
 
-                        let node_size = Self::calculate_size(&node.width, &node.height, &final_parent_size);
-                        node.size = Vector::new2(node_size.0.0, node_size.1.0);
+                        let node_size = Self::calculate_size(&layout.width, &layout.height, &final_parent_size);
+                        layout.size = Vector::new2(node_size.0.0, node_size.1.0);
 
-                        node.position.x = parent_origin.0 + final_parent_size.0*anchor_factor.0 + match offset_x {
+                        layout.position.x = parent_origin.0 + final_parent_size.0*anchor_factor.0 + match offset_x {
                             Offset::Pixels(p) => *p,
                             Offset::Factor(f) => *f * final_parent_size.0
                         };
-                        node.position.y = parent_origin.1 + final_parent_size.1*anchor_factor.1 + match offset_y {
+                        layout.position.y = parent_origin.1 + final_parent_size.1*anchor_factor.1 + match offset_y {
                             Offset::Pixels(p) => *p,
                             Offset::Factor(f) => *f * final_parent_size.1
                         }
@@ -69,11 +67,11 @@ impl UiManager {
         }
 
         // fetch properties first to avoid borrow checker issues
-        let container = nodes[node_index].container.clone();
-        let children_indices = nodes[node_index].children_indices.clone();
-        let node_pos = (nodes[node_index].position.x, nodes[node_index].position.y);
-        let node_size = (nodes[node_index].size.x, nodes[node_index].size.y);
-        let node_clipping = nodes[node_index].clipping;
+        let container = layout.container.clone();
+        let children_indices = entity.children_indices.clone();
+        let node_pos = (layout.position.x, layout.position.y);
+        let node_size = (layout.size.x, layout.size.y);
+        let node_clipping = layout.clipping;
 
         let node_clip_bounds = if node_clipping {
             let clip_min = (
@@ -89,16 +87,17 @@ impl UiManager {
             (node_pos, (node_pos.0 + node_size.0, node_pos.1 + node_size.1))
         };
 
-        nodes[node_index].clip_min.x = node_clip_bounds.0.0;
-        nodes[node_index].clip_min.y = node_clip_bounds.0.1;
-        nodes[node_index].clip_max.x = node_clip_bounds.1.0;
-        nodes[node_index].clip_max.y = node_clip_bounds.1.1;
+        layout.clip_min.x = node_clip_bounds.0.0;
+        layout.clip_min.y = node_clip_bounds.0.1;
+        layout.clip_max.x = node_clip_bounds.1.0;
+        layout.clip_max.y = node_clip_bounds.1.1;
 
         // layout children based on this container type
         match container {
             Container::Stack { horizontal, spacing, padding, packing, alignment, stack_direction } => {
                 Self::layout_stack(
-                    nodes,
+                    &mut self.entities,
+                    &mut self.ui_node_layouts,
                     &children_indices,
                     node_pos,
                     node_size,
@@ -112,7 +111,8 @@ impl UiManager {
             },
             Container::Dock => {
                 Self::layout_dock(
-                    nodes,
+                    &mut self.entities,
+                    &mut self.ui_node_layouts,
                     &children_indices,
                     node_pos,
                     node_size,
@@ -120,9 +120,8 @@ impl UiManager {
             },
         }
         for child_index in children_indices.iter() {
-            Self::layout_node(
+            self.layout_node(
                 gui_viewport,
-                nodes,
                 *child_index,
                 &node_pos,
                 &node_size,
@@ -162,13 +161,16 @@ impl UiManager {
         (width, height)
     }
     fn layout_dock(
-        nodes: &mut Vec<Node>,
+        entities: &mut Vec<Entity>,
+        layouts: &mut Vec<UiNodeLayout>,
         children_indices: &Vec<usize>,
         node_position: (f32, f32),
         node_size: (f32, f32),
     ) {
         let operable_children_indices = children_indices.iter().filter_map(|&child_index| {
-            if let Some(relation) = &nodes[child_index].parent_relation {
+            let entity = &mut entities[child_index];
+            let layout = &mut layouts[entity.ui_layout.unwrap()];
+            if let Some(relation) = &layout.parent_relation {
                 match relation {
                     ParentRelation::Independent { .. } => None,
                     ParentRelation::Docking(_) => Some(child_index),
@@ -185,9 +187,11 @@ impl UiManager {
         let mut offset = (0.0, 0.0);
 
         for &child_index in operable_children_indices.iter() {
-            let child = &nodes[child_index];
+            let child = &entities[child_index];
+            let layout = &mut layouts[child.ui_layout.unwrap()];
+
             let dock_mode;
-            if let Some(relation) = &child.parent_relation {
+            if let Some(relation) = &layout.parent_relation {
                 match relation {
                     ParentRelation::Independent { .. } => continue,
                     ParentRelation::Docking(mode) => dock_mode = mode.clone(),
@@ -197,7 +201,7 @@ impl UiManager {
             }
 
             // child size based on remaining space
-            let child_size = Self::calculate_size(&child.width, &child.height, &remaining_space);
+            let child_size = Self::calculate_size(&layout.width, &layout.height, &remaining_space);
             let child_size = (child_size.0.0, child_size.1.0);
 
             // position and update remaining space based on dock mode
@@ -242,14 +246,15 @@ impl UiManager {
                 },
             };
 
-            nodes[child_index].position.x = child_pos.0;
-            nodes[child_index].position.y = child_pos.1;
-            nodes[child_index].size.x = child_final_size.0;
-            nodes[child_index].size.y = child_final_size.1;
+            layout.position.x = child_pos.0;
+            layout.position.y = child_pos.1;
+            layout.size.x = child_final_size.0;
+            layout.size.y = child_final_size.1;
         }
     }
     fn layout_stack(
-        nodes: &mut Vec<Node>,
+        entities: &mut Vec<Entity>,
+        layouts: &mut Vec<UiNodeLayout>,
         children_indices: &Vec<usize>,
         node_position: (f32, f32),
         node_size: (f32, f32),
@@ -261,7 +266,9 @@ impl UiManager {
         stack_direction: StackDirection,
     ) {
         let mut operable_children_indices = children_indices.iter().filter_map(|&child_index| {
-            if let Some(relation) = &nodes[child_index].parent_relation {
+            let child = &mut entities[child_index];
+            let layout = &mut layouts[child.ui_layout.unwrap()];
+            if let Some(relation) = &layout.parent_relation {
                 match relation {
                     ParentRelation::Independent { .. } => None,
                     ParentRelation::Docking(_) => None,
@@ -294,9 +301,10 @@ impl UiManager {
         }
 
         for &child_index in &operable_children_indices {
-            let child = &nodes[child_index];
+            let child = &mut entities[child_index];
+            let layout = &mut layouts[child.ui_layout.unwrap()];
 
-            let sizes = Self::calculate_size(&child.width, &child.height, &inner_space);
+            let sizes = Self::calculate_size(&layout.width, &layout.height, &inner_space);
             let size = if horizontal { sizes.0 } else { sizes.1 };
 
             if size.1 {
@@ -349,8 +357,9 @@ impl UiManager {
         let remaining_space = (primary_axis_space - used_space).max(0.0);
 
         for (idx, &child_index) in operable_children_indices.iter().enumerate() {
-            let child = &nodes[child_index];
-            let size_mode = if horizontal { &child.width } else { &child.height };
+            let child = &mut entities[child_index];
+            let layout = &mut layouts[child.ui_layout.unwrap()];
+            let size_mode = if horizontal { &layout.width } else { &layout.height };
 
             if let Size::FillFactor(weight) = size_mode {
                 child_sizes[idx] = if total_fill_weight > 0.0 {
@@ -396,7 +405,8 @@ impl UiManager {
 
         // position children
         for (idx, &child_index) in operable_children_indices.iter().enumerate() {
-            let child = &nodes[child_index];
+            let child = &mut entities[child_index];
+            let layout = &mut layouts[child.ui_layout.unwrap()];
             let primary_size = child_sizes[idx];
 
             // flip if end
@@ -408,7 +418,7 @@ impl UiManager {
 
             // cross-axis size
             let cross_size = if horizontal {
-                match child.height {
+                match layout.height {
                     Size::Absolute(h) => h,
                     Size::Factor(f) => inner_space.1 * f,
                     Size::FillFactor(_) => inner_space.1,
@@ -416,7 +426,7 @@ impl UiManager {
                     Size::Copy => primary_size
                 }
             } else {
-                match child.width {
+                match layout.width {
                     Size::Absolute(w) => w,
                     Size::Factor(f) => inner_space.0 * f,
                     Size::FillFactor(_) => inner_space.0,
@@ -456,10 +466,10 @@ impl UiManager {
                 )
             };
 
-            nodes[child_index].position.x = child_pos.0;
-            nodes[child_index].position.y = child_pos.1;
-            nodes[child_index].size.x = child_final_size.0;
-            nodes[child_index].size.y = child_final_size.1;
+            layout.position.x = child_pos.0;
+            layout.position.y = child_pos.1;
+            layout.size.x = child_final_size.0;
+            layout.size.y = child_final_size.1;
 
             // to next child start pos
             if matches!(packing, PackingMode::End) {

@@ -2,13 +2,13 @@ use ash::vk;
 use crate::math::Vector;
 
 pub struct Image {
-    index: usize,
+    pub(crate) index: usize,
     uri: String,
     alpha_threshold: f32,
-    additive_tint: Vector,
-    multiplicative_tint: Vector,
-    corner_radius: f32,
-    aspect_ratio: Option<f32>,
+    pub(crate) additive_tint: Vector,
+    pub(crate) multiplicative_tint: Vector,
+    pub(crate) corner_radius: f32,
+    pub(crate) aspect_ratio: Option<f32>,
 
     image_view: vk::ImageView,
     sampler: vk::Sampler,

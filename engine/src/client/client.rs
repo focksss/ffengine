@@ -5,8 +5,7 @@ use winit::dpi::PhysicalPosition;
 use winit::event::{DeviceEvent, ElementState, Event, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::keyboard::{PhysicalKey};
 use winit::window::CursorGrabMode;
-use crate::gui::gui::GUI;
-use crate::render::render::Renderer;
+use crate::render::render::UiRenderer;
 use crate::scripting::lua_engine::Lua;
 
 pub struct Client {
@@ -68,7 +67,7 @@ impl Client {
         self.new_pressed_mouse_buttons.clear();
     }
 
-    pub fn handle_event<T>(controller_ref: Arc<RefCell<Client>>, gui_ref: Arc<RefCell<GUI>>, event: Event<T>) {
+    pub fn handle_event<T>(controller_ref: Arc<RefCell<Client>>, ui_renderer: &mut UiRenderer, event: Event<T>) {
         let mut should_scroll_event = false;
         let mut should_mouse_move_event = false;
         let mut should_mouse_button_pressed_event = false;
@@ -105,7 +104,7 @@ impl Client {
                             controller.new_pressed_keys.remove(&physical_key);
                         }
                     }
-                    gui_ref.borrow_mut().handle_typing_input(logical_key.clone(), text.clone(), if state == ElementState::Pressed {
+                    ui_renderer.handle_typing_input(logical_key.clone(), text.clone(), if state == ElementState::Pressed {
                         Some(physical_key.clone())
                     } else {
                         None

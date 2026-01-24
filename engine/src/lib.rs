@@ -1,5 +1,4 @@
 pub mod render;
-pub mod gui;
 pub mod math;
 pub mod engine;
 pub mod scripting;

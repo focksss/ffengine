@@ -1,13 +1,11 @@
 use ash::vk;
 use ash::vk::{DescriptorType, Format, ImageLayout, Sampler, ShaderStageFlags};
 use std::cell::RefCell;
-use std::slice;
 use std::sync::Arc;
 use crate::client::client::Client;
-use crate::gui::gui::{Element, GUI};
-use crate::math::Vector;
 use crate::render::render_helper::{Descriptor, DescriptorCreateInfo, DescriptorSetCreateInfo, PassCreateInfo, PipelineCreateInfo, Renderpass, RenderpassCreateInfo, Texture, TextureCreateInfo, Transition};
 use crate::render::scene_renderer::SceneRenderer;
+pub(crate) use crate::render::ui_render::UiRenderer;
 use crate::render::vulkan_base::{compile_shaders, VkBase};
 use crate::scene::scene::Scene;
 use crate::scene::world::world::World;
@@ -23,11 +21,12 @@ pub struct Renderer {
     null_tex_info: vk::DescriptorImageInfo,
 
     pub scene_renderer: Arc<RefCell<SceneRenderer>>,
+    pub ui_renderer: UiRenderer,
 
     pub present_sampler: Sampler,
 }
 impl Renderer {
-    pub fn new(base: &VkBase, world: Arc<RefCell<World>>) -> Renderer { unsafe {
+    pub fn new(base: &VkBase, world: Arc<RefCell<World>>, client: Arc<RefCell<Client>>) -> Renderer { unsafe {
         Renderer::compile_shaders();
 
         let (
@@ -47,7 +46,11 @@ impl Renderer {
             image_view: scene_renderer.borrow().null_texture.image_view.clone(),
             image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
         };
-        let mut renderer = Renderer {
+
+        let null_tex_sampler = scene_renderer.borrow().null_tex_sampler.clone();
+        let ui_renderer = UiRenderer::new(&base.context, client, null_tex_sampler, null_tex_info.image_view);
+
+        let renderer = Renderer {
             device: base.device.clone(),
             draw_command_buffers: base.draw_command_buffers.clone(),
 
@@ -56,6 +59,7 @@ impl Renderer {
             null_tex_info,
 
             scene_renderer,
+            ui_renderer,
 
             present_sampler: base.device.create_sampler(&vk::SamplerCreateInfo {
                 mag_filter: vk::Filter::LINEAR,
@@ -85,7 +89,7 @@ impl Renderer {
             present_renderpass,
         )
     }
-    pub fn reload(&mut self, base: &VkBase, world: &World, gui: &mut GUI) { unsafe {
+    pub fn reload(&mut self, base: &VkBase, world: &World, client: Arc<RefCell<Client>>) { unsafe {
         self.device.device_wait_idle().unwrap();
 
         {
@@ -96,7 +100,7 @@ impl Renderer {
         (self.scene_renderer, self.present_renderpass) = Renderer::create_rendering_objects(
             base,
             world,
-            self.scene_renderer.borrow().viewport.borrow().clone()
+            self.scene_renderer.borrow().viewport.borrow().clone(),
         );
         let scene_renderer = &mut self.scene_renderer.borrow_mut();
 
@@ -106,20 +110,9 @@ impl Renderer {
             image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
         };
 
-        // TODO replace this
-        let viewport_node_index = gui.nodes[gui.nodes[gui.gui_root_sets[0][0]].children_indices[2]].element_indices[0];
-        gui.elements[viewport_node_index] = Element::Texture {
-            texture_set: scene_renderer.sky_renderpass.pass.borrow().get_texture_set(0),
-            index: gui.image_count,
-            additive_tint: Vector::empty(),
-            multiplicative_tint: Vector::fill(1.0),
-            corner_radius: 0.0,
-            aspect_ratio: None,
-        };
+        self.ui_renderer.reload_rendering(scene_renderer.null_tex_sampler, scene_renderer.null_texture.image_view);
 
-        gui.reload_rendering(scene_renderer.null_tex_sampler, scene_renderer.null_texture.image_view);
-
-        self.set_present_textures(gui.pass.borrow().textures[0].iter().map(|t| t).collect());
+        self.set_present_textures(self.ui_renderer.pass.borrow().textures[0].iter().map(|t| t).collect());
 
         scene_renderer.update_world_textures_all_frames(&world);
     } }
@@ -151,7 +144,6 @@ impl Renderer {
         &mut self,
         current_frame: usize,
         scene: Arc<RefCell<Scene>>,
-        gui: Arc<RefCell<GUI>>,
     ) { unsafe {
         let frame_command_buffer = self.draw_command_buffers[current_frame];
 
@@ -160,7 +152,7 @@ impl Renderer {
 
         self.scene_renderer.borrow().render_world(current_frame, &scene);
 
-        gui.borrow_mut().draw(current_frame, frame_command_buffer);
+        self.ui_renderer.draw(current_frame, frame_command_buffer);
 
         /*
         self.hitbox_renderpass.begin_renderpass(current_frame, frame_command_buffer, Some(present_index));
