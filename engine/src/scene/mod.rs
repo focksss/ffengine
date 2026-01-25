@@ -3,4 +3,4 @@ pub mod physics;
 pub mod scene;
 pub mod parser;
 mod components;
-mod ui;
+pub(crate) mod ui;

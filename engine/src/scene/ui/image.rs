@@ -2,18 +2,18 @@ use ash::vk;
 use crate::math::Vector;
 
 pub struct Image {
-    pub(crate) index: usize,
-    uri: String,
-    alpha_threshold: f32,
-    pub(crate) additive_tint: Vector,
-    pub(crate) multiplicative_tint: Vector,
-    pub(crate) corner_radius: f32,
-    pub(crate) aspect_ratio: Option<f32>,
+    pub index: usize,
+    pub uri: String,
+    pub alpha_threshold: f32,
+    pub additive_tint: Vector,
+    pub multiplicative_tint: Vector,
+    pub corner_radius: f32,
+    pub aspect_ratio: Option<f32>,
 
-    image_view: vk::ImageView,
-    sampler: vk::Sampler,
-    image: vk::Image,
-    memory: vk::DeviceMemory,
+    pub image_view: vk::ImageView,
+    pub sampler: vk::Sampler,
+    pub image: vk::Image,
+    pub memory: vk::DeviceMemory,
 }
 impl Image {
     fn destroy(&self, device: &ash::Device) {

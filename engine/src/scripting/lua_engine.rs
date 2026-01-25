@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use mlua;
 use std::cell::RefCell;
 use std::collections::HashMap;
-use mlua::Function;
+use mlua::{Function, IntoLua, Value};
 use crate::engine::EngineRef;
 use crate::math::Vector;
 use crate::scripting::engine_api::client_api::client_api::{LuaCursorIcon, LuaKeyCode, LuaMouseButton, LuaResizeDirection};
@@ -47,6 +47,37 @@ pub enum Field {
     RigidBody(RigidBodyPointer),
     Camera(CameraPointer),
 }
+fn field_to_value(lua: &mlua::Lua, field: Field) -> Result<mlua::Value, mlua::Error> {
+    Ok(match field {
+        Field::Number(v) => mlua::Value::Number(v as f64),
+        Field::Integer(v) => mlua::Value::Integer(v as i64),
+        Field::String(v) => mlua::Value::String(lua.create_string(&v)?),
+        Field::Boolean(v) => mlua::Value::Boolean(v),
+        Field::Table(fields) => {
+            let table = lua.create_table()?;
+            for (i, field) in fields.into_iter().enumerate() {
+                table.set(i + 1, field_to_value(lua, *field)?)?;
+            }
+            mlua::Value::Table(table)
+        }
+        Field::UiNode(v) => mlua::Value::UserData(lua.create_userdata(v)?),
+        Field::UiQuad(v) => mlua::Value::UserData(lua.create_userdata(v)?),
+        Field::UiText(v) => mlua::Value::UserData(lua.create_userdata(v)?),
+        Field::UiTexture(v) => mlua::Value::UserData(lua.create_userdata(v)?),
+        Field::UiImage(v) => mlua::Value::UserData(lua.create_userdata(v)?),
+        Field::Entity(v) => mlua::Value::UserData(lua.create_userdata(v)?),
+        Field::Transform(v) => mlua::Value::UserData(lua.create_userdata(v)?),
+        Field::RenderComponent(v) => mlua::Value::UserData(lua.create_userdata(v)?),
+        Field::RigidBody(v) => mlua::Value::UserData(lua.create_userdata(v)?),
+        Field::Camera(v) => mlua::Value::UserData(lua.create_userdata(v)?),
+    })
+}
+impl IntoLua<'_> for Field {
+    fn into_lua(self, lua: &mlua::Lua) -> mlua::Result<Value> {
+        field_to_value(lua, self)
+    }
+}
+
 struct ScriptInstance {
     owner: EntityPointer,
     environment: mlua::RegistryKey,
@@ -302,7 +333,7 @@ impl Lua {
         script_index: usize,
         instance_index: usize,
         method_name: &str,
-        args: Option<mlua::MultiValue>,
+        args: &Vec<Field>,
     ) -> Result<(), mlua::Error> {
         Self::with_mut(|lua| {
             lua.call_method_impl(script_index, instance_index, method_name, args)
@@ -313,13 +344,19 @@ impl Lua {
         script_index: usize,
         instance_index: usize,
         method_name: &str,
-        args: Option<mlua::MultiValue>,
+        args: &Vec<Field>,
     ) -> Result<(), mlua::Error> {
         let script = &self.scripts[script_index];
         let environment: mlua::Table = self.lua.registry_value(&script.instances[instance_index].environment)?;
 
+        let args = args
+            .into_iter()
+            .map(|f| f.clone().into_lua(&self.lua).expect("arg parse error"))
+            .collect::<Vec<Value>>();
+        let args = mlua::MultiValue::from_vec(args);
+
         if let Some(func) = environment.get::<_, Option<Function>>(method_name)? {
-            func.call::<_, ()>(args.unwrap_or_default())?;
+            func.call::<_, ()>(args)?;
             Ok(())
         } else {
             panic!("failed to call method {}", method_name);
@@ -331,7 +368,7 @@ impl Lua {
     fn run_update_methods_impl(&mut self) -> Result<(), mlua::Error> {
         for script_index in 0..self.scripts.len() {
             for instance_index in 0..self.scripts[script_index].instances.len() {
-                self.call_method_impl(script_index, instance_index, "Update", None)?;
+                self.call_method_impl(script_index, instance_index, "Update", &Vec::new())?;
             }
         }
         Ok(())
@@ -343,7 +380,7 @@ impl Lua {
     fn run_scroll_methods_impl(&mut self) -> Result<(), mlua::Error> {
         for script_index in 0..self.scripts.len() {
             for instance_index in 0..self.scripts[script_index].instances.len() {
-                self.call_method_impl(script_index, instance_index, "MouseScrolled", None)?;
+                self.call_method_impl(script_index, instance_index, "MouseScrolled", &Vec::new())?;
             }
         }
         Ok(())
@@ -355,7 +392,7 @@ impl Lua {
     fn run_mouse_moved_methods_impl(&mut self) -> Result<(), mlua::Error> {
         for script_index in 0..self.scripts.len() {
             for instance_index in 0..self.scripts[script_index].instances.len() {
-                self.call_method_impl(script_index, instance_index, "MouseMoved", None)?;
+                self.call_method_impl(script_index, instance_index, "MouseMoved", &Vec::new())?;
             }
         }
         Ok(())
@@ -367,7 +404,7 @@ impl Lua {
     fn run_mouse_button_pressed_methods_impl(&mut self) -> Result<(), mlua::Error> {
         for script_index in 0..self.scripts.len() {
             for instance_index in 0..self.scripts[script_index].instances.len() {
-                self.call_method_impl(script_index, instance_index, "MouseButtonPressed", None)?;
+                self.call_method_impl(script_index, instance_index, "MouseButtonPressed", &Vec::new())?;
             }
         }
         Ok(())
@@ -379,7 +416,7 @@ impl Lua {
     fn run_mouse_button_released_methods_impl(&mut self) -> Result<(), mlua::Error> {
         for script_index in 0..self.scripts.len() {
             for instance_index in 0..self.scripts[script_index].instances.len() {
-                self.call_method_impl(script_index, instance_index, "MouseButtonReleased", None)?;
+                self.call_method_impl(script_index, instance_index, "MouseButtonReleased", &Vec::new())?;
             }
         }
         Ok(())

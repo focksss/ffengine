@@ -2,24 +2,24 @@ use crate::scripting::lua_engine::Field;
 
 #[derive(Clone)]
 pub struct InteractionInformation {
-    method: String,
-    script: usize,
-    args: Vec<Field>
+    pub method: &'static str,
+    pub script: usize,
+    pub args: Vec<Field>
 }
 #[derive(Clone)]
 pub struct UiInteractableInformation {
-    was_initially_left_pressed: bool,
-    was_initially_right_pressed: bool,
+    pub was_initially_left_pressed: bool,
+    pub was_initially_right_pressed: bool,
 
-    passive_actions: Vec<InteractionInformation>,
+    pub passive_actions: Vec<InteractionInformation>,
     pub hover_actions: Vec<InteractionInformation>,
-    unhover_actions: Vec<InteractionInformation>,
+    pub unhover_actions: Vec<InteractionInformation>,
     pub left_up_actions: Vec<InteractionInformation>,
     pub left_down_actions: Vec<InteractionInformation>,
     pub left_hold_actions: Vec<InteractionInformation>,
-    pub(crate) right_up_actions: Vec<InteractionInformation>,
-    right_down_actions: Vec<InteractionInformation>,
-    right_hold_actions: Vec<InteractionInformation>,
+    pub right_up_actions: Vec<InteractionInformation>,
+    pub right_down_actions: Vec<InteractionInformation>,
+    pub right_hold_actions: Vec<InteractionInformation>,
 }
 impl Default for UiInteractableInformation {
     fn default() -> Self {

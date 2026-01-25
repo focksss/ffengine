@@ -1,11 +1,12 @@
 use crate::math::Vector;
+use crate::render::render_helper::Texture as RenderTexture;
 
 pub struct Texture {
-    texture_set: Vec<Texture>,
-    pub(crate) index: usize,
+    pub texture_set: Vec<RenderTexture>,
+    pub index: usize,
 
-    pub(crate) additive_tint: Vector,
-    pub(crate) multiplicative_tint: Vector,
-    pub(crate) corner_radius: f32,
-    pub(crate) aspect_ratio: Option<f32>,
+    pub additive_tint: Vector,
+    pub multiplicative_tint: Vector,
+    pub corner_radius: f32,
+    pub aspect_ratio: Option<f32>,
 }

@@ -4,6 +4,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use ash::vk;
 use ash::vk::{CommandBuffer, DescriptorType, Format, ImageLayout, ShaderStageFlags};
+use mlua::IntoLua;
 use winit::event::MouseButton;
 use winit::keyboard::{Key, PhysicalKey, SmolStr};
 use crate::client::client::*;
@@ -14,6 +15,7 @@ use crate::render::text::text_render::{TextInformation, TextRenderer};
 use crate::render::render::MAX_FRAMES_IN_FLIGHT;
 use crate::render::vulkan_base::Context;
 use crate::scene::scene::Scene;
+use crate::scene::ui::text::Text;
 use crate::scripting::lua_engine::{Field, Lua};
 
 pub struct UiRenderer {
@@ -39,22 +41,25 @@ pub struct UiRenderer {
 impl UiRenderer {
     fn handle_gui_interaction(
         &mut self,
+        scene: &mut Scene,
         node_index: usize,
         min: Vector,
         max: Vector,
         can_trigger_left_click_events: &mut bool,
         can_trigger_right_click_events: &mut bool,
     ) {
-        let node = &mut self.nodes[node_index];
-        let interactable_information = node.interactable_information.as_mut().unwrap();
+        let node = &mut scene.entities[node_index];
+        let interactable_information = &mut scene.ui_interactable_information[*node.ui_interactable_information.as_ref().unwrap()];
 
         for passive_action in interactable_information.passive_actions.iter() {
-            Lua::cache_call(
-                passive_action.1,
-                passive_action.2,
-                passive_action.0.as_str(),
-                Some(self.active_node),
-            )
+            let script = &scene.script_components[passive_action.script];
+
+            Lua::call_method(
+                script.script,
+                script.instance,
+                passive_action.method,
+                &passive_action.args
+            ).expect("failed to call Lua method");
         }
 
         let (x, y, left_pressed, left_just_pressed, right_pressed, right_just_pressed) = {
@@ -75,34 +80,40 @@ impl UiRenderer {
         if !hovered {
             self.hovered_nodes.remove(&node_index);
             for unhover_action in interactable_information.unhover_actions.iter() {
-                Lua::cache_call(
-                    unhover_action.1,
-                    unhover_action.2,
-                    unhover_action.0.as_str(),
-                    Some(self.active_node),
-                )
+                let script = &scene.script_components[unhover_action.script];
+
+                Lua::call_method(
+                    script.script,
+                    script.instance,
+                    unhover_action.method,
+                    &unhover_action.args
+                ).expect("failed to call Lua method");
             }
         } else {
             self.hovered_nodes.insert(node_index);
             for hover_action in interactable_information.hover_actions.iter() {
-                Lua::cache_call(
-                    hover_action.1,
-                    hover_action.2,
-                    hover_action.0.as_str(),
-                    Some(self.active_node),
-                )
+                let script = &scene.script_components[hover_action.script];
+
+                Lua::call_method(
+                    script.script,
+                    script.instance,
+                    hover_action.method,
+                    &hover_action.args
+                ).expect("failed to call Lua method");
             }
         }
 
         loop {
             if left_just_pressed && hovered {
                 for left_down_action in interactable_information.left_down_actions.iter() {
-                    Lua::cache_call(
-                        left_down_action.1,
-                        left_down_action.2,
-                        left_down_action.0.as_str(),
-                        Some(self.active_node),
-                    );
+                    let script = &scene.script_components[left_down_action.script];
+
+                    Lua::call_method(
+                        script.script,
+                        script.instance,
+                        left_down_action.method,
+                        &left_down_action.args
+                    ).expect("failed to call Lua method");
                 }
                 if !interactable_information.left_up_actions.is_empty() || !interactable_information.left_hold_actions.is_empty() {
                     interactable_information.was_initially_left_pressed = true;
@@ -125,23 +136,27 @@ impl UiRenderer {
             *can_trigger_left_click_events = false;
             if left_pressed {
                 for left_hold_action in interactable_information.left_hold_actions.iter() {
-                    Lua::cache_call(
-                        left_hold_action.1,
-                        left_hold_action.2,
-                        left_hold_action.0.as_str(),
-                        Some(self.active_node),
-                    )
+                    let script = &scene.script_components[left_hold_action.script];
+
+                    Lua::call_method(
+                        script.script,
+                        script.instance,
+                        left_hold_action.method,
+                        &left_hold_action.args
+                    ).expect("failed to call Lua method");
                 }
                 break;
             } else {
                 if hovered {
-                    for left_tap_action in interactable_information.left_up_actions.iter() {
-                        Lua::cache_call(
-                            left_tap_action.1,
-                            left_tap_action.2,
-                            left_tap_action.0.as_str(),
-                            Some(self.active_node),
-                        )
+                    for left_up_action in interactable_information.left_up_actions.iter() {
+                        let script = &scene.script_components[left_up_action.script];
+
+                        Lua::call_method(
+                            script.script,
+                            script.instance,
+                            left_up_action.method,
+                            &left_up_action.args
+                        ).expect("failed to call Lua method");
                     }
                 }
                 interactable_information.was_initially_left_pressed = false;
@@ -150,12 +165,14 @@ impl UiRenderer {
         loop {
             if right_just_pressed && hovered {
                 for right_down_action in interactable_information.right_down_actions.iter() {
-                    Lua::cache_call(
-                        right_down_action.1,
-                        right_down_action.2,
-                        right_down_action.0.as_str(),
-                        Some(self.active_node),
-                    );
+                    let script = &scene.script_components[right_down_action.script];
+
+                    Lua::call_method(
+                        script.script,
+                        script.instance,
+                        right_down_action.method,
+                        &right_down_action.args
+                    ).expect("failed to call Lua method");
                 }
                 if !interactable_information.right_up_actions.is_empty() || !interactable_information.right_hold_actions.is_empty() {
                     interactable_information.was_initially_right_pressed = true;
@@ -178,23 +195,27 @@ impl UiRenderer {
             *can_trigger_right_click_events = false;
             if right_pressed {
                 for right_hold_action in interactable_information.right_hold_actions.iter() {
-                    Lua::cache_call(
-                        right_hold_action.1,
-                        right_hold_action.2,
-                        right_hold_action.0.as_str(),
-                        Some(self.active_node),
-                    )
+                    let script = &scene.script_components[right_hold_action.script];
+
+                    Lua::call_method(
+                        script.script,
+                        script.instance,
+                        right_hold_action.method,
+                        &right_hold_action.args
+                    ).expect("failed to call Lua method");
                 }
                 break;
             } else {
                 if hovered {
-                    for right_tap_action in interactable_information.right_up_actions.iter() {
-                        Lua::cache_call(
-                            right_tap_action.1,
-                            right_tap_action.2,
-                            right_tap_action.0.as_str(),
-                            Some(self.active_node),
-                        )
+                    for right_up_action in interactable_information.right_up_actions.iter() {
+                        let script = &scene.script_components[right_up_action.script];
+
+                        Lua::call_method(
+                            script.script,
+                            script.instance,
+                            right_up_action.method,
+                            &right_up_action.args
+                        ).expect("failed to call Lua method");
                     }
                 }
                 interactable_information.was_initially_right_pressed = false;
@@ -207,20 +228,19 @@ impl UiRenderer {
 
     pub fn new(
         context: &Arc<Context>,
+        scene: &Scene,
         controller: Arc<RefCell<Client>>,
         null_tex_sampler: vk::Sampler,
         null_tex_img_view: vk::ImageView
-    ) -> GUI {
+    ) -> Self {
         let null_info = vk::DescriptorImageInfo {
             sampler: null_tex_sampler,
             image_view: null_tex_img_view,
             image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
         };
-        let (pass_ref, quad_renderpass, text_renderer) = GUI::create_rendering_objects(context, null_info);
+        let (pass_ref, quad_renderpass, text_renderer) = Self::create_rendering_objects(context, null_info);
 
-        let gui = GUI {
-            gui_root_sets: Vec::new(),
-
+        let gui = Self {
             text_field_focused: false,
 
             context: context.clone(),
@@ -230,26 +250,17 @@ impl UiRenderer {
             pass: pass_ref.clone(),
             quad_renderpass,
 
-            nodes: Vec::new(),
-            unparented_node_indices: Vec::new(),
-
-            elements: Vec::new(),
             image_count: 0,
-
-            interactable_node_indices: Vec::new(),
 
             fonts: vec![text_renderer.default_font.clone()],
 
-            script_indices: Vec::new(),
-
             text_renderer,
 
-            active_node: 0,
             hovered_nodes: HashSet::new(),
 
             new_texts: Vec::new(),
         };
-        gui.update_descriptors();
+        gui.update_descriptors(scene);
         gui
     }
     pub fn create_rendering_objects(context: &Arc<Context>, null_info: vk::DescriptorImageInfo) -> (Arc<RefCell<Pass>>, Renderpass, TextRenderer) {
@@ -299,7 +310,7 @@ impl UiRenderer {
         self.fonts = fonts.clone();
         self.text_renderer.update_font_atlases_all_frames(fonts);
     }
-    pub fn reload_rendering(&mut self, null_tex_sampler: vk::Sampler, null_tex_img_view: vk::ImageView) {
+    pub fn reload_rendering(&mut self, scene: &Scene, null_tex_sampler: vk::Sampler, null_tex_img_view: vk::ImageView) {
         let null_info = vk::DescriptorImageInfo {
             sampler: null_tex_sampler,
             image_view: null_tex_img_view,
@@ -308,8 +319,8 @@ impl UiRenderer {
         self.null_tex_info = null_info;
         self.text_renderer.destroy();
         self.quad_renderpass.destroy();
-        (self.pass, self.quad_renderpass, self.text_renderer) = GUI::create_rendering_objects(&self.context, self.null_tex_info);
-        self.update_descriptors();
+        (self.pass, self.quad_renderpass, self.text_renderer) = Self::create_rendering_objects(&self.context, self.null_tex_info);
+        self.update_descriptors(scene);
     }
 
     /**
@@ -317,41 +328,30 @@ impl UiRenderer {
     * * Refer to default.gui in resources/gui
     * * Nodes are drawn recursively and without depth testing. To make a node appear in front of another, define it after another.
     */
-    fn update_descriptors(&self) {
+    fn update_descriptors(&self, scene: &Scene) {
         let mut image_infos: Vec<vk::DescriptorImageInfo> = Vec::with_capacity(1024);
 
         let mut borrowed_sampler = None;
-        let mut texture_indices = Vec::new();
-        for element in self.elements.iter() {
-            if let Element::Image { image_view, sampler, ..} = element {
+        for element in scene.ui_images.iter() {
                 if borrowed_sampler.is_none() {
-                    borrowed_sampler = Some(sampler);
+                    borrowed_sampler = Some(element.sampler);
                 }
                 image_infos.push(vk::DescriptorImageInfo {
-                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                    image_view: *image_view,
-                    sampler: *sampler,
+                    image_layout: ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                    image_view: element.image_view,
+                    sampler: element.sampler,
                 })
-            }
-        }
-        for (i, element) in self.elements.iter().enumerate() {
-            if let Element::Texture { .. } = element {
-                texture_indices.push(i);
-            }
         }
 
         unsafe {
             for frame in 0..MAX_FRAMES_IN_FLIGHT {
                 let mut frame_image_infos = image_infos.clone();
-                for texture_index in texture_indices.iter() {
-                    let element = self.elements.get(*texture_index).unwrap();
-                    if let Element::Texture{ texture_set, .. } = element {
-                        frame_image_infos.push(vk::DescriptorImageInfo {
-                            image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                            image_view: texture_set[frame].device_texture.borrow().image_view.clone(),
-                            sampler: *borrowed_sampler.unwrap(),
-                        })
-                    }
+                for texture in scene.ui_textures.iter() {
+                    frame_image_infos.push(vk::DescriptorImageInfo {
+                        image_layout: ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                        image_view: texture.texture_set[frame].device_texture.borrow().image_view.clone(),
+                        sampler: borrowed_sampler.unwrap(),
+                    })
                 }
                 let missing = 1024 - frame_image_infos.len();
                 for _ in 0..missing {
@@ -374,7 +374,7 @@ impl UiRenderer {
         }
     }
 
-    pub fn add_text(&mut self, text: String) {
+    pub fn add_text(&mut self, scene: &mut Scene, text: String) {
         let new_text = Text {
             text_information: Some(TextInformation::new(self.fonts[0].clone())
                 .text(text.as_str())
@@ -383,8 +383,8 @@ impl UiRenderer {
             font_index: 0,
             color: Vector::fill(1.0)
         };
-        self.new_texts.push(self.elements.len());
-        self.elements.push(new_text);
+        self.new_texts.push(scene.ui_texts.len());
+        scene.ui_texts.push(new_text);
     }
     pub fn initialize_new_texts(&mut self, scene: &mut Scene) {
         for new_text in self.new_texts.drain(..) {
@@ -428,6 +428,7 @@ impl UiRenderer {
         let mut can_trigger_right_click_event = true;
         for parameter_set in interactable_action_parameter_sets.iter().rev() {
             self.handle_gui_interaction(
+                scene,
                 parameter_set.0,
                 parameter_set.1,
                 parameter_set.2,

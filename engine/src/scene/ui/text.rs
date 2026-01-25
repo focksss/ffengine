@@ -3,8 +3,8 @@ use crate::math::Vector;
 
 pub struct Text {
     pub text_information: Option<TextInformation>,
-    font_index: usize,
-    color: Vector,
+    pub(crate) font_index: usize,
+    pub(crate) color: Vector,
 }
 impl Text {
     fn destroy(&self) {
