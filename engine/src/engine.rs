@@ -30,6 +30,7 @@ pub fn get_command_buffer() -> vk::CommandBuffer {
         .unwrap()
 }
 
+//TODO Separate UiRenderer from Renderer to prevent circular dependency
 pub struct Engine {
     pub scene: Arc<RefCell<Scene>>,
 
@@ -60,8 +61,8 @@ impl Engine {
 
         let rw_lock = RwLock::new(base.draw_command_buffers[0]);
         COMMAND_BUFFER.set(rw_lock).expect("Failed to initialize frame command buffer global");
-
-        let renderer = Arc::new(RefCell::new(Renderer::new(&base, world.clone(), client.clone())));
+        
+        let renderer = Arc::new(RefCell::new(Renderer::new(&base, world.clone(), client.clone(), scene)));
 
         let scene = load_scene(scene_path, &base.context, renderer.clone(), world.clone(), physics_engine.clone());
 
@@ -132,7 +133,7 @@ impl Engine {
                             if base.needs_swapchain_recreate {
                                 base.device.device_wait_idle().unwrap();
                                 base.set_surface_and_present_images();
-                                self.renderer.borrow_mut().reload(&base, &self.world.borrow(), self.client.clone());
+                                self.renderer.borrow_mut().reload(&base, &self.world.borrow(), self.scene.clone());
 
                                 base.needs_swapchain_recreate = false;
                                 // frametime_manager.reset();
@@ -146,7 +147,7 @@ impl Engine {
 
                                 let renderer = &mut self.renderer.borrow_mut();
 
-                                renderer.reload(base, &self.world.borrow(), self.client.clone());
+                                renderer.reload(base, &self.world.borrow(), self.scene.clone());
                                 
                                 // renderer.gui.borrow_mut().load_from_file(base, "editor\\resources\\gui\\editor.gui");
                                 
@@ -182,7 +183,7 @@ impl Engine {
                         last_frame_time = now;
 
                         Lua::run_update_methods().expect("Failed to run Update methods");
-                        self.renderer.borrow_mut().ui_renderer.initialize_new_texts();
+                        self.renderer.borrow_mut().ui_renderer.initialize_new_texts(&mut self.scene.borrow_mut());
 
                         let current_fence = base.draw_commands_reuse_fences[current_frame];
                         {

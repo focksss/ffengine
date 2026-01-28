@@ -1,100 +1,66 @@
 use std::cmp::PartialEq;
 use mlua::{FromLua, IntoLua, UserData, UserDataFields, UserDataMethods, Value};
 use crate::engine::{get_command_buffer, EngineRef};
-use crate::gui::gui::{AnchorPoint, Element, GUIInteractableInformation, Node, Offset, ParentRelation, Size};
 use crate::math::Vector;
 use crate::scripting::lua_engine::RegisterToLua;
-
-macro_rules! with_gui {
-    ($lua:expr => $gui:ident) => {
-        let __engine = $lua.app_data_ref::<EngineRef>().unwrap();
-        let __renderer = __engine.renderer.borrow();
-        let $gui = __renderer.gui.borrow();
-    };
-}
-macro_rules! with_gui_mut {
-    ($lua:expr => $gui:ident) => {
-        let __engine = $lua.app_data_ref::<EngineRef>().unwrap();
-        let __renderer = __engine.renderer.borrow();
-        let mut $gui = __renderer.gui.borrow_mut();
-    };
-}
+use crate::scripting::engine_api::scene_api;
+use crate::{with_scene, with_scene_mut};
+use crate::scene::ui::AnchorPoint;
 
 #[derive(Clone)]
 pub struct GUITextPointer {
-    gui_index: usize,
     index: usize
 }
 impl UserData for GUITextPointer {
     fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
         fields.add_field_method_get("text_message", |lua, this| {
-            with_gui!(lua => gui);
-            match &gui.elements[this.index] {
-                Element::Text { text_information, .. } => {
-                    Ok(text_information.as_ref().unwrap().text.clone())
-                }
-                _ => Err(mlua::Error::runtime("Element is not a text"))
-            }
+            with_scene!(lua => scene);
+            let text = &scene.ui_texts[this.index];
+            Ok(text.text_information.as_ref().unwrap().text.clone())
         });
 
         fields.add_field_method_get("font_size", |lua, this| {
-            with_gui!(lua => gui);
-            match &gui.elements[this.index] {
-                Element::Text { text_information, .. } => {
-                    Ok(text_information.as_ref().map_or(-1.0, |t| t.font_size))
-                }
-                _ => Err(mlua::Error::runtime("Element is not a text"))
-            }
+            with_scene!(lua => scene);
+            let text = &scene.ui_texts[this.index];
+            Ok(text.text_information.as_ref().unwrap().font_size)
         });
         fields.add_field_method_set("font_size", |lua, this, val: f32| {
-            with_gui_mut!(lua => gui);
-            match &mut gui.elements[this.index] {
-                Element::Text { text_information, .. } => {
-                    if let Some(text_info) = text_information.as_mut() {
-                        text_info.font_size = val;
-                    }
-                    Ok(())
-                }
-                _ => Err(mlua::Error::runtime("Element is not a text"))
+            with_scene_mut!(lua => scene);
+            let text = &mut scene.ui_texts[this.index];
+            if let Some(info) = &mut text.text_information {
+                Ok(info.font_size = val)
+            } else {
+                Err(mlua::Error::runtime("Text does not have text information"))
             }
         });
 
         fields.add_field_method_get("auto_wrap_distance", |lua, this| {
-            with_gui!(lua => gui);
-            match &gui.elements[this.index] {
-                Element::Text { text_information, .. } => {
-                    Ok(text_information.as_ref().map_or(-1.0, |t| t.auto_wrap_distance))
-                }
-                _ => Err(mlua::Error::runtime("Element is not a text"))
-            }
+            with_scene!(lua => scene);
+            let text = &scene.ui_texts[this.index];
+            Ok(text.text_information.as_ref().unwrap().auto_wrap_distance)
         });
         fields.add_field_method_set("auto_wrap_distance", |lua, this, val: f32| {
-            with_gui_mut!(lua => gui);
-            match &mut gui.elements[this.index] {
-                Element::Text { text_information, .. } => {
-                    if let Some(text_info) = text_information.as_mut() {
-                        text_info.auto_wrap_distance = val;
-                    }
-                    Ok(())
-                }
-                _ => Err(mlua::Error::runtime("Element is not a text"))
+            with_scene_mut!(lua => scene);
+            let text = &mut scene.ui_texts[this.index];
+            if let Some(info) = &mut text.text_information {
+                Ok(info.auto_wrap_distance = val)
+            } else {
+                Err(mlua::Error::runtime("Text does not have text information"))
             }
         });
     }
     fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
         methods.add_method_mut("update_text", |lua, this, text: String| {
-            with_gui_mut!(lua => gui);
-            match &mut gui.elements[this.index] {
-                Element::Text { text_information, .. } => {
-                    if let Some(text_info) = text_information.as_mut() {
-                        let command_buffer = get_command_buffer();
+            with_scene_mut!(lua => scene);
+            let text = &mut scene.ui_texts[this.index];
+            if let Some(info) = &mut text.text_information {
+                let command_buffer = get_command_buffer();
 
-                        text_information.as_mut().unwrap().update_text(text.as_str());
-                        text_information.as_mut().unwrap().update_buffers_all_frames(command_buffer);
-                    }
-                    Ok(())
-                }
-                _ => Err(mlua::Error::runtime("Element is not a text"))
+                info.as_mut().unwrap().update_text(text.as_str());
+                info.as_mut().unwrap().update_buffers_all_frames(command_buffer);
+                Ok(())
+            } else {
+                Err(mlua::Error::runtime("Text does not have text information"))
             }
         });
     }
@@ -102,289 +68,176 @@ impl UserData for GUITextPointer {
 
 #[derive(Clone)]
 pub struct GUIQuadPointer {
-    gui_index: usize,
     index: usize
 }
 impl UserData for GUIQuadPointer {
     fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
         fields.add_field_method_get("color", |lua, this| {
-            with_gui!(lua => gui);
-            match &gui.elements[this.index] {
-                Element::Quad { color, .. } => {
-                    Ok(color.clone())
-                }
-                _ => Err(mlua::Error::runtime("Element is not a quad"))
-            }
+            with_scene!(lua => scene);
+            let quad = &scene.ui_quads[this.index];
+            Ok(quad.color)
         });
         fields.add_field_method_set("color", |lua, this, val: Value| {
-            with_gui_mut!(lua => gui);
-            match &mut gui.elements[this.index] {
-                Element::Quad { color: quad_color, .. } => {
-                    *quad_color = Vector::from_lua(val, lua)?;
-                    Ok(())
-                }
-                _ => Err(mlua::Error::runtime("Element is not a quad"))
-            }
+            with_scene_mut!(lua => scene);
+            let quad = &mut scene.ui_quads[this.index];
+            Ok(quad.color = Vector::from_lua(val, lua)?)
         });
 
         fields.add_field_method_get("corner_radius", |lua, this| {
-            with_gui!(lua => gui);
-            match &gui.elements[this.index] {
-                Element::Quad { corner_radius, .. } => {
-                    Ok(*corner_radius)
-                }
-                _ => Err(mlua::Error::runtime("Element is not a quad"))
-            }
+            with_scene!(lua => scene);
+            let quad = &scene.ui_quads[this.index];
+            Ok(quad.corner_radius)
         });
         fields.add_field_method_set("corner_radius", |lua, this, val: f32| {
-            with_gui_mut!(lua => gui);
-            match &mut gui.elements[this.index] {
-                Element::Quad { corner_radius, .. } => {
-                    *corner_radius = val;
-                    Ok(())
-                }
-                _ => Err(mlua::Error::runtime("Element is not a quad"))
-            }
+            with_scene_mut!(lua => scene);
+            let quad = &mut scene.ui_quads[this.index];
+            Ok(quad.corner_radius = val)
         })
     }
 }
 
 #[derive(Clone)]
 pub struct GUIImagePointer {
-    gui_index: usize,
     index: usize
 }
 impl UserData for GUIImagePointer {
     fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
         fields.add_field_method_get("additive_tint", |lua, this| {
-            with_gui!(lua => gui);
-            match &gui.elements[this.index] {
-                Element::Image { additive_tint, .. } => {
-                    Ok(additive_tint.clone())
-                }
-                _ => Err(mlua::Error::runtime("Element is not an image"))
-            }
+            with_scene!(lua => scene);
+            let image = &scene.ui_images[this.index];
+            Ok(image.additive_tint)
         });
         fields.add_field_method_set("additive_tint", |lua, this, val: Value| {
-            with_gui_mut!(lua => gui);
-            match &mut gui.elements[this.index] {
-                Element::Image { additive_tint: quad_additive_tint, .. } => {
-                    *quad_additive_tint = Vector::from_lua(val, lua)?;
-                    Ok(())
-                }
-                _ => Err(mlua::Error::runtime("Element is not an image"))
-            }
+            with_scene_mut!(lua => scene);
+            let image = &mut scene.ui_images[this.index];
+            Ok(image.additive_tint = Vector::from_lua(val, lua)?)
         });
 
         fields.add_field_method_get("multiplicative_tint", |lua, this| {
-            with_gui!(lua => gui);
-            match &gui.elements[this.index] {
-                Element::Image { multiplicative_tint, .. } => {
-                    Ok(multiplicative_tint.clone())
-                }
-                _ => Err(mlua::Error::runtime("Element is not an image"))
-            }
+            with_scene!(lua => scene);
+            let image = &scene.ui_images[this.index];
+            Ok(image.multiplicative_tint)
         });
         fields.add_field_method_set("multiplicative_tint", |lua, this, val: Value| {
-            with_gui_mut!(lua => gui);
-            match &mut gui.elements[this.index] {
-                Element::Image { multiplicative_tint: quad_multiplicative_tint, .. } => {
-                    *quad_multiplicative_tint = Vector::from_lua(val, lua)?;
-                    Ok(())
-                }
-                _ => Err(mlua::Error::runtime("Element is not an image"))
-            }
+            with_scene_mut!(lua => scene);
+            let image = &mut scene.ui_images[this.index];
+            Ok(image.multiplicative_tint = Vector::from_lua(val, lua)?)
         });
 
         fields.add_field_method_get("index", |lua, this| {
-            with_gui!(lua => gui);
-            match &gui.elements[this.index] {
-                Element::Image { index, .. } => {
-                    Ok(*index)
-                }
-                _ => Err(mlua::Error::runtime("Element is not an image"))
-            }
+            with_scene!(lua => scene);
+            let image = &scene.ui_images[this.index];
+            Ok(image.index)
         });
         fields.add_field_method_set("index", |lua, this, val: usize| {
-            with_gui_mut!(lua => gui);
-            match &mut gui.elements[this.index] {
-                Element::Image { index, .. } => {
-                    *index = val;
-                    Ok(())
-                }
-                _ => Err(mlua::Error::runtime("Element is not an image"))
-            }
+            with_scene_mut!(lua => scene);
+            let image = &mut scene.ui_images[this.index];
+            Ok(image.index = val)
         });
 
         fields.add_field_method_get("corner_radius", |lua, this| {
-            with_gui!(lua => gui);
-            match &gui.elements[this.index] {
-                Element::Image { corner_radius, .. } => {
-                    Ok(*corner_radius)
-                }
-                _ => Err(mlua::Error::runtime("Element is not an image"))
-            }
+            with_scene!(lua => scene);
+            let image = &scene.ui_images[this.index];
+            Ok(image.corner_radius)
         });
         fields.add_field_method_set("corner_radius", |lua, this, val: f32| {
-            with_gui_mut!(lua => gui);
-            match &mut gui.elements[this.index] {
-                Element::Image { corner_radius, .. } => {
-                    *corner_radius = val;
-                    Ok(())
-                }
-                _ => Err(mlua::Error::runtime("Element is not an image"))
-            }
+            with_scene_mut!(lua => scene);
+            let image = &mut scene.ui_images[this.index];
+            Ok(image.corner_radius = val)
         });
     }
 }
 
 #[derive(Clone)]
 pub struct GUITexturePointer {
-    gui_index: usize,
     index: usize
 }
 impl UserData for GUITexturePointer {
     fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
         fields.add_field_method_get("additive_tint", |lua, this| {
-            with_gui!(lua => gui);
-            match &gui.elements[this.index] {
-                Element::Texture { additive_tint, .. } => {
-                    Ok(additive_tint.clone())
-                }
-                _ => Err(mlua::Error::runtime("Element is not an image"))
-            }
+            with_scene!(lua => scene);
+            let image = &scene.ui_textures[this.index];
+            Ok(image.additive_tint)
         });
         fields.add_field_method_set("additive_tint", |lua, this, val: Value| {
-            with_gui_mut!(lua => gui);
-            match &mut gui.elements[this.index] {
-                Element::Texture { additive_tint: quad_additive_tint, .. } => {
-                    *quad_additive_tint = Vector::from_lua(val, lua)?;
-                    Ok(())
-                }
-                _ => Err(mlua::Error::runtime("Element is not an image"))
-            }
+            with_scene_mut!(lua => scene);
+            let image = &mut scene.ui_textures[this.index];
+            Ok(image.additive_tint = Vector::from_lua(val, lua)?)
         });
 
         fields.add_field_method_get("multiplicative_tint", |lua, this| {
-            with_gui!(lua => gui);
-            match &gui.elements[this.index] {
-                Element::Texture { multiplicative_tint, .. } => {
-                    Ok(multiplicative_tint.clone())
-                }
-                _ => Err(mlua::Error::runtime("Element is not an image"))
-            }
+            with_scene!(lua => scene);
+            let image = &scene.ui_textures[this.index];
+            Ok(image.multiplicative_tint)
         });
         fields.add_field_method_set("multiplicative_tint", |lua, this, val: Value| {
-            with_gui_mut!(lua => gui);
-            match &mut gui.elements[this.index] {
-                Element::Texture { multiplicative_tint: quad_multiplicative_tint, .. } => {
-                    *quad_multiplicative_tint = Vector::from_lua(val, lua)?;
-                    Ok(())
-                }
-                _ => Err(mlua::Error::runtime("Element is not an image"))
-            }
+            with_scene_mut!(lua => scene);
+            let image = &mut scene.ui_textures[this.index];
+            Ok(image.multiplicative_tint = Vector::from_lua(val, lua)?)
         });
 
         fields.add_field_method_get("index", |lua, this| {
-            with_gui!(lua => gui);
-            match &gui.elements[this.index] {
-                Element::Texture { index, .. } => {
-                    Ok(*index)
-                }
-                _ => Err(mlua::Error::runtime("Element is not an image"))
-            }
+            with_scene!(lua => scene);
+            let image = &scene.ui_textures[this.index];
+            Ok(image.index)
         });
         fields.add_field_method_set("index", |lua, this, val: usize| {
-            with_gui_mut!(lua => gui);
-            match &mut gui.elements[this.index] {
-                Element::Texture { index, .. } => {
-                    *index = val;
-                    Ok(())
-                }
-                _ => Err(mlua::Error::runtime("Element is not an image"))
-            }
+            with_scene_mut!(lua => scene);
+            let image = &mut scene.ui_textures[this.index];
+            Ok(image.index = val)
         });
 
         fields.add_field_method_get("corner_radius", |lua, this| {
-            with_gui!(lua => gui);
-            match &gui.elements[this.index] {
-                Element::Texture { corner_radius, .. } => {
-                    Ok(*corner_radius)
-                }
-                _ => Err(mlua::Error::runtime("Element is not an image"))
-            }
+            with_scene!(lua => scene);
+            let image = &scene.ui_textures[this.index];
+            Ok(image.corner_radius)
         });
         fields.add_field_method_set("corner_radius", |lua, this, val: f32| {
-            with_gui_mut!(lua => gui);
-            match &mut gui.elements[this.index] {
-                Element::Texture { corner_radius, .. } => {
-                    *corner_radius = val;
-                    Ok(())
-                }
-                _ => Err(mlua::Error::runtime("Element is not an image"))
-            }
+            with_scene_mut!(lua => scene);
+            let image = &mut scene.ui_textures[this.index];
+            Ok(image.corner_radius = val)
         });
     }
 }
 
 #[derive(Clone)]
-pub struct GUINodePointer {
-    gui_index: usize,
+pub struct GUINodeLayoutPointer {
     index: usize
 }
-impl UserData for GUINodePointer {
+impl UserData for GUINodeLayoutPointer {
     fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
         fields.add_field_method_get("hidden", |lua, this| {
-            with_gui!(lua => gui);
-            Ok(gui.nodes[this.index].hidden)
+            with_scene!(lua => scene);
+            let layout = &scene.ui_node_layouts[this.index];
+            Ok(layout.hidden)
         });
         fields.add_field_method_set("hidden", |lua, this, val: bool| {
-            with_gui_mut!(lua => gui);
-            gui.nodes[this.index].hidden = val;
-            Ok(())
+            with_scene_mut!(lua => scene);
+            let layout = &mut scene.ui_node_layouts[this.index];
+            Ok(layout.hidden = val)
         });
 
         fields.add_field_method_get("index", |lua, this| Ok(this.index));
 
-        fields.add_field_method_get("children_indices", |lua, this| {
-            with_gui!(lua => gui);
-            let children = &gui.nodes[this.index].children_indices;
-            let table = lua.create_table()?;
-            for (i, child_index) in children.iter().enumerate() {
-                table.set(i + 1, *child_index)?;
-            }
-            Ok(table)
-        });
-        fields.add_field_method_get("element_indices", |lua, this| {
-            with_gui!(lua => gui);
-            let elements = &gui.nodes[this.index].element_indices;
-            let table = lua.create_table()?;
-            for (i, element_index) in elements.iter().enumerate() {
-                table.set(i + 1, *element_index)?;
-            }
-            Ok(table)
-        });
-
-        fields.add_field_method_get("num_elements", |lua, this| {
-            with_gui!(lua => gui);
-            Ok(gui.nodes[this.index].children_indices.len())
-        });
-
         fields.add_field_method_get("position", |lua, this| {
-            with_gui!(lua => gui);
-            Ok(gui.nodes[this.index].position)
+            with_scene!(lua => scene);
+            let layout = &scene.ui_node_layouts[this.index];
+            Ok(layout.position)
         });
         fields.add_field_method_get("size", |lua, this| {
-            with_gui!(lua => gui);
-            Ok(gui.nodes[this.index].size)
+            with_scene!(lua => scene);
+            let layout = &scene.ui_node_layouts[this.index];
+            Ok(layout.size)
         });
         fields.add_field_method_get("clip_min", |lua, this| {
-            with_gui!(lua => gui);
-            Ok(gui.nodes[this.index].clip_min)
+            with_scene!(lua => scene);
+            let layout = &scene.ui_node_layouts[this.index];
+            Ok(layout.clip_min)
         });
         fields.add_field_method_get("clip_max", |lua, this| {
-            with_gui!(lua => gui);
-            Ok(gui.nodes[this.index].clip_max)
+            with_scene!(lua => scene);
+            let layout = &scene.ui_node_layouts[this.index];
+            Ok(layout.clip_max)
         });
     }
     fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
@@ -840,6 +693,8 @@ impl<'lua> FromLua<'lua> for LuaAnchorPoint {
         })
     }
 }
+
+
 const ALL_ANCHOR_POINTS: &[AnchorPoint] = &[
     AnchorPoint::TopLeft,
     AnchorPoint::TopCenter,

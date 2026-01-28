@@ -26,7 +26,7 @@ pub struct Renderer {
     pub present_sampler: Sampler,
 }
 impl Renderer {
-    pub fn new(base: &VkBase, world: Arc<RefCell<World>>, client: Arc<RefCell<Client>>) -> Renderer { unsafe {
+    pub fn new(base: &VkBase, world: Arc<RefCell<World>>, client: Arc<RefCell<Client>>, scene: Arc<RefCell<Scene>>) -> Renderer { unsafe {
         Renderer::compile_shaders();
 
         let (
@@ -48,7 +48,7 @@ impl Renderer {
         };
 
         let null_tex_sampler = scene_renderer.borrow().null_tex_sampler.clone();
-        let ui_renderer = UiRenderer::new(&base.context, client, null_tex_sampler, null_tex_info.image_view);
+        let ui_renderer = UiRenderer::new(&base.context, &scene.borrow(), client, null_tex_sampler, null_tex_info.image_view);
 
         let renderer = Renderer {
             device: base.device.clone(),
@@ -89,7 +89,7 @@ impl Renderer {
             present_renderpass,
         )
     }
-    pub fn reload(&mut self, base: &VkBase, world: &World, client: Arc<RefCell<Client>>) { unsafe {
+    pub fn reload(&mut self, base: &VkBase, world: &World, scene: Arc<RefCell<Scene>>) { unsafe {
         self.device.device_wait_idle().unwrap();
 
         {
@@ -110,7 +110,7 @@ impl Renderer {
             image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
         };
 
-        self.ui_renderer.reload_rendering(scene_renderer.null_tex_sampler, scene_renderer.null_texture.image_view);
+        self.ui_renderer.reload_rendering(&scene.borrow_mut(), scene_renderer.null_tex_sampler, scene_renderer.null_texture.image_view);
 
         self.set_present_textures(self.ui_renderer.pass.borrow().textures[0].iter().map(|t| t).collect());
 
@@ -147,12 +147,12 @@ impl Renderer {
     ) { unsafe {
         let frame_command_buffer = self.draw_command_buffers[current_frame];
 
-        let scene = &scene.borrow();
+        let scene = &mut scene.borrow_mut();
         //println!("camera data {:?}", camera);
 
         self.scene_renderer.borrow().render_world(current_frame, &scene);
 
-        self.ui_renderer.draw(current_frame, frame_command_buffer);
+        self.ui_renderer.draw(scene, current_frame, frame_command_buffer);
 
         /*
         self.hitbox_renderpass.begin_renderpass(current_frame, frame_command_buffer, Some(present_index));

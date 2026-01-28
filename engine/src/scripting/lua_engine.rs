@@ -7,7 +7,7 @@ use mlua::{Function, IntoLua, Value};
 use crate::engine::EngineRef;
 use crate::math::Vector;
 use crate::scripting::engine_api::client_api::client_api::{LuaCursorIcon, LuaKeyCode, LuaMouseButton, LuaResizeDirection};
-use crate::scripting::engine_api::gui_api::gui_api::{GUIImagePointer, GUINodePointer, GUIQuadPointer, GUITextPointer, GUITexturePointer, LuaAnchorPoint};
+use crate::scripting::engine_api::gui_api::gui_api::{GUIImagePointer, GUINodeLayoutPointer, GUIQuadPointer, GUITextPointer, GUITexturePointer, LuaAnchorPoint};
 use crate::scripting::engine_api::scene_api::scene_api::{CameraPointer, EntityPointer, RenderComponentPointer, RigidBodyPointer, TransformPointer};
 
 thread_local! {
@@ -36,7 +36,7 @@ pub enum Field {
     String(String),
     Boolean(bool),
     Table(Vec<Box<Field>>),
-    UiNode(GUINodePointer),
+    UiLayout(GUINodeLayoutPointer),
     UiQuad(GUIQuadPointer),
     UiText(GUITextPointer),
     UiTexture(GUITexturePointer),
@@ -60,7 +60,7 @@ fn field_to_value(lua: &mlua::Lua, field: Field) -> Result<mlua::Value, mlua::Er
             }
             mlua::Value::Table(table)
         }
-        Field::UiNode(v) => mlua::Value::UserData(lua.create_userdata(v)?),
+        Field::UiLayout(v) => mlua::Value::UserData(lua.create_userdata(v)?),
         Field::UiQuad(v) => mlua::Value::UserData(lua.create_userdata(v)?),
         Field::UiText(v) => mlua::Value::UserData(lua.create_userdata(v)?),
         Field::UiTexture(v) => mlua::Value::UserData(lua.create_userdata(v)?),

@@ -3,13 +3,13 @@ use mlua::{FromLua, UserData, UserDataFields, UserDataMethods, Value};
 use crate::math::Vector;
 use crate::scripting::lua_engine::Lua;
 
-macro_rules! with_scene {
+#[macro_export] macro_rules! with_scene {
     ($lua:expr => $scene:ident) => {
         let __engine = $lua.app_data_ref::<EngineRef>().unwrap();
         let $scene = __engine.scene.borrow();
     };
 }
-macro_rules! with_scene_mut {
+#[macro_export] macro_rules! with_scene_mut {
     ($lua:expr => $scene:ident) => {
         let __engine = $lua.app_data_ref::<EngineRef>().unwrap();
         let mut $scene = __engine.scene.borrow_mut();
